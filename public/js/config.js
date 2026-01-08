@@ -1,5 +1,5 @@
 /**
- * CONFIGURAÇÕES DO SISTEMA
+ * CONFIGURAÇÕES DO SISTEMA - SELF Proteção Veicular v2.0.0
  * Altere estas configurações conforme seu ambiente
  */
 
@@ -22,13 +22,22 @@ const CONFIG = {
     // Timeout para envio de mensagem (ms)
     SEND_TIMEOUT: 30000,
     
+    // Configurações de QR Code
+    QR_REFRESH_INTERVAL: 30000,
+    QR_TIMEOUT: 60000,
+    
     // Chaves do localStorage
     STORAGE_KEYS: {
         LEADS: 'self_leads',
         TEMPLATES: 'self_templates',
         WHATSAPP_CONNECTED: 'whatsapp_connected',
-        WHATSAPP_USER: 'whatsapp_user'
-    }
+        WHATSAPP_USER: 'whatsapp_user',
+        MESSAGES: 'self_messages',
+        CONTACTS: 'self_contacts'
+    },
+    
+    // Versão do sistema
+    VERSION: '2.0.0'
 };
 
 // Dados iniciais de exemplo (serão substituídos pelo banco de dados)
@@ -156,3 +165,13 @@ const Utils = {
         return Date.now() + Math.random().toString(36).substr(2, 9);
     }
 };
+
+// Exportar para uso global
+window.CONFIG = CONFIG;
+window.INITIAL_LEADS = INITIAL_LEADS;
+window.INITIAL_TEMPLATES = INITIAL_TEMPLATES;
+window.Utils = Utils;
+
+// Log de inicialização
+console.log(`🚀 SELF Proteção Veicular v${CONFIG.VERSION}`);
+console.log(`📡 Socket URL: ${CONFIG.SOCKET_URL}`);

@@ -9,50 +9,101 @@
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <link rel="stylesheet" href="css/style.css">
     <style>
-        .conversations-container {
-            display: grid;
-            grid-template-columns: 350px 1fr;
-            gap: 0;
-            height: calc(100vh - 100px);
-            background: white;
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        :root {
+            --primary: #5a2a6b;
+            --primary-light: #7a3a8b;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
+            --dark: #1e293b;
+            --gray: #64748b;
+            --light: #f1f5f9;
+            --lighter: #f8fafc;
+            --white: #ffffff;
+            --border: #e2e8f0;
+            --whatsapp: #25D366;
         }
         
-        /* LISTA DE CONVERSAS */
-        .conversations-sidebar {
+        .inbox-container {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            height: calc(100vh - 100px);
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 4px 25px rgba(0,0,0,0.08);
+        }
+        
+        /* SIDEBAR DE CONVERSAS */
+        .inbox-sidebar {
             border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            background: #f8f9fa;
+            background: #fafbfc;
         }
         
-        .conversations-header {
+        .inbox-header {
             padding: 20px;
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
             color: white;
         }
         
-        .conversations-header h2 {
+        .inbox-header h2 {
             font-size: 20px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .inbox-filters {
+            display: flex;
+            gap: 10px;
             margin-bottom: 15px;
         }
         
-        .search-box {
+        .filter-btn {
             background: rgba(255,255,255,0.2);
             border: 1px solid rgba(255,255,255,0.3);
-            border-radius: 10px;
-            padding: 10px 15px;
             color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .filter-btn:hover,
+        .filter-btn.active {
+            background: white;
+            color: var(--primary);
+        }
+        
+        .search-box {
+            background: rgba(255,255,255,0.95);
+            border: none;
+            border-radius: 10px;
+            padding: 12px 15px;
+            padding-left: 40px;
+            color: var(--dark);
             width: 100%;
             font-size: 14px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 12px center;
         }
         
         .search-box::placeholder {
-            color: rgba(255,255,255,0.7);
+            color: var(--gray);
         }
         
+        .search-box:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(90, 42, 107, 0.2);
+        }
+        
+        /* Lista de Conversas */
         .conversations-list {
             flex: 1;
             overflow-y: auto;
@@ -62,10 +113,10 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 15px 20px;
+            padding: 16px 20px;
             border-bottom: 1px solid var(--border);
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all 0.2s;
             background: white;
         }
         
@@ -74,12 +125,16 @@
         }
         
         .conversation-item.active {
-            background: rgba(90, 42, 107, 0.1);
-            border-left: 3px solid var(--primary);
+            background: rgba(90, 42, 107, 0.08);
+            border-left: 4px solid var(--primary);
         }
         
         .conversation-item.unread {
             background: #f0f9ff;
+        }
+        
+        .conversation-item.unread .conversation-name {
+            font-weight: 700;
         }
         
         .conversation-avatar {
@@ -94,6 +149,18 @@
             font-weight: 600;
             font-size: 18px;
             flex-shrink: 0;
+            position: relative;
+        }
+        
+        .conversation-avatar .online-dot {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            width: 12px;
+            height: 12px;
+            background: var(--success);
+            border: 2px solid white;
+            border-radius: 50%;
         }
         
         .conversation-info {
@@ -101,8 +168,9 @@
             min-width: 0;
         }
         
-        .conversation-info h4 {
+        .conversation-name {
             font-size: 15px;
+            font-weight: 600;
             color: var(--dark);
             margin-bottom: 4px;
             white-space: nowrap;
@@ -110,12 +178,20 @@
             text-overflow: ellipsis;
         }
         
-        .conversation-info p {
+        .conversation-preview {
             font-size: 13px;
             color: var(--gray);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .conversation-preview .check {
+            color: var(--info);
+            font-size: 14px;
         }
         
         .conversation-meta {
@@ -123,20 +199,21 @@
             flex-shrink: 0;
         }
         
-        .conversation-meta .time {
+        .conversation-time {
             font-size: 11px;
             color: var(--gray);
             display: block;
             margin-bottom: 5px;
         }
         
-        .conversation-meta .unread-badge {
+        .unread-badge {
             background: var(--primary);
             color: white;
             border-radius: 12px;
-            padding: 2px 8px;
+            padding: 3px 8px;
             font-size: 11px;
-            font-weight: 600;
+            font-weight: 700;
+            display: inline-block;
         }
         
         /* ÁREA DE CHAT */
@@ -149,11 +226,10 @@
         .chat-header {
             background: linear-gradient(135deg, var(--whatsapp) 0%, #128C7E 100%);
             color: white;
-            padding: 20px 25px;
+            padding: 16px 25px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
         }
         
         .chat-header-left {
@@ -180,7 +256,7 @@
         
         .chat-header-info p {
             font-size: 12px;
-            opacity: 0.8;
+            opacity: 0.9;
         }
         
         .chat-header-actions {
@@ -192,17 +268,21 @@
             background: rgba(255,255,255,0.2);
             border: none;
             color: white;
-            padding: 8px 12px;
-            border-radius: 8px;
+            padding: 10px 14px;
+            border-radius: 10px;
             cursor: pointer;
             font-size: 14px;
-            transition: background 0.2s;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
         
         .chat-header-btn:hover {
             background: rgba(255,255,255,0.3);
         }
         
+        /* Mensagens */
         .chat-messages {
             flex: 1;
             padding: 20px;
@@ -218,24 +298,51 @@
             align-items: center;
             justify-content: center;
             color: var(--gray);
+            text-align: center;
         }
         
         .chat-empty .icon {
-            font-size: 64px;
+            font-size: 80px;
             margin-bottom: 20px;
-            opacity: 0.5;
+            opacity: 0.4;
+        }
+        
+        .chat-empty h3 {
+            font-size: 20px;
+            color: var(--dark);
+            margin-bottom: 10px;
+        }
+        
+        .chat-empty p {
+            font-size: 14px;
+            max-width: 300px;
+            line-height: 1.6;
+        }
+        
+        .chat-date-divider {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .chat-date-divider span {
+            background: rgba(225, 218, 208, 0.9);
+            color: var(--gray);
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
         }
         
         .chat-message {
             max-width: 65%;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             padding: 10px 14px;
-            border-radius: 8px;
+            border-radius: 10px;
             font-size: 14px;
             line-height: 1.5;
             position: relative;
             word-wrap: break-word;
-            animation: messageSlide 0.3s ease;
+            animation: messageSlide 0.2s ease;
         }
         
         @keyframes messageSlide {
@@ -252,18 +359,18 @@
         .chat-message.sent {
             background: #dcf8c6;
             margin-left: auto;
-            border-bottom-right-radius: 2px;
+            border-bottom-right-radius: 4px;
         }
         
         .chat-message.received {
             background: white;
             margin-right: auto;
-            border-bottom-left-radius: 2px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.08);
         }
         
         .chat-message .message-text {
-            margin-bottom: 5px;
+            margin-bottom: 4px;
         }
         
         .chat-message .message-footer {
@@ -279,6 +386,11 @@
             font-size: 14px;
         }
         
+        .chat-message .status-icon.read {
+            color: #53bdeb;
+        }
+        
+        /* Input de Mensagem */
         .chat-input-container {
             padding: 15px 20px;
             background: #f0f2f5;
@@ -287,45 +399,69 @@
         
         .chat-input-wrapper {
             display: flex;
-            gap: 10px;
+            gap: 12px;
             align-items: flex-end;
+        }
+        
+        .chat-input-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .chat-action-btn {
+            background: transparent;
+            border: none;
+            color: var(--gray);
+            font-size: 22px;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+        
+        .chat-action-btn:hover {
+            background: var(--light);
+            color: var(--primary);
         }
         
         .chat-input {
             flex: 1;
             background: white;
             border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 12px 15px;
-            font-size: 14px;
+            border-radius: 12px;
+            padding: 14px 18px;
+            font-size: 15px;
             font-family: inherit;
             resize: none;
             max-height: 120px;
-            min-height: 42px;
+            min-height: 48px;
+            line-height: 1.4;
         }
         
         .chat-input:focus {
             outline: none;
             border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(90, 42, 107, 0.1);
         }
         
         .chat-send-btn {
             background: var(--whatsapp);
             color: white;
             border: none;
-            border-radius: 10px;
-            padding: 12px 20px;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
             cursor: pointer;
-            font-size: 20px;
+            font-size: 22px;
             transition: all 0.2s;
             display: flex;
             align-items: center;
             justify-content: center;
-            min-width: 50px;
+            flex-shrink: 0;
         }
         
         .chat-send-btn:hover {
-            background: #1da851;
+            background: #20BA5A;
             transform: scale(1.05);
         }
         
@@ -335,17 +471,46 @@
             transform: scale(1);
         }
         
+        /* Templates rápidos */
+        .quick-templates {
+            padding: 10px 20px;
+            background: white;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+        }
+        
+        .quick-template {
+            background: var(--lighter);
+            border: 1px solid var(--border);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            color: var(--dark);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        
+        .quick-template:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        /* Aviso de conexão */
         .connection-warning {
-            background: #fff3cd;
+            background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%);
             border: 1px solid #ffc107;
             color: #856404;
-            padding: 15px 20px;
+            padding: 15px 25px;
             text-align: center;
             font-size: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 10px;
+            gap: 12px;
         }
         
         .connection-warning a {
@@ -358,29 +523,97 @@
             text-decoration: underline;
         }
         
-        /* RESPONSIVE */
-        @media (max-width: 768px) {
-            .conversations-container {
+        /* Estado vazio da lista */
+        .conversations-empty {
+            padding: 50px 20px;
+            text-align: center;
+            color: var(--gray);
+        }
+        
+        .conversations-empty .icon {
+            font-size: 64px;
+            display: block;
+            margin-bottom: 15px;
+            opacity: 0.4;
+        }
+        
+        .conversations-empty h3 {
+            font-size: 16px;
+            color: var(--dark);
+            margin-bottom: 8px;
+        }
+        
+        .conversations-empty p {
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        
+        /* Typing indicator */
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 10px 14px;
+            background: white;
+            border-radius: 10px;
+            width: fit-content;
+            margin-bottom: 8px;
+        }
+        
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: var(--gray);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-5px); }
+        }
+        
+        /* Responsive */
+        @media (max-width: 900px) {
+            .inbox-container {
                 grid-template-columns: 1fr;
+                height: auto;
             }
             
-            .conversations-sidebar {
+            .inbox-sidebar {
+                max-height: 50vh;
+            }
+            
+            .inbox-sidebar.hidden {
                 display: none;
             }
             
-            .conversations-sidebar.mobile-active {
-                display: flex;
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                z-index: 1000;
+            .chat-area.hidden {
+                display: none;
             }
             
-            .chat-message {
-                max-width: 80%;
+            .back-btn {
+                display: flex !important;
             }
+        }
+        
+        .back-btn {
+            display: none;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            margin-right: 10px;
         }
     </style>
 </head>
@@ -393,7 +626,7 @@
         
         <ul class="sidebar-menu">
             <li>
-                <a href="index.html">
+                <a href="dashboard.html">
                     <span class="icon">📊</span>
                     Dashboard
                 </a>
@@ -412,7 +645,7 @@
             </li>
             <li>
                 <a href="conversas.html" class="active">
-                    <span class="icon">💬</span>
+                    <span class="icon">💭</span>
                     Conversas
                 </a>
             </li>
@@ -424,10 +657,12 @@
             </li>
         </ul>
         
-        <button class="btn btn-outline logout-btn" onclick="logout()">
-            <span class="icon">🚪</span>
-            Sair
-        </button>
+        <div class="sidebar-footer">
+            <button class="btn-logout" onclick="logout()">
+                <span>🚪</span>
+                Sair
+            </button>
+        </div>
     </aside>
     
     <!-- MOBILE MENU TOGGLE -->
@@ -438,32 +673,33 @@
     <main class="main-content">
         <div class="header">
             <div class="header-title">
-                <h1>💬 Conversas com Leads</h1>
-                <p>Gerencie suas conversas do WhatsApp</p>
-            </div>
-            <div class="header-actions">
-                <button class="btn btn-primary" onclick="window.location.href='whatsapp.html'">
-                    <span>⚙️</span>
-                    Configurar WhatsApp
-                </button>
+                <h1>💭 Conversas</h1>
+                <p>Gerencie suas conversas com leads</p>
             </div>
         </div>
         
-        <!-- CONNECTION WARNING -->
-        <div class="connection-warning" id="connection-warning" style="display: none;">
+        <!-- Aviso de conexão -->
+        <div class="connection-warning" id="connection-warning" style="display: none; margin-bottom: 20px; border-radius: 12px;">
             <span>⚠️</span>
-            <span>WhatsApp não conectado.</span>
-            <a href="whatsapp.html">Conectar agora</a>
+            <span>WhatsApp não está conectado.</span>
+            <a href="whatsapp.html">Conectar agora →</a>
         </div>
         
-        <!-- CONVERSATIONS CONTAINER -->
-        <div class="conversations-container">
+        <div class="inbox-container">
             <!-- SIDEBAR DE CONVERSAS -->
-            <div class="conversations-sidebar">
-                <div class="conversations-header">
-                    <h2>Conversas</h2>
-                    <input type="text" class="search-box" id="search-input" placeholder="🔍 Buscar conversa...">
+            <div class="inbox-sidebar" id="inbox-sidebar">
+                <div class="inbox-header">
+                    <h2>
+                        <span>💬</span>
+                        Inbox
+                    </h2>
+                    <div class="inbox-filters">
+                        <button class="filter-btn active" onclick="filterConversations('all')">Todos</button>
+                        <button class="filter-btn" onclick="filterConversations('unread')">Não lidos</button>
+                    </div>
+                    <input type="text" class="search-box" placeholder="Buscar conversa..." id="search-input" oninput="searchConversations()">
                 </div>
+                
                 <div class="conversations-list" id="conversations-list">
                     <!-- Conversas serão carregadas via JavaScript -->
                 </div>
@@ -471,10 +707,60 @@
             
             <!-- ÁREA DE CHAT -->
             <div class="chat-area" id="chat-area">
-                <div class="chat-empty">
-                    <span class="icon">💬</span>
-                    <h3>Selecione uma conversa</h3>
-                    <p>Escolha um lead na lista para começar a conversar</p>
+                <div class="chat-header" id="chat-header" style="display: none;">
+                    <div class="chat-header-left">
+                        <button class="back-btn" onclick="showConversationsList()">←</button>
+                        <div class="chat-header-avatar" id="chat-avatar">👤</div>
+                        <div class="chat-header-info">
+                            <h3 id="chat-name">Selecione uma conversa</h3>
+                            <p id="chat-phone">-</p>
+                        </div>
+                    </div>
+                    <div class="chat-header-actions">
+                        <button class="chat-header-btn" onclick="viewLeadDetails()">
+                            <span>👤</span>
+                            Ver Lead
+                        </button>
+                        <button class="chat-header-btn" onclick="openWhatsAppWeb()">
+                            <span>🔗</span>
+                            Abrir no WhatsApp
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="chat-messages" id="chat-messages">
+                    <div class="chat-empty" id="chat-empty">
+                        <span class="icon">💬</span>
+                        <h3>Nenhum chat selecionado</h3>
+                        <p>Selecione uma conversa da lista ao lado para começar a conversar</p>
+                    </div>
+                </div>
+                
+                <div class="quick-templates" id="quick-templates" style="display: none;">
+                    <button class="quick-template" onclick="useTemplate('Olá! Tudo bem?')">👋 Olá!</button>
+                    <button class="quick-template" onclick="useTemplate('Posso te ajudar com mais informações sobre proteção veicular?')">ℹ️ Mais informações</button>
+                    <button class="quick-template" onclick="useTemplate('Obrigado pelo contato! Qualquer dúvida, estou à disposição.')">🙏 Agradecer</button>
+                    <button class="quick-template" onclick="useTemplate('Vou verificar e te retorno em breve!')">⏰ Retorno</button>
+                </div>
+                
+                <div class="chat-input-container" id="chat-input-container" style="display: none;">
+                    <div class="chat-input-wrapper">
+                        <div class="chat-input-actions">
+                            <button class="chat-action-btn" title="Emoji">😊</button>
+                            <button class="chat-action-btn" title="Anexar">📎</button>
+                        </div>
+                        <textarea 
+                            class="chat-input" 
+                            id="message-input" 
+                            placeholder="Digite sua mensagem..." 
+                            rows="1"
+                            onkeydown="handleKeyDown(event)"
+                            oninput="autoResize(this)"
+                        ></textarea>
+                        <button class="chat-send-btn" id="send-btn" onclick="sendMessage()">
+                            ➤
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -484,448 +770,560 @@
     <div class="toast-container" id="toast-container"></div>
     
     <script src="js/config.js"></script>
-    <script src="js/whatsapp.js"></script>
     <script>
-        // Estado global
+        // Estado
         let socket = null;
         let isConnected = false;
-        let currentChat = null;
+        let currentContact = null;
         let conversations = [];
         let messages = {};
+        let currentFilter = 'all';
         
         // Inicialização
         document.addEventListener('DOMContentLoaded', function() {
-            initializeApp();
+            initSocket();
+            loadConversations();
+            
+            // Verificar parâmetros da URL
+            const params = new URLSearchParams(window.location.search);
+            const phone = params.get('phone');
+            const name = params.get('name');
+            
+            if (phone) {
+                setTimeout(() => {
+                    selectConversation({
+                        number: phone,
+                        name: name || phone,
+                        jid: formatJid(phone)
+                    });
+                }, 500);
+            }
         });
         
-        // Inicializar aplicação
-        function initializeApp() {
-            loadConversationsFromStorage();
-            loadMessagesFromStorage();
-            renderConversations();
-            
-            // Inicializar WhatsApp
-            WhatsApp.init({
-                onConnect: handleWhatsAppConnect,
-                onDisconnect: handleWhatsAppDisconnect,
-                onMessage: handleIncomingMessage,
-                onMessageSent: handleMessageSent,
-                onError: handleError
+        // Inicializar Socket
+        function initSocket() {
+            socket = io(CONFIG.SOCKET_URL, {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 10,
+                reconnectionDelay: 1000
             });
             
-            // Search
-            document.getElementById('search-input').addEventListener('input', function(e) {
-                filterConversations(e.target.value);
+            socket.on('connect', function() {
+                console.log('✅ Conectado ao servidor');
+                socket.emit('check-session', { sessionId: CONFIG.SESSION_ID });
+            });
+            
+            socket.on('session-status', function(data) {
+                isConnected = data.status === 'connected';
+                updateConnectionWarning();
+                
+                if (isConnected) {
+                    socket.emit('get-contacts', { sessionId: CONFIG.SESSION_ID });
+                }
+            });
+            
+            socket.on('connected', function(data) {
+                isConnected = true;
+                updateConnectionWarning();
+                socket.emit('get-contacts', { sessionId: CONFIG.SESSION_ID });
+            });
+            
+            socket.on('disconnected', function() {
+                isConnected = false;
+                updateConnectionWarning();
+            });
+            
+            socket.on('contacts-list', function(data) {
+                if (data.contacts && data.contacts.length > 0) {
+                    mergeContacts(data.contacts);
+                    renderConversations();
+                }
+            });
+            
+            socket.on('messages-list', function(data) {
+                if (data.contactJid && data.messages) {
+                    messages[data.contactJid] = data.messages;
+                    if (currentContact && currentContact.jid === data.contactJid) {
+                        renderMessages(data.messages);
+                    }
+                }
+            });
+            
+            socket.on('new-message', function(data) {
+                // Adicionar mensagem ao chat
+                if (data.from) {
+                    if (!messages[data.from]) {
+                        messages[data.from] = [];
+                    }
+                    
+                    // Evitar duplicatas
+                    const exists = messages[data.from].find(m => m.id === data.id);
+                    if (!exists) {
+                        messages[data.from].push(data);
+                        
+                        // Atualizar UI se for o chat atual
+                        if (currentContact && currentContact.jid === data.from) {
+                            renderMessages(messages[data.from]);
+                            scrollToBottom();
+                        }
+                        
+                        // Atualizar lista de conversas
+                        updateConversationPreview(data.from, data);
+                    }
+                }
+            });
+            
+            socket.on('message-sent', function(data) {
+                showToast('success', 'Mensagem enviada!');
+            });
+            
+            socket.on('message-status', function(data) {
+                // Atualizar status da mensagem
+                updateMessageStatus(data.messageId, data.status);
+            });
+            
+            socket.on('error', function(data) {
+                showToast('error', data.message || 'Erro na operação');
             });
         }
         
-        // Carregar conversas do localStorage
-        function loadConversationsFromStorage() {
+        // Atualizar aviso de conexão
+        function updateConnectionWarning() {
+            const warning = document.getElementById('connection-warning');
+            warning.style.display = isConnected ? 'none' : 'flex';
+        }
+        
+        // Carregar conversas
+        function loadConversations() {
+            // Carregar leads do localStorage
             const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.LEADS);
-            if (stored) {
-                const leads = JSON.parse(stored);
-                conversations = leads.map(lead => ({
-                    id: lead.telefone,
-                    name: lead.nome,
-                    phone: lead.telefone,
-                    vehicle: lead.veiculo,
-                    lastMessage: '',
-                    lastMessageTime: new Date(lead.data).getTime(),
-                    unreadCount: 0
-                }));
-            }
+            let leads = stored ? JSON.parse(stored) : INITIAL_LEADS;
+            
+            // Converter leads para formato de conversa
+            conversations = leads.map(lead => ({
+                jid: formatJid(lead.telefone),
+                number: lead.telefone,
+                name: lead.nome,
+                lastMessage: 'Clique para iniciar conversa',
+                lastMessageTime: new Date(lead.data).getTime() || Date.now(),
+                unreadCount: 0,
+                status: lead.status,
+                veiculo: lead.veiculo,
+                placa: lead.placa
+            }));
+            
+            renderConversations();
         }
         
-        // Carregar mensagens do localStorage
-        function loadMessagesFromStorage() {
-            const stored = localStorage.getItem('whatsapp_messages');
-            if (stored) {
-                messages = JSON.parse(stored);
-            }
+        // Mesclar contatos do WhatsApp
+        function mergeContacts(whatsappContacts) {
+            whatsappContacts.forEach(contact => {
+                const existing = conversations.find(c => c.jid === contact.jid || c.number === contact.number);
+                if (existing) {
+                    existing.lastMessage = contact.lastMessage || existing.lastMessage;
+                    existing.lastMessageTime = contact.lastMessageTime || existing.lastMessageTime;
+                    existing.unreadCount = contact.unreadCount || 0;
+                } else {
+                    conversations.push({
+                        jid: contact.jid || formatJid(contact.number),
+                        number: contact.number,
+                        name: contact.name || contact.number,
+                        lastMessage: contact.lastMessage || 'Nova conversa',
+                        lastMessageTime: contact.lastMessageTime || Date.now(),
+                        unreadCount: contact.unreadCount || 0
+                    });
+                }
+            });
+            
+            // Ordenar por última mensagem
+            conversations.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
         }
         
-        // Salvar mensagens no localStorage
-        function saveMessagesToStorage() {
-            localStorage.setItem('whatsapp_messages', JSON.stringify(messages));
-        }
-        
-        // Renderizar lista de conversas
-        function renderConversations(filter = '') {
+        // Renderizar conversas
+        function renderConversations() {
             const container = document.getElementById('conversations-list');
+            let filtered = conversations;
             
-            if (conversations.length === 0) {
-                container.innerHTML = `
-                    <div class="chat-empty" style="padding: 40px;">
-                        <span class="icon">👥</span>
-                        <p>Nenhuma conversa encontrada</p>
-                    </div>
-                `;
-                return;
+            // Aplicar filtro
+            if (currentFilter === 'unread') {
+                filtered = conversations.filter(c => c.unreadCount > 0);
             }
             
-            let filtered = conversations;
-            if (filter) {
-                const lowerFilter = filter.toLowerCase();
-                filtered = conversations.filter(c => 
-                    c.name.toLowerCase().includes(lowerFilter) ||
-                    c.phone.includes(lowerFilter)
+            // Aplicar busca
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+            if (searchTerm) {
+                filtered = filtered.filter(c => 
+                    c.name.toLowerCase().includes(searchTerm) ||
+                    c.number.includes(searchTerm)
                 );
             }
             
-            // Ordenar por última mensagem
-            filtered.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
-            
-            container.innerHTML = filtered.map(conv => {
-                const lastMsg = conv.lastMessage || 'Nenhuma mensagem ainda';
-                const time = formatTime(conv.lastMessageTime);
-                const unreadBadge = conv.unreadCount > 0 ? 
-                    `<span class="unread-badge">${conv.unreadCount}</span>` : '';
-                const activeClass = currentChat && currentChat.id === conv.id ? 'active' : '';
-                const unreadClass = conv.unreadCount > 0 ? 'unread' : '';
-                
-                return `
-                    <div class="conversation-item ${activeClass} ${unreadClass}" onclick="openChat('${conv.id}')">
-                        <div class="conversation-avatar">${conv.name.charAt(0).toUpperCase()}</div>
-                        <div class="conversation-info">
-                            <h4>${conv.name}</h4>
-                            <p>${lastMsg}</p>
-                        </div>
-                        <div class="conversation-meta">
-                            <span class="time">${time}</span>
-                            ${unreadBadge}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-        
-        // Filtrar conversas
-        function filterConversations(query) {
-            renderConversations(query);
-        }
-        
-        // Abrir chat
-        function openChat(conversationId) {
-            const conversation = conversations.find(c => c.id === conversationId);
-            if (!conversation) return;
-            
-            currentChat = conversation;
-            
-            // Marcar como lido
-            conversation.unreadCount = 0;
-            renderConversations();
-            
-            // Renderizar área de chat
-            renderChatArea();
-        }
-        
-        // Renderizar área de chat
-        function renderChatArea() {
-            const chatArea = document.getElementById('chat-area');
-            
-            if (!currentChat) {
-                chatArea.innerHTML = `
-                    <div class="chat-empty">
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="conversations-empty">
                         <span class="icon">💬</span>
-                        <h3>Selecione uma conversa</h3>
-                        <p>Escolha um lead na lista para começar a conversar</p>
+                        <h3>Nenhuma conversa</h3>
+                        <p>Não há conversas para exibir no momento</p>
                     </div>
                 `;
                 return;
             }
             
-            const chatMessages = messages[currentChat.id] || [];
-            
-            chatArea.innerHTML = `
-                <div class="chat-header">
-                    <div class="chat-header-left">
-                        <div class="chat-header-avatar">${currentChat.name.charAt(0).toUpperCase()}</div>
-                        <div class="chat-header-info">
-                            <h3>${currentChat.name}</h3>
-                            <p>${currentChat.phone} • ${currentChat.vehicle}</p>
+            container.innerHTML = filtered.map(conv => `
+                <div class="conversation-item ${conv.unreadCount > 0 ? 'unread' : ''} ${currentContact?.jid === conv.jid ? 'active' : ''}" 
+                     onclick="selectConversation(${JSON.stringify(conv).replace(/"/g, '&quot;')})">
+                    <div class="conversation-avatar">
+                        ${conv.name ? conv.name.charAt(0).toUpperCase() : '👤'}
+                    </div>
+                    <div class="conversation-info">
+                        <div class="conversation-name">${conv.name}</div>
+                        <div class="conversation-preview">
+                            ${conv.lastMessage}
                         </div>
                     </div>
-                    <div class="chat-header-actions">
-                        <button class="chat-header-btn" onclick="clearChat()" title="Limpar conversa">
-                            🗑️
-                        </button>
+                    <div class="conversation-meta">
+                        <span class="conversation-time">${formatTime(conv.lastMessageTime)}</span>
+                        ${conv.unreadCount > 0 ? `<span class="unread-badge">${conv.unreadCount}</span>` : ''}
                     </div>
                 </div>
+            `).join('');
+        }
+        
+        // Selecionar conversa
+        function selectConversation(contact) {
+            currentContact = contact;
+            
+            // Atualizar UI
+            document.getElementById('chat-header').style.display = 'flex';
+            document.getElementById('chat-empty').style.display = 'none';
+            document.getElementById('chat-input-container').style.display = 'block';
+            document.getElementById('quick-templates').style.display = 'flex';
+            
+            document.getElementById('chat-avatar').textContent = contact.name ? contact.name.charAt(0).toUpperCase() : '👤';
+            document.getElementById('chat-name').textContent = contact.name;
+            document.getElementById('chat-phone').textContent = formatPhone(contact.number);
+            
+            // Marcar como lido
+            const conv = conversations.find(c => c.jid === contact.jid);
+            if (conv) {
+                conv.unreadCount = 0;
+            }
+            
+            // Atualizar lista
+            renderConversations();
+            
+            // Carregar mensagens
+            if (isConnected) {
+                socket.emit('get-messages', { 
+                    sessionId: CONFIG.SESSION_ID, 
+                    contactJid: contact.jid 
+                });
+                socket.emit('mark-read', {
+                    sessionId: CONFIG.SESSION_ID,
+                    contactJid: contact.jid
+                });
+            }
+            
+            // Mostrar mensagens em cache
+            if (messages[contact.jid]) {
+                renderMessages(messages[contact.jid]);
+            } else {
+                document.getElementById('chat-messages').innerHTML = `
+                    <div class="chat-empty">
+                        <span class="icon">💬</span>
+                        <h3>Inicie a conversa</h3>
+                        <p>Envie uma mensagem para ${contact.name}</p>
+                    </div>
+                `;
+            }
+            
+            // Mobile: esconder lista
+            if (window.innerWidth <= 900) {
+                document.getElementById('inbox-sidebar').classList.add('hidden');
+                document.getElementById('chat-area').classList.remove('hidden');
+            }
+        }
+        
+        // Renderizar mensagens
+        function renderMessages(msgs) {
+            const container = document.getElementById('chat-messages');
+            
+            if (!msgs || msgs.length === 0) {
+                container.innerHTML = `
+                    <div class="chat-empty">
+                        <span class="icon">💬</span>
+                        <h3>Inicie a conversa</h3>
+                        <p>Envie uma mensagem para começar</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Agrupar por data
+            const grouped = groupMessagesByDate(msgs);
+            
+            let html = '';
+            for (const [date, dayMessages] of Object.entries(grouped)) {
+                html += `<div class="chat-date-divider"><span>${date}</span></div>`;
                 
-                <div class="chat-messages" id="chat-messages">
-                    ${chatMessages.length === 0 ? `
-                        <div class="chat-empty">
-                            <span class="icon">💬</span>
-                            <p>Nenhuma mensagem ainda</p>
-                            <p style="font-size: 12px; margin-top: 10px;">Envie uma mensagem para iniciar a conversa</p>
+                dayMessages.forEach(msg => {
+                    const statusIcon = getStatusIcon(msg.status);
+                    html += `
+                        <div class="chat-message ${msg.isFromMe ? 'sent' : 'received'}" data-id="${msg.id}">
+                            <div class="message-text">${escapeHtml(msg.text)}</div>
+                            <div class="message-footer">
+                                <span>${formatMessageTime(msg.timestamp)}</span>
+                                ${msg.isFromMe ? `<span class="status-icon ${msg.status === 'read' ? 'read' : ''}">${statusIcon}</span>` : ''}
+                            </div>
                         </div>
-                    ` : chatMessages.map(msg => renderMessage(msg)).join('')}
-                </div>
-                
-                <div class="chat-input-container">
-                    <div class="chat-input-wrapper">
-                        <textarea 
-                            class="chat-input" 
-                            id="message-input" 
-                            placeholder="Digite sua mensagem..."
-                            rows="1"
-                            onkeydown="handleInputKeydown(event)"
-                        ></textarea>
-                        <button class="chat-send-btn" onclick="sendMessage()" ${!isConnected ? 'disabled' : ''}>
-                            ✈️
-                        </button>
-                    </div>
-                </div>
-            `;
+                    `;
+                });
+            }
             
-            // Auto-resize textarea
-            const textarea = document.getElementById('message-input');
-            textarea.addEventListener('input', function() {
-                this.style.height = 'auto';
-                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-            });
-            
-            // Scroll para última mensagem
+            container.innerHTML = html;
             scrollToBottom();
         }
         
-        // Renderizar mensagem
-        function renderMessage(msg) {
-            const type = msg.fromMe ? 'sent' : 'received';
-            const time = formatTime(msg.timestamp);
-            const statusIcon = msg.fromMe ? (msg.status === 'sent' ? '✓✓' : '✓') : '';
+        // Agrupar mensagens por data
+        function groupMessagesByDate(msgs) {
+            const groups = {};
             
-            return `
-                <div class="chat-message ${type}">
-                    <div class="message-text">${escapeHtml(msg.text)}</div>
-                    <div class="message-footer">
-                        <span class="time">${time}</span>
-                        ${statusIcon ? `<span class="status-icon">${statusIcon}</span>` : ''}
-                    </div>
-                </div>
-            `;
+            msgs.forEach(msg => {
+                const date = new Date(msg.timestamp);
+                const today = new Date();
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+                
+                let dateKey;
+                if (date.toDateString() === today.toDateString()) {
+                    dateKey = 'Hoje';
+                } else if (date.toDateString() === yesterday.toDateString()) {
+                    dateKey = 'Ontem';
+                } else {
+                    dateKey = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                }
+                
+                if (!groups[dateKey]) {
+                    groups[dateKey] = [];
+                }
+                groups[dateKey].push(msg);
+            });
+            
+            return groups;
         }
         
         // Enviar mensagem
-        async function sendMessage() {
-            if (!currentChat || !isConnected) {
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            
+            if (!message || !currentContact) return;
+            
+            if (!isConnected) {
                 showToast('warning', 'WhatsApp não está conectado');
                 return;
             }
             
-            const input = document.getElementById('message-input');
-            const text = input.value.trim();
+            // Enviar via socket
+            socket.emit('send-message', {
+                sessionId: CONFIG.SESSION_ID,
+                to: currentContact.number,
+                message: message,
+                type: 'text'
+            });
             
-            if (!text) return;
+            // Adicionar mensagem localmente
+            const newMessage = {
+                id: 'temp_' + Date.now(),
+                text: message,
+                isFromMe: true,
+                timestamp: Date.now(),
+                status: 'pending'
+            };
+            
+            if (!messages[currentContact.jid]) {
+                messages[currentContact.jid] = [];
+            }
+            messages[currentContact.jid].push(newMessage);
+            
+            // Atualizar UI
+            renderMessages(messages[currentContact.jid]);
             
             // Limpar input
             input.value = '';
             input.style.height = 'auto';
             
-            // Adicionar mensagem localmente
-            const message = {
-                id: Date.now().toString(),
-                text: text,
-                timestamp: Date.now(),
-                fromMe: true,
-                status: 'sending'
-            };
-            
-            if (!messages[currentChat.id]) {
-                messages[currentChat.id] = [];
-            }
-            messages[currentChat.id].push(message);
-            
-            // Atualizar conversa
-            currentChat.lastMessage = text;
-            currentChat.lastMessageTime = message.timestamp;
-            
-            saveMessagesToStorage();
-            renderChatArea();
-            renderConversations();
-            
-            // Enviar via WhatsApp
-            try {
-                await WhatsApp.sendMessage(currentChat.phone, text);
+            // Atualizar preview da conversa
+            updateConversationPreview(currentContact.jid, newMessage);
+        }
+        
+        // Atualizar preview da conversa
+        function updateConversationPreview(jid, message) {
+            const conv = conversations.find(c => c.jid === jid);
+            if (conv) {
+                conv.lastMessage = message.text.substring(0, 50) + (message.text.length > 50 ? '...' : '');
+                conv.lastMessageTime = message.timestamp;
                 
-                // Atualizar status
-                message.status = 'sent';
-                saveMessagesToStorage();
-                renderChatArea();
-                
-                showToast('success', 'Mensagem enviada!');
-            } catch (error) {
-                console.error('Erro ao enviar mensagem:', error);
-                message.status = 'error';
-                saveMessagesToStorage();
-                renderChatArea();
-                showToast('error', 'Erro ao enviar mensagem: ' + error.message);
+                // Reordenar
+                conversations.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+                renderConversations();
             }
         }
         
-        // Handle input keydown
-        function handleInputKeydown(event) {
+        // Atualizar status da mensagem
+        function updateMessageStatus(messageId, status) {
+            const msgEl = document.querySelector(`[data-id="${messageId}"]`);
+            if (msgEl) {
+                const statusEl = msgEl.querySelector('.status-icon');
+                if (statusEl) {
+                    statusEl.textContent = getStatusIcon(status);
+                    if (status === 'read') {
+                        statusEl.classList.add('read');
+                    }
+                }
+            }
+        }
+        
+        // Usar template
+        function useTemplate(text) {
+            const input = document.getElementById('message-input');
+            input.value = text;
+            input.focus();
+        }
+        
+        // Filtrar conversas
+        function filterConversations(filter) {
+            currentFilter = filter;
+            
+            // Atualizar botões
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            renderConversations();
+        }
+        
+        // Buscar conversas
+        function searchConversations() {
+            renderConversations();
+        }
+        
+        // Voltar para lista (mobile)
+        function showConversationsList() {
+            document.getElementById('inbox-sidebar').classList.remove('hidden');
+            document.getElementById('chat-area').classList.add('hidden');
+        }
+        
+        // Abrir WhatsApp Web
+        function openWhatsAppWeb() {
+            if (currentContact) {
+                const phone = currentContact.number.replace(/[^0-9]/g, '');
+                window.open(`https://wa.me/55${phone}`, '_blank');
+            }
+        }
+        
+        // Ver detalhes do lead
+        function viewLeadDetails() {
+            if (currentContact) {
+                showToast('info', `Lead: ${currentContact.name}`);
+            }
+        }
+        
+        // Helpers
+        function formatJid(phone) {
+            let cleaned = phone.replace(/[^0-9]/g, '');
+            if (!cleaned.startsWith('55') && cleaned.length <= 11) {
+                cleaned = '55' + cleaned;
+            }
+            return cleaned + '@s.whatsapp.net';
+        }
+        
+        function formatPhone(phone) {
+            if (!phone) return '';
+            const cleaned = phone.replace(/[^0-9]/g, '');
+            if (cleaned.length === 11) {
+                return `(${cleaned.slice(0,2)}) ${cleaned.slice(2,7)}-${cleaned.slice(7)}`;
+            } else if (cleaned.length === 10) {
+                return `(${cleaned.slice(0,2)}) ${cleaned.slice(2,6)}-${cleaned.slice(6)}`;
+            }
+            return phone;
+        }
+        
+        function formatTime(timestamp) {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            const now = new Date();
+            
+            if (date.toDateString() === now.toDateString()) {
+                return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            }
+            
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            if (date.toDateString() === yesterday.toDateString()) {
+                return 'Ontem';
+            }
+            
+            return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        }
+        
+        function formatMessageTime(timestamp) {
+            if (!timestamp) return '';
+            return new Date(timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        }
+        
+        function getStatusIcon(status) {
+            switch (status) {
+                case 'pending': return '🕐';
+                case 'sent': return '✓';
+                case 'delivered': return '✓✓';
+                case 'read': return '✓✓';
+                default: return '✓';
+            }
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function scrollToBottom() {
+            const container = document.getElementById('chat-messages');
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function handleKeyDown(event) {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 sendMessage();
             }
         }
         
-        // Limpar chat
-        function clearChat() {
-            if (!currentChat) return;
-            
-            if (confirm('Tem certeza que deseja limpar esta conversa?')) {
-                messages[currentChat.id] = [];
-                currentChat.lastMessage = '';
-                saveMessagesToStorage();
-                renderChatArea();
-                renderConversations();
-                showToast('info', 'Conversa limpa');
-            }
-        }
-        
-        // Scroll para o final
-        function scrollToBottom() {
-            setTimeout(() => {
-                const container = document.getElementById('chat-messages');
-                if (container) {
-                    container.scrollTop = container.scrollHeight;
-                }
-            }, 100);
-        }
-        
-        // Handlers do WhatsApp
-        function handleWhatsAppConnect(data) {
-            isConnected = true;
-            document.getElementById('connection-warning').style.display = 'none';
-            showToast('success', 'WhatsApp conectado!');
-            
-            // Habilitar botão de envio
-            const sendBtn = document.querySelector('.chat-send-btn');
-            if (sendBtn) sendBtn.disabled = false;
-        }
-        
-        function handleWhatsAppDisconnect() {
-            isConnected = false;
-            document.getElementById('connection-warning').style.display = 'flex';
-            
-            // Desabilitar botão de envio
-            const sendBtn = document.querySelector('.chat-send-btn');
-            if (sendBtn) sendBtn.disabled = true;
-        }
-        
-        function handleIncomingMessage(data) {
-            console.log('Mensagem recebida:', data);
-            
-            // Extrair número do telefone
-            const phone = data.from.split('@')[0];
-            
-            // Encontrar conversa
-            let conversation = conversations.find(c => c.phone.replace(/\D/g, '') === phone);
-            
-            if (!conversation) {
-                // Criar nova conversa
-                conversation = {
-                    id: phone,
-                    name: phone,
-                    phone: phone,
-                    vehicle: 'Desconhecido',
-                    lastMessage: data.text,
-                    lastMessageTime: data.timestamp * 1000,
-                    unreadCount: 1
-                };
-                conversations.push(conversation);
-            } else {
-                conversation.lastMessage = data.text;
-                conversation.lastMessageTime = data.timestamp * 1000;
-                if (!currentChat || currentChat.id !== conversation.id) {
-                    conversation.unreadCount++;
-                }
-            }
-            
-            // Adicionar mensagem
-            if (!messages[conversation.id]) {
-                messages[conversation.id] = [];
-            }
-            
-            messages[conversation.id].push({
-                id: Date.now().toString(),
-                text: data.text,
-                timestamp: data.timestamp * 1000,
-                fromMe: false
-            });
-            
-            saveMessagesToStorage();
-            renderConversations();
-            
-            // Se é o chat atual, atualizar
-            if (currentChat && currentChat.id === conversation.id) {
-                renderChatArea();
-            }
-            
-            // Notificação
-            if (!currentChat || currentChat.id !== conversation.id) {
-                showToast('info', `Nova mensagem de ${conversation.name}`);
-            }
-        }
-        
-        function handleMessageSent(data) {
-            console.log('Mensagem enviada confirmada:', data);
-        }
-        
-        function handleError(data) {
-            console.error('Erro WhatsApp:', data);
-            showToast('error', data.message || 'Erro no WhatsApp');
-        }
-        
-        // Utilitários
-        function formatTime(timestamp) {
-            const date = new Date(timestamp);
-            const now = new Date();
-            const diff = now - date;
-            
-            // Hoje
-            if (diff < 86400000 && date.getDate() === now.getDate()) {
-                return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-            }
-            
-            // Ontem
-            const yesterday = new Date(now);
-            yesterday.setDate(yesterday.getDate() - 1);
-            if (date.getDate() === yesterday.getDate()) {
-                return 'Ontem';
-            }
-            
-            // Esta semana
-            if (diff < 604800000) {
-                return date.toLocaleDateString('pt-BR', { weekday: 'short' });
-            }
-            
-            // Mais antigo
-            return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-        }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML.replace(/\n/g, '<br>');
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
         }
         
         function showToast(type, message) {
             const container = document.getElementById('toast-container');
-            const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
-            
             const toast = document.createElement('div');
-            toast.className = 'toast ' + type;
+            toast.className = `toast ${type}`;
+            
+            const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
             toast.innerHTML = `
-                <span class="toast-icon">${icons[type]}</span>
+                <span class="toast-icon">${icons[type] || 'ℹ️'}</span>
                 <span class="toast-message">${message}</span>
-                <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
             `;
             
             container.appendChild(toast);
-            setTimeout(() => { if (toast.parentElement) toast.remove(); }, 5000);
+            setTimeout(() => {
+                toast.classList.add('fade-out');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
         }
         
         function toggleSidebar() {
@@ -934,10 +1332,8 @@
         }
         
         function logout() {
-            if (confirm('Tem certeza que deseja sair?')) {
-                localStorage.clear();
-                window.location.href = 'index.html';
-            }
+            localStorage.removeItem('isLoggedIn');
+            window.location.href = 'login.html';
         }
     </script>
 </body>

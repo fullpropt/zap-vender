@@ -1,29 +1,36 @@
-# 🚗 SELF Proteção Veicular - Sistema CRM com WhatsApp
+# 🚗 SELF Proteção Veicular - Sistema CRM com WhatsApp v2.0.0
+
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
+![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-green.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 Sistema completo de CRM com integração WhatsApp para gestão de leads e envio de mensagens automatizadas.
 
 ## ✨ Funcionalidades
 
-- ✅ **Dashboard completo** com estatísticas de leads
+- ✅ **Dashboard Profissional** com métricas e funil de vendas
 - ✅ **Integração WhatsApp** via Baileys (sem API paga)
-- ✅ **Envio de mensagens** direto do dashboard (sem abrir nova guia)
+- ✅ **Inbox de Conversas** - chat em tempo real com leads
+- ✅ **Conexão via QR Code** - similar ao BotConversa
+- ✅ **Envio de mensagens** direto do sistema
 - ✅ **Templates de mensagem** personalizáveis
 - ✅ **Funil de vendas** com etapas
 - ✅ **Sessão persistente** - conecta uma vez, usa sempre
+- ✅ **Reconexão automática** - sistema robusto
 - ✅ **Interface responsiva** para desktop e mobile
 
 ## 🛠️ Requisitos
 
 - **Node.js** versão 18 ou superior
-- **VPS/Servidor** com acesso SSH (HostGator compartilhado NÃO funciona)
+- **VPS/Servidor** com acesso SSH (ou Railway/Render)
 - **PM2** (opcional, para manter o servidor rodando)
 
-## 🚀 Instalação
+## 🚀 Instalação Local
 
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/SEU_USUARIO/self-protecao-veicular.git
+git clone https://github.com/fullpropt/self-protecao-veicular.git
 cd self-protecao-veicular
 ```
 
@@ -47,6 +54,22 @@ npm start
 
 Abra no navegador: `http://localhost:3001`
 
+## 🌐 Deploy no Railway
+
+### Opção 1: Deploy Automático
+
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template)
+
+### Opção 2: Deploy Manual
+
+1. Acesse [Railway](https://railway.app)
+2. Crie um novo projeto
+3. Conecte seu repositório GitHub
+4. Configure as variáveis de ambiente:
+   - `PORT`: 3001 (ou deixe o Railway definir)
+   - `NODE_ENV`: production
+5. Deploy será automático a cada push
+
 ## 📱 Conectando o WhatsApp
 
 1. Acesse o sistema no navegador
@@ -55,7 +78,123 @@ Abra no navegador: `http://localhost:3001`
 4. Escaneie o QR Code com seu celular
 5. Pronto! A sessão fica salva automaticamente
 
-## 🌐 Deploy em Produção
+## 📁 Estrutura do Projeto
+
+```
+self-protecao-veicular/
+├── server/
+│   └── index.js           # Servidor Node.js com Baileys
+├── public/
+│   ├── css/
+│   │   └── style.css      # Estilos globais
+│   ├── js/
+│   │   └── config.js      # Configurações do frontend
+│   ├── img/
+│   │   └── logo-self.png  # Logo do sistema
+│   ├── dashboard.html     # Dashboard principal
+│   ├── whatsapp.html      # Conexão WhatsApp
+│   ├── conversas.html     # Inbox de conversas
+│   ├── funil.html         # Funil de vendas
+│   ├── configuracoes.html # Configurações
+│   └── login.html         # Página de login
+├── sessions/              # Sessões WhatsApp (auto-gerado)
+├── data/                  # Dados persistidos (auto-gerado)
+├── package.json
+├── railway.json           # Configuração Railway
+├── Procfile               # Comando de inicialização
+└── README.md
+```
+
+## ⚙️ Configurações
+
+Edite o arquivo `public/js/config.js` para personalizar:
+
+```javascript
+const CONFIG = {
+    // URL do servidor (detecta automaticamente)
+    SOCKET_URL: window.location.hostname === 'localhost' 
+        ? 'http://localhost:3001' 
+        : window.location.origin,
+    
+    // ID da sessão WhatsApp
+    SESSION_ID: 'self_whatsapp_session',
+    
+    // Código do país
+    COUNTRY_CODE: '55',
+    
+    // Delay entre mensagens em massa (ms)
+    BULK_MESSAGE_DELAY: 3000
+};
+```
+
+## 🔧 API REST
+
+### Status do servidor
+```
+GET /api/status
+```
+
+### Status da sessão
+```
+GET /api/session/:sessionId/status
+```
+
+### Enviar mensagem
+```
+POST /api/send
+Content-Type: application/json
+
+{
+    "sessionId": "self_whatsapp_session",
+    "to": "5527999999999",
+    "message": "Olá! Esta é uma mensagem de teste.",
+    "type": "text"
+}
+```
+
+### Listar contatos
+```
+GET /api/contacts/:sessionId
+```
+
+### Listar mensagens
+```
+GET /api/messages/:sessionId/:contactNumber
+```
+
+### Health Check
+```
+GET /health
+```
+
+## 🔄 Eventos Socket.IO
+
+### Cliente → Servidor
+
+| Evento | Descrição |
+|--------|-----------|
+| `check-session` | Verificar sessão existente |
+| `start-session` | Iniciar nova sessão |
+| `send-message` | Enviar mensagem |
+| `get-contacts` | Obter lista de contatos |
+| `get-messages` | Obter mensagens de um contato |
+| `mark-read` | Marcar conversa como lida |
+| `logout` | Desconectar WhatsApp |
+
+### Servidor → Cliente
+
+| Evento | Descrição |
+|--------|-----------|
+| `qr` | QR Code para escaneamento |
+| `connecting` | Conectando ao WhatsApp |
+| `connected` | WhatsApp conectado |
+| `disconnected` | WhatsApp desconectado |
+| `new-message` | Nova mensagem recebida |
+| `message-sent` | Mensagem enviada com sucesso |
+| `message-status` | Atualização de status da mensagem |
+| `error` | Erro na operação |
+
+## 🌐 Deploy em VPS (Alternativo)
 
 ### Usando PM2 (Recomendado)
 
@@ -103,77 +242,6 @@ sudo apt install certbot python3-certbot-nginx
 sudo certbot --nginx -d seu-dominio.com
 ```
 
-## 📁 Estrutura do Projeto
-
-```
-self-protecao-veicular/
-├── public/                 # Arquivos estáticos (frontend)
-│   ├── css/
-│   │   └── style.css      # Estilos globais
-│   ├── js/
-│   │   ├── config.js      # Configurações
-│   │   ├── whatsapp.js    # Módulo WhatsApp
-│   │   └── dashboard.js   # Lógica do dashboard
-│   ├── img/
-│   │   └── logo-self.png  # Logo
-│   ├── index.html         # Dashboard principal
-│   ├── whatsapp.html      # Página de conexão WhatsApp
-│   ├── funil.html         # Funil de vendas
-│   └── configuracoes.html # Configurações
-├── server/
-│   └── index.js           # Servidor Node.js
-├── sessions/              # Sessões WhatsApp (auto-gerado)
-├── package.json
-└── README.md
-```
-
-## ⚙️ Configurações
-
-Edite o arquivo `public/js/config.js` para personalizar:
-
-```javascript
-const CONFIG = {
-    // URL do servidor (altere para seu domínio em produção)
-    SOCKET_URL: 'http://localhost:3001',
-    
-    // ID da sessão WhatsApp
-    SESSION_ID: 'self_whatsapp_session',
-    
-    // Código do país
-    COUNTRY_CODE: '55',
-    
-    // Delay entre mensagens em massa (ms)
-    BULK_MESSAGE_DELAY: 3000
-};
-```
-
-## 🔧 API REST
-
-O servidor também expõe uma API REST:
-
-### Status do servidor
-```
-GET /api/status
-```
-
-### Status da sessão
-```
-GET /api/session/:sessionId/status
-```
-
-### Enviar mensagem
-```
-POST /api/send
-Content-Type: application/json
-
-{
-    "sessionId": "self_whatsapp_session",
-    "to": "5527999999999",
-    "message": "Olá! Esta é uma mensagem de teste.",
-    "type": "text"
-}
-```
-
 ## ❓ Problemas Comuns
 
 ### QR Code não aparece
@@ -191,6 +259,15 @@ Content-Type: application/json
 - Mantenha o celular conectado à internet
 - Verifique se não há outra sessão web ativa
 
+## 📝 Variáveis de Ambiente
+
+| Variável | Descrição | Padrão |
+|----------|-----------|--------|
+| `PORT` | Porta do servidor | 3001 |
+| `NODE_ENV` | Ambiente (development/production) | development |
+| `SESSIONS_DIR` | Diretório de sessões | ./sessions |
+| `DATA_DIR` | Diretório de dados | ./data |
+
 ## 📞 Suporte
 
 Para dúvidas ou problemas, abra uma issue no GitHub.
@@ -198,3 +275,7 @@ Para dúvidas ou problemas, abra uma issue no GitHub.
 ## 📄 Licença
 
 MIT License - Livre para uso comercial e modificações.
+
+---
+
+**SELF Proteção Veicular** © 2026 - Todos os direitos reservados

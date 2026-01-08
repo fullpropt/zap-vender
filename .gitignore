@@ -4,6 +4,9 @@ node_modules/
 # Sessions (contém dados sensíveis do WhatsApp)
 sessions/
 
+# Data files (mensagens e contatos)
+data/
+
 # Logs
 *.log
 npm-debug.log*
