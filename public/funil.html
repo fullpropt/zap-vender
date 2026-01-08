@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Funil de Vendas | SELF Proteção Veicular</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .kanban-container {
+            display: flex;
+            gap: 20px;
+            overflow-x: auto;
+            padding-bottom: 20px;
+        }
+        
+        .kanban-column {
+            min-width: 320px;
+            max-width: 320px;
+            background: var(--lighter);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .kanban-header {
+            padding: 20px;
+            border-bottom: 3px solid;
+        }
+        
+        .kanban-header.etapa-1 { border-color: var(--warning); }
+        .kanban-header.etapa-2 { border-color: var(--info); }
+        .kanban-header.etapa-3 { border-color: var(--success); }
+        
+        .kanban-header h3 {
+            font-size: 16px;
+            color: var(--dark);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .kanban-header .count {
+            background: var(--white);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--gray);
+        }
+        
+        .kanban-cards {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            max-height: calc(100vh - 300px);
+        }
+        
+        .kanban-card {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            cursor: grab;
+            transition: all 0.2s;
+        }
+        
+        .kanban-card:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        
+        .kanban-card.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+        
+        .kanban-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        
+        .kanban-card-name {
+            font-weight: 600;
+            color: var(--dark);
+            font-size: 15px;
+        }
+        
+        .kanban-card-date {
+            font-size: 11px;
+            color: var(--gray-light);
+        }
+        
+        .kanban-card-info {
+            font-size: 13px;
+            color: var(--gray);
+            margin-bottom: 8px;
+        }
+        
+        .kanban-card-vehicle {
+            font-size: 12px;
+            color: var(--gray-light);
+            background: var(--lighter);
+            padding: 6px 10px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+        
+        .kanban-card-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .kanban-card-actions button {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .btn-card-whatsapp {
+            background: var(--whatsapp);
+            color: white;
+        }
+        
+        .btn-card-whatsapp:hover {
+            background: #1da851;
+        }
+        
+        .btn-card-move {
+            background: var(--light);
+            color: var(--gray);
+        }
+        
+        .btn-card-move:hover {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            color: var(--gray-light);
+            margin-top: 10px;
+            transition: all 0.2s;
+        }
+        
+        .drop-zone.active {
+            border-color: var(--primary);
+            background: rgba(90, 42, 107, 0.05);
+        }
+    </style>
+</head>
+<body>
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-logo">
+            <img src="img/logo-self.png" alt="SELF Proteção Veicular">
+        </div>
+        
+        <ul class="sidebar-menu">
+            <li>
+                <a href="index.html">
+                    <span class="icon">📊</span>
+                    Dashboard
+                </a>
+            </li>
+            <li>
+                <a href="funil.html" class="active">
+                    <span class="icon">📈</span>
+                    Funil de Vendas
+                </a>
+            </li>
+            <li>
+                <a href="whatsapp.html">
+                    <span class="icon">💬</span>
+                    WhatsApp
+                </a>
+            </li>
+            <li>
+                <a href="configuracoes.html">
+                    <span class="icon">⚙️</span>
+                    Configurações
+                </a>
+            </li>
+        </ul>
+        
+        <div class="sidebar-footer">
+            <button class="btn-logout" onclick="logout()">
+                <span>🚪</span>
+                Sair
+            </button>
+        </div>
+    </aside>
+    
+    <button class="mobile-menu-toggle" onclick="toggleSidebar()">☰</button>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+        <div class="header">
+            <div class="header-title">
+                <h1>📈 Funil de Vendas</h1>
+                <p>Arraste os cards para mover entre etapas</p>
+            </div>
+        </div>
+        
+        <div class="kanban-container" id="kanban">
+            <!-- Etapa 1 - Novo -->
+            <div class="kanban-column" data-status="1">
+                <div class="kanban-header etapa-1">
+                    <h3>
+                        ⏳ Etapa 1 - Novo
+                        <span class="count" id="count-1">0</span>
+                    </h3>
+                </div>
+                <div class="kanban-cards" id="cards-1">
+                    <!-- Cards serão inseridos via JS -->
+                </div>
+            </div>
+            
+            <!-- Etapa 2 - Em Contato -->
+            <div class="kanban-column" data-status="2">
+                <div class="kanban-header etapa-2">
+                    <h3>
+                        📞 Etapa 2 - Em Contato
+                        <span class="count" id="count-2">0</span>
+                    </h3>
+                </div>
+                <div class="kanban-cards" id="cards-2">
+                    <!-- Cards serão inseridos via JS -->
+                </div>
+            </div>
+            
+            <!-- Etapa 3 - Fechado -->
+            <div class="kanban-column" data-status="3">
+                <div class="kanban-header etapa-3">
+                    <h3>
+                        ✅ Etapa 3 - Fechado
+                        <span class="count" id="count-3">0</span>
+                    </h3>
+                </div>
+                <div class="kanban-cards" id="cards-3">
+                    <!-- Cards serão inseridos via JS -->
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <div class="toast-container" id="toast-container"></div>
+    
+    <script src="js/config.js"></script>
+    <script>
+        let leads = [];
+        let draggedCard = null;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            loadLeads();
+            setupDragAndDrop();
+        });
+        
+        function loadLeads() {
+            const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.LEADS);
+            if (stored) {
+                leads = JSON.parse(stored);
+            } else {
+                leads = INITIAL_LEADS;
+                localStorage.setItem(CONFIG.STORAGE_KEYS.LEADS, JSON.stringify(leads));
+            }
+            renderKanban();
+        }
+        
+        function saveLeads() {
+            localStorage.setItem(CONFIG.STORAGE_KEYS.LEADS, JSON.stringify(leads));
+        }
+        
+        function renderKanban() {
+            // Limpar colunas
+            for (let i = 1; i <= 3; i++) {
+                document.getElementById('cards-' + i).innerHTML = '';
+            }
+            
+            // Contar e renderizar
+            const counts = { 1: 0, 2: 0, 3: 0 };
+            
+            leads.forEach(function(lead) {
+                counts[lead.status]++;
+                
+                const card = document.createElement('div');
+                card.className = 'kanban-card';
+                card.draggable = true;
+                card.dataset.id = lead.id;
+                
+                card.innerHTML = `
+                    <div class="kanban-card-header">
+                        <span class="kanban-card-name">${lead.nome}</span>
+                        <span class="kanban-card-date">${lead.data.split(',')[0]}</span>
+                    </div>
+                    <div class="kanban-card-info">📱 ${Utils.formatPhoneDisplay(lead.telefone)}</div>
+                    <div class="kanban-card-vehicle">${lead.veiculo}</div>
+                    <div class="kanban-card-actions">
+                        <button class="btn-card-whatsapp" onclick="sendWhatsApp(${lead.id})">💬 WhatsApp</button>
+                        <button class="btn-card-move" onclick="moveNext(${lead.id})">➡️</button>
+                    </div>
+                `;
+                
+                document.getElementById('cards-' + lead.status).appendChild(card);
+            });
+            
+            // Atualizar contadores
+            for (let i = 1; i <= 3; i++) {
+                document.getElementById('count-' + i).textContent = counts[i];
+            }
+        }
+        
+        function setupDragAndDrop() {
+            const kanban = document.getElementById('kanban');
+            
+            kanban.addEventListener('dragstart', function(e) {
+                if (e.target.classList.contains('kanban-card')) {
+                    draggedCard = e.target;
+                    e.target.classList.add('dragging');
+                }
+            });
+            
+            kanban.addEventListener('dragend', function(e) {
+                if (e.target.classList.contains('kanban-card')) {
+                    e.target.classList.remove('dragging');
+                    draggedCard = null;
+                }
+            });
+            
+            document.querySelectorAll('.kanban-cards').forEach(function(column) {
+                column.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    column.style.background = 'rgba(90, 42, 107, 0.05)';
+                });
+                
+                column.addEventListener('dragleave', function(e) {
+                    column.style.background = '';
+                });
+                
+                column.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    column.style.background = '';
+                    
+                    if (draggedCard) {
+                        const newStatus = parseInt(column.closest('.kanban-column').dataset.status);
+                        const leadId = parseInt(draggedCard.dataset.id);
+                        
+                        updateLeadStatus(leadId, newStatus);
+                    }
+                });
+            });
+        }
+        
+        function updateLeadStatus(leadId, newStatus) {
+            const lead = leads.find(function(l) { return l.id === leadId; });
+            if (lead && lead.status !== newStatus) {
+                lead.status = newStatus;
+                saveLeads();
+                renderKanban();
+                showToast('success', 'Lead movido para Etapa ' + newStatus);
+            }
+        }
+        
+        function moveNext(leadId) {
+            const lead = leads.find(function(l) { return l.id === leadId; });
+            if (lead && lead.status < 3) {
+                lead.status++;
+                saveLeads();
+                renderKanban();
+                showToast('success', 'Lead movido para Etapa ' + lead.status);
+            }
+        }
+        
+        function sendWhatsApp(leadId) {
+            const lead = leads.find(function(l) { return l.id === leadId; });
+            if (lead) {
+                window.location.href = 'index.html?send=' + lead.telefone + '&name=' + encodeURIComponent(lead.nome);
+            }
+        }
+        
+        function showToast(type, message) {
+            const container = document.getElementById('toast-container');
+            const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+            
+            const toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.innerHTML = `
+                <span class="toast-icon">${icons[type]}</span>
+                <span class="toast-message">${message}</span>
+                <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+            `;
+            
+            container.appendChild(toast);
+            setTimeout(function() { if (toast.parentElement) toast.remove(); }, 3000);
+        }
+        
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
+            document.querySelector('.sidebar-overlay').classList.toggle('active');
+        }
+        
+        function logout() {
+            if (confirm('Tem certeza que deseja sair?')) {
+                localStorage.clear();
+                window.location.href = 'index.html';
+            }
+        }
+    </script>
+</body>
+</html>

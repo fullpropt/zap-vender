@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dashboard | SELF Proteção Veicular</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-logo">
+            <img src="img/logo-self.png" alt="SELF Proteção Veicular">
+        </div>
+        
+        <ul class="sidebar-menu">
+            <li>
+                <a href="index.html" class="active">
+                    <span class="icon">📊</span>
+                    Dashboard
+                </a>
+            </li>
+            <li>
+                <a href="funil.html">
+                    <span class="icon">📈</span>
+                    Funil de Vendas
+                </a>
+            </li>
+            <li>
+                <a href="whatsapp.html">
+                    <span class="icon">💬</span>
+                    WhatsApp
+                </a>
+            </li>
+            <li>
+                <a href="configuracoes.html">
+                    <span class="icon">⚙️</span>
+                    Configurações
+                </a>
+            </li>
+        </ul>
+        
+        <div class="sidebar-footer">
+            <button class="btn-logout" onclick="logout()">
+                <span>🚪</span>
+                Sair
+            </button>
+        </div>
+    </aside>
+    
+    <!-- MOBILE MENU TOGGLE -->
+    <button class="mobile-menu-toggle" onclick="toggleSidebar()">☰</button>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+        <div class="header">
+            <div class="header-title">
+                <h1>Dashboard</h1>
+                <p>Gerencie seus leads e envie mensagens</p>
+            </div>
+            
+            <div id="connection-status" class="connection-badge disconnected">
+                <span class="dot"></span>
+                <span id="connection-text">WhatsApp Desconectado</span>
+            </div>
+        </div>
+        
+        <!-- STATS -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-card-icon purple">📊</div>
+                </div>
+                <div class="stat-card-value" id="stat-total">0</div>
+                <div class="stat-card-label">Total de Leads</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-card-icon yellow">⏳</div>
+                </div>
+                <div class="stat-card-value" id="stat-etapa1">0</div>
+                <div class="stat-card-label">Etapa 1 - Novo</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-card-icon blue">📞</div>
+                </div>
+                <div class="stat-card-value" id="stat-etapa2">0</div>
+                <div class="stat-card-label">Etapa 2 - Contato</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-card-header">
+                    <div class="stat-card-icon green">✅</div>
+                </div>
+                <div class="stat-card-value" id="stat-etapa3">0</div>
+                <div class="stat-card-label">Etapa 3 - Fechado</div>
+            </div>
+        </div>
+        
+        <!-- TABLE -->
+        <div class="table-container">
+            <div class="table-header">
+                <h3>Leads</h3>
+                <div class="table-actions">
+                    <div class="table-search">
+                        <span class="icon">🔍</span>
+                        <input type="text" placeholder="Buscar lead..." id="search-input">
+                    </div>
+                    <button class="btn btn-primary" onclick="openAddLeadModal()">
+                        <span>➕</span> Novo Lead
+                    </button>
+                </div>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>DATA/HORA</th>
+                            <th>NOME</th>
+                            <th>WHATSAPP</th>
+                            <th>PLACA</th>
+                            <th>VEÍCULO</th>
+                            <th>STATUS</th>
+                            <th>AÇÕES</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leads-table">
+                        <!-- Dados serão inseridos via JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- TEMPLATES -->
+        <div class="templates-section">
+            <div class="templates-header">
+                <h3>📝 Templates de Mensagem</h3>
+                <button class="btn btn-outline" onclick="openNewTemplateModal()">
+                    <span>➕</span> Novo Template
+                </button>
+            </div>
+            
+            <div class="templates-grid" id="templates-grid">
+                <!-- Templates serão inseridos via JavaScript -->
+            </div>
+        </div>
+    </main>
+    
+    <!-- MODAL ENVIAR MENSAGEM -->
+    <div class="modal-overlay" id="send-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>💬 Enviar Mensagem WhatsApp</h2>
+                <button class="modal-close" onclick="closeModal('send-modal')">✕</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="contact-info" id="modal-contact-info">
+                    <div class="contact-avatar" id="modal-avatar">👤</div>
+                    <div class="contact-details">
+                        <h4 id="modal-name">Nome do Contato</h4>
+                        <p id="modal-phone">+55 (00) 00000-0000</p>
+                        <p class="vehicle" id="modal-vehicle">Veículo</p>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Selecione um Template (opcional)</label>
+                    <select id="template-select" onchange="applyTemplate()">
+                        <option value="">-- Mensagem personalizada --</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Mensagem</label>
+                    <textarea id="message-input" placeholder="Digite sua mensagem..."></textarea>
+                    <p class="help-text">Use {{nome}} para inserir o nome do contato automaticamente</p>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('send-modal')">Cancelar</button>
+                <button class="btn btn-success" id="send-btn" onclick="sendMessage()">
+                    <span>📤</span> Enviar WhatsApp
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MODAL NOVO TEMPLATE -->
+    <div class="modal-overlay" id="template-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>📝 Novo Template</h2>
+                <button class="modal-close" onclick="closeModal('template-modal')">✕</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Nome do Template</label>
+                    <input type="text" id="template-name" placeholder="Ex: Boas-vindas">
+                </div>
+                
+                <div class="form-group">
+                    <label>Mensagem</label>
+                    <textarea id="template-message" placeholder="Digite o template da mensagem..."></textarea>
+                    <p class="help-text">Use {{nome}} para inserir o nome do contato automaticamente</p>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('template-modal')">Cancelar</button>
+                <button class="btn btn-primary" onclick="saveTemplate()">
+                    <span>💾</span> Salvar Template
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MODAL ADICIONAR LEAD -->
+    <div class="modal-overlay" id="add-lead-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>➕ Novo Lead</h2>
+                <button class="modal-close" onclick="closeModal('add-lead-modal')">✕</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Nome Completo *</label>
+                    <input type="text" id="lead-nome" placeholder="Nome do cliente">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>WhatsApp *</label>
+                        <input type="text" id="lead-telefone" placeholder="(00) 00000-0000">
+                    </div>
+                    <div class="form-group">
+                        <label>Placa</label>
+                        <input type="text" id="lead-placa" placeholder="ABC1234">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Veículo</label>
+                    <input type="text" id="lead-veiculo" placeholder="Ex: Honda Civic 2023">
+                </div>
+                
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="lead-status">
+                        <option value="1">Etapa 1 - Novo</option>
+                        <option value="2">Etapa 2 - Em Contato</option>
+                        <option value="3">Etapa 3 - Fechado</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('add-lead-modal')">Cancelar</button>
+                <button class="btn btn-primary" onclick="saveLead()">
+                    <span>💾</span> Salvar Lead
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- TOAST CONTAINER -->
+    <div class="toast-container" id="toast-container"></div>
+    
+    <script src="js/config.js"></script>
+    <script src="js/whatsapp.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>
