@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Conversas | SELF Proteção Veicular</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .conversations-container {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 0;
+            height: calc(100vh - 100px);
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        }
+        
+        /* LISTA DE CONVERSAS */
+        .conversations-sidebar {
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            background: #f8f9fa;
+        }
+        
+        .conversations-header {
+            padding: 20px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: white;
+        }
+        
+        .conversations-header h2 {
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        
+        .search-box {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 10px;
+            padding: 10px 15px;
+            color: white;
+            width: 100%;
+            font-size: 14px;
+        }
+        
+        .search-box::placeholder {
+            color: rgba(255,255,255,0.7);
+        }
+        
+        .conversations-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+        
+        .conversation-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.2s;
+            background: white;
+        }
+        
+        .conversation-item:hover {
+            background: var(--lighter);
+        }
+        
+        .conversation-item.active {
+            background: rgba(90, 42, 107, 0.1);
+            border-left: 3px solid var(--primary);
+        }
+        
+        .conversation-item.unread {
+            background: #f0f9ff;
+        }
+        
+        .conversation-avatar {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+        
+        .conversation-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .conversation-info h4 {
+            font-size: 15px;
+            color: var(--dark);
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .conversation-info p {
+            font-size: 13px;
+            color: var(--gray);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .conversation-meta {
+            text-align: right;
+            flex-shrink: 0;
+        }
+        
+        .conversation-meta .time {
+            font-size: 11px;
+            color: var(--gray);
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .conversation-meta .unread-badge {
+            background: var(--primary);
+            color: white;
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        /* ÁREA DE CHAT */
+        .chat-area {
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+        
+        .chat-header {
+            background: linear-gradient(135deg, var(--whatsapp) 0%, #128C7E 100%);
+            color: white;
+            padding: 20px 25px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .chat-header-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .chat-header-avatar {
+            width: 45px;
+            height: 45px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        
+        .chat-header-info h3 {
+            font-size: 16px;
+            margin-bottom: 3px;
+        }
+        
+        .chat-header-info p {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        
+        .chat-header-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .chat-header-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        
+        .chat-header-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #e5ddd5;
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4ccc4' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        }
+        
+        .chat-empty {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--gray);
+        }
+        
+        .chat-empty .icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        .chat-message {
+            max-width: 65%;
+            margin-bottom: 12px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.5;
+            position: relative;
+            word-wrap: break-word;
+            animation: messageSlide 0.3s ease;
+        }
+        
+        @keyframes messageSlide {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .chat-message.sent {
+            background: #dcf8c6;
+            margin-left: auto;
+            border-bottom-right-radius: 2px;
+        }
+        
+        .chat-message.received {
+            background: white;
+            margin-right: auto;
+            border-bottom-left-radius: 2px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        
+        .chat-message .message-text {
+            margin-bottom: 5px;
+        }
+        
+        .chat-message .message-footer {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 5px;
+            font-size: 11px;
+            color: #667781;
+        }
+        
+        .chat-message .status-icon {
+            font-size: 14px;
+        }
+        
+        .chat-input-container {
+            padding: 15px 20px;
+            background: #f0f2f5;
+            border-top: 1px solid var(--border);
+        }
+        
+        .chat-input-wrapper {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        
+        .chat-input {
+            flex: 1;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px 15px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: none;
+            max-height: 120px;
+            min-height: 42px;
+        }
+        
+        .chat-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        .chat-send-btn {
+            background: var(--whatsapp);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 12px 20px;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 50px;
+        }
+        
+        .chat-send-btn:hover {
+            background: #1da851;
+            transform: scale(1.05);
+        }
+        
+        .chat-send-btn:disabled {
+            background: var(--gray);
+            cursor: not-allowed;
+            transform: scale(1);
+        }
+        
+        .connection-warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            color: #856404;
+            padding: 15px 20px;
+            text-align: center;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .connection-warning a {
+            color: var(--primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+        
+        .connection-warning a:hover {
+            text-decoration: underline;
+        }
+        
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            .conversations-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .conversations-sidebar {
+                display: none;
+            }
+            
+            .conversations-sidebar.mobile-active {
+                display: flex;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 1000;
+            }
+            
+            .chat-message {
+                max-width: 80%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-logo">
+            <img src="img/logo-self.png" alt="SELF Proteção Veicular">
+        </div>
+        
+        <ul class="sidebar-menu">
+            <li>
+                <a href="index.html">
+                    <span class="icon">📊</span>
+                    Dashboard
+                </a>
+            </li>
+            <li>
+                <a href="funil.html">
+                    <span class="icon">📈</span>
+                    Funil de Vendas
+                </a>
+            </li>
+            <li>
+                <a href="whatsapp.html">
+                    <span class="icon">💬</span>
+                    WhatsApp
+                </a>
+            </li>
+            <li>
+                <a href="conversas.html" class="active">
+                    <span class="icon">💬</span>
+                    Conversas
+                </a>
+            </li>
+            <li>
+                <a href="configuracoes.html">
+                    <span class="icon">⚙️</span>
+                    Configurações
+                </a>
+            </li>
+        </ul>
+        
+        <button class="btn btn-outline logout-btn" onclick="logout()">
+            <span class="icon">🚪</span>
+            Sair
+        </button>
+    </aside>
+    
+    <!-- MOBILE MENU TOGGLE -->
+    <button class="mobile-menu-toggle" onclick="toggleSidebar()">☰</button>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+        <div class="header">
+            <div class="header-title">
+                <h1>💬 Conversas com Leads</h1>
+                <p>Gerencie suas conversas do WhatsApp</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-primary" onclick="window.location.href='whatsapp.html'">
+                    <span>⚙️</span>
+                    Configurar WhatsApp
+                </button>
+            </div>
+        </div>
+        
+        <!-- CONNECTION WARNING -->
+        <div class="connection-warning" id="connection-warning" style="display: none;">
+            <span>⚠️</span>
+            <span>WhatsApp não conectado.</span>
+            <a href="whatsapp.html">Conectar agora</a>
+        </div>
+        
+        <!-- CONVERSATIONS CONTAINER -->
+        <div class="conversations-container">
+            <!-- SIDEBAR DE CONVERSAS -->
+            <div class="conversations-sidebar">
+                <div class="conversations-header">
+                    <h2>Conversas</h2>
+                    <input type="text" class="search-box" id="search-input" placeholder="🔍 Buscar conversa...">
+                </div>
+                <div class="conversations-list" id="conversations-list">
+                    <!-- Conversas serão carregadas via JavaScript -->
+                </div>
+            </div>
+            
+            <!-- ÁREA DE CHAT -->
+            <div class="chat-area" id="chat-area">
+                <div class="chat-empty">
+                    <span class="icon">💬</span>
+                    <h3>Selecione uma conversa</h3>
+                    <p>Escolha um lead na lista para começar a conversar</p>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- TOAST CONTAINER -->
+    <div class="toast-container" id="toast-container"></div>
+    
+    <script src="js/config.js"></script>
+    <script src="js/whatsapp.js"></script>
+    <script>
+        // Estado global
+        let socket = null;
+        let isConnected = false;
+        let currentChat = null;
+        let conversations = [];
+        let messages = {};
+        
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+        });
+        
+        // Inicializar aplicação
+        function initializeApp() {
+            loadConversationsFromStorage();
+            loadMessagesFromStorage();
+            renderConversations();
+            
+            // Inicializar WhatsApp
+            WhatsApp.init({
+                onConnect: handleWhatsAppConnect,
+                onDisconnect: handleWhatsAppDisconnect,
+                onMessage: handleIncomingMessage,
+                onMessageSent: handleMessageSent,
+                onError: handleError
+            });
+            
+            // Search
+            document.getElementById('search-input').addEventListener('input', function(e) {
+                filterConversations(e.target.value);
+            });
+        }
+        
+        // Carregar conversas do localStorage
+        function loadConversationsFromStorage() {
+            const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.LEADS);
+            if (stored) {
+                const leads = JSON.parse(stored);
+                conversations = leads.map(lead => ({
+                    id: lead.telefone,
+                    name: lead.nome,
+                    phone: lead.telefone,
+                    vehicle: lead.veiculo,
+                    lastMessage: '',
+                    lastMessageTime: new Date(lead.data).getTime(),
+                    unreadCount: 0
+                }));
+            }
+        }
+        
+        // Carregar mensagens do localStorage
+        function loadMessagesFromStorage() {
+            const stored = localStorage.getItem('whatsapp_messages');
+            if (stored) {
+                messages = JSON.parse(stored);
+            }
+        }
+        
+        // Salvar mensagens no localStorage
+        function saveMessagesToStorage() {
+            localStorage.setItem('whatsapp_messages', JSON.stringify(messages));
+        }
+        
+        // Renderizar lista de conversas
+        function renderConversations(filter = '') {
+            const container = document.getElementById('conversations-list');
+            
+            if (conversations.length === 0) {
+                container.innerHTML = `
+                    <div class="chat-empty" style="padding: 40px;">
+                        <span class="icon">👥</span>
+                        <p>Nenhuma conversa encontrada</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let filtered = conversations;
+            if (filter) {
+                const lowerFilter = filter.toLowerCase();
+                filtered = conversations.filter(c => 
+                    c.name.toLowerCase().includes(lowerFilter) ||
+                    c.phone.includes(lowerFilter)
+                );
+            }
+            
+            // Ordenar por última mensagem
+            filtered.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
+            
+            container.innerHTML = filtered.map(conv => {
+                const lastMsg = conv.lastMessage || 'Nenhuma mensagem ainda';
+                const time = formatTime(conv.lastMessageTime);
+                const unreadBadge = conv.unreadCount > 0 ? 
+                    `<span class="unread-badge">${conv.unreadCount}</span>` : '';
+                const activeClass = currentChat && currentChat.id === conv.id ? 'active' : '';
+                const unreadClass = conv.unreadCount > 0 ? 'unread' : '';
+                
+                return `
+                    <div class="conversation-item ${activeClass} ${unreadClass}" onclick="openChat('${conv.id}')">
+                        <div class="conversation-avatar">${conv.name.charAt(0).toUpperCase()}</div>
+                        <div class="conversation-info">
+                            <h4>${conv.name}</h4>
+                            <p>${lastMsg}</p>
+                        </div>
+                        <div class="conversation-meta">
+                            <span class="time">${time}</span>
+                            ${unreadBadge}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Filtrar conversas
+        function filterConversations(query) {
+            renderConversations(query);
+        }
+        
+        // Abrir chat
+        function openChat(conversationId) {
+            const conversation = conversations.find(c => c.id === conversationId);
+            if (!conversation) return;
+            
+            currentChat = conversation;
+            
+            // Marcar como lido
+            conversation.unreadCount = 0;
+            renderConversations();
+            
+            // Renderizar área de chat
+            renderChatArea();
+        }
+        
+        // Renderizar área de chat
+        function renderChatArea() {
+            const chatArea = document.getElementById('chat-area');
+            
+            if (!currentChat) {
+                chatArea.innerHTML = `
+                    <div class="chat-empty">
+                        <span class="icon">💬</span>
+                        <h3>Selecione uma conversa</h3>
+                        <p>Escolha um lead na lista para começar a conversar</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const chatMessages = messages[currentChat.id] || [];
+            
+            chatArea.innerHTML = `
+                <div class="chat-header">
+                    <div class="chat-header-left">
+                        <div class="chat-header-avatar">${currentChat.name.charAt(0).toUpperCase()}</div>
+                        <div class="chat-header-info">
+                            <h3>${currentChat.name}</h3>
+                            <p>${currentChat.phone} • ${currentChat.vehicle}</p>
+                        </div>
+                    </div>
+                    <div class="chat-header-actions">
+                        <button class="chat-header-btn" onclick="clearChat()" title="Limpar conversa">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="chat-messages" id="chat-messages">
+                    ${chatMessages.length === 0 ? `
+                        <div class="chat-empty">
+                            <span class="icon">💬</span>
+                            <p>Nenhuma mensagem ainda</p>
+                            <p style="font-size: 12px; margin-top: 10px;">Envie uma mensagem para iniciar a conversa</p>
+                        </div>
+                    ` : chatMessages.map(msg => renderMessage(msg)).join('')}
+                </div>
+                
+                <div class="chat-input-container">
+                    <div class="chat-input-wrapper">
+                        <textarea 
+                            class="chat-input" 
+                            id="message-input" 
+                            placeholder="Digite sua mensagem..."
+                            rows="1"
+                            onkeydown="handleInputKeydown(event)"
+                        ></textarea>
+                        <button class="chat-send-btn" onclick="sendMessage()" ${!isConnected ? 'disabled' : ''}>
+                            ✈️
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Auto-resize textarea
+            const textarea = document.getElementById('message-input');
+            textarea.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            });
+            
+            // Scroll para última mensagem
+            scrollToBottom();
+        }
+        
+        // Renderizar mensagem
+        function renderMessage(msg) {
+            const type = msg.fromMe ? 'sent' : 'received';
+            const time = formatTime(msg.timestamp);
+            const statusIcon = msg.fromMe ? (msg.status === 'sent' ? '✓✓' : '✓') : '';
+            
+            return `
+                <div class="chat-message ${type}">
+                    <div class="message-text">${escapeHtml(msg.text)}</div>
+                    <div class="message-footer">
+                        <span class="time">${time}</span>
+                        ${statusIcon ? `<span class="status-icon">${statusIcon}</span>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Enviar mensagem
+        async function sendMessage() {
+            if (!currentChat || !isConnected) {
+                showToast('warning', 'WhatsApp não está conectado');
+                return;
+            }
+            
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            // Limpar input
+            input.value = '';
+            input.style.height = 'auto';
+            
+            // Adicionar mensagem localmente
+            const message = {
+                id: Date.now().toString(),
+                text: text,
+                timestamp: Date.now(),
+                fromMe: true,
+                status: 'sending'
+            };
+            
+            if (!messages[currentChat.id]) {
+                messages[currentChat.id] = [];
+            }
+            messages[currentChat.id].push(message);
+            
+            // Atualizar conversa
+            currentChat.lastMessage = text;
+            currentChat.lastMessageTime = message.timestamp;
+            
+            saveMessagesToStorage();
+            renderChatArea();
+            renderConversations();
+            
+            // Enviar via WhatsApp
+            try {
+                await WhatsApp.sendMessage(currentChat.phone, text);
+                
+                // Atualizar status
+                message.status = 'sent';
+                saveMessagesToStorage();
+                renderChatArea();
+                
+                showToast('success', 'Mensagem enviada!');
+            } catch (error) {
+                console.error('Erro ao enviar mensagem:', error);
+                message.status = 'error';
+                saveMessagesToStorage();
+                renderChatArea();
+                showToast('error', 'Erro ao enviar mensagem: ' + error.message);
+            }
+        }
+        
+        // Handle input keydown
+        function handleInputKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+        
+        // Limpar chat
+        function clearChat() {
+            if (!currentChat) return;
+            
+            if (confirm('Tem certeza que deseja limpar esta conversa?')) {
+                messages[currentChat.id] = [];
+                currentChat.lastMessage = '';
+                saveMessagesToStorage();
+                renderChatArea();
+                renderConversations();
+                showToast('info', 'Conversa limpa');
+            }
+        }
+        
+        // Scroll para o final
+        function scrollToBottom() {
+            setTimeout(() => {
+                const container = document.getElementById('chat-messages');
+                if (container) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            }, 100);
+        }
+        
+        // Handlers do WhatsApp
+        function handleWhatsAppConnect(data) {
+            isConnected = true;
+            document.getElementById('connection-warning').style.display = 'none';
+            showToast('success', 'WhatsApp conectado!');
+            
+            // Habilitar botão de envio
+            const sendBtn = document.querySelector('.chat-send-btn');
+            if (sendBtn) sendBtn.disabled = false;
+        }
+        
+        function handleWhatsAppDisconnect() {
+            isConnected = false;
+            document.getElementById('connection-warning').style.display = 'flex';
+            
+            // Desabilitar botão de envio
+            const sendBtn = document.querySelector('.chat-send-btn');
+            if (sendBtn) sendBtn.disabled = true;
+        }
+        
+        function handleIncomingMessage(data) {
+            console.log('Mensagem recebida:', data);
+            
+            // Extrair número do telefone
+            const phone = data.from.split('@')[0];
+            
+            // Encontrar conversa
+            let conversation = conversations.find(c => c.phone.replace(/\D/g, '') === phone);
+            
+            if (!conversation) {
+                // Criar nova conversa
+                conversation = {
+                    id: phone,
+                    name: phone,
+                    phone: phone,
+                    vehicle: 'Desconhecido',
+                    lastMessage: data.text,
+                    lastMessageTime: data.timestamp * 1000,
+                    unreadCount: 1
+                };
+                conversations.push(conversation);
+            } else {
+                conversation.lastMessage = data.text;
+                conversation.lastMessageTime = data.timestamp * 1000;
+                if (!currentChat || currentChat.id !== conversation.id) {
+                    conversation.unreadCount++;
+                }
+            }
+            
+            // Adicionar mensagem
+            if (!messages[conversation.id]) {
+                messages[conversation.id] = [];
+            }
+            
+            messages[conversation.id].push({
+                id: Date.now().toString(),
+                text: data.text,
+                timestamp: data.timestamp * 1000,
+                fromMe: false
+            });
+            
+            saveMessagesToStorage();
+            renderConversations();
+            
+            // Se é o chat atual, atualizar
+            if (currentChat && currentChat.id === conversation.id) {
+                renderChatArea();
+            }
+            
+            // Notificação
+            if (!currentChat || currentChat.id !== conversation.id) {
+                showToast('info', `Nova mensagem de ${conversation.name}`);
+            }
+        }
+        
+        function handleMessageSent(data) {
+            console.log('Mensagem enviada confirmada:', data);
+        }
+        
+        function handleError(data) {
+            console.error('Erro WhatsApp:', data);
+            showToast('error', data.message || 'Erro no WhatsApp');
+        }
+        
+        // Utilitários
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+            
+            // Hoje
+            if (diff < 86400000 && date.getDate() === now.getDate()) {
+                return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            }
+            
+            // Ontem
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            if (date.getDate() === yesterday.getDate()) {
+                return 'Ontem';
+            }
+            
+            // Esta semana
+            if (diff < 604800000) {
+                return date.toLocaleDateString('pt-BR', { weekday: 'short' });
+            }
+            
+            // Mais antigo
+            return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML.replace(/\n/g, '<br>');
+        }
+        
+        function showToast(type, message) {
+            const container = document.getElementById('toast-container');
+            const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+            
+            const toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.innerHTML = `
+                <span class="toast-icon">${icons[type]}</span>
+                <span class="toast-message">${message}</span>
+                <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+            `;
+            
+            container.appendChild(toast);
+            setTimeout(() => { if (toast.parentElement) toast.remove(); }, 5000);
+        }
+        
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
+            document.querySelector('.sidebar-overlay').classList.toggle('active');
+        }
+        
+        function logout() {
+            if (confirm('Tem certeza que deseja sair?')) {
+                localStorage.clear();
+                window.location.href = 'index.html';
+            }
+        }
+    </script>
+</body>
+</html>
