@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+README_WHATSAPP.md
+sessions
+*.log
+.env
+.env.*
