@@ -1,6 +1,9 @@
 # Dockerfile para Railway
 FROM node:18-alpine
 
+# Instalar git e outras dependências necessárias
+RUN apk add --no-cache git python3 make g++
+
 # Criar diretório da aplicação
 WORKDIR /app
 
@@ -8,7 +11,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Instalar dependências
-RUN npm install --production
+RUN npm install --omit=dev
 
 # Copiar código fonte
 COPY . .
