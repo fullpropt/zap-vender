@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
+    "build": "echo 'No build required'",
     "install-deps": "npm install"
   },
   "keywords": [

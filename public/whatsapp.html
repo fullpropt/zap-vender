@@ -520,6 +520,26 @@
             socket.on('error', function(data) {
                 console.error('Erro:', data);
                 showToast('error', data.message || 'Erro na conexão');
+                
+                // Resetar botão em caso de erro
+                const btn = document.getElementById('btn-connect');
+                btn.disabled = false;
+                btn.innerHTML = '🔌 Conectar WhatsApp';
+            });
+            
+            socket.on('connecting', function(data) {
+                console.log('Conectando ao WhatsApp...');
+            });
+            
+            socket.on('reconnecting', function(data) {
+                console.log('Reconectando... Tentativa ' + data.attempt + '/' + data.maxAttempts);
+                showToast('info', 'Reconectando... Tentativa ' + data.attempt);
+            });
+            
+            socket.on('reconnect-failed', function(data) {
+                console.error('Falha na reconexão');
+                showToast('error', 'Falha na reconexão após múltiplas tentativas');
+                updateUI(false);
             });
         }
         
@@ -529,11 +549,13 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:8px;"></span> Conectando...';
             
-            document.getElementById('qr-placeholder').innerHTML = `
+            const qrContainer = document.getElementById('qr-container');
+            qrContainer.innerHTML = `
                 <div class="loading-spinner"></div>
                 <p style="margin-top:15px;">Gerando QR Code...</p>
             `;
             
+            console.log('Iniciando sessão WhatsApp...');
             socket.emit('start-session', { sessionId: CONFIG.SESSION_ID });
         }
         

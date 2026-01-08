@@ -5,10 +5,10 @@
 
 const CONFIG = {
     // URL do servidor WhatsApp (Node.js com Baileys)
-    // Em produção, altere para o IP/domínio do seu servidor
+    // Em produção no Railway, usa a mesma origem (sem porta específica)
     SOCKET_URL: window.location.hostname === 'localhost' 
         ? 'http://localhost:3001' 
-        : window.location.protocol + '//' + window.location.hostname + ':3001',
+        : window.location.origin,
     
     // ID da sessão WhatsApp
     SESSION_ID: 'self_whatsapp_session',

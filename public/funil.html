@@ -3,423 +3,537 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Funil de Vendas | SELF Proteção Veicular</title>
+    <title>Análise do Funil | SELF Proteção Veicular</title>
+    <meta name="robots" content="noindex, nofollow">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css">
     <style>
-        .kanban-container {
-            display: flex;
-            gap: 20px;
-            overflow-x: auto;
-            padding-bottom: 20px;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
         
-        .kanban-column {
-            min-width: 320px;
-            max-width: 320px;
-            background: var(--lighter);
-            border-radius: 16px;
-            display: flex;
-            flex-direction: column;
+        :root {
+            --primary: #5a2a6b;
+            --primary-light: #7a3a8b;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
+            --dark: #1e293b;
+            --gray: #64748b;
+            --light: #f1f5f9;
+            --white: #ffffff;
         }
         
-        .kanban-header {
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--light);
+            min-height: 100vh;
+        }
+        
+        /* SIDEBAR */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 260px;
+            height: 100vh;
+            background: linear-gradient(180deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: white;
             padding: 20px;
-            border-bottom: 3px solid;
+            z-index: 1000;
         }
         
-        .kanban-header.etapa-1 { border-color: var(--warning); }
-        .kanban-header.etapa-2 { border-color: var(--info); }
-        .kanban-header.etapa-3 { border-color: var(--success); }
+        .sidebar-logo {
+            padding: 20px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 20px;
+        }
         
-        .kanban-header h3 {
-            font-size: 16px;
-            color: var(--dark);
+        .sidebar-logo img {
+            height: 50px;
+            border-radius: 8px;
+        }
+        
+        .sidebar-menu {
+            list-style: none;
+        }
+        
+        .sidebar-menu li {
+            margin-bottom: 5px;
+        }
+        
+        .sidebar-menu a {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
+            padding: 14px 16px;
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            border-radius: 10px;
+            transition: all 0.3s;
         }
         
-        .kanban-header .count {
-            background: var(--white);
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 12px;
-            color: var(--gray);
+        .sidebar-menu a:hover,
+        .sidebar-menu a.active {
+            background: rgba(255,255,255,0.15);
+            color: white;
         }
         
-        .kanban-cards {
-            flex: 1;
-            padding: 15px;
-            overflow-y: auto;
-            max-height: calc(100vh - 300px);
+        .sidebar-menu .icon {
+            font-size: 20px;
         }
         
-        .kanban-card {
-            background: var(--white);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            cursor: grab;
-            transition: all 0.2s;
+        .logout-btn {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            width: calc(100% - 40px);
         }
         
-        .kanban-card:hover {
-            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
-            transform: translateY(-2px);
+        /* MAIN CONTENT */
+        .main-content {
+            margin-left: 260px;
+            padding: 30px;
         }
         
-        .kanban-card.dragging {
-            opacity: 0.5;
-            cursor: grabbing;
-        }
-        
-        .kanban-card-header {
+        /* HEADER */
+        .header {
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 12px;
+            align-items: center;
+            margin-bottom: 30px;
         }
         
-        .kanban-card-name {
+        .header-title h1 {
+            color: var(--dark);
+            font-size: 28px;
+        }
+        
+        .header-title p {
+            color: var(--gray);
+            font-size: 14px;
+        }
+        
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+        
+        .btn-outline {
+            background: white;
+            border: 2px solid var(--light);
+            color: var(--dark);
+        }
+        
+        .btn-outline:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        
+        /* FUNNEL VISUALIZATION */
+        .funnel-container {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+        
+        .funnel-visual {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .funnel-step {
+            background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+        
+        .funnel-step:hover {
+            transform: translateX(10px);
+            box-shadow: 0 8px 30px rgba(90, 42, 107, 0.3);
+        }
+        
+        .funnel-step.step-1 { width: 100%; background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%); }
+        .funnel-step.step-2 { width: 85%; background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%); }
+        .funnel-step.step-3 { width: 70%; background: linear-gradient(90deg, #5a2a6b 0%, #7a3a8b 100%); }
+        .funnel-step.step-4 { width: 55%; background: linear-gradient(90deg, #10b981 0%, #34d399 100%); }
+        
+        .funnel-step-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .funnel-step-title {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .funnel-step-count {
+            font-size: 32px;
+            font-weight: 700;
+        }
+        
+        .funnel-step-details {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .funnel-step-rate {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        /* DETAILS SECTION */
+        .details-section {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--dark);
+            margin-bottom: 20px;
+        }
+        
+        .leads-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .lead-item {
+            padding: 16px;
+            background: var(--light);
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s;
+        }
+        
+        .lead-item:hover {
+            background: #e2e8f0;
+            transform: translateX(5px);
+        }
+        
+        .lead-info {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .lead-name {
             font-weight: 600;
             color: var(--dark);
-            font-size: 15px;
         }
         
-        .kanban-card-date {
-            font-size: 11px;
-            color: var(--gray-light);
-        }
-        
-        .kanban-card-info {
-            font-size: 13px;
+        .lead-phone {
             color: var(--gray);
-            margin-bottom: 8px;
-        }
-        
-        .kanban-card-vehicle {
-            font-size: 12px;
-            color: var(--gray-light);
-            background: var(--lighter);
-            padding: 6px 10px;
-            border-radius: 6px;
-            margin-bottom: 12px;
-        }
-        
-        .kanban-card-actions {
-            display: flex;
-            gap: 8px;
-        }
-        
-        .kanban-card-actions button {
-            flex: 1;
-            padding: 8px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
             font-size: 14px;
-            transition: all 0.2s;
         }
         
-        .btn-card-whatsapp {
-            background: var(--whatsapp);
-            color: white;
+        .lead-vehicle {
+            color: var(--gray);
+            font-size: 14px;
         }
         
-        .btn-card-whatsapp:hover {
-            background: #1da851;
+        .lead-date {
+            color: var(--gray);
+            font-size: 12px;
         }
         
-        .btn-card-move {
-            background: var(--light);
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-badge.etapa1 { background: rgba(59, 130, 246, 0.1); color: var(--info); }
+        .status-badge.etapa2 { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+        .status-badge.etapa3 { background: rgba(90, 42, 107, 0.1); color: var(--primary); }
+        .status-badge.concluido { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
             color: var(--gray);
         }
         
-        .btn-card-move:hover {
-            background: var(--primary);
-            color: white;
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
         }
         
-        .drop-zone {
-            border: 2px dashed var(--border);
-            border-radius: 12px;
-            padding: 30px;
-            text-align: center;
-            color: var(--gray-light);
-            margin-top: 10px;
-            transition: all 0.2s;
-        }
-        
-        .drop-zone.active {
-            border-color: var(--primary);
-            background: rgba(90, 42, 107, 0.05);
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .funnel-step {
+                width: 100% !important;
+            }
         }
     </style>
 </head>
 <body>
     <!-- SIDEBAR -->
-    <aside class="sidebar" id="sidebar">
+    <aside class="sidebar">
         <div class="sidebar-logo">
-            <img src="img/logo-self.png" alt="SELF Proteção Veicular">
+            <img src="logo-self.png" alt="SELF">
         </div>
         
         <ul class="sidebar-menu">
-            <li>
-                <a href="index.html">
-                    <span class="icon">📊</span>
-                    Dashboard
-                </a>
-            </li>
-            <li>
-                <a href="funil.html" class="active">
-                    <span class="icon">📈</span>
-                    Funil de Vendas
-                </a>
-            </li>
-            <li>
-                <a href="whatsapp.html">
-                    <span class="icon">💬</span>
-                    WhatsApp
-                </a>
-            </li>
-            <li>
-                <a href="conversas.html">
-                    <span class="icon">💬</span>
-                    Conversas
-                </a>
-            </li>
-            <li>
-                <a href="configuracoes.html">
-                    <span class="icon">⚙️</span>
-                    Configurações
-                </a>
-            </li>
+            <li><a href="dashboard"><span class="icon">📊</span> Dashboard</a></li>
+            <li><a href="#"><span class="icon">👥</span> Leads</a></li>
+            <li><a href="funil" class="active"><span class="icon">📈</span> Funil</a></li>
+            <li><a href="#"><span class="icon">⚙️</span> Configurações</a></li>
         </ul>
         
-        <div class="sidebar-footer">
-            <button class="btn-logout" onclick="logout()">
-                <span>🚪</span>
-                Sair
-            </button>
-        </div>
+        <button class="btn btn-outline logout-btn" onclick="logout()">
+            🚪 Sair
+        </button>
     </aside>
-    
-    <button class="mobile-menu-toggle" onclick="toggleSidebar()">☰</button>
-    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
     
     <!-- MAIN CONTENT -->
     <main class="main-content">
+        <!-- HEADER -->
         <div class="header">
             <div class="header-title">
-                <h1>📈 Funil de Vendas</h1>
-                <p>Arraste os cards para mover entre etapas</p>
+                <h1>Análise do Funil de Conversão</h1>
+                <p>Visualize o progresso dos clientes em cada etapa</p>
+            </div>
+            <div>
+                <button class="btn btn-outline" onclick="window.location.href='dashboard.html'">
+                    ← Voltar ao Dashboard
+                </button>
             </div>
         </div>
         
-        <div class="kanban-container" id="kanban">
-            <!-- Etapa 1 - Novo -->
-            <div class="kanban-column" data-status="1">
-                <div class="kanban-header etapa-1">
-                    <h3>
-                        ⏳ Etapa 1 - Novo
-                        <span class="count" id="count-1">0</span>
-                    </h3>
+        <!-- FUNNEL VISUALIZATION -->
+        <div class="funnel-container">
+            <h2 class="section-title">📊 Visão Geral do Funil</h2>
+            <div class="funnel-visual">
+                <div class="funnel-step step-1" onclick="showStepDetails(1)">
+                    <div class="funnel-step-header">
+                        <div class="funnel-step-title">Etapa 1: Dados do Veículo</div>
+                        <div class="funnel-step-count" id="step1Count">0</div>
+                    </div>
+                    <div class="funnel-step-details">
+                        <div>Clientes que iniciaram o processo</div>
+                        <div class="funnel-step-rate">100%</div>
+                    </div>
                 </div>
-                <div class="kanban-cards" id="cards-1">
-                    <!-- Cards serão inseridos via JS -->
+                
+                <div class="funnel-step step-2" onclick="showStepDetails(2)">
+                    <div class="funnel-step-header">
+                        <div class="funnel-step-title">Etapa 2: Dados Pessoais</div>
+                        <div class="funnel-step-count" id="step2Count">0</div>
+                    </div>
+                    <div class="funnel-step-details">
+                        <div>Clientes que preencheram dados pessoais</div>
+                        <div class="funnel-step-rate" id="step2Rate">0%</div>
+                    </div>
+                </div>
+                
+                <div class="funnel-step step-3" onclick="showStepDetails(3)">
+                    <div class="funnel-step-header">
+                        <div class="funnel-step-title">Etapa 3: Contato</div>
+                        <div class="funnel-step-count" id="step3Count">0</div>
+                    </div>
+                    <div class="funnel-step-details">
+                        <div>Clientes que forneceram contato</div>
+                        <div class="funnel-step-rate" id="step3Rate">0%</div>
+                    </div>
+                </div>
+                
+                <div class="funnel-step step-4" onclick="showStepDetails(4)">
+                    <div class="funnel-step-header">
+                        <div class="funnel-step-title">Concluído</div>
+                        <div class="funnel-step-count" id="step4Count">0</div>
+                    </div>
+                    <div class="funnel-step-details">
+                        <div>Clientes que completaram o cadastro</div>
+                        <div class="funnel-step-rate" id="step4Rate">0%</div>
+                    </div>
                 </div>
             </div>
-            
-            <!-- Etapa 2 - Em Contato -->
-            <div class="kanban-column" data-status="2">
-                <div class="kanban-header etapa-2">
-                    <h3>
-                        📞 Etapa 2 - Em Contato
-                        <span class="count" id="count-2">0</span>
-                    </h3>
-                </div>
-                <div class="kanban-cards" id="cards-2">
-                    <!-- Cards serão inseridos via JS -->
-                </div>
-            </div>
-            
-            <!-- Etapa 3 - Fechado -->
-            <div class="kanban-column" data-status="3">
-                <div class="kanban-header etapa-3">
-                    <h3>
-                        ✅ Etapa 3 - Fechado
-                        <span class="count" id="count-3">0</span>
-                    </h3>
-                </div>
-                <div class="kanban-cards" id="cards-3">
-                    <!-- Cards serão inseridos via JS -->
-                </div>
+        </div>
+        
+        <!-- DETAILS SECTION -->
+        <div class="details-section" id="detailsSection" style="display: none;">
+            <h2 class="section-title" id="detailsTitle">Leads na Etapa</h2>
+            <div class="leads-list" id="leadsList">
+                <!-- Leads serão inseridos aqui -->
             </div>
         </div>
     </main>
     
-    <div class="toast-container" id="toast-container"></div>
-    
-    <script src="js/config.js"></script>
     <script>
-        let leads = [];
-        let draggedCard = null;
-        
-        document.addEventListener('DOMContentLoaded', function() {
-            loadLeads();
-            setupDragAndDrop();
-        });
-        
-        function loadLeads() {
-            const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.LEADS);
-            if (stored) {
-                leads = JSON.parse(stored);
-            } else {
-                leads = INITIAL_LEADS;
-                localStorage.setItem(CONFIG.STORAGE_KEYS.LEADS, JSON.stringify(leads));
+        // Verificar autenticação
+        function checkAuth() {
+            const token = sessionStorage.getItem('selfDashboardToken');
+            const expiry = sessionStorage.getItem('selfDashboardExpiry');
+            
+            if (!token || !expiry || Date.now() > parseInt(expiry)) {
+                window.location.href = 'login';
+                return false;
             }
-            renderKanban();
-        }
-        
-        function saveLeads() {
-            localStorage.setItem(CONFIG.STORAGE_KEYS.LEADS, JSON.stringify(leads));
-        }
-        
-        function renderKanban() {
-            // Limpar colunas
-            for (let i = 1; i <= 3; i++) {
-                document.getElementById('cards-' + i).innerHTML = '';
-            }
-            
-            // Contar e renderizar
-            const counts = { 1: 0, 2: 0, 3: 0 };
-            
-            leads.forEach(function(lead) {
-                counts[lead.status]++;
-                
-                const card = document.createElement('div');
-                card.className = 'kanban-card';
-                card.draggable = true;
-                card.dataset.id = lead.id;
-                
-                card.innerHTML = `
-                    <div class="kanban-card-header">
-                        <span class="kanban-card-name">${lead.nome}</span>
-                        <span class="kanban-card-date">${lead.data.split(',')[0]}</span>
-                    </div>
-                    <div class="kanban-card-info">📱 ${Utils.formatPhoneDisplay(lead.telefone)}</div>
-                    <div class="kanban-card-vehicle">${lead.veiculo}</div>
-                    <div class="kanban-card-actions">
-                        <button class="btn-card-whatsapp" onclick="sendWhatsApp(${lead.id})">💬 WhatsApp</button>
-                        <button class="btn-card-move" onclick="moveNext(${lead.id})">➡️</button>
-                    </div>
-                `;
-                
-                document.getElementById('cards-' + lead.status).appendChild(card);
-            });
-            
-            // Atualizar contadores
-            for (let i = 1; i <= 3; i++) {
-                document.getElementById('count-' + i).textContent = counts[i];
-            }
-        }
-        
-        function setupDragAndDrop() {
-            const kanban = document.getElementById('kanban');
-            
-            kanban.addEventListener('dragstart', function(e) {
-                if (e.target.classList.contains('kanban-card')) {
-                    draggedCard = e.target;
-                    e.target.classList.add('dragging');
-                }
-            });
-            
-            kanban.addEventListener('dragend', function(e) {
-                if (e.target.classList.contains('kanban-card')) {
-                    e.target.classList.remove('dragging');
-                    draggedCard = null;
-                }
-            });
-            
-            document.querySelectorAll('.kanban-cards').forEach(function(column) {
-                column.addEventListener('dragover', function(e) {
-                    e.preventDefault();
-                    column.style.background = 'rgba(90, 42, 107, 0.05)';
-                });
-                
-                column.addEventListener('dragleave', function(e) {
-                    column.style.background = '';
-                });
-                
-                column.addEventListener('drop', function(e) {
-                    e.preventDefault();
-                    column.style.background = '';
-                    
-                    if (draggedCard) {
-                        const newStatus = parseInt(column.closest('.kanban-column').dataset.status);
-                        const leadId = parseInt(draggedCard.dataset.id);
-                        
-                        updateLeadStatus(leadId, newStatus);
-                    }
-                });
-            });
-        }
-        
-        function updateLeadStatus(leadId, newStatus) {
-            const lead = leads.find(function(l) { return l.id === leadId; });
-            if (lead && lead.status !== newStatus) {
-                lead.status = newStatus;
-                saveLeads();
-                renderKanban();
-                showToast('success', 'Lead movido para Etapa ' + newStatus);
-            }
-        }
-        
-        function moveNext(leadId) {
-            const lead = leads.find(function(l) { return l.id === leadId; });
-            if (lead && lead.status < 3) {
-                lead.status++;
-                saveLeads();
-                renderKanban();
-                showToast('success', 'Lead movido para Etapa ' + lead.status);
-            }
-        }
-        
-        function sendWhatsApp(leadId) {
-            const lead = leads.find(function(l) { return l.id === leadId; });
-            if (lead) {
-                window.location.href = 'index.html?send=' + lead.telefone + '&name=' + encodeURIComponent(lead.nome);
-            }
-        }
-        
-        function showToast(type, message) {
-            const container = document.getElementById('toast-container');
-            const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
-            
-            const toast = document.createElement('div');
-            toast.className = 'toast ' + type;
-            toast.innerHTML = `
-                <span class="toast-icon">${icons[type]}</span>
-                <span class="toast-message">${message}</span>
-                <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
-            `;
-            
-            container.appendChild(toast);
-            setTimeout(function() { if (toast.parentElement) toast.remove(); }, 3000);
-        }
-        
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('active');
-            document.querySelector('.sidebar-overlay').classList.toggle('active');
+            return true;
         }
         
         function logout() {
-            if (confirm('Tem certeza que deseja sair?')) {
-                localStorage.clear();
-                window.location.href = 'index.html';
+            sessionStorage.removeItem('selfDashboardToken');
+            sessionStorage.removeItem('selfDashboardUser');
+            sessionStorage.removeItem('selfDashboardExpiry');
+            window.location.href = 'login';
+        }
+        
+        let leads = [];
+        
+        // Carregar dados
+        function loadData() {
+            const stored = localStorage.getItem('selfLeads');
+            if (stored) {
+                leads = JSON.parse(stored);
             }
+            updateFunnelStats();
+        }
+        
+        function updateFunnelStats() {
+            const step1 = leads.filter(l => l.ultima_etapa >= 1).length;
+            const step2 = leads.filter(l => l.ultima_etapa >= 2).length;
+            const step3 = leads.filter(l => l.ultima_etapa >= 3).length;
+            const step4 = leads.filter(l => l.ultima_etapa >= 4).length;
+            
+            document.getElementById('step1Count').textContent = step1;
+            document.getElementById('step2Count').textContent = step2;
+            document.getElementById('step3Count').textContent = step3;
+            document.getElementById('step4Count').textContent = step4;
+            
+            document.getElementById('step2Rate').textContent = step1 > 0 ? ((step2 / step1) * 100).toFixed(1) + '%' : '0%';
+            document.getElementById('step3Rate').textContent = step2 > 0 ? ((step3 / step2) * 100).toFixed(1) + '%' : '0%';
+            document.getElementById('step4Rate').textContent = step3 > 0 ? ((step4 / step3) * 100).toFixed(1) + '%' : '0%';
+        }
+        
+        function showStepDetails(step) {
+            const detailsSection = document.getElementById('detailsSection');
+            const detailsTitle = document.getElementById('detailsTitle');
+            const leadsList = document.getElementById('leadsList');
+            
+            let filteredLeads;
+            let stepName;
+            
+            switch(step) {
+                case 1:
+                    filteredLeads = leads.filter(l => l.ultima_etapa === 1);
+                    stepName = 'Etapa 1: Dados do Veículo';
+                    break;
+                case 2:
+                    filteredLeads = leads.filter(l => l.ultima_etapa === 2);
+                    stepName = 'Etapa 2: Dados Pessoais';
+                    break;
+                case 3:
+                    filteredLeads = leads.filter(l => l.ultima_etapa === 3);
+                    stepName = 'Etapa 3: Contato';
+                    break;
+                case 4:
+                    filteredLeads = leads.filter(l => l.ultima_etapa >= 4);
+                    stepName = 'Concluído';
+                    break;
+            }
+            
+            detailsTitle.textContent = `📋 Leads na ${stepName} (${filteredLeads.length})`;
+            
+            if (filteredLeads.length === 0) {
+                leadsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div>Nenhum lead nesta etapa</div>
+                    </div>
+                `;
+            } else {
+                leadsList.innerHTML = filteredLeads.map(lead => `
+                    <div class="lead-item">
+                        <div class="lead-info">
+                            <div>
+                                <div class="lead-name">${lead.nome || 'N/A'}</div>
+                                <div class="lead-phone">${formatPhone(lead.whatsapp)}</div>
+                            </div>
+                            <div class="lead-vehicle">${formatVehicle(lead.tipo_veiculo)}</div>
+                            <div class="lead-date">${new Date(lead.data_criacao).toLocaleDateString('pt-BR')}</div>
+                        </div>
+                        <span class="status-badge ${lead.status}">${formatStatus(lead.status)}</span>
+                    </div>
+                `).join('');
+            }
+            
+            detailsSection.style.display = 'block';
+            detailsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function formatPhone(phone) {
+            if (!phone) return 'N/A';
+            return `(${phone.slice(0,2)}) ${phone.slice(2,7)}-${phone.slice(7)}`;
+        }
+        
+        function formatVehicle(type) {
+            const types = {
+                'carro': '🚗 Carro',
+                'moto': '🏍️ Moto',
+                'bike_eletrica': '🚴 Bike'
+            };
+            return types[type] || type;
+        }
+        
+        function formatStatus(status) {
+            const statuses = {
+                'etapa1': 'Etapa 1',
+                'etapa2': 'Etapa 2',
+                'etapa3': 'Etapa 3',
+                'concluido': 'Concluído'
+            };
+            return statuses[status] || status;
+        }
+        
+        // Inicialização
+        if (checkAuth()) {
+            loadData();
         }
     </script>
 </body>

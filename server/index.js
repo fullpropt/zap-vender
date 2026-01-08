@@ -22,6 +22,7 @@ const pino = require('pino');
 
 // Configurações
 const PORT = process.env.PORT || 3001;
+const HOST = '0.0.0.0';
 const SESSIONS_DIR = path.join(__dirname, '..', 'sessions');
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
@@ -525,9 +526,19 @@ app.get('/api/sessions', (req, res) => {
     });
 });
 
-// Rota principal - servir index.html
+// Rota principal - servir login.html como página inicial
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
+});
+
+// Outras rotas - servir arquivos estáticos
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+    const requestedFile = path.join(__dirname, '..', 'public', req.path);
+    if (fs.existsSync(requestedFile)) {
+        res.sendFile(requestedFile);
+    } else {
+        res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
+    }
 });
 
 // ============================================
