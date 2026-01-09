@@ -1,36 +1,54 @@
 {
   "name": "self-protecao-veicular",
-  "version": "3.0.0",
-  "description": "Sistema de CRM com integração WhatsApp para SELF Proteção Veicular",
+  "version": "4.0.0",
+  "description": "Sistema de CRM com integração WhatsApp para SELF Proteção Veicular - Plataforma de automação de mensagens estilo BotConversa",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
-    "build": "mkdir -p sessions data",
-    "postinstall": "mkdir -p sessions data"
+    "build": "mkdir -p sessions data uploads && npm run db:migrate",
+    "postinstall": "mkdir -p sessions data uploads",
+    "db:migrate": "node server/database/migrate.js",
+    "db:seed": "node server/database/seed.js",
+    "test": "jest"
   },
   "keywords": [
     "whatsapp",
     "crm",
     "protecao-veicular",
-    "baileys"
+    "baileys",
+    "chatbot",
+    "automation",
+    "flow-builder"
   ],
   "author": "SELF Proteção Veicular",
   "license": "MIT",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.16",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.7.0",
+    "bull": "^4.16.5",
     "cors": "^2.8.5",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
     "qrcode": "^1.5.4",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "uuid": "^11.0.5"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
     "nodemon": "^3.1.9"
   },
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=10.0.0"
-  }
+  },
+  "engineStrict": true
 }

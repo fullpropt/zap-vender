@@ -1,8 +1,9 @@
-# Railway Configuration - SELF Proteção Veicular
-# Usar NIXPACKS para garantir Node.js 20
+# Railway Configuration - SELF Proteção Veicular v4.0
+# Sistema de automação de mensagens WhatsApp
 
 [build]
 builder = "NIXPACKS"
+nixpacksConfigPath = "nixpacks.toml"
 
 [deploy]
 startCommand = "node server/index.js"
