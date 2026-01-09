@@ -1,0 +1,14 @@
+# Nixpacks Configuration - SELF Proteção Veicular
+# Forçar Node.js 20 LTS
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm"]
+
+[phases.install]
+cmds = ["npm install --omit=dev --legacy-peer-deps"]
+
+[phases.build]
+cmds = ["mkdir -p sessions data"]
+
+[start]
+cmd = "node server/index.js"

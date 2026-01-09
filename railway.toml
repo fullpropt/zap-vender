@@ -1,8 +1,8 @@
+# Railway Configuration - SELF Proteção Veicular
+# Usar NIXPACKS para garantir Node.js 20
+
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
-# Forçar rebuild sem cache
-watchPatterns = ["**"]
+builder = "NIXPACKS"
 
 [deploy]
 startCommand = "node server/index.js"

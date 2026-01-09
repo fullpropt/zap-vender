@@ -1,13 +1,13 @@
 {
   "name": "self-protecao-veicular",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "description": "Sistema de CRM com integração WhatsApp para SELF Proteção Veicular",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
-    "build": "echo 'No build required'",
-    "install-deps": "npm install"
+    "build": "mkdir -p sessions data",
+    "postinstall": "mkdir -p sessions data"
   },
   "keywords": [
     "whatsapp",
@@ -30,6 +30,7 @@
     "nodemon": "^3.1.9"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
   }
 }
