@@ -1,23 +1,41 @@
-# Dockerfile para Railway
+# ============================================
+# SELF Proteção Veicular - Dockerfile v2.0.1
+# Build: 2026-01-09-v2 (cache buster)
+# ============================================
+
+# IMPORTANTE: Usar Node.js 20+ (requerido pelo Baileys)
 FROM node:20-alpine
 
-# Instalar git e outras dependências necessárias para compilação
-RUN apk add --no-cache git python3 make g++
+# Metadados
+LABEL maintainer="SELF Proteção Veicular"
+LABEL version="2.0.1"
+
+# Instalar dependências do sistema
+RUN apk add --no-cache \
+    git \
+    python3 \
+    make \
+    g++ \
+    wget
 
 # Criar diretório da aplicação
 WORKDIR /app
 
-# Copiar arquivos de dependências
+# Limpar cache do npm para evitar conflitos
+RUN npm cache clean --force
+
+# Copiar arquivos de dependências primeiro (para cache de layers)
 COPY package*.json ./
 
-# Instalar dependências
-RUN npm install --omit=dev
+# Instalar dependências de produção
+RUN npm install --omit=dev --legacy-peer-deps
 
 # Copiar código fonte
 COPY . .
 
-# Criar diretórios necessários
-RUN mkdir -p sessions data
+# Criar diretórios necessários com permissões
+RUN mkdir -p sessions data && \
+    chmod 755 sessions data
 
 # Expor porta
 EXPOSE 3001
@@ -27,8 +45,8 @@ ENV NODE_ENV=production
 ENV PORT=3001
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
 
 # Comando de inicialização
-CMD ["npm", "start"]
+CMD ["node", "server/index.js"]

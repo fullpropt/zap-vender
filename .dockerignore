@@ -1,10 +1,33 @@
-node_modules
-npm-debug.log
-.git
+# Dependências (serão instaladas no container)
+node_modules/
+
+# Sessões WhatsApp (dados sensíveis)
+sessions/
+
+# Dados locais
+data/
+
+# Git
+.git/
 .gitignore
-README.md
-README_WHATSAPP.md
-sessions
+
+# Logs
 *.log
+npm-debug.log*
+
+# Arquivos de desenvolvimento
 .env
 .env.*
+.env.local
+nodemon.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentação extra
+README_WHATSAPP.md
