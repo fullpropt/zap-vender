@@ -4,6 +4,7 @@
  */
 
 const { MessageQueue, Settings, Lead } = require('../database/models');
+const { run } = require('../database/connection');
 const EventEmitter = require('events');
 
 class QueueService extends EventEmitter {
@@ -176,6 +177,16 @@ class QueueService extends EventEmitter {
             console.error(`❌ Erro ao processar mensagem ${message.id}:`, error.message);
             
             MessageQueue.markFailed(message.id, error.message);
+            try {
+                run(
+                    `UPDATE messages
+                     SET status = 'failed'
+                     WHERE conversation_id = ? AND lead_id = ? AND status = 'pending'`,
+                    [message.conversation_id, message.lead_id]
+                );
+            } catch (dbError) {
+                console.error(`❌ Erro ao atualizar status da mensagem ${message.id}:`, dbError.message);
+            }
             
             this.emit('message:failed', { 
                 id: message.id, 
