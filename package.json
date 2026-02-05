@@ -2,10 +2,10 @@
   "name": "self-protecao-veicular",
   "version": "4.1.0",
   "description": "Sistema de CRM com integração WhatsApp para SELF Proteção Veicular - Plataforma de automação de mensagens estilo BotConversa",
-  "main": "server/start.js",
+  "main": "server/index.js",
   "scripts": {
     "start": "node server/start.js",
-    "dev": "nodemon server/index.js",
+    "dev": "nodemon server/start.js",
     "build": "npm run db:migrate",
     "postinstall": "mkdir -p sessions data uploads",
     "db:migrate": "node server/database/migrate.js",

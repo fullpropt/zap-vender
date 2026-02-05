@@ -1,47 +1,88 @@
 /**
  * SELF PROTEÇÃO VEICULAR - SERVIDOR PRINCIPAL v4.1
- * Carregado via bootstrap.js para /health responder antes de módulos pesados.
+ * Carregado por server/start.js (bootstrap) após listen - app e server já criados.
  */
+
+module.exports = function init(app, server) {
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 
-function attachToServer(app, server) {
-  // Módulos carregados APÓS o servidor já estar ouvindo (Baileys, DB, etc.)
-  const express = require('express');
-  const { Server } = require('socket.io');
-  const cors = require('cors');
-  const helmet = require('helmet');
-  const rateLimit = require('express-rate-limit');
-  const multer = require('multer');
-  const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, delay } = require('@whiskeysockets/baileys');
-  const pino = require('pino');
-  const qrcode = require('qrcode');
-  const { getDatabase, close: closeDatabase } = require('./database/connection');
-  const { migrate } = require('./database/migrate');
-  const { Lead, Conversation, Message, Template, Flow, Settings, User } = require('./database/models');
-  const webhookService = require('./services/webhookService');
-  const queueService = require('./services/queueService');
-  const flowService = require('./services/flowService');
-  const { authenticate, optionalAuth, requestLogger } = require('./middleware/auth');
-  const { encrypt, decrypt } = require('./utils/encryption');
+// Baileys
+const { 
+    default: makeWASocket, 
+    DisconnectReason, 
+    useMultiFileAuthState,
+    fetchLatestBaileysVersion,
+    makeCacheableSignalKeyStore,
+    delay
+} = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const qrcode = require('qrcode');
 
-  const PORT = process.env.PORT || 3001;
-  const SESSIONS_DIR = process.env.SESSIONS_DIR || path.join(__dirname, '..', 'sessions');
-  const UPLOADS_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
-  const MAX_RECONNECT_ATTEMPTS = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 5;
-  const RECONNECT_DELAY = parseInt(process.env.RECONNECT_DELAY) || 3000;
-  const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT) || 60000;
+// Database
+const { getDatabase, close: closeDatabase } = require('./database/connection');
+const { migrate } = require('./database/migrate');
+const { Lead, Conversation, Message, Template, Flow, Settings, User } = require('./database/models');
 
-  // Migração
-  try {
+// Services
+const webhookService = require('./services/webhookService');
+const queueService = require('./services/queueService');
+const flowService = require('./services/flowService');
+
+// Middleware
+const { authenticate, optionalAuth, requestLogger } = require('./middleware/auth');
+
+// Encryption
+const { encrypt, decrypt } = require('./utils/encryption');
+
+// ============================================
+// CONFIGURAÇÕES
+// ============================================
+
+const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
+const SESSIONS_DIR = process.env.SESSIONS_DIR || path.join(__dirname, '..', 'sessions');
+const UPLOADS_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
+const MAX_RECONNECT_ATTEMPTS = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 5;
+const RECONNECT_DELAY = parseInt(process.env.RECONNECT_DELAY) || 3000;
+const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT) || 60000;
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'self-protecao-veicular-key-2024';
+
+// Avisar se chaves de segurança não foram configuradas (não bloqueia startup para deploy funcionar)
+if (process.env.NODE_ENV === 'production') {
+    if (!process.env.ENCRYPTION_KEY || ENCRYPTION_KEY === 'self-protecao-veicular-key-2024') {
+        console.warn('⚠️  AVISO: Configure ENCRYPTION_KEY nas variáveis de ambiente para produção.');
+    }
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'self-protecao-jwt-secret-2024') {
+        console.warn('⚠️  AVISO: Configure JWT_SECRET nas variáveis de ambiente para produção.');
+    }
+}
+
+// Criar diretórios necessários
+[SESSIONS_DIR, UPLOADS_DIR, path.join(__dirname, '..', 'data')].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+});
+
+// Migração roda aqui (servidor já está ouvindo via start.js)
+try {
     migrate();
     console.log('✅ Banco de dados inicializado');
-  } catch (error) {
+} catch (error) {
     console.error('❌ Erro ao inicializar banco de dados:', error.message);
-  }
+}
 
-  // Segurança
-  app.use(helmet({
+// ============================================
+// MIDDLEWARES E ROTAS (app já tem /health do start.js)
+// ============================================
+
+// Segurança
+app.use(helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false
 }));
@@ -101,7 +142,12 @@ const upload = multer({
     limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 });
 
-  const io = new Server(server, {
+// ============================================
+// SOCKET.IO
+// ============================================
+
+const { Server } = require('socket.io');
+const io = new Server(server, {
     cors: {
         origin: '*',
         methods: ['GET', 'POST']
@@ -1272,67 +1318,61 @@ app.use((err, req, res, next) => {
     });
 });
 
-  // Handler para rotas não encontradas
-  app.use((req, res) => {
-    res.status(404).json({ error: 'Rota não encontrada', code: 'NOT_FOUND' });
-  });
-
-  process.on('SIGTERM', async () => {
-    console.log('⚠️  SIGTERM recebido, encerrando servidor...');
-    queueService.stopProcessing();
-    for (const [sessionId, session] of sessions.entries()) {
-      try { await session.socket.end(); } catch (e) {}
-    }
-    closeDatabase();
-    server.close(() => {
-      console.log('✅ Servidor encerrado');
-      process.exit(0);
+// Handler para rotas não encontradas
+app.use((req, res) => {
+    res.status(404).json({ 
+        error: 'Rota não encontrada',
+        code: 'NOT_FOUND'
     });
-  });
-
-  process.on('SIGINT', async () => {
-    queueService.stopProcessing();
-    closeDatabase();
-    process.exit(0);
-  });
-
-  console.log('');
-  console.log('╔════════════════════════════════════════════════════════════╗');
-  console.log('║     SELF PROTEÇÃO VEICULAR - SERVIDOR v4.1                 ║');
-  console.log('║     Sistema de Automação de Mensagens WhatsApp             ║');
-  console.log('╠════════════════════════════════════════════════════════════╣');
-  console.log(`║  🚀 Servidor rodando na porta ${PORT}                          ║`);
-  console.log(`║  📁 Sessões: ${SESSIONS_DIR.substring(0, 42).padEnd(42)} ║`);
-  console.log(`║  🌐 URL: http://localhost:${PORT}                               ║`);
-  console.log(`║  🔄 Reconexão automática: ${MAX_RECONNECT_ATTEMPTS} tentativas                  ║`);
-  console.log(`║  📬 Fila de mensagens: Ativa                               ║`);
-  console.log(`║  🔒 Criptografia: Ativa                                    ║`);
-  console.log('╚════════════════════════════════════════════════════════════╝');
-  console.log('');
-  console.log('✅ Servidor pronto para receber conexões!');
-  console.log('');
-}
+});
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection:', reason);
+    console.error('❌ Unhandled Rejection:', reason);
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  if (process.env.NODE_ENV === 'production') process.exit(1);
+    console.error('❌ Uncaught Exception:', error);
+    // Em produção, pode querer fazer graceful shutdown
+    if (process.env.NODE_ENV === 'production') {
+        process.exit(1);
+    }
 });
 
-module.exports = { attachToServer };
+// ============================================
+// LOG DE INICIALIZAÇÃO
+// ============================================
 
-// Executar standalone se chamado diretamente (ex: node server/index.js)
-if (require.main === module) {
-  require('dotenv').config();
-  const express = require('express');
-  const http = require('http');
-  const app = express();
-  app.get('/health', (req, res) => res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() }));
-  const server = http.createServer(app);
-  const PORT = process.env.PORT || 3001;
-  const HOST = process.env.HOST || '0.0.0.0';
-  server.listen(PORT, HOST, () => attachToServer(app, server));
-}
+    console.log('');
+    console.log('╔════════════════════════════════════════════════════════════╗');
+    console.log('║     SELF PROTEÇÃO VEICULAR - SERVIDOR v4.1                 ║');
+    console.log('║     Sistema de Automação de Mensagens WhatsApp             ║');
+    console.log('╠════════════════════════════════════════════════════════════╣');
+    console.log(`║  🚀 Servidor rodando na porta ${PORT}                          ║`);
+    console.log(`║  📁 Sessões: ${SESSIONS_DIR.substring(0, 42).padEnd(42)} ║`);
+    console.log(`║  🌐 URL: http://localhost:${PORT}                               ║`);
+    console.log(`║  🔄 Reconexão automática: ${MAX_RECONNECT_ATTEMPTS} tentativas                  ║`);
+    console.log(`║  📬 Fila de mensagens: Ativa                               ║`);
+    console.log(`║  🔒 Criptografia: Ativa                                    ║`);
+    console.log('╚════════════════════════════════════════════════════════════╝');
+    console.log('');
+    console.log('✅ Servidor pronto para receber conexões!');
+    console.log('');
+
+    // Graceful shutdown (referências em closure)
+    process.on('SIGTERM', async () => {
+        console.log('⚠️  SIGTERM recebido, encerrando servidor...');
+        queueService.stopProcessing();
+        for (const [sessionId, session] of sessions.entries()) {
+            try { await session.socket.end(); } catch (e) {}
+        }
+        closeDatabase();
+        server.close(() => { console.log('✅ Servidor encerrado'); process.exit(0); });
+    });
+
+    process.on('SIGINT', async () => {
+        console.log('⚠️  SIGINT recebido, encerrando servidor...');
+        queueService.stopProcessing();
+        closeDatabase();
+        process.exit(0);
+    });
+};
