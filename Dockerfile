@@ -34,13 +34,8 @@ WORKDIR /app
 # Copiar apenas package.json primeiro (otimização de cache)
 COPY package*.json ./
 
-# Instalar dependências
-# Usa npm ci se package-lock.json existir, senão usa npm install
-RUN if [ -f package-lock.json ]; then \
-        npm ci --omit=dev --legacy-peer-deps; \
-    else \
-        npm install --omit=dev --legacy-peer-deps --no-save; \
-    fi && \
+# Instalar dependências (npm install funciona sem package-lock.json)
+RUN npm install --omit=dev --legacy-peer-deps && \
     npm cache clean --force
 
 # Copiar resto do código
