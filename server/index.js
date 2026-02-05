@@ -46,8 +46,11 @@ const webhookService = require('./services/webhookService');
 const queueService = require('./services/queueService');
 const flowService = require('./services/flowService');
 
+// Middleware
+const { authenticate, optionalAuth, requestLogger } = require('./middleware/auth');
+
 // Encryption
-const CryptoJS = require('crypto-js');
+const { encrypt, decrypt } = require('./utils/encryption');
 
 // ============================================
 // CONFIGURAÇÕES
@@ -61,6 +64,18 @@ const MAX_RECONNECT_ATTEMPTS = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 5
 const RECONNECT_DELAY = parseInt(process.env.RECONNECT_DELAY) || 3000;
 const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT) || 60000;
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'self-protecao-veicular-key-2024';
+
+// Validar chaves de segurança em produção
+if (process.env.NODE_ENV === 'production') {
+    if (!process.env.ENCRYPTION_KEY || ENCRYPTION_KEY === 'self-protecao-veicular-key-2024') {
+        console.error('❌ ERRO: ENCRYPTION_KEY deve ser configurada em produção!');
+        process.exit(1);
+    }
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'self-protecao-jwt-secret-2024') {
+        console.error('❌ ERRO: JWT_SECRET deve ser configurada em produção!');
+        process.exit(1);
+    }
+}
 
 // Criar diretórios necessários
 [SESSIONS_DIR, UPLOADS_DIR, path.join(__dirname, '..', 'data')].forEach(dir => {
@@ -100,12 +115,31 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// CORS
+// CORS - Configurável via variável de ambiente
+const allowedOrigins = process.env.CORS_ORIGINS 
+    ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+    : (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3000', 'http://localhost:3001']);
+
 app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    credentials: true
+    origin: (origin, callback) => {
+        // Permitir requisições sem origin (mobile apps, Postman, etc)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.length === 0 || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Não permitido por CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
+// Request logging
+if (process.env.NODE_ENV !== 'production') {
+    app.use(requestLogger);
+}
 
 // Body parser
 app.use(express.json({ limit: '50mb' }));
@@ -160,7 +194,7 @@ const logger = pino({ level: 'silent' });
  */
 function encryptMessage(text) {
     if (!text) return null;
-    return CryptoJS.AES.encrypt(text, ENCRYPTION_KEY).toString();
+    return encrypt(text);
 }
 
 /**
@@ -168,8 +202,7 @@ function encryptMessage(text) {
  */
 function decryptMessage(encrypted) {
     if (!encrypted) return null;
-    const bytes = CryptoJS.AES.decrypt(encrypted, ENCRYPTION_KEY);
-    return bytes.toString(CryptoJS.enc.Utf8);
+    return decrypt(encrypted);
 }
 
 /**
@@ -880,10 +913,84 @@ app.get('/api/status', (req, res) => {
 });
 
 // ============================================
+// API DE AUTENTICAÇÃO
+// ============================================
+
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email e senha são obrigatórios' });
+        }
+        
+        const { User } = require('./database/models');
+        const { verifyPassword, generateToken, generateRefreshToken } = require('./middleware/auth');
+        
+        const user = User.findByEmail(email);
+        if (!user || !verifyPassword(password, user.password_hash)) {
+            return res.status(401).json({ error: 'Credenciais inválidas' });
+        }
+        
+        if (!user.is_active) {
+            return res.status(401).json({ error: 'Usuário desativado' });
+        }
+        
+        User.updateLastLogin(user.id);
+        
+        const token = generateToken(user);
+        const refreshToken = generateRefreshToken(user);
+        
+        res.json({
+            success: true,
+            token,
+            refreshToken,
+            user: {
+                id: user.id,
+                uuid: user.uuid,
+                name: user.name,
+                email: user.email,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/auth/refresh', (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken) {
+            return res.status(400).json({ error: 'Refresh token é obrigatório' });
+        }
+        
+        const { verifyToken, generateToken } = require('./middleware/auth');
+        const { User } = require('./database/models');
+        
+        const decoded = verifyToken(refreshToken);
+        if (!decoded || decoded.type !== 'refresh') {
+            return res.status(401).json({ error: 'Refresh token inválido' });
+        }
+        
+        const user = User.findById(decoded.id);
+        if (!user || !user.is_active) {
+            return res.status(401).json({ error: 'Usuário não encontrado ou inativo' });
+        }
+        
+        const token = generateToken(user);
+        
+        res.json({ success: true, token });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================
 // API DE LEADS
 // ============================================
 
-app.get('/api/leads', (req, res) => {
+app.get('/api/leads', optionalAuth, (req, res) => {
     const { status, search, limit, offset } = req.query;
     const leads = Lead.list({ 
         status: status ? parseInt(status) : undefined,
@@ -896,7 +1003,7 @@ app.get('/api/leads', (req, res) => {
     res.json({ success: true, leads, total });
 });
 
-app.get('/api/leads/:id', (req, res) => {
+app.get('/api/leads/:id', optionalAuth, (req, res) => {
     const lead = Lead.findById(req.params.id);
     if (!lead) {
         return res.status(404).json({ error: 'Lead não encontrado' });
@@ -904,7 +1011,7 @@ app.get('/api/leads/:id', (req, res) => {
     res.json({ success: true, lead });
 });
 
-app.post('/api/leads', (req, res) => {
+app.post('/api/leads', authenticate, (req, res) => {
     try {
         const result = Lead.create(req.body);
         const lead = Lead.findById(result.id);
@@ -917,7 +1024,7 @@ app.post('/api/leads', (req, res) => {
     }
 });
 
-app.put('/api/leads/:id', (req, res) => {
+app.put('/api/leads/:id', authenticate, (req, res) => {
     const lead = Lead.findById(req.params.id);
     if (!lead) {
         return res.status(404).json({ error: 'Lead não encontrado' });
@@ -940,7 +1047,7 @@ app.put('/api/leads/:id', (req, res) => {
     res.json({ success: true, lead: updatedLead });
 });
 
-app.delete('/api/leads/:id', (req, res) => {
+app.delete('/api/leads/:id', authenticate, (req, res) => {
     Lead.delete(req.params.id);
     res.json({ success: true });
 });
@@ -949,7 +1056,7 @@ app.delete('/api/leads/:id', (req, res) => {
 // API DE MENSAGENS
 // ============================================
 
-app.post('/api/send', async (req, res) => {
+app.post('/api/send', authenticate, async (req, res) => {
     const { sessionId, to, message, type, options } = req.body;
     
     if (!sessionId || !to || !message) {
@@ -968,7 +1075,7 @@ app.post('/api/send', async (req, res) => {
     }
 });
 
-app.get('/api/messages/:leadId', (req, res) => {
+app.get('/api/messages/:leadId', authenticate, (req, res) => {
     const messages = Message.listByLead(req.params.leadId, { 
         limit: parseInt(req.query.limit) || 100 
     });
@@ -985,11 +1092,11 @@ app.get('/api/messages/:leadId', (req, res) => {
 // API DE FILA
 // ============================================
 
-app.get('/api/queue/status', (req, res) => {
+app.get('/api/queue/status', authenticate, (req, res) => {
     res.json({ success: true, ...queueService.getStatus() });
 });
 
-app.post('/api/queue/add', (req, res) => {
+app.post('/api/queue/add', authenticate, (req, res) => {
     const { leadId, content, mediaType, mediaUrl, priority, scheduledAt } = req.body;
     
     const result = queueService.add({
@@ -1004,7 +1111,7 @@ app.post('/api/queue/add', (req, res) => {
     res.json({ success: true, ...result });
 });
 
-app.post('/api/queue/bulk', (req, res) => {
+app.post('/api/queue/bulk', authenticate, (req, res) => {
     const { leadIds, content, options } = req.body;
     
     const results = queueService.addBulk(leadIds, content, options);
@@ -1012,12 +1119,12 @@ app.post('/api/queue/bulk', (req, res) => {
     res.json({ success: true, queued: results.length });
 });
 
-app.delete('/api/queue/:id', (req, res) => {
+app.delete('/api/queue/:id', authenticate, (req, res) => {
     queueService.cancel(req.params.id);
     res.json({ success: true });
 });
 
-app.delete('/api/queue', (req, res) => {
+app.delete('/api/queue', authenticate, (req, res) => {
     const count = queueService.cancelAll();
     res.json({ success: true, cancelled: count });
 });
@@ -1026,24 +1133,24 @@ app.delete('/api/queue', (req, res) => {
 // API DE TEMPLATES
 // ============================================
 
-app.get('/api/templates', (req, res) => {
+app.get('/api/templates', optionalAuth, (req, res) => {
     const templates = Template.list(req.query);
     res.json({ success: true, templates });
 });
 
-app.post('/api/templates', (req, res) => {
+app.post('/api/templates', authenticate, (req, res) => {
     const result = Template.create(req.body);
     const template = Template.findById(result.id);
     res.json({ success: true, template });
 });
 
-app.put('/api/templates/:id', (req, res) => {
+app.put('/api/templates/:id', authenticate, (req, res) => {
     Template.update(req.params.id, req.body);
     const template = Template.findById(req.params.id);
     res.json({ success: true, template });
 });
 
-app.delete('/api/templates/:id', (req, res) => {
+app.delete('/api/templates/:id', authenticate, (req, res) => {
     Template.delete(req.params.id);
     res.json({ success: true });
 });
@@ -1052,12 +1159,12 @@ app.delete('/api/templates/:id', (req, res) => {
 // API DE FLUXOS
 // ============================================
 
-app.get('/api/flows', (req, res) => {
+app.get('/api/flows', optionalAuth, (req, res) => {
     const flows = Flow.list(req.query);
     res.json({ success: true, flows });
 });
 
-app.get('/api/flows/:id', (req, res) => {
+app.get('/api/flows/:id', optionalAuth, (req, res) => {
     const flow = Flow.findById(req.params.id);
     if (!flow) {
         return res.status(404).json({ error: 'Fluxo não encontrado' });
@@ -1065,19 +1172,19 @@ app.get('/api/flows/:id', (req, res) => {
     res.json({ success: true, flow });
 });
 
-app.post('/api/flows', (req, res) => {
+app.post('/api/flows', authenticate, (req, res) => {
     const result = Flow.create(req.body);
     const flow = Flow.findById(result.id);
     res.json({ success: true, flow });
 });
 
-app.put('/api/flows/:id', (req, res) => {
+app.put('/api/flows/:id', authenticate, (req, res) => {
     Flow.update(req.params.id, req.body);
     const flow = Flow.findById(req.params.id);
     res.json({ success: true, flow });
 });
 
-app.delete('/api/flows/:id', (req, res) => {
+app.delete('/api/flows/:id', authenticate, (req, res) => {
     Flow.delete(req.params.id);
     res.json({ success: true });
 });
@@ -1086,27 +1193,27 @@ app.delete('/api/flows/:id', (req, res) => {
 // API DE WEBHOOKS
 // ============================================
 
-app.get('/api/webhooks', (req, res) => {
+app.get('/api/webhooks', authenticate, (req, res) => {
     const { Webhook } = require('./database/models');
     const webhooks = Webhook.list();
     res.json({ success: true, webhooks });
 });
 
-app.post('/api/webhooks', (req, res) => {
+app.post('/api/webhooks', authenticate, (req, res) => {
     const { Webhook } = require('./database/models');
     const result = Webhook.create(req.body);
     const webhook = Webhook.findById(result.id);
     res.json({ success: true, webhook });
 });
 
-app.put('/api/webhooks/:id', (req, res) => {
+app.put('/api/webhooks/:id', authenticate, (req, res) => {
     const { Webhook } = require('./database/models');
     Webhook.update(req.params.id, req.body);
     const webhook = Webhook.findById(req.params.id);
     res.json({ success: true, webhook });
 });
 
-app.delete('/api/webhooks/:id', (req, res) => {
+app.delete('/api/webhooks/:id', authenticate, (req, res) => {
     const { Webhook } = require('./database/models');
     Webhook.delete(req.params.id);
     res.json({ success: true });
@@ -1141,12 +1248,12 @@ app.post('/api/webhook/incoming', (req, res) => {
 // API DE CONFIGURAÇÕES
 // ============================================
 
-app.get('/api/settings', (req, res) => {
+app.get('/api/settings', authenticate, (req, res) => {
     const settings = Settings.getAll();
     res.json({ success: true, settings });
 });
 
-app.put('/api/settings', (req, res) => {
+app.put('/api/settings', authenticate, (req, res) => {
     for (const [key, value] of Object.entries(req.body)) {
         const type = typeof value === 'number' ? 'number' : 
                      typeof value === 'boolean' ? 'boolean' :
@@ -1169,7 +1276,7 @@ app.put('/api/settings', (req, res) => {
 // UPLOAD DE ARQUIVOS
 // ============================================
 
-app.post('/api/upload', upload.single('file'), (req, res) => {
+app.post('/api/upload', authenticate, upload.single('file'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     }
@@ -1207,12 +1314,54 @@ app.get('*', (req, res) => {
 // TRATAMENTO DE ERROS
 // ============================================
 
+// Middleware de tratamento de erros
+app.use((err, req, res, next) => {
+    console.error('❌ Erro:', err);
+    
+    // Erro de CORS
+    if (err.message === 'Não permitido por CORS') {
+        return res.status(403).json({ 
+            error: 'Origem não permitida',
+            code: 'CORS_ERROR'
+        });
+    }
+    
+    // Erro de validação
+    if (err.name === 'ValidationError') {
+        return res.status(400).json({ 
+            error: 'Dados inválidos',
+            details: err.message,
+            code: 'VALIDATION_ERROR'
+        });
+    }
+    
+    // Erro genérico
+    res.status(err.status || 500).json({ 
+        error: process.env.NODE_ENV === 'production' 
+            ? 'Erro interno do servidor' 
+            : err.message,
+        code: err.code || 'INTERNAL_ERROR'
+    });
+});
+
+// Handler para rotas não encontradas
+app.use((req, res) => {
+    res.status(404).json({ 
+        error: 'Rota não encontrada',
+        code: 'NOT_FOUND'
+    });
+});
+
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Unhandled Rejection:', reason);
 });
 
 process.on('uncaughtException', (error) => {
     console.error('❌ Uncaught Exception:', error);
+    // Em produção, pode querer fazer graceful shutdown
+    if (process.env.NODE_ENV === 'production') {
+        process.exit(1);
+    }
 });
 
 // ============================================
