@@ -60,5 +60,5 @@ ENV HOST=0.0.0.0
 # NOTA: Healthcheck gerenciado pelo Railway via railway.toml
 # Não usar HEALTHCHECK interno do Docker para evitar conflitos
 
-# Iniciar aplicação (start.js sobe /health antes de carregar Baileys/DB)
-CMD ["node", "server/start.js"]
+# Bootstrap: sobe /health primeiro, depois carrega app (evita healthcheck fail no Railway)
+CMD ["node", "server/bootstrap.js"]
