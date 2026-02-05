@@ -35,6 +35,12 @@ Sistema completo de CRM com integração WhatsApp para gestão de leads, automa�
 - **npm** versão 10 ou superior
 - **VPS/Servidor** com acesso SSH (ou Railway)
 
+## ⚠️ Hardening obrigatório (produção)
+- API `/api/*` e WebSocket exigem JWT (`Authorization: Bearer <token>` e `auth.token` no Socket.IO).
+- Índices únicos criados na migração: `leads.phone` e `conversations(lead_id, session_id)` para evitar duplicidade/erros de `ON CONFLICT` (garanta que não existam duplicados antes de rodar `npm run db:migrate`).
+- Sessões do WhatsApp são persistidas em disco (`SESSIONS_DIR`) e reidratadas no boot; no Railway, monte volume persistente e aponte `SESSIONS_DIR` para `/mnt/data/sessions`.
+- Configure `JWT_SECRET` e `ENCRYPTION_KEY` com valores fortes; defina `CORS_ORIGINS` com as URLs do frontend/Railway.
+
 ## 🚀 Instalação Local
 
 ### 1. Clone o repositório
@@ -107,6 +113,8 @@ Abra no navegador: `http://localhost:3001`
 | `JWT_SECRET` | Chave secreta para tokens JWT (min 32 chars) | Sim |
 | `ENCRYPTION_KEY` | Chave para criptografia de mensagens | Sim |
 | `WEBHOOK_SECRET` | Chave para validar webhooks externos | Não |
+| `CORS_ORIGINS` | URLs permitidas (ex.: https://web-production-a38e.up.railway.app) | Sim |
+| `SESSIONS_DIR` | Diretorio persistente das sessões Baileys (`/mnt/data/sessions` no Railway) | Sim |
 
 5. Deploy será automático a cada push
 
@@ -116,6 +124,7 @@ O projeto já inclui os arquivos de configuração:
 - `railway.toml` - Configuração de build e deploy
 - `nixpacks.toml` - Configuração do Nixpacks para Node.js 20
 - `railway.json` - Configuração adicional
+- Monte um volume persistente e aponte `SESSIONS_DIR` para `/mnt/data/sessions` para manter sessões após restart.
 
 ## 📱 Conectando o WhatsApp
 
