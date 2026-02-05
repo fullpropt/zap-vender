@@ -82,17 +82,7 @@ if (process.env.NODE_ENV === 'production') {
     }
 });
 
-// ============================================
-// INICIALIZAÇÃO DO BANCO DE DADOS
-// ============================================
-
-try {
-    migrate();
-    console.log('✅ Banco de dados inicializado');
-} catch (error) {
-    console.error('❌ Erro ao inicializar banco de dados:', error.message);
-    // Não encerra o processo: /health continua respondendo para deploy passar
-}
+// Migração roda DEPOIS do listen (veja fim do arquivo) para healthcheck passar no Railway
 
 // ============================================
 // EXPRESS APP
@@ -1374,6 +1364,14 @@ process.on('uncaughtException', (error) => {
 // ============================================
 
 server.listen(PORT, HOST, () => {
+    // Migração após listen para /health responder imediatamente (Railway/load balancer)
+    try {
+        migrate();
+        console.log('✅ Banco de dados inicializado');
+    } catch (error) {
+        console.error('❌ Erro ao inicializar banco de dados:', error.message);
+    }
+
     console.log('');
     console.log('╔════════════════════════════════════════════════════════════╗');
     console.log('║     SELF PROTEÇÃO VEICULAR - SERVIDOR v4.1                 ║');
