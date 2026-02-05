@@ -33,6 +33,10 @@ const webhookService = require('./services/webhookService');
 const queueService = require('./services/queueService');
 const flowService = require('./services/flowService');
 
+// Utils - Fixers (correções automáticas baseadas em análise de projetos GitHub)
+const audioFixer = require('./utils/audioFixer');
+const connectionFixer = require('./utils/connectionFixer');
+
 // Middleware
 const { authenticate, optionalAuth, requestLogger } = require('./middleware/auth');
 
@@ -229,11 +233,27 @@ async function sendMessageToWhatsApp(options) {
             fileName: options.fileName || 'documento'
         });
     } else if (mediaType === 'audio' && mediaUrl) {
-        result = await session.socket.sendMessage(targetJid, {
-            audio: { url: mediaUrl },
-            mimetype: 'audio/mp4',
-            ptt: true
-        });
+        // Usar audioFixer para corrigir problemas comuns
+        try {
+            const audioOptions = await audioFixer.prepareAudioForSend(mediaUrl, {
+                mimetype: options.mimetype || 'audio/ogg; codecs=opus',
+                ptt: options.ptt !== undefined ? options.ptt : true,
+                duration: options.duration || null
+            });
+
+            result = await session.socket.sendMessage(targetJid, {
+                audio: { url: audioOptions.path || mediaUrl },
+                ...audioOptions.options
+            });
+        } catch (error) {
+            console.error('[SendMessage] Erro ao preparar áudio, usando método padrão:', error.message);
+            // Fallback para método padrão
+            result = await session.socket.sendMessage(targetJid, {
+                audio: { url: mediaUrl },
+                mimetype: options.mimetype || 'audio/ogg; codecs=opus',
+                ptt: options.ptt !== undefined ? options.ptt : true
+            });
+        }
     } else {
         result = await session.socket.sendMessage(targetJid, { text: content });
     }
@@ -254,6 +274,13 @@ async function createSession(sessionId, socket, attempt = 0) {
     
     try {
         console.log(`[${sessionId}] Criando sessão... (Tentativa ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+        
+        // Validar e corrigir sessão se necessário
+        const sessionValidation = await connectionFixer.validateSession(sessionPath);
+        if (!sessionValidation.valid && attempt === 0) {
+            console.log(`[${sessionId}] Problemas na sessão detectados, corrigindo...`);
+            await connectionFixer.fixSession(sessionPath);
+        }
         
         const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
         const { version } = await fetchLatestBaileysVersion();
@@ -344,8 +371,17 @@ async function createSession(sessionId, socket, attempt = 0) {
                 
                 console.log(`[${sessionId}] Conexão fechada. Status: ${statusCode}`);
                 
+                // Detectar tipo de erro e aplicar correção
+                const errorInfo = connectionFixer.detectDisconnectReason(lastDisconnect?.error);
+                console.log(`[${sessionId}] Tipo de erro: ${errorInfo.type}, Ação: ${errorInfo.action}`);
+                
+                // Aplicar correção se necessário
+                if (errorInfo.action === 'clean_session' || errorInfo.action === 'regenerate_keys') {
+                    await connectionFixer.applyFixAction(sessionPath, errorInfo.action);
+                }
+                
                 // Webhook
-                webhookService.trigger('whatsapp.disconnected', { sessionId, statusCode });
+                webhookService.trigger('whatsapp.disconnected', { sessionId, statusCode, errorType: errorInfo.type });
                 
                 if (shouldReconnect) {
                     const currentAttempt = reconnectAttempts.get(sessionId) || 0;
@@ -409,6 +445,10 @@ async function createSession(sessionId, socket, attempt = 0) {
                     webhookService.trigger('whatsapp.connected', { sessionId, user: session.user });
                     
                     console.log(`[${sessionId}] ✅ WhatsApp conectado: ${session.user.name}`);
+                    
+                    // Criar monitor de saúde da conexão
+                    const healthMonitor = connectionFixer.createHealthMonitor(sock, sessionId);
+                    session.healthMonitor = healthMonitor;
                 }
             }
         });

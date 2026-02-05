@@ -11,10 +11,16 @@
     "db:migrate": "node server/database/migrate.js",
     "db:seed": "node server/database/seed.js",
     "db:reset": "rm -rf data/self.db && npm run db:migrate && npm run db:seed",
-    "test": "jest",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "test:unit": "jest tests/ --testPathPattern=unit",
+    "test:integration": "jest tests/ --testPathPattern=integration",
     "lint": "eslint server/ --ext .js",
+    "lint:fix": "eslint server/ --ext .js --fix",
     "clean": "rm -rf node_modules sessions data uploads",
-    "health": "curl -s http://localhost:3001/health | jq"
+    "health": "curl -s http://localhost:3001/health | jq",
+    "update": "node scripts/auto-update.js",
+    "update:commit": "AUTO_COMMIT=true node scripts/auto-update.js"
   },
   "keywords": [
     "whatsapp",
