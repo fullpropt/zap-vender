@@ -348,13 +348,6 @@ async function createSession(sessionId, socket, attempt = 0) {
             await connectionFixer.fixSession(sessionPath);
         }
         
-        // Validar e corrigir sessão se necessário
-        const sessionValidation = await connectionFixer.validateSession(sessionPath);
-        if (!sessionValidation.valid && attempt === 0) {
-            console.log(`[${sessionId}] Problemas na sessão detectados, corrigindo...`);
-            await connectionFixer.fixSession(sessionPath);
-        }
-        
         const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
         const { version } = await fetchLatestBaileysVersion();
         
@@ -445,15 +438,6 @@ async function createSession(sessionId, socket, attempt = 0) {
                 
                 console.log(`[${sessionId}] Conexão fechada. Status: ${statusCode}`);
                 persistWhatsappSession(sessionId, 'disconnected');
-                
-                // Detectar tipo de erro e aplicar correção
-                const errorInfo = connectionFixer.detectDisconnectReason(lastDisconnect?.error);
-                console.log(`[${sessionId}] Tipo de erro: ${errorInfo.type}, Ação: ${errorInfo.action}`);
-                
-                // Aplicar correção se necessário
-                if (errorInfo.action === 'clean_session' || errorInfo.action === 'regenerate_keys') {
-                    await connectionFixer.applyFixAction(sessionPath, errorInfo.action);
-                }
                 
                 // Detectar tipo de erro e aplicar correção
                 const errorInfo = connectionFixer.detectDisconnectReason(lastDisconnect?.error);

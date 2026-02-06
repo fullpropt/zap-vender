@@ -38,7 +38,7 @@ Sistema completo de CRM com integração WhatsApp para gestão de leads, automa�
 ## ⚠️ Hardening obrigatório (produção)
 - API `/api/*` e WebSocket exigem JWT (`Authorization: Bearer <token>` e `auth.token` no Socket.IO).
 - Índices únicos criados na migração: `leads.phone` e `conversations(lead_id, session_id)` para evitar duplicidade/erros de `ON CONFLICT` (garanta que não existam duplicados antes de rodar `npm run db:migrate`).
-- Sessões do WhatsApp são persistidas em disco (`SESSIONS_DIR`) e reidratadas no boot; no Railway, monte volume persistente e aponte `SESSIONS_DIR` para `/mnt/data/sessions`.
+- Sessões do WhatsApp são persistidas em disco (`SESSIONS_DIR`) e reidratadas no boot; no Railway monte volume persistente e mantenha `SESSIONS_DIR=/mnt/data/sessions`.
 - Configure `JWT_SECRET` e `ENCRYPTION_KEY` com valores fortes; defina `CORS_ORIGINS` com as URLs do frontend/Railway.
 
 ## 🚀 Instalação Local
