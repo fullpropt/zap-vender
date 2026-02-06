@@ -548,7 +548,7 @@ async function createSession(sessionId, socket, attempt = 0) {
             for (const update of updates) {
                 if (update.update.status) {
                     const statusMap = { 1: 'pending', 2: 'sent', 3: 'delivered', 4: 'read' };
-                    const status = statusMap[update.update.status] || 'unknown';
+                    const status = statusMap[update.update.status] || 'pending';
                     
                     // Atualizar no banco
                     Message.updateStatus(update.key.id, status, new Date().toISOString());
@@ -661,7 +661,7 @@ async function processIncomingMessage(sessionId, msg) {
         content: text,
         content_encrypted: encryptMessage(text),
         media_type: mediaType,
-        status: isFromMe ? 'sent' : 'received',
+        status: isFromMe ? 'sent' : 'delivered',
         is_from_me: isFromMe,
         sent_at: msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000).toISOString() : new Date().toISOString()
     };
@@ -686,7 +686,7 @@ async function processIncomingMessage(sessionId, msg) {
         mediaType,
         timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now(),
         pushName: msg.pushName || '',
-        status: isFromMe ? 'sent' : 'received',
+        status: isFromMe ? 'sent' : 'delivered',
         leadId: lead.id,
         leadName: lead.name,
         conversationId: conversation.id
