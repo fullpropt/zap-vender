@@ -15,15 +15,15 @@
             <img src="img/logo-self.png" alt="SELF" onerror="this.style.display='none'">
         </div>
         <ul class="sidebar-menu">
-            <li><a href="dashboard.html"><span class="icon">📊</span> Dashboard</a></li>
-            <li><a href="funil.html"><span class="icon">📋</span> Funil de Vendas</a></li>
-            <li><a href="whatsapp.html"><span class="icon">💬</span> WhatsApp</a></li>
-            <li><a href="conversas-v2.html" class="active"><span class="icon">💭</span> Conversas</a></li>
-            <li><a href="flow-builder.html"><span class="icon">🔄</span> Fluxos</a></li>
-            <li><a href="configuracoes.html"><span class="icon">⚙️</span> Configurações</a></li>
+            <li><a href="dashboard.html"><span class="icon icon-dashboard"></span> Dashboard</a></li>
+            <li><a href="funil.html"><span class="icon icon-funnel"></span> Funil de Vendas</a></li>
+            <li><a href="whatsapp.html"><span class="icon icon-whatsapp"></span> WhatsApp</a></li>
+            <li><a href="conversas-v2.html" class="active"><span class="icon icon-message"></span> Conversas</a></li>
+            <li><a href="flow-builder.html"><span class="icon icon-flows"></span> Fluxos</a></li>
+            <li><a href="configuracoes.html"><span class="icon icon-settings"></span> Configurações</a></li>
         </ul>
         <div class="sidebar-footer">
-            <a href="login.html" class="btn-logout"><span class="icon">🚪</span> Sair</a>
+            <a href="login.html" class="btn-logout">Sair</a>
         </div>
     </nav>
     
@@ -31,7 +31,7 @@
     <main class="main-content">
         <div class="header">
             <div class="header-title">
-                <h1>💭 Conversas</h1>
+                <h1><span class="icon icon-message icon-sm"></span> Conversas</h1>
                 <p>Gerencie suas conversas com leads</p>
             </div>
             <div class="header-actions">
@@ -46,14 +46,14 @@
             <!-- Lista de Conversas -->
             <div class="conversations-list" id="conversationsList">
                 <div class="conversations-header">
-                    <h2>📥 Inbox</h2>
+                    <h2><span class="icon icon-inbox icon-sm"></span> Inbox</h2>
                     <div class="conversations-tabs">
                         <button class="tab-btn active" data-filter="all">Todos</button>
                         <button class="tab-btn" data-filter="unread">Não lidos</button>
                         <button class="tab-btn" data-filter="bot">Bot Ativo</button>
                     </div>
                     <div class="search-box">
-                        <span class="search-icon">🔍</span>
+                        <span class="search-icon icon icon-search icon-sm"></span>
                         <input type="text" id="searchContacts" placeholder="Buscar conversa...">
                     </div>
                 </div>
@@ -65,7 +65,7 @@
             <!-- Área de Chat -->
             <div class="chat-area" id="chatArea">
                 <div class="empty-state" id="emptyState">
-                    <div class="icon">💬</div>
+                    <div class="icon icon-empty icon-lg"></div>
                     <h3>Inicie uma conversa</h3>
                     <p>Selecione um contato na lista ao lado para começar a conversar</p>
                 </div>
@@ -79,13 +79,13 @@
                     </div>
                     <div class="chat-header-actions">
                         <button class="btn-icon" id="btnToggleBot" title="Ativar/Desativar Bot">
-                            🤖
+                            <span class="icon icon-automation icon-sm"></span>
                         </button>
                         <button class="btn-icon" id="btnViewLead" title="Ver Lead">
-                            👤
+                            <span class="icon icon-user icon-sm"></span>
                         </button>
                         <button class="btn-icon" id="btnOpenWhatsApp" title="Abrir no WhatsApp">
-                            📱
+                            <span class="icon icon-whatsapp icon-sm"></span>
                         </button>
                     </div>
                 </div>
@@ -98,22 +98,22 @@
                 <!-- Área de Input (oculto inicialmente) -->
                 <div class="chat-input-area" id="chatInputArea" style="display: none;">
                     <div class="quick-replies" id="quickReplies">
-                        <button class="quick-reply-btn" data-message="Olá! Tudo bem?">👋 Olá!</button>
-                        <button class="quick-reply-btn" data-message="Vou verificar e te retorno em breve!">📋 Mais informações</button>
-                        <button class="quick-reply-btn" data-message="Obrigado pelo contato!">🙏 Agradecer</button>
-                        <button class="quick-reply-btn" data-message="Vou retornar em breve!">🔄 Retorno</button>
+                        <button class="quick-reply-btn" data-message="Olá! Tudo bem?"><span class="icon icon-smile icon-sm"></span> Olá!</button>
+                        <button class="quick-reply-btn" data-message="Vou verificar e te retorno em breve!"><span class="icon icon-info icon-sm"></span> Mais informações</button>
+                        <button class="quick-reply-btn" data-message="Obrigado pelo contato!"><span class="icon icon-check icon-sm"></span> Agradecer</button>
+                        <button class="quick-reply-btn" data-message="Vou retornar em breve!"><span class="icon icon-clock icon-sm"></span> Retorno</button>
                     </div>
                     <div class="chat-input-wrapper">
                         <div class="chat-input-actions">
-                            <button id="btnEmoji" title="Emoji">😊</button>
-                            <button id="btnAttach" title="Anexar arquivo">📎</button>
-                            <button id="btnAudio" title="Gravar áudio">🎤</button>
+                            <button id="btnEmoji" title="Emoji"><span class="icon icon-smile icon-sm"></span></button>
+                            <button id="btnAttach" title="Anexar arquivo"><span class="icon icon-attachment icon-sm"></span></button>
+                            <button id="btnAudio" title="Gravar áudio"><span class="icon icon-message icon-sm"></span></button>
                         </div>
                         <div class="chat-input-field">
                             <textarea id="messageInput" placeholder="Digite sua mensagem..." rows="1"></textarea>
                         </div>
                         <button class="send-btn" id="btnSend" disabled>
-                            ➤
+                            <span class="icon icon-send icon-sm"></span>
                         </button>
                     </div>
                 </div>
@@ -128,7 +128,7 @@
     <div class="modal-overlay" id="attachModal">
         <div class="modal">
             <div class="modal-header">
-                <h2>📎 Enviar Arquivo</h2>
+                <h2><span class="icon icon-attachment icon-sm"></span> Enviar Arquivo</h2>
                 <button class="modal-close" onclick="closeAttachModal()">&times;</button>
             </div>
             <div class="modal-body">
@@ -188,12 +188,12 @@
             });
             
             socket.on('connect', () => {
-                console.log('✅ Socket conectado');
+                console.log('Socket conectado');
                 socket.emit('check-session', { sessionId: SESSION_ID });
             });
             
             socket.on('disconnect', () => {
-                console.log('❌ Socket desconectado');
+                console.log('Socket desconectado');
                 updateConnectionStatus(false);
             });
             
@@ -335,7 +335,7 @@
             if (list.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state" style="padding: 40px 20px;">
-                        <div class="icon">📭</div>
+                    <div class="icon icon-empty icon-lg"></div>
                         <h3>Nenhum contato</h3>
                         <p>Seus contatos aparecerão aqui</p>
                     </div>
@@ -448,7 +448,7 @@
             if (messageList.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <div class="icon">💬</div>
+                    <div class="icon icon-empty icon-lg"></div>
                         <h3>Inicie a conversa</h3>
                         <p>Envie uma mensagem para ${currentContact?.name || currentContact?.number}</p>
                     </div>
@@ -463,7 +463,7 @@
                 const status = msg.status || 'sent';
                 
                 const statusIcon = {
-                    'pending': '🕐',
+                    'pending': '•',
                     'sent': '✓',
                     'delivered': '✓✓',
                     'read': '✓✓'
@@ -478,7 +478,7 @@
                                 <div class="message-media ${msg.media_type}">
                                     ${msg.media_type === 'image' ? `<img src="${msg.media_url}" alt="Imagem">` : ''}
                                     ${msg.media_type === 'document' ? `
-                                        <div class="doc-icon">📄</div>
+                                        <div class="doc-icon"><span class="icon icon-attachment icon-sm"></span></div>
                                         <span>Documento</span>
                                     ` : ''}
                                     ${msg.media_type === 'audio' ? `
@@ -658,7 +658,7 @@
             } else {
                 preview.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 10px; padding: 15px; background: var(--gray-100); border-radius: 8px;">
-                        <span style="font-size: 24px;">📄</span>
+                        <span class="icon icon-attachment icon-md"></span>
                         <div>
                             <div style="font-weight: 600;">${file.name}</div>
                             <div style="font-size: 12px; color: var(--gray-500);">${formatFileSize(file.size)}</div>
@@ -785,10 +785,10 @@
             const container = document.getElementById('toastContainer');
             
             const icons = {
-                success: '✅',
-                error: '❌',
-                warning: '⚠️',
-                info: 'ℹ️'
+                success: 'OK',
+                error: 'ERRO',
+                warning: 'AVISO',
+                info: 'INFO'
             };
             
             const toast = document.createElement('div');

@@ -117,12 +117,12 @@ function initSocket() {
     });
     
     APP.socket.on('connect', () => {
-        console.log('✅ Socket conectado');
+        console.log('Socket conectado');
         APP.socket.emit('check-session', { sessionId: APP.sessionId });
     });
     
     APP.socket.on('disconnect', () => {
-        console.log('❌ Socket desconectado');
+        console.log('Socket desconectado');
         updateWhatsAppStatus('disconnected');
     });
     
@@ -289,10 +289,10 @@ function showToast(type, title, message, duration = 5000) {
     }
     
     const icons = {
-        success: '✅',
-        error: '❌',
-        warning: '⚠️',
-        info: 'ℹ️'
+        success: 'OK',
+        error: 'ERRO',
+        warning: 'AVISO',
+        info: 'INFO'
     };
     
     const toast = document.createElement('div');
@@ -645,15 +645,15 @@ async function updateUnreadCount() {
 // ============================================
 
 const LEAD_STATUS = {
-    1: { label: 'Novo', color: 'info', icon: '🆕' },
-    2: { label: 'Em Andamento', color: 'warning', icon: '⏳' },
-    3: { label: 'Concluído', color: 'success', icon: '✅' },
-    4: { label: 'Perdido', color: 'danger', icon: '❌' }
+    1: { label: 'Novo', color: 'info' },
+    2: { label: 'Em Andamento', color: 'warning' },
+    3: { label: 'Concluído', color: 'success' },
+    4: { label: 'Perdido', color: 'danger' }
 };
 
 function getStatusBadge(status) {
     const s = LEAD_STATUS[status] || LEAD_STATUS[1];
-    return `<span class="badge badge-${s.color}">${s.icon} ${s.label}</span>`;
+    return `<span class="badge badge-${s.color}">${s.label}</span>`;
 }
 
 function getStatusLabel(status) {

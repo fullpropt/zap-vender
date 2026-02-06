@@ -288,32 +288,32 @@
         <nav class="sidebar-nav">
             <div class="nav-section">
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="icon">🏠</span>Painel de Controle</a></li>
-                    <li class="nav-item"><a href="contatos.html" class="nav-link"><span class="icon">👥</span>Contatos</a></li>
-                    <li class="nav-item"><a href="campanhas.html" class="nav-link"><span class="icon">📢</span>Campanhas</a></li>
-                    <li class="nav-item"><a href="transmissao.html" class="nav-link"><span class="icon">📡</span>Transmissão</a></li>
+                    <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="icon icon-dashboard"></span>Painel de Controle</a></li>
+                    <li class="nav-item"><a href="contatos.html" class="nav-link"><span class="icon icon-contacts"></span>Contatos</a></li>
+                    <li class="nav-item"><a href="campanhas.html" class="nav-link"><span class="icon icon-campaigns"></span>Campanhas</a></li>
+                    <li class="nav-item"><a href="transmissao.html" class="nav-link"><span class="icon icon-broadcast"></span>Transmissão</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Conversas</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="inbox.html" class="nav-link active"><span class="icon">💬</span>Inbox<span class="badge" id="unreadBadge" style="display:none;">0</span></a></li>
+                    <li class="nav-item"><a href="inbox.html" class="nav-link active"><span class="icon icon-inbox"></span>Inbox<span class="badge" id="unreadBadge" style="display:none;">0</span></a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Automação</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="automacao.html" class="nav-link"><span class="icon">🤖</span>Automação</a></li>
-                    <li class="nav-item"><a href="fluxos.html" class="nav-link"><span class="icon">🔄</span>Fluxos de Conversa</a></li>
-                    <li class="nav-item"><a href="funil.html" class="nav-link"><span class="icon">📊</span>Funil de Vendas</a></li>
+                    <li class="nav-item"><a href="automacao.html" class="nav-link"><span class="icon icon-automation"></span>Automação</a></li>
+                    <li class="nav-item"><a href="fluxos.html" class="nav-link"><span class="icon icon-flows"></span>Fluxos de Conversa</a></li>
+                    <li class="nav-item"><a href="funil.html" class="nav-link"><span class="icon icon-funnel"></span>Funil de Vendas</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Sistema</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon">📱</span>WhatsApp</a></li>
-                    <li class="nav-item"><a href="configuracoes.html" class="nav-link"><span class="icon">⚙️</span>Configurações</a></li>
-                    <li class="nav-item"><a href="configuracoes.html#copys" class="nav-link" title="Copys e Mensagens"><span class="icon">📋</span>Modelos</a></li>
+                    <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon icon-whatsapp"></span>WhatsApp</a></li>
+                    <li class="nav-item"><a href="configuracoes.html" class="nav-link"><span class="icon icon-settings"></span>Configurações</a></li>
+                    <li class="nav-item"><a href="configuracoes.html#copys" class="nav-link" title="Copys e Mensagens"><span class="icon icon-templates"></span>Modelos</a></li>
                 </ul>
             </div>
         </nav>
@@ -322,7 +322,7 @@
                 <span class="status-indicator disconnected"></span>
                 <span class="whatsapp-status-text">Desconectado</span>
             </div>
-            <button class="btn-logout" onclick="logout()"><span>🚪</span>Sair</button>
+            <button class="btn-logout" onclick="logout()">Sair</button>
         </div>
     </aside>
 
@@ -331,19 +331,19 @@
             <!-- Lista de Conversas -->
             <div class="conversations-panel" id="conversationsPanel">
                 <div class="conversations-header">
-                    <h2>💬 Inbox</h2>
+                    <h2><span class="icon icon-inbox icon-sm"></span> Inbox</h2>
                     <div class="conversations-tabs">
                         <button class="active" onclick="filterConversations('all')">Todos</button>
                         <button onclick="filterConversations('unread')">Não lidos</button>
                     </div>
                     <div class="search-box" style="max-width: 100%;">
-                        <span class="search-icon">🔍</span>
+                        <span class="search-icon icon icon-search icon-sm"></span>
                         <input type="text" id="searchConversations" placeholder="Buscar conversa..." onkeyup="searchConversations()">
                     </div>
                 </div>
                 <div class="conversations-list" id="conversationsList">
                     <div class="empty-state" style="padding: 40px;">
-                        <div class="empty-state-icon">💬</div>
+                        <div class="empty-state-icon icon icon-empty icon-lg"></div>
                         <p>Carregando conversas...</p>
                     </div>
                 </div>
@@ -352,7 +352,7 @@
             <!-- Painel de Chat -->
             <div class="chat-panel" id="chatPanel">
                 <div class="chat-empty">
-                    <div class="chat-empty-icon">💬</div>
+                    <div class="chat-empty-icon icon icon-empty icon-lg"></div>
                     <h3>Nenhum chat selecionado</h3>
                     <p>Selecione uma conversa da lista ao lado para começar a conversar</p>
                 </div>
@@ -361,7 +361,7 @@
             <!-- Painel Lateral Direito (estilo BotConversa) -->
             <div class="inbox-right-panel" id="inboxRightPanel">
                 <div class="inbox-right-panel-content" id="inboxRightContent">
-                    <span class="inbox-right-panel-robot">🤖</span>
+                    <span class="inbox-right-panel-robot icon icon-automation icon-lg"></span>
                     <p><strong>Este cliente ainda não está cadastrado na sua audiência.</strong></p>
                     <p>Vamos cadastrá-lo para que o cartão do usuário dele apareça aqui?</p>
                     <button class="btn-register-user" onclick="registerCurrentUser()">SIM! Cadastrar este usuário</button>
@@ -437,7 +437,7 @@
             if (conversations.length === 0) {
                 list.innerHTML = `
                     <div class="empty-state" style="padding: 40px;">
-                        <div class="empty-state-icon">💬</div>
+                        <div class="empty-state-icon icon icon-empty icon-lg"></div>
                         <p>Nenhuma conversa</p>
                     </div>
                 `;
@@ -547,8 +547,8 @@
                         <div class="chat-header-status">${formatPhone(currentConversation.phone)}</div>
                     </div>
                     <div style="display: flex; gap: 10px;">
-                        <button class="btn btn-sm btn-outline btn-icon" onclick="openWhatsApp()" title="Abrir no WhatsApp">📱</button>
-                        <button class="btn btn-sm btn-outline btn-icon" onclick="viewContact()" title="Ver contato">👤</button>
+                        <button class="btn btn-sm btn-outline btn-icon" onclick="openWhatsApp()" title="Abrir no WhatsApp"><span class="icon icon-whatsapp icon-sm"></span></button>
+                        <button class="btn btn-sm btn-outline btn-icon" onclick="viewContact()" title="Ver contato"><span class="icon icon-user icon-sm"></span></button>
                         <button class="btn btn-sm btn-outline btn-icon" onclick="toggleContactInfo()" title="Mais opções">⋮</button>
                     </div>
                 </div>
@@ -566,7 +566,7 @@
 
                 <div class="chat-input">
                     <textarea id="messageInput" placeholder="Digite uma mensagem..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
-                    <button onclick="sendMessage()" title="Enviar">📤</button>
+                    <button onclick="sendMessage()" title="Enviar"><span class="icon icon-send icon-sm"></span></button>
                 </div>
             `;
 
@@ -691,7 +691,7 @@
                 showToast('success', 'Sucesso', 'Usuário cadastrado na sua audiência!');
                 loadConversations();
                 document.getElementById('inboxRightContent').innerHTML = `
-                    <span class="inbox-right-panel-robot" style="font-size: 48px;">✅</span>
+                    <span class="inbox-right-panel-robot icon icon-check icon-lg"></span>
                     <p><strong>Cliente cadastrado!</strong></p>
                     <p>O cartão do usuário está disponível em Contatos.</p>
                 `;

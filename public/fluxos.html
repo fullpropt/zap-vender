@@ -138,31 +138,31 @@
         <nav class="sidebar-nav">
             <div class="nav-section">
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="icon">🏠</span>Painel de Controle</a></li>
-                    <li class="nav-item"><a href="contatos.html" class="nav-link"><span class="icon">👥</span>Contatos</a></li>
-                    <li class="nav-item"><a href="campanhas.html" class="nav-link"><span class="icon">📢</span>Campanhas</a></li>
-                    <li class="nav-item"><a href="transmissao.html" class="nav-link"><span class="icon">📡</span>Transmissão</a></li>
+                    <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="icon icon-dashboard"></span>Painel de Controle</a></li>
+                    <li class="nav-item"><a href="contatos.html" class="nav-link"><span class="icon icon-contacts"></span>Contatos</a></li>
+                    <li class="nav-item"><a href="campanhas.html" class="nav-link"><span class="icon icon-campaigns"></span>Campanhas</a></li>
+                    <li class="nav-item"><a href="transmissao.html" class="nav-link"><span class="icon icon-broadcast"></span>Transmissão</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Conversas</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="inbox.html" class="nav-link"><span class="icon">💬</span>Inbox</a></li>
+                    <li class="nav-item"><a href="inbox.html" class="nav-link"><span class="icon icon-inbox"></span>Inbox</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Automação</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="automacao.html" class="nav-link"><span class="icon">🤖</span>Automação</a></li>
-                    <li class="nav-item"><a href="fluxos.html" class="nav-link active"><span class="icon">🔄</span>Fluxos de Conversa</a></li>
-                    <li class="nav-item"><a href="funil.html" class="nav-link"><span class="icon">📊</span>Funil de Vendas</a></li>
+                    <li class="nav-item"><a href="automacao.html" class="nav-link"><span class="icon icon-automation"></span>Automação</a></li>
+                    <li class="nav-item"><a href="fluxos.html" class="nav-link active"><span class="icon icon-flows"></span>Fluxos de Conversa</a></li>
+                    <li class="nav-item"><a href="funil.html" class="nav-link"><span class="icon icon-funnel"></span>Funil de Vendas</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Sistema</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon">📱</span>WhatsApp</a></li>
-                    <li class="nav-item"><a href="configuracoes.html" class="nav-link"><span class="icon">⚙️</span>Configurações</a></li>
+                    <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon icon-whatsapp"></span>WhatsApp</a></li>
+                    <li class="nav-item"><a href="configuracoes.html" class="nav-link"><span class="icon icon-settings"></span>Configurações</a></li>
                 </ul>
             </div>
         </nav>
@@ -171,47 +171,47 @@
                 <span class="status-indicator disconnected"></span>
                 <span class="whatsapp-status-text">Desconectado</span>
             </div>
-            <button class="btn-logout" onclick="logout()"><span>🚪</span>Sair</button>
+            <button class="btn-logout" onclick="logout()">Sair</button>
         </div>
     </aside>
 
     <main class="main-content">
         <div class="page-header">
             <div class="page-title">
-                <h1>🔄 Fluxos de Conversa</h1>
+                <h1><span class="icon icon-flows icon-sm"></span> Fluxos de Conversa</h1>
                 <p>Crie sequências de mensagens automáticas</p>
             </div>
             <div class="page-actions">
-                <button class="btn btn-outline" onclick="loadFlows()">🔄 Atualizar</button>
-                <button class="btn btn-primary" onclick="openModal('newFlowModal')">➕ Novo Fluxo</button>
+                <button class="btn btn-outline" onclick="loadFlows()"><span class="icon icon-refresh icon-sm"></span> Atualizar</button>
+                <button class="btn btn-primary" onclick="openModal('newFlowModal')"><span class="icon icon-add icon-sm"></span> Novo Fluxo</button>
             </div>
         </div>
 
         <!-- Stats -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="stat-icon primary">🔄</div>
+                <div class="stat-icon primary"><span class="icon icon-flows"></span></div>
                 <div class="stat-content">
                     <div class="stat-value" id="totalFlows">0</div>
                     <div class="stat-label">Total de Fluxos</div>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon success">✅</div>
+                <div class="stat-icon success"><span class="icon icon-check"></span></div>
                 <div class="stat-content">
                     <div class="stat-value" id="activeFlows">0</div>
                     <div class="stat-label">Ativos</div>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon info">👥</div>
+                <div class="stat-icon info"><span class="icon icon-contacts"></span></div>
                 <div class="stat-content">
                     <div class="stat-value" id="inFlows">0</div>
                     <div class="stat-label">Leads em Fluxos</div>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon warning">📤</div>
+                <div class="stat-icon warning"><span class="icon icon-export"></span></div>
                 <div class="stat-content">
                     <div class="stat-value" id="sentMessages">0</div>
                     <div class="stat-label">Mensagens Enviadas</div>
@@ -222,7 +222,7 @@
         <!-- Lista de Fluxos -->
         <div class="flows-grid" id="flowsList">
             <div class="empty-state" style="grid-column: 1 / -1;">
-                <div class="empty-state-icon">🔄</div>
+                <div class="empty-state-icon icon icon-empty icon-lg"></div>
                 <p>Carregando fluxos...</p>
             </div>
         </div>
@@ -232,7 +232,7 @@
     <div class="modal-overlay" id="newFlowModal">
         <div class="modal modal-lg">
             <div class="modal-header">
-                <h3 class="modal-title">➕ Novo Fluxo de Conversa</h3>
+                <h3 class="modal-title"><span class="icon icon-add icon-sm"></span> Novo Fluxo de Conversa</h3>
                 <button class="modal-close" onclick="closeModal('newFlowModal')">×</button>
             </div>
             <div class="modal-body">
@@ -259,7 +259,7 @@
 
                     <hr style="margin: 20px 0;">
                     
-                    <h4 style="margin-bottom: 15px;">📝 Etapas do Fluxo</h4>
+                    <h4 style="margin-bottom: 15px;"><span class="icon icon-list icon-sm"></span> Etapas do Fluxo</h4>
                     
                     <div id="flowSteps">
                         <div class="step-item" data-step="1">
@@ -291,19 +291,19 @@
                                 </div>
                             </div>
                             <div class="step-item-actions">
-                                <button type="button" class="btn btn-sm btn-outline-danger btn-icon" onclick="removeStep(1)" title="Remover">🗑️</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger btn-icon" onclick="removeStep(1)" title="Remover"><span class="icon icon-delete icon-sm"></span></button>
                             </div>
                         </div>
                     </div>
                     
                     <button type="button" class="btn btn-outline w-100 mt-3" onclick="addStep()">
-                        ➕ Adicionar Etapa
+                        <span class="icon icon-add icon-sm"></span> Adicionar Etapa
                     </button>
                 </form>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('newFlowModal')">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveFlow()">💾 Salvar Fluxo</button>
+                <button class="btn btn-primary" onclick="saveFlow()"><span class="icon icon-save icon-sm"></span> Salvar Fluxo</button>
             </div>
         </div>
     </div>
@@ -312,7 +312,7 @@
     <div class="modal-overlay" id="flowEditorModal">
         <div class="modal modal-xl">
             <div class="modal-header">
-                <h3 class="modal-title" id="editorTitle">✏️ Editor de Fluxo</h3>
+                <h3 class="modal-title" id="editorTitle"><span class="icon icon-edit icon-sm"></span> Editor de Fluxo</h3>
                 <button class="modal-close" onclick="closeModal('flowEditorModal')">×</button>
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
@@ -320,7 +320,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('flowEditorModal')">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveFlowChanges()">💾 Salvar Alterações</button>
+                <button class="btn btn-primary" onclick="saveFlowChanges()"><span class="icon icon-save icon-sm"></span> Salvar Alterações</button>
             </div>
         </div>
     </div>
@@ -406,9 +406,9 @@
             if (flows.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state" style="grid-column: 1 / -1;">
-                        <div class="empty-state-icon">🔄</div>
+                        <div class="empty-state-icon icon icon-empty icon-lg"></div>
                         <p>Nenhum fluxo criado</p>
-                        <button class="btn btn-primary mt-3" onclick="openModal('newFlowModal')">➕ Criar Fluxo</button>
+                        <button class="btn btn-primary mt-3" onclick="openModal('newFlowModal')"><span class="icon icon-add icon-sm"></span> Criar Fluxo</button>
                     </div>
                 `;
                 return;
@@ -422,7 +422,7 @@
                             <p class="flow-description">${f.description || 'Sem descrição'}</p>
                         </div>
                         <span class="badge badge-${f.is_active ? 'success' : 'secondary'}">
-                            ${f.is_active ? '🟢 Ativo' : '⚪ Inativo'}
+                            ${f.is_active ? 'Ativo' : 'Inativo'}
                         </span>
                     </div>
                     <div class="flow-body">
@@ -446,11 +446,11 @@
                             <span><strong>${f.messages_sent || 0}</strong> mensagens</span>
                         </div>
                         <div style="display: flex; gap: 10px;">
-                            <button class="btn btn-sm btn-outline" onclick="editFlow(${f.id})">✏️ Editar</button>
+                            <button class="btn btn-sm btn-outline" onclick="editFlow(${f.id})"><span class="icon icon-edit icon-sm"></span> Editar</button>
                             <button class="btn btn-sm ${f.is_active ? 'btn-warning' : 'btn-success'}" onclick="toggleFlow(${f.id})">
-                                ${f.is_active ? '⏸️' : '▶️'}
+                                ${f.is_active ? '<span class="icon icon-pause icon-sm"></span>' : '<span class="icon icon-play icon-sm"></span>'}
                             </button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="deleteFlow(${f.id})">🗑️</button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteFlow(${f.id})"><span class="icon icon-delete icon-sm"></span></button>
                         </div>
                     </div>
                 </div>
@@ -499,7 +499,7 @@
                         </div>
                     </div>
                     <div class="step-item-actions">
-                        <button type="button" class="btn btn-sm btn-outline-danger btn-icon" onclick="removeStep(${stepCount})" title="Remover">🗑️</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger btn-icon" onclick="removeStep(${stepCount})" title="Remover"><span class="icon icon-delete icon-sm"></span></button>
                     </div>
                 </div>
             `;
@@ -609,7 +609,7 @@
                         </div>
                     </div>
                     <div class="step-item-actions">
-                        <button type="button" class="btn btn-sm btn-outline-danger btn-icon" onclick="removeStep(1)" title="Remover">🗑️</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger btn-icon" onclick="removeStep(1)" title="Remover"><span class="icon icon-delete icon-sm"></span></button>
                     </div>
                 </div>
             `;
@@ -621,7 +621,7 @@
             if (!flow) return;
 
             currentFlowId = id;
-            document.getElementById('editorTitle').textContent = `✏️ ${flow.name}`;
+            document.getElementById('editorTitle').innerHTML = `<span class="icon icon-edit icon-sm"></span> ${flow.name}`;
             
             let stepsHtml = flow.steps.map((s, i) => `
                 <div class="step-item" data-step="${i + 1}">
@@ -665,7 +665,7 @@
                     <textarea class="form-textarea" id="editFlowDescription" rows="2">${flow.description || ''}</textarea>
                 </div>
                 <hr style="margin: 20px 0;">
-                <h4 style="margin-bottom: 15px;">📝 Etapas</h4>
+                <h4 style="margin-bottom: 15px;"><span class="icon icon-list icon-sm"></span> Etapas</h4>
                 <div id="editFlowSteps">${stepsHtml}</div>
             `;
 

@@ -46,7 +46,7 @@ const INITIAL_LEADS = [
         nome: 'Vanderlei Dazilio',
         telefone: '27988117501',
         placa: 'MTD7021',
-        veiculo: '🚗 Vectra Elegan. 2.0 MPFI 8V FlexPower Mec (2011)',
+        veiculo: 'Vectra Elegan. 2.0 MPFI 8V FlexPower Mec (2011)',
         status: 3
     },
     {
@@ -55,7 +55,7 @@ const INITIAL_LEADS = [
         nome: 'Dkdkdkdk',
         telefone: '99999999999',
         placa: '-',
-        veiculo: '🚗 CITY Sedan EXL 1.5 Flex 16V 4p Aut. (2015)',
+        veiculo: 'CITY Sedan EXL 1.5 Flex 16V 4p Aut. (2015)',
         status: 1
     },
     {
@@ -64,7 +64,7 @@ const INITIAL_LEADS = [
         nome: 'Izabel Carlinda Alves',
         telefone: '28999560503',
         placa: 'QRE9C41',
-        veiculo: '🚗 SANDERO STEPWAY Dynamiq. Flex 1.6 16V 5p (2019)',
+        veiculo: 'SANDERO STEPWAY Dynamiq. Flex 1.6 16V 5p (2019)',
         status: 2
     },
     {
@@ -73,7 +73,7 @@ const INITIAL_LEADS = [
         nome: 'Oziel',
         telefone: '27996403141',
         placa: 'MTE9813',
-        veiculo: '🏍️ NXR 150 BROS ESD MIX/FLEX (2010)',
+        veiculo: 'NXR 150 BROS ESD MIX/FLEX (2010)',
         status: 2
     },
     {
@@ -82,7 +82,7 @@ const INITIAL_LEADS = [
         nome: 'Pedro Henrique',
         telefone: '27988242959',
         placa: '-',
-        veiculo: '🏍️ YS 250 FAZER/ FAZER L. EDITION /BLUEFLEX (2017)',
+        veiculo: 'YS 250 FAZER/ FAZER L. EDITION /BLUEFLEX (2017)',
         status: 2
     },
     {
@@ -91,7 +91,7 @@ const INITIAL_LEADS = [
         nome: 'Thiago',
         telefone: '27997622522',
         placa: 'ODC3979',
-        veiculo: '🚗 Grand Vitara 2.0 16V 4x2/4x4 5p Aut. (2012)',
+        veiculo: 'Grand Vitara 2.0 16V 4x2/4x4 5p Aut. (2012)',
         status: 2
     }
 ];
@@ -100,17 +100,17 @@ const INITIAL_TEMPLATES = [
     {
         id: 1,
         nome: 'Boas-vindas',
-        mensagem: 'Oi {{nome}}, tudo bem? 👋 Aqui é da *SELF Proteção Veicular*! Vi que você tem interesse em proteger seu veículo. Posso te ajudar?'
+        mensagem: 'Oi {{nome}}, tudo bem? Aqui é da *SELF Proteção Veicular*! Vi que você tem interesse em proteger seu veículo. Posso te ajudar?'
     },
     {
         id: 2,
         nome: 'Follow-up',
-        mensagem: 'Oi {{nome}}, feliz ano novo! 🎉🎊🎉 Aqui é o *Thyago* da *SELF Proteção Veicular* 🚗 Te chamei porque vi que você demonstrou interesse em proteger seu veículo. Ainda está interessado?'
+        mensagem: 'Oi {{nome}}, feliz ano novo! Aqui é o *Thyago* da *SELF Proteção Veicular* Te chamei porque vi que você demonstrou interesse em proteger seu veículo. Ainda está interessado?'
     },
     {
         id: 3,
         nome: 'Promoção',
-        mensagem: 'Oi {{nome}}! 🔥 *PROMOÇÃO ESPECIAL* só essa semana! Proteção veicular com *50% de desconto* na adesão. Quer saber mais?'
+        mensagem: 'Oi {{nome}}! *PROMOÇÃO ESPECIAL* só essa semana! Proteção veicular com *50% de desconto* na adesão. Quer saber mais?'
     }
 ];
 
@@ -171,5 +171,5 @@ window.INITIAL_TEMPLATES = INITIAL_TEMPLATES;
 window.Utils = Utils;
 
 // Log de inicialização
-console.log(`🚀 SELF Proteção Veicular v${CONFIG.VERSION}`);
-console.log(`📡 Socket URL: ${CONFIG.SOCKET_URL}`);
+console.log(`SELF Proteção Veicular v${CONFIG.VERSION}`);
+console.log(`Socket URL: ${CONFIG.SOCKET_URL}`);

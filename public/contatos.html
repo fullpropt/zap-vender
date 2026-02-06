@@ -26,31 +26,31 @@
         <nav class="sidebar-nav">
             <div class="nav-section">
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="icon">🏠</span>Painel de Controle</a></li>
-                    <li class="nav-item"><a href="contatos.html" class="nav-link active"><span class="icon">👥</span>Contatos</a></li>
-                    <li class="nav-item"><a href="campanhas.html" class="nav-link"><span class="icon">📢</span>Campanhas</a></li>
-                    <li class="nav-item"><a href="transmissao.html" class="nav-link"><span class="icon">📡</span>Transmissão</a></li>
+                    <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="icon icon-dashboard"></span>Painel de Controle</a></li>
+                    <li class="nav-item"><a href="contatos.html" class="nav-link active"><span class="icon icon-contacts"></span>Contatos</a></li>
+                    <li class="nav-item"><a href="campanhas.html" class="nav-link"><span class="icon icon-campaigns"></span>Campanhas</a></li>
+                    <li class="nav-item"><a href="transmissao.html" class="nav-link"><span class="icon icon-broadcast"></span>Transmissão</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Conversas</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="inbox.html" class="nav-link"><span class="icon">💬</span>Inbox<span class="badge" style="display:none;">0</span></a></li>
+                    <li class="nav-item"><a href="inbox.html" class="nav-link"><span class="icon icon-inbox"></span>Inbox<span class="badge" style="display:none;">0</span></a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Automação</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="automacao.html" class="nav-link"><span class="icon">🤖</span>Automação</a></li>
-                    <li class="nav-item"><a href="fluxos.html" class="nav-link"><span class="icon">🔄</span>Fluxos de Conversa</a></li>
-                    <li class="nav-item"><a href="funil.html" class="nav-link"><span class="icon">📊</span>Funil de Vendas</a></li>
+                    <li class="nav-item"><a href="automacao.html" class="nav-link"><span class="icon icon-automation"></span>Automação</a></li>
+                    <li class="nav-item"><a href="fluxos.html" class="nav-link"><span class="icon icon-flows"></span>Fluxos de Conversa</a></li>
+                    <li class="nav-item"><a href="funil.html" class="nav-link"><span class="icon icon-funnel"></span>Funil de Vendas</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Sistema</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon">📱</span>WhatsApp</a></li>
-                    <li class="nav-item"><a href="configuracoes.html" class="nav-link"><span class="icon">⚙️</span>Configurações</a></li>
+                    <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon icon-whatsapp"></span>WhatsApp</a></li>
+                    <li class="nav-item"><a href="configuracoes.html" class="nav-link"><span class="icon icon-settings"></span>Configurações</a></li>
                 </ul>
             </div>
         </nav>
@@ -60,7 +60,7 @@
                 <span class="status-indicator disconnected"></span>
                 <span class="whatsapp-status-text">Desconectado</span>
             </div>
-            <button class="btn-logout" onclick="logout()"><span>🚪</span>Sair</button>
+            <button class="btn-logout" onclick="logout()">Sair</button>
         </div>
     </aside>
 
@@ -69,42 +69,42 @@
         <!-- Header -->
         <div class="page-header">
             <div class="page-title">
-                <h1>👥 Contatos</h1>
+                <h1><span class="icon icon-contacts icon-sm"></span> Contatos</h1>
                 <p>Gerencie todos os seus leads e contatos</p>
             </div>
             <div class="page-actions">
-                <button class="btn btn-outline" onclick="loadContacts()">🔄 Atualizar</button>
-                <button class="btn btn-outline" onclick="openModal('importModal')">📥 Importar</button>
-                <button class="btn btn-success" onclick="exportContacts()">📤 Exportar</button>
-                <button class="btn btn-primary" onclick="openModal('addContactModal')">➕ Novo Contato</button>
+                <button class="btn btn-outline" onclick="loadContacts()"><span class="icon icon-refresh icon-sm"></span> Atualizar</button>
+                <button class="btn btn-outline" onclick="openModal('importModal')"><span class="icon icon-import icon-sm"></span> Importar</button>
+                <button class="btn btn-success" onclick="exportContacts()"><span class="icon icon-export icon-sm"></span> Exportar</button>
+                <button class="btn btn-primary" onclick="openModal('addContactModal')"><span class="icon icon-add icon-sm"></span> Novo Contato</button>
             </div>
         </div>
 
         <!-- Stats -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="stat-icon primary">👥</div>
+                <div class="stat-icon primary"><span class="icon icon-contacts"></span></div>
                 <div class="stat-content">
                     <div class="stat-value" id="totalContacts">0</div>
                     <div class="stat-label">Total de Contatos</div>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon success">✅</div>
+                <div class="stat-icon success"><span class="icon icon-check"></span></div>
                 <div class="stat-content">
                     <div class="stat-value" id="activeContacts">0</div>
                     <div class="stat-label">Ativos</div>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon warning">🆕</div>
+                <div class="stat-icon warning"><span class="icon icon-spark"></span></div>
                 <div class="stat-content">
                     <div class="stat-value" id="newContacts">0</div>
                     <div class="stat-label">Novos (7 dias)</div>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon info">📱</div>
+                <div class="stat-icon info"><span class="icon icon-whatsapp"></span></div>
                 <div class="stat-content">
                     <div class="stat-value" id="withWhatsapp">0</div>
                     <div class="stat-label">Com WhatsApp</div>
@@ -116,21 +116,21 @@
         <div class="card mb-4" id="bulkActions" style="display: none;">
             <div class="card-body" style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                 <span><strong id="selectedCount">0</strong> contatos selecionados</span>
-                <button class="btn btn-sm btn-whatsapp" onclick="bulkSendMessage()">📱 Enviar Mensagem</button>
-                <button class="btn btn-sm btn-outline" onclick="bulkChangeStatus()">🔄 Alterar Status</button>
-                <button class="btn btn-sm btn-outline" onclick="bulkAddTag()">🏷️ Adicionar Tag</button>
-                <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()">🗑️ Excluir</button>
-                <button class="btn btn-sm btn-outline" onclick="clearSelection()">✖️ Limpar Seleção</button>
+                <button class="btn btn-sm btn-whatsapp" onclick="bulkSendMessage()"><span class="icon icon-whatsapp icon-sm"></span> Enviar Mensagem</button>
+                <button class="btn btn-sm btn-outline" onclick="bulkChangeStatus()"><span class="icon icon-refresh icon-sm"></span> Alterar Status</button>
+                <button class="btn btn-sm btn-outline" onclick="bulkAddTag()"><span class="icon icon-tag icon-sm"></span> Adicionar Tag</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()"><span class="icon icon-delete icon-sm"></span> Excluir</button>
+                <button class="btn btn-sm btn-outline" onclick="clearSelection()"><span class="icon icon-close icon-sm"></span> Limpar Seleção</button>
             </div>
         </div>
 
         <!-- Tabela de Contatos -->
         <div class="table-container">
             <div class="table-header">
-                <div class="table-title">📋 Lista de Contatos</div>
+                <div class="table-title"><span class="icon icon-contacts icon-sm"></span> Lista de Contatos</div>
                 <div class="table-filters">
                     <div class="search-box">
-                        <span class="search-icon">🔍</span>
+                        <span class="search-icon icon icon-search icon-sm"></span>
                         <input type="text" id="searchContacts" placeholder="Buscar..." onkeyup="filterContacts()">
                     </div>
                     <select class="form-select" id="filterStatus" onchange="filterContacts()" style="width: auto;">
@@ -161,7 +161,7 @@
                         </tr>
                     </thead>
                     <tbody id="contactsTableBody">
-                        <tr><td colspan="9" class="table-empty"><div class="table-empty-icon">📋</div><p>Carregando contatos...</p></td></tr>
+                        <tr><td colspan="9" class="table-empty"><div class="table-empty-icon icon icon-empty icon-lg"></div><p>Carregando contatos...</p></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -179,7 +179,7 @@
     <div class="modal-overlay" id="addContactModal">
         <div class="modal">
             <div class="modal-header">
-                <h3 class="modal-title">➕ Novo Contato</h3>
+                <h3 class="modal-title"><span class="icon icon-add icon-sm"></span> Novo Contato</h3>
                 <button class="modal-close" onclick="closeModal('addContactModal')">×</button>
             </div>
             <div class="modal-body">
@@ -245,14 +245,14 @@
     <div class="modal-overlay" id="editContactModal">
         <div class="modal modal-lg">
             <div class="modal-header">
-                <h3 class="modal-title">✏️ Editar Contato</h3>
+                <h3 class="modal-title"><span class="icon icon-edit icon-sm"></span> Editar Contato</h3>
                 <button class="modal-close" onclick="closeModal('editContactModal')">×</button>
             </div>
             <div class="modal-body">
                 <div class="tabs">
-                    <button class="tab active" onclick="switchTab('info')">📋 Informações</button>
-                    <button class="tab" onclick="switchTab('history')">📜 Histórico</button>
-                    <button class="tab" onclick="switchTab('messages')">💬 Mensagens</button>
+                    <button class="tab active" onclick="switchTab('info')"><span class="icon icon-info icon-sm"></span> Informações</button>
+                    <button class="tab" onclick="switchTab('history')"><span class="icon icon-clock icon-sm"></span> Histórico</button>
+                    <button class="tab" onclick="switchTab('messages')"><span class="icon icon-message icon-sm"></span> Mensagens</button>
                 </div>
                 
                 <div class="tab-content active" id="tab-info">
@@ -302,21 +302,21 @@
                 
                 <div class="tab-content" id="tab-history">
                     <div id="contactHistory" class="empty-state">
-                        <div class="empty-state-icon">📜</div>
+                        <div class="empty-state-icon icon icon-clock icon-lg"></div>
                         <p>Nenhum histórico disponível</p>
                     </div>
                 </div>
                 
                 <div class="tab-content" id="tab-messages">
                     <div id="contactMessages" class="empty-state">
-                        <div class="empty-state-icon">💬</div>
+                        <div class="empty-state-icon icon icon-message icon-lg"></div>
                         <p>Nenhuma mensagem trocada</p>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('editContactModal')">Cancelar</button>
-                <button class="btn btn-whatsapp" onclick="openWhatsApp()">📱 WhatsApp</button>
+                <button class="btn btn-whatsapp" onclick="openWhatsApp()"><span class="icon icon-whatsapp icon-sm"></span> WhatsApp</button>
                 <button class="btn btn-primary" onclick="updateContact()">Salvar Alterações</button>
             </div>
         </div>
@@ -326,7 +326,7 @@
     <div class="modal-overlay" id="importModal">
         <div class="modal modal-lg">
             <div class="modal-header">
-                <h3 class="modal-title">📥 Importar Contatos</h3>
+                <h3 class="modal-title"><span class="icon icon-import icon-sm"></span> Importar Contatos</h3>
                 <button class="modal-close" onclick="closeModal('importModal')">×</button>
             </div>
             <div class="modal-body">
@@ -359,7 +359,7 @@ João Silva,27999999999,Honda Civic,ABC1234"></textarea>
     <div class="modal-overlay" id="bulkMessageModal">
         <div class="modal modal-lg">
             <div class="modal-header">
-                <h3 class="modal-title">📱 Enviar Mensagem em Lote</h3>
+                <h3 class="modal-title"><span class="icon icon-whatsapp icon-sm"></span> Enviar Mensagem em Lote</h3>
                 <button class="modal-close" onclick="closeModal('bulkMessageModal')">×</button>
             </div>
             <div class="modal-body">
@@ -401,7 +401,7 @@ Use {{nome}} para personalizar"></textarea>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('bulkMessageModal')">Cancelar</button>
-                <button class="btn btn-whatsapp" onclick="sendBulkMessage()">📱 Enviar para Todos</button>
+                <button class="btn btn-whatsapp" onclick="sendBulkMessage()"><span class="icon icon-whatsapp icon-sm"></span> Enviar para Todos</button>
             </div>
         </div>
     </div>
@@ -487,7 +487,7 @@ Use {{nome}} para personalizar"></textarea>
             const pageContacts = filteredContacts.slice(start, end);
 
             if (pageContacts.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" class="table-empty"><div class="table-empty-icon">👥</div><p>Nenhum contato encontrado</p></td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" class="table-empty"><div class="table-empty-icon icon icon-empty icon-lg"></div><p>Nenhum contato encontrado</p></td></tr>`;
             } else {
                 tbody.innerHTML = pageContacts.map(c => `
                     <tr data-id="${c.id}">
@@ -509,9 +509,9 @@ Use {{nome}} para personalizar"></textarea>
                         <td>${c.last_message_at ? timeAgo(c.last_message_at) : '-'}</td>
                         <td>
                             <div style="display: flex; gap: 5px;">
-                                <button class="btn btn-sm btn-whatsapp btn-icon" onclick="quickMessage(${c.id})" title="Mensagem">💬</button>
-                                <button class="btn btn-sm btn-outline btn-icon" onclick="editContact(${c.id})" title="Editar">✏️</button>
-                                <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteContact(${c.id})" title="Excluir">🗑️</button>
+                                <button class="btn btn-sm btn-whatsapp btn-icon" onclick="quickMessage(${c.id})" title="Mensagem"><span class="icon icon-message icon-sm"></span></button>
+                                <button class="btn btn-sm btn-outline btn-icon" onclick="editContact(${c.id})" title="Editar"><span class="icon icon-edit icon-sm"></span></button>
+                                <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteContact(${c.id})" title="Excluir"><span class="icon icon-delete icon-sm"></span></button>
                             </div>
                         </td>
                     </tr>

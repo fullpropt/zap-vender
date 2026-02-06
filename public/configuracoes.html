@@ -106,32 +106,32 @@
         <nav class="sidebar-nav">
             <div class="nav-section">
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="icon">🏠</span>Painel de Controle</a></li>
-                    <li class="nav-item"><a href="contatos.html" class="nav-link"><span class="icon">👥</span>Contatos</a></li>
-                    <li class="nav-item"><a href="campanhas.html" class="nav-link"><span class="icon">📢</span>Campanhas</a></li>
-                    <li class="nav-item"><a href="transmissao.html" class="nav-link"><span class="icon">📡</span>Transmissão</a></li>
+                    <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="icon icon-dashboard"></span>Painel de Controle</a></li>
+                    <li class="nav-item"><a href="contatos.html" class="nav-link"><span class="icon icon-contacts"></span>Contatos</a></li>
+                    <li class="nav-item"><a href="campanhas.html" class="nav-link"><span class="icon icon-campaigns"></span>Campanhas</a></li>
+                    <li class="nav-item"><a href="transmissao.html" class="nav-link"><span class="icon icon-broadcast"></span>Transmissão</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Conversas</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="inbox.html" class="nav-link"><span class="icon">💬</span>Inbox</a></li>
+                    <li class="nav-item"><a href="inbox.html" class="nav-link"><span class="icon icon-inbox"></span>Inbox</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Automação</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="automacao.html" class="nav-link"><span class="icon">🤖</span>Automação</a></li>
-                    <li class="nav-item"><a href="fluxos.html" class="nav-link"><span class="icon">🔄</span>Fluxos de Conversa</a></li>
-                    <li class="nav-item"><a href="funil.html" class="nav-link"><span class="icon">📊</span>Funil de Vendas</a></li>
+                    <li class="nav-item"><a href="automacao.html" class="nav-link"><span class="icon icon-automation"></span>Automação</a></li>
+                    <li class="nav-item"><a href="fluxos.html" class="nav-link"><span class="icon icon-flows"></span>Fluxos de Conversa</a></li>
+                    <li class="nav-item"><a href="funil.html" class="nav-link"><span class="icon icon-funnel"></span>Funil de Vendas</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Sistema</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon">📱</span>WhatsApp</a></li>
-                    <li class="nav-item"><a href="configuracoes.html" class="nav-link active"><span class="icon">⚙️</span>Configurações</a></li>
-                    <li class="nav-item"><a href="configuracoes.html#copys" class="nav-link"><span class="icon">📋</span>Modelos</a></li>
+                    <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon icon-whatsapp"></span>WhatsApp</a></li>
+                    <li class="nav-item"><a href="configuracoes.html" class="nav-link active"><span class="icon icon-settings"></span>Configurações</a></li>
+                    <li class="nav-item"><a href="configuracoes.html#copys" class="nav-link"><span class="icon icon-templates"></span>Modelos</a></li>
                 </ul>
             </div>
         </nav>
@@ -140,33 +140,33 @@
                 <span class="status-indicator disconnected"></span>
                 <span class="whatsapp-status-text">Desconectado</span>
             </div>
-            <button class="btn-logout" onclick="logout()"><span>🚪</span>Sair</button>
+            <button class="btn-logout" onclick="logout()">Sair</button>
         </div>
     </aside>
 
     <main class="main-content">
         <div class="page-header">
             <div class="page-title">
-                <h1>⚙️ Configurações</h1>
+                <h1><span class="icon icon-settings icon-sm"></span> Configurações</h1>
                 <p>Gerencie as configurações do sistema</p>
             </div>
         </div>
 
         <div class="settings-container">
             <nav class="settings-nav">
-                <div class="settings-nav-item active" onclick="showPanel('conexao')"><span>📱</span> Conexão</div>
-                <div class="settings-nav-item" onclick="showPanel('general')"><span>🏢</span> Campos</div>
-                <div class="settings-nav-item" onclick="showPanel('labels')"><span>🏷️</span> Etiquetas</div>
-                <div class="settings-nav-item" onclick="showPanel('quick')"><span>⚡</span> Respostas rápidas</div>
-                <div class="settings-nav-item" onclick="showPanel('team')"><span>👥</span> Equipe</div>
-                <div class="settings-nav-item" onclick="showPanel('hours')"><span>🕐</span> Horários</div>
-                <div class="settings-nav-item" onclick="showPanel('flows')"><span>🔄</span> Fluxos Padrões</div>
-                <div class="settings-nav-item" onclick="showPanel('funnel')"><span>📊</span> Funil de Vendas</div>
-                <div class="settings-nav-item" onclick="showPanel('copys')"><span>📝</span> Copys e Mensagens</div>
-                <div class="settings-nav-item" onclick="showPanel('whatsapp')"><span>📱</span> WhatsApp</div>
-                <div class="settings-nav-item" onclick="showPanel('notifications')"><span>🔔</span> Notificações</div>
-                <div class="settings-nav-item" onclick="showPanel('users')"><span>👥</span> Usuários</div>
-                <div class="settings-nav-item" onclick="showPanel('api')"><span>🔌</span> API e Webhooks</div>
+                <div class="settings-nav-item active" onclick="showPanel('conexao')"><span class="icon icon-whatsapp icon-sm"></span> Conexão</div>
+                <div class="settings-nav-item" onclick="showPanel('general')"><span class="icon icon-building icon-sm"></span> Campos</div>
+                <div class="settings-nav-item" onclick="showPanel('labels')"><span class="icon icon-tag icon-sm"></span> Etiquetas</div>
+                <div class="settings-nav-item" onclick="showPanel('quick')"><span class="icon icon-bolt icon-sm"></span> Respostas rápidas</div>
+                <div class="settings-nav-item" onclick="showPanel('team')"><span class="icon icon-contacts icon-sm"></span> Equipe</div>
+                <div class="settings-nav-item" onclick="showPanel('hours')"><span class="icon icon-clock icon-sm"></span> Horários</div>
+                <div class="settings-nav-item" onclick="showPanel('flows')"><span class="icon icon-flows icon-sm"></span> Fluxos Padrões</div>
+                <div class="settings-nav-item" onclick="showPanel('funnel')"><span class="icon icon-funnel icon-sm"></span> Funil de Vendas</div>
+                <div class="settings-nav-item" onclick="showPanel('copys')"><span class="icon icon-templates icon-sm"></span> Copys e Mensagens</div>
+                <div class="settings-nav-item" onclick="showPanel('whatsapp')"><span class="icon icon-whatsapp icon-sm"></span> WhatsApp</div>
+                <div class="settings-nav-item" onclick="showPanel('notifications')"><span class="icon icon-bell icon-sm"></span> Notificações</div>
+                <div class="settings-nav-item" onclick="showPanel('users')"><span class="icon icon-user icon-sm"></span> Usuários</div>
+                <div class="settings-nav-item" onclick="showPanel('api')"><span class="icon icon-plug icon-sm"></span> API e Webhooks</div>
             </nav>
 
             <div class="settings-panels">
@@ -192,7 +192,7 @@
                 <!-- Geral -->
                 <div class="settings-panel" id="panel-general">
                     <div class="settings-section">
-                        <h3 class="settings-section-title">🏢 Informações da Empresa</h3>
+                        <h3 class="settings-section-title"><span class="icon icon-building icon-sm"></span> Informações da Empresa</h3>
                         <div class="form-group">
                             <label class="form-label">Nome da Empresa</label>
                             <input type="text" class="form-input" id="companyName" value="SELF Proteção Veicular">
@@ -212,7 +212,7 @@
                             <input type="email" class="form-input" id="companyEmail" placeholder="contato@empresa.com">
                         </div>
                     </div>
-                    <button class="btn btn-primary" onclick="saveGeneralSettings()">💾 Salvar Configurações</button>
+                    <button class="btn btn-primary" onclick="saveGeneralSettings()"><span class="icon icon-save icon-sm"></span> Salvar Configurações</button>
                 </div>
 
                 <div class="settings-panel" id="panel-labels"><h3 class="settings-section-title">Etiquetas</h3><p class="text-muted">Em breve.</p></div>
@@ -224,12 +224,12 @@
                 <!-- Funil de Vendas -->
                 <div class="settings-panel" id="panel-funnel">
                     <div class="settings-section">
-                        <h3 class="settings-section-title">📊 Etapas do Funil</h3>
+                        <h3 class="settings-section-title"><span class="icon icon-funnel icon-sm"></span> Etapas do Funil</h3>
                         <p class="text-muted mb-4">Configure as etapas do seu funil de vendas.</p>
                         
                         <div id="funnelStages">
                             <div class="copy-card" data-stage="1">
-                                <div class="copy-card-header"><span class="copy-card-title">🔵 Etapa 1</span></div>
+                                <div class="copy-card-header"><span class="copy-card-title">Etapa 1</span></div>
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label class="form-label">Nome</label>
@@ -247,7 +247,7 @@
                             </div>
 
                             <div class="copy-card" data-stage="2">
-                                <div class="copy-card-header"><span class="copy-card-title">🟠 Etapa 2</span></div>
+                                <div class="copy-card-header"><span class="copy-card-title">Etapa 2</span></div>
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label class="form-label">Nome</label>
@@ -265,7 +265,7 @@
                             </div>
 
                             <div class="copy-card" data-stage="3">
-                                <div class="copy-card-header"><span class="copy-card-title">🟢 Etapa 3</span></div>
+                                <div class="copy-card-header"><span class="copy-card-title">Etapa 3</span></div>
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label class="form-label">Nome</label>
@@ -283,7 +283,7 @@
                             </div>
 
                             <div class="copy-card" data-stage="4">
-                                <div class="copy-card-header"><span class="copy-card-title">⚫ Etapa 4</span></div>
+                                <div class="copy-card-header"><span class="copy-card-title">Etapa 4</span></div>
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label class="form-label">Nome</label>
@@ -301,13 +301,13 @@
                             </div>
                         </div>
                     </div>
-                    <button class="btn btn-primary" onclick="saveFunnelSettings()">💾 Salvar Funil</button>
+                    <button class="btn btn-primary" onclick="saveFunnelSettings()"><span class="icon icon-save icon-sm"></span> Salvar Funil</button>
                 </div>
 
                 <!-- Copys e Mensagens -->
                 <div class="settings-panel" id="panel-copys">
                     <div class="settings-section">
-                        <h3 class="settings-section-title">📝 Templates de Mensagens</h3>
+                        <h3 class="settings-section-title"><span class="icon icon-templates icon-sm"></span> Templates de Mensagens</h3>
                         <p class="text-muted mb-3">Configure os templates de mensagens automáticas. Use as variáveis:</p>
                         
                         <div class="mb-4">
@@ -320,12 +320,12 @@
 
                         <div class="copy-card">
                             <div class="copy-card-header">
-                                <span class="copy-card-title">👋 Boas-vindas</span>
-                                <button class="btn btn-sm btn-outline" onclick="testCopy('welcome')">🧪 Testar</button>
+                                <span class="copy-card-title">Boas-vindas</span>
+                                <button class="btn btn-sm btn-outline" onclick="testCopy('welcome')">Testar</button>
                             </div>
-                            <textarea class="form-textarea" id="copyWelcome" rows="4">Olá {{nome}}! 👋
+                            <textarea class="form-textarea" id="copyWelcome" rows="4">Olá {{nome}}!
 
-Seja bem-vindo à SELF Proteção Veicular! 🚗
+Seja bem-vindo à SELF Proteção Veicular!
 
 Somos especialistas em proteção veicular com os melhores preços do mercado.
 
@@ -334,25 +334,25 @@ Como posso ajudar você hoje?</textarea>
 
                         <div class="copy-card">
                             <div class="copy-card-header">
-                                <span class="copy-card-title">📋 Cotação</span>
-                                <button class="btn btn-sm btn-outline" onclick="testCopy('quote')">🧪 Testar</button>
+                                <span class="copy-card-title">Cotação</span>
+                                <button class="btn btn-sm btn-outline" onclick="testCopy('quote')">Testar</button>
                             </div>
-                            <textarea class="form-textarea" id="copyQuote" rows="4">Olá {{nome}}! 📋
+                            <textarea class="form-textarea" id="copyQuote" rows="4">Olá {{nome}}!
 
 Preparamos uma cotação especial para seu veículo:
 
-🚗 Veículo: {{veiculo}}
-📝 Placa: {{placa}}
+Veículo: {{veiculo}}
+Placa: {{placa}}
 
 Entre em contato para mais detalhes!</textarea>
                         </div>
 
                         <div class="copy-card">
                             <div class="copy-card-header">
-                                <span class="copy-card-title">🔄 Follow-up</span>
-                                <button class="btn btn-sm btn-outline" onclick="testCopy('followup')">🧪 Testar</button>
+                                <span class="copy-card-title">Follow-up</span>
+                                <button class="btn btn-sm btn-outline" onclick="testCopy('followup')">Testar</button>
                             </div>
-                            <textarea class="form-textarea" id="copyFollowup" rows="4">Olá {{nome}}! 😊
+                            <textarea class="form-textarea" id="copyFollowup" rows="4">Olá {{nome}}!
 
 Vi que você demonstrou interesse em proteção veicular.
 
@@ -361,25 +361,25 @@ Temos condições especiais essa semana! Posso te enviar mais informações?</te
 
                         <div class="copy-card">
                             <div class="copy-card-header">
-                                <span class="copy-card-title">✅ Fechamento</span>
-                                <button class="btn btn-sm btn-outline" onclick="testCopy('closing')">🧪 Testar</button>
+                                <span class="copy-card-title">Fechamento</span>
+                                <button class="btn btn-sm btn-outline" onclick="testCopy('closing')">Testar</button>
                             </div>
-                            <textarea class="form-textarea" id="copyClosing" rows="4">Parabéns {{nome}}! 🎉
+                            <textarea class="form-textarea" id="copyClosing" rows="4">Parabéns {{nome}}!
 
 Seu veículo {{veiculo}} agora está protegido pela SELF!
 
 Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
                         </div>
 
-                        <button class="btn btn-outline w-100 mt-3" onclick="openModal('addTemplateModal')">➕ Adicionar Template</button>
+                        <button class="btn btn-outline w-100 mt-3" onclick="openModal('addTemplateModal')"><span class="icon icon-add icon-sm"></span> Adicionar Template</button>
                     </div>
-                    <button class="btn btn-primary" onclick="saveCopysSettings()">💾 Salvar Templates</button>
+                    <button class="btn btn-primary" onclick="saveCopysSettings()"><span class="icon icon-save icon-sm"></span> Salvar Templates</button>
                 </div>
 
                 <!-- WhatsApp -->
                 <div class="settings-panel" id="panel-whatsapp">
                     <div class="settings-section">
-                        <h3 class="settings-section-title">📱 Conexão WhatsApp</h3>
+                        <h3 class="settings-section-title"><span class="icon icon-whatsapp icon-sm"></span> Conexão WhatsApp</h3>
                         <div class="alert alert-info mb-4">
                             <strong>Status:</strong> <span id="whatsappStatusText">Verificando...</span>
                         </div>
@@ -388,13 +388,13 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
                             <div id="qrCode" style="display: inline-block; padding: 20px; background: white; border-radius: 10px;"></div>
                         </div>
                         <div class="mt-4">
-                            <button class="btn btn-primary" onclick="connectWhatsApp()">🔗 Conectar WhatsApp</button>
-                            <button class="btn btn-outline-danger ml-2" onclick="disconnectWhatsApp()">🔌 Desconectar</button>
+                            <button class="btn btn-primary" onclick="connectWhatsApp()"><span class="icon icon-link icon-sm"></span> Conectar WhatsApp</button>
+                            <button class="btn btn-outline-danger ml-2" onclick="disconnectWhatsApp()"><span class="icon icon-plug icon-sm"></span> Desconectar</button>
                         </div>
                     </div>
 
                     <div class="settings-section">
-                        <h3 class="settings-section-title">⚙️ Configurações de Envio</h3>
+                        <h3 class="settings-section-title"><span class="icon icon-settings icon-sm"></span> Configurações de Envio</h3>
                         <div class="form-group">
                             <label class="form-label">Intervalo entre mensagens (segundos)</label>
                             <input type="number" class="form-input" id="messageInterval" value="30" min="10" max="300">
@@ -412,13 +412,13 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
                             </div>
                         </div>
                     </div>
-                    <button class="btn btn-primary" onclick="saveWhatsAppSettings()">💾 Salvar Configurações</button>
+                    <button class="btn btn-primary" onclick="saveWhatsAppSettings()"><span class="icon icon-save icon-sm"></span> Salvar Configurações</button>
                 </div>
 
                 <!-- Notificações -->
                 <div class="settings-panel" id="panel-notifications">
                     <div class="settings-section">
-                        <h3 class="settings-section-title">🔔 Preferências de Notificação</h3>
+                        <h3 class="settings-section-title"><span class="icon icon-bell icon-sm"></span> Preferências de Notificação</h3>
                         <div class="form-group">
                             <label class="checkbox-wrapper">
                                 <input type="checkbox" id="notifyNewLead" checked>
@@ -441,13 +441,13 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
                             </label>
                         </div>
                     </div>
-                    <button class="btn btn-primary" onclick="saveNotificationSettings()">💾 Salvar Notificações</button>
+                    <button class="btn btn-primary" onclick="saveNotificationSettings()"><span class="icon icon-save icon-sm"></span> Salvar Notificações</button>
                 </div>
 
                 <!-- Usuários -->
                 <div class="settings-panel" id="panel-users">
                     <div class="settings-section">
-                        <h3 class="settings-section-title">👥 Gerenciar Usuários</h3>
+                        <h3 class="settings-section-title"><span class="icon icon-user icon-sm"></span> Gerenciar Usuários</h3>
                         <div class="table-container">
                             <table class="data-table">
                                 <thead>
@@ -465,16 +465,16 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
                                         <td>admin@self.com</td>
                                         <td><span class="badge badge-primary">Administrador</span></td>
                                         <td><span class="badge badge-success">Ativo</span></td>
-                                        <td><button class="btn btn-sm btn-outline">✏️</button></td>
+                                        <td><button class="btn btn-sm btn-outline"><span class="icon icon-edit icon-sm"></span></button></td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
-                        <button class="btn btn-primary mt-4" onclick="openModal('addUserModal')">➕ Adicionar Usuário</button>
+                        <button class="btn btn-primary mt-4" onclick="openModal('addUserModal')"><span class="icon icon-add icon-sm"></span> Adicionar Usuário</button>
                     </div>
 
                     <div class="settings-section">
-                        <h3 class="settings-section-title">🔐 Alterar Senha</h3>
+                        <h3 class="settings-section-title"><span class="icon icon-lock icon-sm"></span> Alterar Senha</h3>
                         <div class="form-group">
                             <label class="form-label">Senha Atual</label>
                             <input type="password" class="form-input" id="currentPassword">
@@ -487,26 +487,26 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
                             <label class="form-label">Confirmar Nova Senha</label>
                             <input type="password" class="form-input" id="confirmPassword">
                         </div>
-                        <button class="btn btn-primary" onclick="changePassword()">🔐 Alterar Senha</button>
+                        <button class="btn btn-primary" onclick="changePassword()"><span class="icon icon-lock icon-sm"></span> Alterar Senha</button>
                     </div>
                 </div>
 
                 <!-- API e Webhooks -->
                 <div class="settings-panel" id="panel-api">
                     <div class="settings-section">
-                        <h3 class="settings-section-title">🔑 Chaves de API</h3>
+                        <h3 class="settings-section-title"><span class="icon icon-lock icon-sm"></span> Chaves de API</h3>
                         <div class="form-group">
                             <label class="form-label">API Key</label>
                             <div style="display: flex; gap: 10px;">
                                 <input type="text" class="form-input" id="apiKey" value="sk_live_xxxxxxxxxxxx" readonly style="font-family: monospace;">
-                                <button class="btn btn-outline" onclick="copyApiKey()">📋</button>
-                                <button class="btn btn-outline" onclick="regenerateApiKey()">🔄</button>
+                                <button class="btn btn-outline" onclick="copyApiKey()"><span class="icon icon-templates icon-sm"></span></button>
+                                <button class="btn btn-outline" onclick="regenerateApiKey()"><span class="icon icon-refresh icon-sm"></span></button>
                             </div>
                         </div>
                     </div>
 
                     <div class="settings-section">
-                        <h3 class="settings-section-title">🔗 Webhooks</h3>
+                        <h3 class="settings-section-title"><span class="icon icon-link icon-sm"></span> Webhooks</h3>
                         <p class="text-muted mb-4">Configure URLs para receber notificações de eventos.</p>
                         <div class="form-group">
                             <label class="form-label">URL do Webhook (Novo Lead)</label>
@@ -516,9 +516,9 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
                             <label class="form-label">URL do Webhook (Nova Mensagem)</label>
                             <input type="url" class="form-input" id="webhookNewMessage" placeholder="https://seu-site.com/webhook/new-message">
                         </div>
-                        <button class="btn btn-outline" onclick="testWebhook()">🧪 Testar Webhook</button>
+                        <button class="btn btn-outline" onclick="testWebhook()">Testar Webhook</button>
                     </div>
-                    <button class="btn btn-primary" onclick="saveApiSettings()">💾 Salvar Configurações</button>
+                    <button class="btn btn-primary" onclick="saveApiSettings()"><span class="icon icon-save icon-sm"></span> Salvar Configurações</button>
                 </div>
             </div>
         </div>
@@ -528,7 +528,7 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
     <div class="modal-overlay" id="addUserModal">
         <div class="modal">
             <div class="modal-header">
-                <h3 class="modal-title">➕ Adicionar Usuário</h3>
+                <h3 class="modal-title"><span class="icon icon-add icon-sm"></span> Adicionar Usuário</h3>
                 <button class="modal-close" onclick="closeModal('addUserModal')">×</button>
             </div>
             <div class="modal-body">
@@ -554,7 +554,7 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('addUserModal')">Cancelar</button>
-                <button class="btn btn-primary" onclick="addUser()">➕ Adicionar</button>
+                <button class="btn btn-primary" onclick="addUser()"><span class="icon icon-add icon-sm"></span> Adicionar</button>
             </div>
         </div>
     </div>
@@ -563,7 +563,7 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
     <div class="modal-overlay" id="addTemplateModal">
         <div class="modal">
             <div class="modal-header">
-                <h3 class="modal-title">➕ Novo Template</h3>
+                <h3 class="modal-title"><span class="icon icon-add icon-sm"></span> Novo Template</h3>
                 <button class="modal-close" onclick="closeModal('addTemplateModal')">×</button>
             </div>
             <div class="modal-body">
@@ -578,7 +578,7 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('addTemplateModal')">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveNewTemplate()">💾 Salvar</button>
+                <button class="btn btn-primary" onclick="saveNewTemplate()"><span class="icon icon-save icon-sm"></span> Salvar</button>
             </div>
         </div>
     </div>
@@ -693,7 +693,7 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
             const container = document.querySelector('#panel-copys .settings-section');
             const newCard = document.createElement('div');
             newCard.className = 'copy-card';
-            newCard.innerHTML = `<div class="copy-card-header"><span class="copy-card-title">📝 ${name}</span><button class="btn btn-sm btn-outline-danger" onclick="this.closest('.copy-card').remove()">🗑️</button></div><textarea class="form-textarea" rows="4">${message}</textarea>`;
+            newCard.innerHTML = `<div class="copy-card-header"><span class="copy-card-title">${name}</span><button class="btn btn-sm btn-outline-danger" onclick="this.closest('.copy-card').remove()"><span class="icon icon-delete icon-sm"></span></button></div><textarea class="form-textarea" rows="4">${message}</textarea>`;
             container.insertBefore(newCard, container.querySelector('button.w-100'));
             closeModal('addTemplateModal');
             document.getElementById('newTemplateName').value = '';
@@ -705,7 +705,7 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
             try {
                 const response = await api.get('/api/whatsapp/status');
                 const txt = document.getElementById('whatsappStatusText');
-                if (txt) txt.textContent = response.connected ? '✅ Conectado' : '❌ Desconectado';
+                if (txt) txt.textContent = response.connected ? 'Conectado' : 'Desconectado';
                 const success = document.getElementById('connectionSuccess');
                 const disc = document.getElementById('connectionDisconnected');
                 const phoneEl = document.getElementById('connectedPhone');
@@ -762,7 +762,7 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
             if (!name || !email || !password) { showToast('error', 'Erro', 'Preencha todos os campos'); return; }
             const tbody = document.getElementById('usersTableBody');
             const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${name}</td><td>${email}</td><td><span class="badge badge-${role === 'admin' ? 'primary' : 'secondary'}">${role === 'admin' ? 'Administrador' : 'Usuário'}</span></td><td><span class="badge badge-success">Ativo</span></td><td><button class="btn btn-sm btn-outline">✏️</button><button class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">🗑️</button></td>`;
+            tr.innerHTML = `<td>${name}</td><td>${email}</td><td><span class="badge badge-${role === 'admin' ? 'primary' : 'secondary'}">${role === 'admin' ? 'Administrador' : 'Usuário'}</span></td><td><span class="badge badge-success">Ativo</span></td><td><button class="btn btn-sm btn-outline"><span class="icon icon-edit icon-sm"></span></button><button class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()"><span class="icon icon-delete icon-sm"></span></button></td>`;
             tbody.appendChild(tr);
             closeModal('addUserModal');
             showToast('success', 'Sucesso', 'Usuário adicionado!');

@@ -146,31 +146,31 @@
         <nav class="sidebar-nav">
             <div class="nav-section">
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="icon">🏠</span>Painel de Controle</a></li>
-                    <li class="nav-item"><a href="contatos.html" class="nav-link"><span class="icon">👥</span>Contatos</a></li>
-                    <li class="nav-item"><a href="campanhas.html" class="nav-link"><span class="icon">📢</span>Campanhas</a></li>
-                    <li class="nav-item"><a href="transmissao.html" class="nav-link"><span class="icon">📡</span>Transmissão</a></li>
+                    <li class="nav-item"><a href="dashboard.html" class="nav-link"><span class="icon icon-dashboard"></span>Painel de Controle</a></li>
+                    <li class="nav-item"><a href="contatos.html" class="nav-link"><span class="icon icon-contacts"></span>Contatos</a></li>
+                    <li class="nav-item"><a href="campanhas.html" class="nav-link"><span class="icon icon-campaigns"></span>Campanhas</a></li>
+                    <li class="nav-item"><a href="transmissao.html" class="nav-link"><span class="icon icon-broadcast"></span>Transmissão</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Conversas</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="inbox.html" class="nav-link"><span class="icon">💬</span>Inbox</a></li>
+                    <li class="nav-item"><a href="inbox.html" class="nav-link"><span class="icon icon-inbox"></span>Inbox</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Automação</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="automacao.html" class="nav-link"><span class="icon">🤖</span>Automação</a></li>
-                    <li class="nav-item"><a href="fluxos.html" class="nav-link"><span class="icon">🔄</span>Fluxos de Conversa</a></li>
-                    <li class="nav-item"><a href="funil.html" class="nav-link active"><span class="icon">📊</span>Funil de Vendas</a></li>
+                    <li class="nav-item"><a href="automacao.html" class="nav-link"><span class="icon icon-automation"></span>Automação</a></li>
+                    <li class="nav-item"><a href="fluxos.html" class="nav-link"><span class="icon icon-flows"></span>Fluxos de Conversa</a></li>
+                    <li class="nav-item"><a href="funil.html" class="nav-link active"><span class="icon icon-funnel"></span>Funil de Vendas</a></li>
                 </ul>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">Sistema</div>
                 <ul class="nav-menu">
-                    <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon">📱</span>WhatsApp</a></li>
-                    <li class="nav-item"><a href="configuracoes.html" class="nav-link"><span class="icon">⚙️</span>Configurações</a></li>
+                    <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon icon-whatsapp"></span>WhatsApp</a></li>
+                    <li class="nav-item"><a href="configuracoes.html" class="nav-link"><span class="icon icon-settings"></span>Configurações</a></li>
                 </ul>
             </div>
         </nav>
@@ -179,22 +179,22 @@
                 <span class="status-indicator disconnected"></span>
                 <span class="whatsapp-status-text">Desconectado</span>
             </div>
-            <button class="btn-logout" onclick="logout()"><span>🚪</span>Sair</button>
+            <button class="btn-logout" onclick="logout()">Sair</button>
         </div>
     </aside>
 
     <main class="main-content">
         <div class="page-header">
             <div class="page-title">
-                <h1>📊 Funil de Vendas</h1>
+                <h1><span class="icon icon-funnel icon-sm"></span> Funil de Vendas</h1>
                 <p>Visualize e gerencie seu pipeline de vendas</p>
             </div>
             <div class="page-actions">
-                <button class="btn btn-outline" onclick="loadFunnel()">🔄 Atualizar</button>
+                <button class="btn btn-outline" onclick="loadFunnel()"><span class="icon icon-refresh icon-sm"></span> Atualizar</button>
                 <button class="btn btn-outline" onclick="toggleView()">
-                    <span id="viewIcon">📊</span> <span id="viewText">Kanban</span>
+                    <span id="viewIcon"><span class="icon icon-chart-bar icon-sm"></span></span> <span id="viewText">Kanban</span>
                 </button>
-                <button class="btn btn-primary" onclick="openModal('configModal')">⚙️ Configurar Etapas</button>
+                <button class="btn btn-primary" onclick="openModal('configModal')"><span class="icon icon-settings icon-sm"></span> Configurar Etapas</button>
             </div>
         </div>
 
@@ -234,28 +234,28 @@
         <div class="kanban-container" id="kanbanView">
             <div class="kanban-column" data-stage="1">
                 <div class="kanban-header stage-1">
-                    <span class="kanban-title">🆕 Novo</span>
+                    <span class="kanban-title"><span class="icon icon-spark icon-sm"></span> Novo</span>
                     <span class="kanban-count" id="kanban1Count">0</span>
                 </div>
                 <div class="kanban-body" id="kanban1Body"></div>
             </div>
             <div class="kanban-column" data-stage="2">
                 <div class="kanban-header stage-2">
-                    <span class="kanban-title">⏳ Em Andamento</span>
+                    <span class="kanban-title"><span class="icon icon-clock icon-sm"></span> Em Andamento</span>
                     <span class="kanban-count" id="kanban2Count">0</span>
                 </div>
                 <div class="kanban-body" id="kanban2Body"></div>
             </div>
             <div class="kanban-column" data-stage="3">
                 <div class="kanban-header stage-3">
-                    <span class="kanban-title">✅ Concluído</span>
+                    <span class="kanban-title"><span class="icon icon-check icon-sm"></span> Concluído</span>
                     <span class="kanban-count" id="kanban3Count">0</span>
                 </div>
                 <div class="kanban-body" id="kanban3Body"></div>
             </div>
             <div class="kanban-column" data-stage="4">
                 <div class="kanban-header stage-4">
-                    <span class="kanban-title">❌ Perdido</span>
+                    <span class="kanban-title"><span class="icon icon-close icon-sm"></span> Perdido</span>
                     <span class="kanban-count" id="kanban4Count">0</span>
                 </div>
                 <div class="kanban-body" id="kanban4Body"></div>
@@ -267,7 +267,7 @@
     <div class="modal-overlay" id="configModal">
         <div class="modal modal-lg">
             <div class="modal-header">
-                <h3 class="modal-title">⚙️ Configurar Etapas do Funil</h3>
+                <h3 class="modal-title"><span class="icon icon-settings icon-sm"></span> Configurar Etapas do Funil</h3>
                 <button class="modal-close" onclick="closeModal('configModal')">×</button>
             </div>
             <div class="modal-body">
@@ -306,7 +306,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('configModal')">Cancelar</button>
-                <button class="btn btn-primary" onclick="saveStagesConfig()">💾 Salvar Configurações</button>
+                <button class="btn btn-primary" onclick="saveStagesConfig()"><span class="icon icon-save icon-sm"></span> Salvar Configurações</button>
             </div>
         </div>
     </div>
@@ -315,13 +315,13 @@
     <div class="modal-overlay" id="leadModal">
         <div class="modal">
             <div class="modal-header">
-                <h3 class="modal-title" id="leadModalTitle">👤 Detalhes do Lead</h3>
+                <h3 class="modal-title" id="leadModalTitle"><span class="icon icon-user icon-sm"></span> Detalhes do Lead</h3>
                 <button class="modal-close" onclick="closeModal('leadModal')">×</button>
             </div>
             <div class="modal-body" id="leadModalBody"></div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('leadModal')">Fechar</button>
-                <button class="btn btn-whatsapp" onclick="openLeadWhatsApp()">📱 WhatsApp</button>
+                <button class="btn btn-whatsapp" onclick="openLeadWhatsApp()"><span class="icon icon-whatsapp icon-sm"></span> WhatsApp</button>
             </div>
         </div>
     </div>
@@ -392,10 +392,10 @@
                                     <div class="kanban-card-phone">${formatPhone(l.phone)}</div>
                                 </div>
                             </div>
-                            ${l.vehicle ? `<div class="kanban-card-vehicle">🚗 ${l.vehicle}</div>` : ''}
+                            ${l.vehicle ? `<div class="kanban-card-vehicle"><span class="icon icon-car icon-sm"></span> ${l.vehicle}</div>` : ''}
                             <div class="kanban-card-footer">
                                 <span class="kanban-card-date">${timeAgo(l.created_at)}</span>
-                                <button class="btn btn-sm btn-whatsapp btn-icon" onclick="event.stopPropagation(); quickWhatsApp('${l.phone}')">💬</button>
+                                <button class="btn btn-sm btn-whatsapp btn-icon" onclick="event.stopPropagation(); quickWhatsApp('${l.phone}')"><span class="icon icon-message icon-sm"></span></button>
                             </div>
                         </div>
                     `).join('');
@@ -462,7 +462,7 @@
             currentLead = leads.find(l => l.id === id);
             if (!currentLead) return;
 
-            document.getElementById('leadModalTitle').textContent = `👤 ${currentLead.name || 'Lead'}`;
+            document.getElementById('leadModalTitle').innerHTML = `<span class="icon icon-user icon-sm"></span> ${currentLead.name || 'Lead'}`;
             document.getElementById('leadModalBody').innerHTML = `
                 <div class="form-group">
                     <label class="form-label">Nome</label>
@@ -523,13 +523,13 @@
             if (currentView === 'kanban') {
                 funnel.style.display = 'flex';
                 kanban.style.display = 'none';
-                icon.textContent = '📋';
+                icon.innerHTML = '<span class="icon icon-list icon-sm"></span>';
                 text.textContent = 'Funil';
                 currentView = 'funnel';
             } else {
                 funnel.style.display = 'flex';
                 kanban.style.display = 'grid';
-                icon.textContent = '📊';
+                icon.innerHTML = '<span class="icon icon-chart-bar icon-sm"></span>';
                 text.textContent = 'Kanban';
                 currentView = 'kanban';
             }

@@ -627,41 +627,38 @@
         <ul class="sidebar-menu">
             <li>
                 <a href="dashboard.html">
-                    <span class="icon">📊</span>
+                    <span class="icon icon-dashboard"></span>
                     Dashboard
                 </a>
             </li>
             <li>
                 <a href="funil.html">
-                    <span class="icon">📈</span>
+                    <span class="icon icon-funnel"></span>
                     Funil de Vendas
                 </a>
             </li>
             <li>
                 <a href="whatsapp.html">
-                    <span class="icon">💬</span>
+                    <span class="icon icon-whatsapp"></span>
                     WhatsApp
                 </a>
             </li>
             <li>
                 <a href="conversas.html" class="active">
-                    <span class="icon">💭</span>
+                    <span class="icon icon-message"></span>
                     Conversas
                 </a>
             </li>
             <li>
                 <a href="configuracoes.html">
-                    <span class="icon">⚙️</span>
+                    <span class="icon icon-settings"></span>
                     Configurações
                 </a>
             </li>
         </ul>
         
         <div class="sidebar-footer">
-            <button class="btn-logout" onclick="logout()">
-                <span>🚪</span>
-                Sair
-            </button>
+            <button class="btn-logout" onclick="logout()">Sair</button>
         </div>
     </aside>
     
@@ -673,14 +670,14 @@
     <main class="main-content">
         <div class="header">
             <div class="header-title">
-                <h1>💭 Conversas</h1>
+                <h1><span class="icon icon-message icon-sm"></span> Conversas</h1>
                 <p>Gerencie suas conversas com leads</p>
             </div>
         </div>
         
         <!-- Aviso de conexão -->
         <div class="connection-warning" id="connection-warning" style="display: none; margin-bottom: 20px; border-radius: 12px;">
-            <span>⚠️</span>
+            <span class="icon icon-warning icon-sm"></span>
             <span>WhatsApp não está conectado.</span>
             <a href="whatsapp.html">Conectar agora →</a>
         </div>
@@ -690,7 +687,7 @@
             <div class="inbox-sidebar" id="inbox-sidebar">
                 <div class="inbox-header">
                     <h2>
-                        <span>💬</span>
+                        <span class="icon icon-inbox icon-sm"></span>
                         Inbox
                     </h2>
                     <div class="inbox-filters">
@@ -710,7 +707,7 @@
                 <div class="chat-header" id="chat-header" style="display: none;">
                     <div class="chat-header-left">
                         <button class="back-btn" onclick="showConversationsList()">←</button>
-                        <div class="chat-header-avatar" id="chat-avatar">👤</div>
+                        <div class="chat-header-avatar" id="chat-avatar"><span class="icon icon-user icon-sm"></span></div>
                         <div class="chat-header-info">
                             <h3 id="chat-name">Selecione uma conversa</h3>
                             <p id="chat-phone">-</p>
@@ -718,11 +715,11 @@
                     </div>
                     <div class="chat-header-actions">
                         <button class="chat-header-btn" onclick="viewLeadDetails()">
-                            <span>👤</span>
+                            <span class="icon icon-user icon-sm"></span>
                             Ver Lead
                         </button>
                         <button class="chat-header-btn" onclick="openWhatsAppWeb()">
-                            <span>🔗</span>
+                            <span class="icon icon-link icon-sm"></span>
                             Abrir no WhatsApp
                         </button>
                     </div>
@@ -730,24 +727,24 @@
                 
                 <div class="chat-messages" id="chat-messages">
                     <div class="chat-empty" id="chat-empty">
-                        <span class="icon">💬</span>
+                        <span class="icon icon-empty icon-lg"></span>
                         <h3>Nenhum chat selecionado</h3>
                         <p>Selecione uma conversa da lista ao lado para começar a conversar</p>
                     </div>
                 </div>
                 
                 <div class="quick-templates" id="quick-templates" style="display: none;">
-                    <button class="quick-template" onclick="useTemplate('Olá! Tudo bem?')">👋 Olá!</button>
-                    <button class="quick-template" onclick="useTemplate('Posso te ajudar com mais informações sobre proteção veicular?')">ℹ️ Mais informações</button>
-                    <button class="quick-template" onclick="useTemplate('Obrigado pelo contato! Qualquer dúvida, estou à disposição.')">🙏 Agradecer</button>
-                    <button class="quick-template" onclick="useTemplate('Vou verificar e te retorno em breve!')">⏰ Retorno</button>
+                    <button class="quick-template" onclick="useTemplate('Olá! Tudo bem?')"><span class="icon icon-smile icon-sm"></span> Olá!</button>
+                    <button class="quick-template" onclick="useTemplate('Posso te ajudar com mais informações sobre proteção veicular?')"><span class="icon icon-info icon-sm"></span> Mais informações</button>
+                    <button class="quick-template" onclick="useTemplate('Obrigado pelo contato! Qualquer dúvida, estou à disposição.')"><span class="icon icon-check icon-sm"></span> Agradecer</button>
+                    <button class="quick-template" onclick="useTemplate('Vou verificar e te retorno em breve!')"><span class="icon icon-clock icon-sm"></span> Retorno</button>
                 </div>
                 
                 <div class="chat-input-container" id="chat-input-container" style="display: none;">
                     <div class="chat-input-wrapper">
                         <div class="chat-input-actions">
-                            <button class="chat-action-btn" title="Emoji">😊</button>
-                            <button class="chat-action-btn" title="Anexar">📎</button>
+                            <button class="chat-action-btn" title="Emoji"><span class="icon icon-smile icon-sm"></span></button>
+                            <button class="chat-action-btn" title="Anexar"><span class="icon icon-attachment icon-sm"></span></button>
                         </div>
                         <textarea 
                             class="chat-input" 
@@ -758,7 +755,7 @@
                             oninput="autoResize(this)"
                         ></textarea>
                         <button class="chat-send-btn" id="send-btn" onclick="sendMessage()">
-                            ➤
+                            <span class="icon icon-send icon-sm"></span>
                         </button>
                     </div>
                 </div>
@@ -810,7 +807,7 @@
             });
             
             socket.on('connect', function() {
-                console.log('✅ Conectado ao servidor');
+                console.log('Conectado ao servidor');
                 socket.emit('check-session', { sessionId: CONFIG.SESSION_ID });
             });
             
@@ -962,7 +959,7 @@
             if (filtered.length === 0) {
                 container.innerHTML = `
                     <div class="conversations-empty">
-                        <span class="icon">💬</span>
+                        <span class="icon icon-empty icon-lg"></span>
                         <h3>Nenhuma conversa</h3>
                         <p>Não há conversas para exibir no momento</p>
                     </div>
@@ -974,7 +971,7 @@
                 <div class="conversation-item ${conv.unreadCount > 0 ? 'unread' : ''} ${currentContact?.jid === conv.jid ? 'active' : ''}" 
                      onclick="selectConversation(${JSON.stringify(conv).replace(/"/g, '&quot;')})">
                     <div class="conversation-avatar">
-                        ${conv.name ? conv.name.charAt(0).toUpperCase() : '👤'}
+                        ${conv.name ? conv.name.charAt(0).toUpperCase() : '<span class="icon icon-user icon-sm"></span>'}
                     </div>
                     <div class="conversation-info">
                         <div class="conversation-name">${conv.name}</div>
@@ -1000,7 +997,7 @@
             document.getElementById('chat-input-container').style.display = 'block';
             document.getElementById('quick-templates').style.display = 'flex';
             
-            document.getElementById('chat-avatar').textContent = contact.name ? contact.name.charAt(0).toUpperCase() : '👤';
+            document.getElementById('chat-avatar').innerHTML = contact.name ? contact.name.charAt(0).toUpperCase() : '<span class="icon icon-user icon-sm"></span>';
             document.getElementById('chat-name').textContent = contact.name;
             document.getElementById('chat-phone').textContent = formatPhone(contact.number);
             
@@ -1031,7 +1028,7 @@
             } else {
                 document.getElementById('chat-messages').innerHTML = `
                     <div class="chat-empty">
-                        <span class="icon">💬</span>
+                        <span class="icon icon-empty icon-lg"></span>
                         <h3>Inicie a conversa</h3>
                         <p>Envie uma mensagem para ${contact.name}</p>
                     </div>
@@ -1052,7 +1049,7 @@
             if (!msgs || msgs.length === 0) {
                 container.innerHTML = `
                     <div class="chat-empty">
-                        <span class="icon">💬</span>
+                        <span class="icon icon-empty icon-lg"></span>
                         <h3>Inicie a conversa</h3>
                         <p>Envie uma mensagem para começar</p>
                     </div>
@@ -1276,7 +1273,7 @@
         
         function getStatusIcon(status) {
             switch (status) {
-                case 'pending': return '🕐';
+                case 'pending': return '•';
                 case 'sent': return '✓';
                 case 'delivered': return '✓✓';
                 case 'read': return '✓✓';
@@ -1313,9 +1310,9 @@
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
             
-            const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+            const icons = { success: 'OK', error: 'ERRO', warning: 'AVISO', info: 'INFO' };
             toast.innerHTML = `
-                <span class="toast-icon">${icons[type] || 'ℹ️'}</span>
+                <span class="toast-icon">${icons[type] || 'INFO'}</span>
                 <span class="toast-message">${message}</span>
             `;
             

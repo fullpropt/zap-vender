@@ -595,15 +595,15 @@
             <img src="img/logo-self.png" alt="SELF" onerror="this.style.display='none'">
         </div>
         <ul class="sidebar-menu">
-            <li><a href="dashboard.html"><span class="icon">📊</span> Dashboard</a></li>
-            <li><a href="funil.html"><span class="icon">📋</span> Funil de Vendas</a></li>
-            <li><a href="whatsapp.html"><span class="icon">💬</span> WhatsApp</a></li>
-            <li><a href="conversas.html"><span class="icon">💭</span> Conversas</a></li>
-            <li><a href="flow-builder.html" class="active"><span class="icon">🔄</span> Fluxos</a></li>
-            <li><a href="configuracoes.html"><span class="icon">⚙️</span> Configurações</a></li>
+            <li><a href="dashboard.html"><span class="icon icon-dashboard"></span> Dashboard</a></li>
+            <li><a href="funil.html"><span class="icon icon-funnel"></span> Funil de Vendas</a></li>
+            <li><a href="whatsapp.html"><span class="icon icon-whatsapp"></span> WhatsApp</a></li>
+            <li><a href="conversas.html"><span class="icon icon-message"></span> Conversas</a></li>
+            <li><a href="flow-builder.html" class="active"><span class="icon icon-flows"></span> Fluxos</a></li>
+            <li><a href="configuracoes.html"><span class="icon icon-settings"></span> Configurações</a></li>
         </ul>
         <div class="sidebar-footer">
-            <a href="login.html" class="btn-logout"><span class="icon">🚪</span> Sair</a>
+            <a href="login.html" class="btn-logout">Sair</a>
         </div>
     </nav>
     
@@ -611,15 +611,15 @@
     <main class="main-content">
         <div class="header">
             <div class="header-title">
-                <h1>🔄 Construtor de Fluxos</h1>
+                <h1><span class="icon icon-flows icon-sm"></span> Construtor de Fluxos</h1>
                 <p>Crie automações visuais para suas conversas</p>
             </div>
             <div class="header-actions">
                 <button class="toolbar-btn secondary" onclick="openFlowsModal()">
-                    📂 Meus Fluxos
+                    <span class="icon icon-list icon-sm"></span> Meus Fluxos
                 </button>
                 <button class="toolbar-btn primary" onclick="createNewFlow()">
-                    ➕ Novo Fluxo
+                    <span class="icon icon-add icon-sm"></span> Novo Fluxo
                 </button>
             </div>
         </div>
@@ -630,14 +630,14 @@
                 <div class="node-category">
                     <h3>Gatilhos</h3>
                     <div class="node-item" draggable="true" data-type="trigger" data-subtype="new_contact">
-                        <div class="icon trigger">👋</div>
+                        <div class="icon trigger icon-user"></div>
                         <div class="info">
                             <div class="name">Novo Contato</div>
                             <div class="desc">Inicia quando um novo lead entra</div>
                         </div>
                     </div>
                     <div class="node-item" draggable="true" data-type="trigger" data-subtype="keyword">
-                        <div class="icon trigger">🔑</div>
+                        <div class="icon trigger icon-lock"></div>
                         <div class="info">
                             <div class="name">Palavra-chave</div>
                             <div class="desc">Inicia com palavra específica</div>
@@ -648,14 +648,14 @@
                 <div class="node-category">
                     <h3>Mensagens</h3>
                     <div class="node-item" draggable="true" data-type="message">
-                        <div class="icon message">💬</div>
+                        <div class="icon message icon-message"></div>
                         <div class="info">
                             <div class="name">Enviar Mensagem</div>
                             <div class="desc">Envia texto ou mídia</div>
                         </div>
                     </div>
                     <div class="node-item" draggable="true" data-type="wait">
-                        <div class="icon delay">⏳</div>
+                        <div class="icon delay icon-clock"></div>
                         <div class="info">
                             <div class="name">Aguardar Resposta</div>
                             <div class="desc">Espera input do usuário</div>
@@ -666,14 +666,14 @@
                 <div class="node-category">
                     <h3>Lógica</h3>
                     <div class="node-item" draggable="true" data-type="condition">
-                        <div class="icon condition">🔀</div>
+                        <div class="icon condition icon-bolt"></div>
                         <div class="info">
                             <div class="name">Condição</div>
                             <div class="desc">Ramifica baseado em resposta</div>
                         </div>
                     </div>
                     <div class="node-item" draggable="true" data-type="delay">
-                        <div class="icon delay">⏰</div>
+                        <div class="icon delay icon-clock"></div>
                         <div class="info">
                             <div class="name">Delay</div>
                             <div class="desc">Aguarda tempo específico</div>
@@ -684,35 +684,35 @@
                 <div class="node-category">
                     <h3>Ações</h3>
                     <div class="node-item" draggable="true" data-type="transfer">
-                        <div class="icon action">👤</div>
+                        <div class="icon action icon-user"></div>
                         <div class="info">
                             <div class="name">Transferir</div>
                             <div class="desc">Passa para atendente</div>
                         </div>
                     </div>
                     <div class="node-item" draggable="true" data-type="tag">
-                        <div class="icon action">🏷️</div>
+                        <div class="icon action icon-tag"></div>
                         <div class="info">
                             <div class="name">Adicionar Tag</div>
                             <div class="desc">Marca o lead com tag</div>
                         </div>
                     </div>
                     <div class="node-item" draggable="true" data-type="status">
-                        <div class="icon action">📊</div>
+                        <div class="icon action icon-chart-bar"></div>
                         <div class="info">
                             <div class="name">Alterar Status</div>
                             <div class="desc">Muda status do lead</div>
                         </div>
                     </div>
                     <div class="node-item" draggable="true" data-type="webhook">
-                        <div class="icon action">🔗</div>
+                        <div class="icon action icon-link"></div>
                         <div class="info">
                             <div class="name">Webhook</div>
                             <div class="desc">Envia dados para URL</div>
                         </div>
                     </div>
                     <div class="node-item" draggable="true" data-type="end">
-                        <div class="icon action">🏁</div>
+                        <div class="icon action icon-check"></div>
                         <div class="info">
                             <div class="name">Finalizar</div>
                             <div class="desc">Encerra o fluxo</div>
@@ -725,15 +725,15 @@
             <div class="flow-canvas" id="flowCanvas">
                 <div class="flow-toolbar">
                     <input type="text" id="flowName" placeholder="Nome do fluxo" style="border: 2px solid var(--border); border-radius: 8px; padding: 8px 12px; width: 200px;">
-                    <button class="toolbar-btn secondary" onclick="clearCanvas()">🗑️ Limpar</button>
-                    <button class="toolbar-btn primary" onclick="saveFlow()">💾 Salvar</button>
+                    <button class="toolbar-btn secondary" onclick="clearCanvas()"><span class="icon icon-delete icon-sm"></span> Limpar</button>
+                    <button class="toolbar-btn primary" onclick="saveFlow()"><span class="icon icon-save icon-sm"></span> Salvar</button>
                 </div>
                 
                 <svg class="connections-svg" id="connectionsSvg"></svg>
                 
                 <div class="canvas-container" id="canvasContainer">
                     <div class="empty-canvas" id="emptyCanvas">
-                        <div class="icon">🔄</div>
+                        <div class="icon icon-flows"></div>
                         <h3>Arraste os blocos para começar</h3>
                         <p>Crie seu fluxo de automação visual</p>
                     </div>
@@ -888,21 +888,21 @@
             nodeEl.style.top = node.position.y + 'px';
             
             const icons = {
-                trigger: '🎯',
-                message: '💬',
-                wait: '⏳',
-                condition: '🔀',
-                delay: '⏰',
-                transfer: '👤',
-                tag: '🏷️',
-                status: '📊',
-                webhook: '🔗',
-                end: '🏁'
+                trigger: 'icon-bolt',
+                message: 'icon-message',
+                wait: 'icon-clock',
+                condition: 'icon-bolt',
+                delay: 'icon-clock',
+                transfer: 'icon-user',
+                tag: 'icon-tag',
+                status: 'icon-chart-bar',
+                webhook: 'icon-link',
+                end: 'icon-check'
             };
             
             nodeEl.innerHTML = `
                 <div class="flow-node-header ${node.type}">
-                    <span class="icon">${icons[node.type] || '📦'}</span>
+                    <span class="icon ${icons[node.type] || 'icon-empty'}"></span>
                     <span class="title">${node.data.label}</span>
                     <button class="delete-btn" onclick="deleteNode('${node.id}')">&times;</button>
                 </div>
@@ -1293,7 +1293,7 @@
             
             document.getElementById('canvasContainer').innerHTML = `
                 <div class="empty-canvas" id="emptyCanvas">
-                    <div class="icon">🔄</div>
+                    <div class="icon icon-flows"></div>
                     <h3>Arraste os blocos para começar</h3>
                     <p>Crie seu fluxo de automação visual</p>
                 </div>
@@ -1378,7 +1378,7 @@
             
             container.innerHTML = flows.map(flow => `
                 <div class="flow-list-item" onclick="loadFlow(${flow.id})">
-                    <div class="icon">🔄</div>
+                    <div class="icon icon-flows"></div>
                     <div class="info">
                         <div class="name">${flow.name}</div>
                         <div class="meta">Trigger: ${flow.trigger_type} | ${flow.nodes?.length || 0} blocos</div>
