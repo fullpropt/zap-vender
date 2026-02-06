@@ -52,9 +52,6 @@ RUN mkdir -p sessions data uploads && \
     chown -R nodejs:nodejs sessions data uploads && \
     chmod 755 sessions data uploads
 
-# Mudar para usuário não-root
-USER nodejs
-
 # Expor porta
 EXPOSE 3001
 
