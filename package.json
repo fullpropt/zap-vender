@@ -20,7 +20,10 @@
     "clean": "rm -rf node_modules sessions data uploads",
     "health": "curl -s http://localhost:3001/health | jq",
     "update": "node scripts/auto-update.js",
-    "update:commit": "AUTO_COMMIT=true node scripts/auto-update.js"
+    "update:commit": "AUTO_COMMIT=true node scripts/auto-update.js",
+    "backup": "node server/utils/backup.js",
+    "backup:list": "node -e \"require('./server/utils/backup').listBackups().forEach(b => console.log(b))\"",
+    "health:check": "node -e \"console.log(JSON.stringify(require('./server/utils/healthCheck').getHealthStatus(), null, 2))\""
   },
   "keywords": [
     "whatsapp",

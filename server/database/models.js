@@ -87,7 +87,7 @@ const Lead = {
         
         if (fields.length === 0) return null;
         
-        fields.push('updated_at = datetime('now')');
+        fields.push("updated_at = datetime('now')");
         values.push(id);
         
         return run(`UPDATE leads SET ${fields.join(', ')} WHERE id = ?`, values);
@@ -203,18 +203,18 @@ const Conversation = {
         
         if (fields.length === 0) return null;
         
-        fields.push('updated_at = datetime('now')');
+        fields.push("updated_at = datetime('now')");
         values.push(id);
         
         return run(`UPDATE conversations SET ${fields.join(', ')} WHERE id = ?`, values);
     },
     
     incrementUnread(id) {
-        return run('UPDATE conversations SET unread_count = unread_count + 1, updated_at = datetime('now') WHERE id = ?', [id]);
+        return run("UPDATE conversations SET unread_count = unread_count + 1, updated_at = datetime('now') WHERE id = ?", [id]);
     },
     
     markAsRead(id) {
-        return run('UPDATE conversations SET unread_count = 0, updated_at = datetime('now') WHERE id = ?', [id]);
+        return run("UPDATE conversations SET unread_count = 0, updated_at = datetime('now') WHERE id = ?", [id]);
     },
     
     list(options = {}) {
@@ -410,7 +410,7 @@ const Template = {
         
         if (fields.length === 0) return null;
         
-        fields.push('updated_at = datetime('now')');
+        fields.push("updated_at = datetime('now')");
         values.push(id);
         
         return run(`UPDATE templates SET ${fields.join(', ')} WHERE id = ?`, values);
@@ -528,7 +528,7 @@ const Flow = {
         
         if (fields.length === 0) return null;
         
-        fields.push('updated_at = datetime('now')');
+        fields.push("updated_at = datetime('now')");
         values.push(id);
         
         return run(`UPDATE flows SET ${fields.join(', ')} WHERE id = ?`, values);
@@ -669,7 +669,7 @@ const Webhook = {
         
         if (fields.length === 0) return null;
         
-        fields.push('updated_at = datetime('now')');
+        fields.push("updated_at = datetime('now')");
         values.push(id);
         
         return run(`UPDATE webhooks SET ${fields.join(', ')} WHERE id = ?`, values);
@@ -774,7 +774,7 @@ const User = {
     },
     
     updateLastLogin(id) {
-        return run('UPDATE users SET last_login_at = datetime('now') WHERE id = ?', [id]);
+        return run("UPDATE users SET last_login_at = datetime('now') WHERE id = ?", [id]);
     },
     
     list() {
