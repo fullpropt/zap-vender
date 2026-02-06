@@ -26,10 +26,12 @@ app.get('/health', (req, res) => {
 const server = http.createServer(app);
 server.listen(PORT, HOST, () => {
     console.log(`[Bootstrap] Servidor ouvindo em ${HOST}:${PORT} - /health OK`);
-    try {
-        require('./index')(app, server);
-    } catch (err) {
-        console.error('[Bootstrap] Erro ao carregar app:', err.message);
-        // /health continua respondendo mesmo se o app falhar
-    }
+    // Carregar app em setImmediate para /health responder antes do init pesado
+    setImmediate(() => {
+        try {
+            require('./index')(app, server);
+        } catch (err) {
+            console.error('[Bootstrap] Erro ao carregar app:', err.message);
+        }
+    });
 });
