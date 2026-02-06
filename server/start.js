@@ -15,10 +15,27 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 function resolveVolumeBase() {
     const envBase = process.env.RAILWAY_VOLUME_MOUNT_PATH
+        || process.env.RAILWAY_VOLUME_PATH
         || process.env.RAILWAY_VOLUME
         || process.env.VOLUME_MOUNT_PATH;
     if (envBase) return envBase;
-    return '/mnt/data';
+    if (fs.existsSync('/mnt/data')) return '/mnt/data';
+
+    const bindRoot = '/var/lib/containers/railwayapp/bind-mounts';
+    if (fs.existsSync(bindRoot)) {
+        const tenants = fs.readdirSync(bindRoot, { withFileTypes: true })
+            .filter(entry => entry.isDirectory())
+            .map(entry => path.join(bindRoot, entry.name));
+
+        for (const tenantPath of tenants) {
+            const volumes = fs.readdirSync(tenantPath, { withFileTypes: true })
+                .filter(entry => entry.isDirectory() && entry.name.startsWith('vol_'))
+                .map(entry => path.join(tenantPath, entry.name));
+            if (volumes.length > 0) return volumes[0];
+        }
+    }
+
+    return null;
 }
 
 const volumeBase = process.env.NODE_ENV === 'production' ? resolveVolumeBase() : null;
@@ -28,6 +45,7 @@ if (volumeBase) {
     process.env.SESSIONS_DIR = process.env.SESSIONS_DIR || path.join(volumeBase, 'sessions');
     process.env.UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(volumeBase, 'uploads');
     process.env.DATABASE_PATH = process.env.DATABASE_PATH || path.join(process.env.DATA_DIR, 'self.db');
+    console.log(`[Bootstrap] Volume persistente: ${volumeBase}`);
 }
 
 // Criar diretórios necessários
