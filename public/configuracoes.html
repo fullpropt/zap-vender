@@ -84,6 +84,13 @@
             cursor: pointer;
         }
         .variable-tag:hover { background: rgba(var(--primary-rgb), 0.2); }
+        .connection-status-card { background: white; border-radius: var(--border-radius); padding: 30px; border: 1px solid var(--border-color); }
+        .connection-icon { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; margin-bottom: 20px; }
+        .connection-icon.success { background: #10b981; color: white; }
+        .connection-icon.disconnected { background: var(--gray-200); color: var(--gray-600); }
+        .connection-status-card h4 { margin: 0 0 12px; font-size: 20px; }
+        .connection-status-card p { margin: 0 0 12px; color: var(--gray-600); line-height: 1.5; }
+        .connection-info { font-size: 13px; color: var(--gray-500); background: var(--gray-50); padding: 15px; border-radius: 8px; margin: 15px 0 !important; }
     </style>
 </head>
 <body>
@@ -124,6 +131,7 @@
                 <ul class="nav-menu">
                     <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon">📱</span>WhatsApp</a></li>
                     <li class="nav-item"><a href="configuracoes.html" class="nav-link active"><span class="icon">⚙️</span>Configurações</a></li>
+                    <li class="nav-item"><a href="configuracoes.html#copys" class="nav-link"><span class="icon">📋</span>Modelos</a></li>
                 </ul>
             </div>
         </nav>
@@ -146,7 +154,13 @@
 
         <div class="settings-container">
             <nav class="settings-nav">
-                <div class="settings-nav-item active" onclick="showPanel('general')"><span>🏢</span> Geral</div>
+                <div class="settings-nav-item active" onclick="showPanel('conexao')"><span>📱</span> Conexão</div>
+                <div class="settings-nav-item" onclick="showPanel('general')"><span>🏢</span> Campos</div>
+                <div class="settings-nav-item" onclick="showPanel('labels')"><span>🏷️</span> Etiquetas</div>
+                <div class="settings-nav-item" onclick="showPanel('quick')"><span>⚡</span> Respostas rápidas</div>
+                <div class="settings-nav-item" onclick="showPanel('team')"><span>👥</span> Equipe</div>
+                <div class="settings-nav-item" onclick="showPanel('hours')"><span>🕐</span> Horários</div>
+                <div class="settings-nav-item" onclick="showPanel('flows')"><span>🔄</span> Fluxos Padrões</div>
                 <div class="settings-nav-item" onclick="showPanel('funnel')"><span>📊</span> Funil de Vendas</div>
                 <div class="settings-nav-item" onclick="showPanel('copys')"><span>📝</span> Copys e Mensagens</div>
                 <div class="settings-nav-item" onclick="showPanel('whatsapp')"><span>📱</span> WhatsApp</div>
@@ -156,8 +170,27 @@
             </nav>
 
             <div class="settings-panels">
+                <!-- Conexão (estilo BotConversa) -->
+                <div class="settings-panel active" id="panel-conexao">
+                    <h3 class="settings-section-title">Conexão</h3>
+                    <div class="connection-status-card" id="connectionStatusCard">
+                        <div class="connection-success" id="connectionSuccess" style="display: none;">
+                            <div class="connection-icon success">✓</div>
+                            <h4>Automação está ligada</h4>
+                            <p>O número de WhatsApp <strong id="connectedPhone">+55...</strong> está conectado à Companhia.</p>
+                            <p class="connection-info">Seu WhatsApp foi conectado com sucesso. Automação continuará funcionando mesmo com o celular desligado. Porém, se você não acessar o aplicativo do WhatsApp nos próximos 14 dias, seu telefone será desconectado automaticamente pelo WhatsApp por motivos de segurança.</p>
+                            <button class="btn btn-danger" onclick="disconnectWhatsApp()">Desconectar</button>
+                        </div>
+                        <div class="connection-disconnected" id="connectionDisconnected">
+                            <div class="connection-icon disconnected">!</div>
+                            <h4>WhatsApp desconectado</h4>
+                            <p>Conecte seu WhatsApp em <a href="whatsapp.html">WhatsApp → Conectar</a> para ativar a automação.</p>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Geral -->
-                <div class="settings-panel active" id="panel-general">
+                <div class="settings-panel" id="panel-general">
                     <div class="settings-section">
                         <h3 class="settings-section-title">🏢 Informações da Empresa</h3>
                         <div class="form-group">
@@ -181,6 +214,12 @@
                     </div>
                     <button class="btn btn-primary" onclick="saveGeneralSettings()">💾 Salvar Configurações</button>
                 </div>
+
+                <div class="settings-panel" id="panel-labels"><h3 class="settings-section-title">Etiquetas</h3><p class="text-muted">Em breve.</p></div>
+                <div class="settings-panel" id="panel-quick"><h3 class="settings-section-title">Respostas rápidas</h3><p class="text-muted">Em breve.</p></div>
+                <div class="settings-panel" id="panel-team"><h3 class="settings-section-title">Equipe</h3><p class="text-muted">Em breve.</p></div>
+                <div class="settings-panel" id="panel-hours"><h3 class="settings-section-title">Horários</h3><p class="text-muted">Em breve.</p></div>
+                <div class="settings-panel" id="panel-flows"><h3 class="settings-section-title">Fluxos Padrões</h3><p class="text-muted">Em breve.</p></div>
 
                 <!-- Funil de Vendas -->
                 <div class="settings-panel" id="panel-funnel">
@@ -549,6 +588,16 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
         document.addEventListener('DOMContentLoaded', () => {
             loadSettings();
             checkWhatsAppStatus();
+            const hash = window.location.hash?.slice(1);
+            if (hash) {
+                const panel = document.getElementById(`panel-${hash}`);
+                if (panel) {
+                    document.querySelectorAll('.settings-nav-item').forEach(i => i.classList.remove('active'));
+                    document.querySelector(`[onclick="showPanel('${hash}')"]`)?.classList.add('active');
+                    document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
+                    panel.classList.add('active');
+                }
+            }
         });
 
         function showPanel(panelId) {
@@ -655,8 +704,28 @@ Qualquer dúvida, estamos à disposição. Obrigado pela confiança!</textarea>
         async function checkWhatsAppStatus() {
             try {
                 const response = await api.get('/api/whatsapp/status');
-                document.getElementById('whatsappStatusText').textContent = response.connected ? '✅ Conectado' : '❌ Desconectado';
-            } catch (error) { document.getElementById('whatsappStatusText').textContent = 'Desconectado'; }
+                const txt = document.getElementById('whatsappStatusText');
+                if (txt) txt.textContent = response.connected ? '✅ Conectado' : '❌ Desconectado';
+                const success = document.getElementById('connectionSuccess');
+                const disc = document.getElementById('connectionDisconnected');
+                const phoneEl = document.getElementById('connectedPhone');
+                if (success && disc) {
+                    if (response.connected) {
+                        success.style.display = 'block';
+                        disc.style.display = 'none';
+                        if (phoneEl) phoneEl.textContent = response.phone || '+55...';
+                    } else {
+                        success.style.display = 'none';
+                        disc.style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                const txt = document.getElementById('whatsappStatusText');
+                if (txt) txt.textContent = 'Desconectado';
+                const success = document.getElementById('connectionSuccess');
+                const disc = document.getElementById('connectionDisconnected');
+                if (success && disc) { success.style.display = 'none'; disc.style.display = 'block'; }
+            }
         }
 
         async function connectWhatsApp() {

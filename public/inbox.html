@@ -11,7 +11,7 @@
     <style>
         .inbox-container {
             display: grid;
-            grid-template-columns: 350px 1fr;
+            grid-template-columns: 350px 1fr 320px;
             height: calc(100vh - 120px);
             gap: 0;
             background: white;
@@ -19,11 +19,16 @@
             box-shadow: var(--shadow-lg);
             overflow: hidden;
         }
+        @media (max-width: 1024px) {
+            .inbox-container { grid-template-columns: 350px 1fr; }
+            .inbox-right-panel { display: none; }
+        }
         @media (max-width: 768px) {
             .inbox-container { grid-template-columns: 1fr; }
             .chat-panel { display: none; }
             .chat-panel.active { display: flex; }
             .conversations-panel.hidden { display: none; }
+            .inbox-right-panel { display: none; }
         }
         .conversations-panel {
             border-right: 1px solid var(--border-color);
@@ -255,13 +260,19 @@
             0%, 60%, 100% { transform: translateY(0); }
             30% { transform: translateY(-5px); }
         }
-        .contact-info-panel {
-            width: 300px;
+        .contact-info-panel { display: none; }
+        .inbox-right-panel {
             background: white;
             border-left: 1px solid var(--border-color);
-            display: none;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
         }
-        .contact-info-panel.active { display: block; }
+        .inbox-right-panel-content { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .inbox-right-panel-robot { font-size: 64px; margin-bottom: 20px; opacity: 0.6; }
+        .inbox-right-panel p { color: var(--gray-600); line-height: 1.5; margin: 0 0 16px; font-size: 14px; }
+        .inbox-right-panel .btn-register-user { background: var(--whatsapp, #25d366); color: white; padding: 12px 24px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; font-size: 14px; }
+        .inbox-right-panel .btn-register-user:hover { opacity: 0.9; }
     </style>
 </head>
 <body>
@@ -302,6 +313,7 @@
                 <ul class="nav-menu">
                     <li class="nav-item"><a href="whatsapp.html" class="nav-link"><span class="icon">📱</span>WhatsApp</a></li>
                     <li class="nav-item"><a href="configuracoes.html" class="nav-link"><span class="icon">⚙️</span>Configurações</a></li>
+                    <li class="nav-item"><a href="configuracoes.html#copys" class="nav-link" title="Copys e Mensagens"><span class="icon">📋</span>Modelos</a></li>
                 </ul>
             </div>
         </nav>
@@ -343,6 +355,16 @@
                     <div class="chat-empty-icon">💬</div>
                     <h3>Nenhum chat selecionado</h3>
                     <p>Selecione uma conversa da lista ao lado para começar a conversar</p>
+                </div>
+            </div>
+
+            <!-- Painel Lateral Direito (estilo BotConversa) -->
+            <div class="inbox-right-panel" id="inboxRightPanel">
+                <div class="inbox-right-panel-content" id="inboxRightContent">
+                    <span class="inbox-right-panel-robot">🤖</span>
+                    <p><strong>Este cliente ainda não está cadastrado na sua audiência.</strong></p>
+                    <p>Vamos cadastrá-lo para que o cartão do usuário dele apareça aqui?</p>
+                    <button class="btn-register-user" onclick="registerCurrentUser()">SIM! Cadastrar este usuário</button>
                 </div>
             </div>
         </div>
@@ -654,6 +676,29 @@
 
         function toggleContactInfo() {
             showToast('info', 'Info', 'Painel de informações em desenvolvimento');
+        }
+
+        async function registerCurrentUser() {
+            if (!currentConversation) return;
+            try {
+                showLoading('Cadastrando usuário...');
+                await api.post('/api/leads', {
+                    name: currentConversation.name || 'Contato',
+                    phone: currentConversation.phone,
+                    status: 1
+                });
+                hideLoading();
+                showToast('success', 'Sucesso', 'Usuário cadastrado na sua audiência!');
+                loadConversations();
+                document.getElementById('inboxRightContent').innerHTML = `
+                    <span class="inbox-right-panel-robot" style="font-size: 48px;">✅</span>
+                    <p><strong>Cliente cadastrado!</strong></p>
+                    <p>O cartão do usuário está disponível em Contatos.</p>
+                `;
+            } catch (error) {
+                hideLoading();
+                showToast('error', 'Erro', error?.response?.data?.error || 'Não foi possível cadastrar');
+            }
         }
 
         function backToList() {

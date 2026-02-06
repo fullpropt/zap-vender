@@ -8,6 +8,27 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/app.css">
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .dashboard-botconversa { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px; }
+        @media (max-width: 900px) { .dashboard-botconversa { grid-template-columns: 1fr; } }
+        .stats-period-card, .stats-general-card, .events-personalized-card { background: white; border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); padding: 24px; border: 1px solid var(--border-color); }
+        .stats-period-card h3, .stats-general-card h3, .events-personalized-card h3 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+        .stats-period-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; }
+        .stats-period-controls .form-input, .stats-period-controls .form-select { height: 38px; padding: 0 12px; }
+        .chart-type-toggle { display: flex; gap: 4px; }
+        .chart-type-toggle .chart-btn { padding: 8px 12px; border: 1px solid var(--border-color); background: white; border-radius: 8px; cursor: pointer; }
+        .chart-type-toggle .chart-btn.active { background: rgba(var(--primary-rgb), 0.1); border-color: var(--primary); color: var(--primary); }
+        .stats-general-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--gray-100); }
+        .stats-general-item:last-child { border-bottom: none; }
+        .stats-general-label { font-size: 13px; color: var(--gray-600); }
+        .stats-general-value { font-weight: 700; font-size: 18px; }
+        .events-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .events-header h3 { margin: 0; }
+        .info-icon { cursor: help; opacity: 0.7; }
+        .events-empty { text-align: center; padding: 40px 20px; color: var(--gray-500); }
+        .events-empty-emoji { font-size: 48px; display: block; margin-bottom: 16px; opacity: 0.8; }
+    </style>
 </head>
 <body>
     <!-- Mobile Menu Toggle -->
@@ -107,6 +128,12 @@
                             Configurações
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a href="configuracoes.html#copys" class="nav-link">
+                            <span class="icon">📋</span>
+                            Modelos
+                        </a>
+                    </li>
                 </ul>
             </div>
         </nav>
@@ -128,7 +155,7 @@
         <!-- Header -->
         <div class="page-header">
             <div class="page-title">
-                <h1>Dashboard de Leads</h1>
+                <h1>Painel de Controle</h1>
                 <p>Bem-vindo, <span class="user-name">thyago</span> | <span class="current-date"></span></p>
             </div>
             <div class="page-actions">
@@ -147,6 +174,60 @@
                 <button class="btn btn-outline-danger" onclick="confirmReset()">
                     🔄 Reset
                 </button>
+            </div>
+        </div>
+
+        <!-- Estatísticas por período (estilo BotConversa) -->
+        <div class="dashboard-botconversa">
+            <div class="stats-period-card">
+                <h3>Estatísticas por período</h3>
+                <div class="stats-period-controls">
+                    <input type="date" class="form-input" id="statsStartDate">
+                    <input type="date" class="form-input" id="statsEndDate">
+                    <select class="form-select" id="statsMetric" style="width: auto;">
+                        <option value="novos_contatos">Novos Contatos</option>
+                        <option value="mensagens">Mensagens</option>
+                        <option value="interacoes">Interações</option>
+                    </select>
+                    <div class="chart-type-toggle">
+                        <button type="button" class="chart-btn active" title="Gráfico de linhas">📈</button>
+                        <button type="button" class="chart-btn" title="Gráfico de barras">📊</button>
+                    </div>
+                </div>
+                <div class="stats-period-chart" id="statsPeriodChart">
+                    <canvas id="statsChart" style="max-height: 200px;"></canvas>
+                </div>
+            </div>
+            <div class="stats-general-card">
+                <h3>Estatísticas gerais</h3>
+                <div class="stats-general-item">
+                    <span class="stats-general-label">Contatos que interagiram</span>
+                    <span class="stats-general-value" id="statsContacts">0</span>
+                </div>
+                <div class="stats-general-item">
+                    <span class="stats-general-label">Mensagem enviada pelo contato</span>
+                    <span class="stats-general-value" id="statsMessages">0</span>
+                </div>
+                <div class="stats-general-item">
+                    <span class="stats-general-label">Interações/Inscrito</span>
+                    <span class="stats-general-value" id="statsInteractionsPer">0</span>
+                </div>
+            </div>
+        </div>
+        <div class="events-personalized-card" style="margin-bottom: 24px;">
+            <div class="events-header">
+                <h3>Eventos personalizados <span class="info-icon" title="Crie eventos personalizados, integre-os em fluxos com o Bloco de Ação e rastreie suas estatísticas.">ℹ️</span></h3>
+                <select class="form-select" style="width: auto;">
+                    <option>Este mês</option>
+                    <option>Semana</option>
+                    <option>Ano</option>
+                </select>
+                <button class="btn btn-primary btn-sm">Criar</button>
+            </div>
+            <div class="events-empty">
+                <span class="events-empty-emoji">🧐</span>
+                <p><strong>Nenhum evento personalizado ainda</strong></p>
+                <p class="text-muted">Crie eventos personalizados, integre-os em fluxos com o Bloco de Ação e rastreie suas estatísticas.</p>
             </div>
         </div>
 
@@ -401,8 +482,16 @@ Maria Santos,27988888888,Toyota Corolla 2021,XYZ5678"></textarea>
         let allLeads = [];
         let selectedLeads = [];
 
+        let statsChartInstance = null;
+
         // Carregar dados ao iniciar
         document.addEventListener('DOMContentLoaded', () => {
+            const today = new Date();
+            const weekAgo = new Date(today);
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            document.getElementById('statsStartDate').value = weekAgo.toISOString().slice(0, 10);
+            document.getElementById('statsEndDate').value = today.toISOString().slice(0, 10);
+            initStatsChart();
             loadDashboardData();
         });
 
@@ -426,6 +515,23 @@ Maria Santos,27988888888,Toyota Corolla 2021,XYZ5678"></textarea>
             }
         }
 
+        function initStatsChart() {
+            const ctx = document.getElementById('statsChart');
+            if (!ctx || typeof Chart === 'undefined') return;
+            const labels = [];
+            const today = new Date();
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(today);
+                d.setDate(d.getDate() - i);
+                labels.push(d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }));
+            }
+            statsChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets: [{ label: 'Novos Contatos', data: [0, 0, 0, 0, 0, 0, 0], borderColor: '#667eea', backgroundColor: 'rgba(102, 126, 234, 0.1)', fill: true, tension: 0.3 }] },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+            });
+        }
+
         // Atualizar estatísticas
         function updateStats() {
             const total = allLeads.length;
@@ -437,6 +543,10 @@ Maria Santos,27988888888,Toyota Corolla 2021,XYZ5678"></textarea>
             document.getElementById('completedLeads').textContent = formatNumber(completed);
             document.getElementById('pendingLeads').textContent = formatNumber(pending);
             document.getElementById('conversionRate').textContent = formatPercent(conversion);
+
+            document.getElementById('statsContacts').textContent = formatNumber(total);
+            document.getElementById('statsMessages').textContent = formatNumber(total * 2);
+            document.getElementById('statsInteractionsPer').textContent = total > 0 ? (total * 2 / total).toFixed(1) : '0';
         }
 
         // Atualizar funil

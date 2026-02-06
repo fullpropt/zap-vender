@@ -12,15 +12,8 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 
-// Baileys
-const { 
-    default: makeWASocket, 
-    DisconnectReason, 
-    useMultiFileAuthState,
-    fetchLatestBaileysVersion,
-    makeCacheableSignalKeyStore,
-    delay
-} = require('@whiskeysockets/baileys');
+// Baileys (loader dinâmico - ESM)
+const baileysLoader = require('./services/whatsapp/baileysLoader');
 const pino = require('pino');
 const qrcode = require('qrcode');
 
@@ -37,6 +30,9 @@ const flowService = require('./services/flowService');
 // Utils - Fixers (correções automáticas baseadas em análise de projetos GitHub)
 const audioFixer = require('./utils/audioFixer');
 const connectionFixer = require('./utils/connectionFixer');
+
+// WhatsApp Service (engine Baileys modular)
+const whatsappService = require('./services/whatsapp');
 
 // Middleware
 const { authenticate, optionalAuth, requestLogger, verifyToken } = require('./middleware/auth');
@@ -191,14 +187,12 @@ io.use((socket, next) => {
 });
 
 // ============================================
-// WHATSAPP - GERENCIAMENTO DE SESSÕES
+// WHATSAPP - GERENCIAMENTO DE SESSÕES (via whatsapp service)
 // ============================================
 
-const sessions = new Map();
-const reconnectAttempts = new Map();
-const qrTimeouts = new Map();
-const typingStatus = new Map();
-
+const sessions = whatsappService.sessions;
+const reconnectAttempts = whatsappService.reconnectAttempts;
+const qrTimeouts = whatsappService.qrTimeouts;
 const logger = pino({ level: 'silent' });
 
 function persistWhatsappSession(sessionId, status, options = {}) {
@@ -252,37 +246,22 @@ function decryptMessage(encrypted) {
     return decrypt(encrypted);
 }
 
-/**
- * Formatar número para JID
- */
-function formatJid(phone) {
-    let cleaned = phone.replace(/[^0-9]/g, '');
-    if (!cleaned.startsWith('55') && cleaned.length <= 11) {
-        cleaned = '55' + cleaned;
-    }
-    return cleaned + '@s.whatsapp.net';
-}
-
-/**
- * Extrair número do JID
- */
-function extractNumber(jid) {
-    if (!jid) return '';
-    return jid.replace('@s.whatsapp.net', '').replace('@g.us', '');
-}
+const formatJid = whatsappService.formatJid;
+const extractNumber = whatsappService.extractNumber;
 
 /**
  * Função de envio de mensagem (usada pelos serviços)
  */
 async function sendMessageToWhatsApp(options) {
     const { to, jid, content, mediaType, mediaUrl, sessionId } = options;
-    const targetJid = jid || formatJid(to);
-    const session = sessions.get(sessionId || 'self_whatsapp_session');
+    const sid = sessionId || 'self_whatsapp_session';
+    const session = whatsappService.getSession(sid);
     
     if (!session || !session.isConnected) {
         throw new Error('WhatsApp não está conectado');
     }
     
+    const targetJid = jid || formatJid(to);
     let result;
     
     if (mediaType === 'image' && mediaUrl) {
@@ -297,21 +276,18 @@ async function sendMessageToWhatsApp(options) {
             fileName: options.fileName || 'documento'
         });
     } else if (mediaType === 'audio' && mediaUrl) {
-        // Usar audioFixer para corrigir problemas comuns
         try {
             const audioOptions = await audioFixer.prepareAudioForSend(mediaUrl, {
                 mimetype: options.mimetype || 'audio/ogg; codecs=opus',
                 ptt: options.ptt !== undefined ? options.ptt : true,
                 duration: options.duration || null
             });
-
             result = await session.socket.sendMessage(targetJid, {
                 audio: { url: audioOptions.path || mediaUrl },
                 ...audioOptions.options
             });
         } catch (error) {
             console.error('[SendMessage] Erro ao preparar áudio, usando método padrão:', error.message);
-            // Fallback para método padrão
             result = await session.socket.sendMessage(targetJid, {
                 audio: { url: mediaUrl },
                 mimetype: options.mimetype || 'audio/ogg; codecs=opus',
@@ -336,6 +312,16 @@ async function createSession(sessionId, socket, attempt = 0) {
         clearTimeout(qrTimeouts.get(sessionId));
         qrTimeouts.delete(sessionId);
     }
+    
+    const baileys = await baileysLoader.getBaileys();
+    const {
+        default: makeWASocket,
+        DisconnectReason,
+        useMultiFileAuthState,
+        fetchLatestBaileysVersion,
+        makeCacheableSignalKeyStore,
+        delay
+    } = baileys;
     
     try {
         console.log(`[${sessionId}] Criando sessão... (Tentativa ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
@@ -589,7 +575,7 @@ async function createSession(sessionId, socket, attempt = 0) {
         const currentAttempt = reconnectAttempts.get(sessionId) || 0;
         if (currentAttempt < MAX_RECONNECT_ATTEMPTS) {
             reconnectAttempts.set(sessionId, currentAttempt + 1);
-            await delay(RECONNECT_DELAY);
+            await baileys.delay(RECONNECT_DELAY);
             return await createSession(sessionId, clientSocket, currentAttempt + 1);
         } else {
             clientSocket.emit('error', { message: 'Erro ao criar sessão WhatsApp' });
@@ -791,8 +777,7 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
  * Verificar se sessão existe
  */
 function sessionExists(sessionId) {
-    const sessionPath = path.join(SESSIONS_DIR, sessionId);
-    return fs.existsSync(sessionPath) && fs.existsSync(path.join(sessionPath, 'creds.json'));
+    return whatsappService.hasSession(sessionId, SESSIONS_DIR);
 }
 
 // ============================================
@@ -981,6 +966,30 @@ io.on('connection', (socket) => {
 // ============================================
 // ROTAS API REST
 // ============================================
+
+// Status do WhatsApp (para Configurações > Conexão)
+app.get('/api/whatsapp/status', optionalAuth, (req, res) => {
+    const sessionId = 'self_whatsapp_session';
+    const session = sessions.get(sessionId);
+    const connected = !!(session && session.isConnected);
+    let phone = null;
+    if (session && session.user && session.user.id) {
+        const jid = String(session.user.id);
+        phone = '+' + jid.replace(/@s\.whatsapp\.net|@c\.us/g, '').trim();
+    }
+    res.json({ connected, phone });
+});
+
+app.post('/api/whatsapp/disconnect', authenticate, async (req, res) => {
+    try {
+        const sessionId = 'self_whatsapp_session';
+        await whatsappService.logoutSession(sessionId, SESSIONS_DIR);
+        io.emit('whatsapp-status', { sessionId, status: 'disconnected' });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Status do servidor
 app.get('/api/status', (req, res) => {
