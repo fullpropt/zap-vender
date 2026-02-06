@@ -83,6 +83,7 @@ function logout() {
     sessionStorage.removeItem('selfDashboardToken');
     sessionStorage.removeItem('selfDashboardUser');
     sessionStorage.removeItem('selfDashboardExpiry');
+    sessionStorage.removeItem('selfDashboardRefreshToken');
     window.location.href = 'login.html';
 }
 
@@ -311,6 +312,7 @@ function showToast(type, title, message, duration = 5000) {
 
 async function apiRequest(endpoint, options = {}) {
     const url = `${APP.socketUrl}${endpoint}`;
+    const token = sessionStorage.getItem('selfDashboardToken');
     
     const defaultOptions = {
         headers: {
@@ -319,6 +321,15 @@ async function apiRequest(endpoint, options = {}) {
     };
     
     const config = { ...defaultOptions, ...options };
+
+    config.headers = {
+        ...defaultOptions.headers,
+        ...(options.headers || {})
+    };
+
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
     
     if (options.body && typeof options.body === 'object') {
         config.body = JSON.stringify(options.body);
@@ -328,6 +339,11 @@ async function apiRequest(endpoint, options = {}) {
         const response = await fetch(url, config);
         const data = await response.json();
         
+        if (response.status === 401 && !window.location.pathname.includes('login.html')) {
+            logout();
+            throw new Error(data.error || 'Sessão expirada');
+        }
+
         if (!response.ok) {
             throw new Error(data.error || 'Erro na requisição');
         }

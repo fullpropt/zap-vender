@@ -5,6 +5,7 @@
 
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const { User } = require('../database/models');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'self-protecao-jwt-secret-2024';
@@ -24,9 +25,22 @@ function hashPassword(password) {
  * Verificar senha
  */
 function verifyPassword(password, storedHash) {
-    const [salt, hash] = storedHash.split(':');
-    const verifyHash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
-    return hash === verifyHash;
+    if (!password || !storedHash) return false;
+
+    // Hash legado em formato salt:hash (pbkdf2)
+    if (storedHash.includes(':')) {
+        const [salt, hash] = storedHash.split(':');
+        if (!salt || !hash) return false;
+        const verifyHash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+        return hash === verifyHash;
+    }
+
+    // Compatibilidade com hashes bcrypt já existentes no banco
+    try {
+        return bcrypt.compareSync(password, storedHash);
+    } catch (error) {
+        return false;
+    }
 }
 
 /**

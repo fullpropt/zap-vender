@@ -123,7 +123,7 @@
         <form id="loginForm" onsubmit="return handleLogin(event)">
             <div class="form-group">
                 <label class="form-label">Usuario</label>
-                <input type="text" class="form-input" id="username" placeholder="Digite seu usuario" required autocomplete="off">
+                <input type="text" class="form-input" id="username" placeholder="Digite seu e-mail ou usuário" required autocomplete="off">
             </div>
             
             <div class="form-group">
@@ -140,45 +140,50 @@
     </div>
     
     <script>
-        // Credenciais hasheadas para seguranca
-        const VALID_USER_HASH = 'dGh5YWdv'; // thyago em base64
-        const VALID_PASS_HASH = 'dGh5YWdvMTIz'; // thyago123 em base64
-        
-        function handleLogin(e) {
+        async function handleLogin(e) {
             e.preventDefault();
-            
-            const username = document.getElementById('username').value;
+
+            const identifier = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value;
-            
-            // Verificacao com hash
-            const userHash = btoa(username);
-            const passHash = btoa(password);
-            
-            if (userHash === VALID_USER_HASH && passHash === VALID_PASS_HASH) {
-                // Gerar token de sessao
-                const sessionToken = generateSessionToken();
-                sessionStorage.setItem('selfDashboardToken', sessionToken);
-                sessionStorage.setItem('selfDashboardUser', username);
-                sessionStorage.setItem('selfDashboardExpiry', Date.now() + (8 * 60 * 60 * 1000)); // 8 horas
-                
-                // Redirecionar para dashboard
+            const errorMsg = document.getElementById('errorMsg');
+
+            try {
+                const response = await fetch(`${window.location.origin}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: identifier,
+                        password
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data?.token) {
+                    throw new Error(data?.error || 'Credenciais inválidas');
+                }
+
+                sessionStorage.setItem('selfDashboardToken', data.token);
+                if (data.refreshToken) {
+                    sessionStorage.setItem('selfDashboardRefreshToken', data.refreshToken);
+                }
+                sessionStorage.setItem('selfDashboardUser', data.user?.name || identifier);
+                sessionStorage.setItem('selfDashboardExpiry', Date.now() + (8 * 60 * 60 * 1000));
+
                 window.location.href = 'dashboard.html';
-            } else {
-                document.getElementById('errorMsg').style.display = 'block';
+            } catch (error) {
+                errorMsg.style.display = 'block';
+                errorMsg.textContent = error.message || 'Falha ao realizar login';
                 setTimeout(() => {
-                    document.getElementById('errorMsg').style.display = 'none';
-                }, 3000);
+                    errorMsg.style.display = 'none';
+                }, 4000);
             }
-            
+
             return false;
         }
-        
-        function generateSessionToken() {
-            const array = new Uint8Array(32);
-            crypto.getRandomValues(array);
-            return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-        }
-        
+
         // Verificar se ja esta logado
         if (sessionStorage.getItem('selfDashboardToken')) {
             const expiry = sessionStorage.getItem('selfDashboardExpiry');

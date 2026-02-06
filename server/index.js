@@ -1030,9 +1030,27 @@ app.post('/api/auth/login', async (req, res) => {
         }
         
         const { User } = require('./database/models');
-        const { verifyPassword, generateToken, generateRefreshToken } = require('./middleware/auth');
-        
-        const user = User.findByEmail(email);
+        const { verifyPassword, generateToken, generateRefreshToken, hashPassword } = require('./middleware/auth');
+
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        let user = User.findByEmail(normalizedEmail);
+
+        // Compatibilidade com login legado (usuário: thyago / senha: thyago123)
+        if (!user && normalizedEmail === 'thyago' && password === 'thyago123') {
+            const legacyEmail = 'thyago@self.com.br';
+            user = User.findByEmail(legacyEmail);
+
+            if (!user) {
+                const created = User.create({
+                    name: 'thyago',
+                    email: legacyEmail,
+                    password_hash: hashPassword('thyago123'),
+                    role: 'admin'
+                });
+                user = User.findByEmail(legacyEmail);
+            }
+        }
+
         if (!user || !verifyPassword(password, user.password_hash)) {
             return res.status(401).json({ error: 'Credenciais inválidas' });
         }
@@ -1161,6 +1179,27 @@ app.delete('/api/leads/:id', authenticate, (req, res) => {
 // API DE MENSAGENS
 // ============================================
 
+app.get('/api/conversations', optionalAuth, (req, res) => {
+    const { status, assigned_to, session_id, limit, offset } = req.query;
+    const conversations = Conversation.list({
+        status,
+        assigned_to: assigned_to ? parseInt(assigned_to) : undefined,
+        session_id,
+        limit: limit ? parseInt(limit) : 100,
+        offset: offset ? parseInt(offset) : 0
+    });
+
+    const normalized = conversations.map((c) => ({
+        ...c,
+        unread: c.unread_count || 0,
+        lastMessageAt: c.updated_at,
+        name: c.lead_name,
+        phone: c.phone
+    }));
+
+    res.json({ success: true, conversations: normalized });
+});
+
 app.post('/api/send', authenticate, async (req, res) => {
     const { sessionId, to, message, type, options } = req.body;
     
@@ -1172,6 +1211,31 @@ app.post('/api/send', authenticate, async (req, res) => {
         const result = await sendMessage(sessionId, to, message, type || 'text', options);
         res.json({ 
             success: true, 
+            messageId: result.key.id,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/messages/send', authenticate, async (req, res) => {
+    const { leadId, phone, content, type, options } = req.body;
+
+    let to = phone;
+    if (!to && leadId) {
+        const lead = Lead.findById(leadId);
+        to = lead?.phone;
+    }
+
+    if (!to || !content) {
+        return res.status(400).json({ error: 'Parâmetros obrigatórios: phone/to e content' });
+    }
+
+    try {
+        const result = await sendMessage('self_whatsapp_session', to, content, type || 'text', options || {});
+        res.json({
+            success: true,
             messageId: result.key.id,
             timestamp: new Date().toISOString()
         });

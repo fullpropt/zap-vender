@@ -364,16 +364,22 @@
             try {
                 socket = io();
                 
-                socket.on('new_message', (data) => {
+                socket.on('new-message', (data) => {
                     if (currentConversation && data.leadId === currentConversation.id) {
-                        messages.push(data.message);
-                        renderMessages();
+                        messages.push({
+                            id: data.id || Date.now(),
+                            content: data.text || '',
+                            direction: data.isFromMe ? 'outgoing' : 'incoming',
+                            status: data.status || (data.isFromMe ? 'sent' : 'received'),
+                            created_at: new Date(data.timestamp || Date.now()).toISOString()
+                        });
+                        document.getElementById('chatMessages').innerHTML = renderMessages();
                         scrollToBottom();
                     }
                     loadConversations();
                 });
 
-                socket.on('message_status', (data) => {
+                socket.on('message-status', (data) => {
                     // Atualizar status da mensagem
                 });
             } catch (e) {
@@ -383,28 +389,23 @@
 
         async function loadConversations() {
             try {
-                const response = await api.get('/api/conversations');
-                conversations = response.conversations || [];
+                const response = await api.get('/api/leads');
+                const leads = response.leads || [];
+                conversations = leads.map(l => ({
+                    id: l.id,
+                    name: l.name || l.phone,
+                    phone: l.phone,
+                    lastMessage: l.last_message || 'Clique para iniciar conversa',
+                    lastMessageAt: l.last_message_at || l.updated_at || l.created_at,
+                    unread: l.unread_count || 0,
+                    status: l.status
+                }));
+
                 renderConversations();
                 updateUnreadBadge();
             } catch (error) {
-                // Carregar leads como conversas
-                try {
-                    const response = await api.get('/api/leads');
-                    const leads = response.leads || [];
-                    conversations = leads.map(l => ({
-                        id: l.id,
-                        name: l.name,
-                        phone: l.phone,
-                        lastMessage: l.last_message || 'Clique para iniciar conversa',
-                        lastMessageAt: l.last_message_at || l.created_at,
-                        unread: l.unread_count || 0,
-                        status: l.status
-                    }));
-                    renderConversations();
-                } catch (e) {
-                    console.error(e);
-                }
+                console.error(error);
+                showToast('error', 'Erro', 'Não foi possível carregar as conversas');
             }
         }
 
@@ -500,7 +501,11 @@
         async function loadMessages(leadId) {
             try {
                 const response = await api.get(`/api/messages/${leadId}`);
-                messages = response.messages || [];
+                messages = (response.messages || []).map(m => ({
+                    ...m,
+                    direction: m.direction || (m.is_from_me ? 'outgoing' : 'incoming'),
+                    created_at: m.created_at || m.sent_at || new Date().toISOString()
+                }));
             } catch (error) {
                 messages = [];
             }
@@ -619,10 +624,11 @@
             input.value = '';
 
             try {
-                await api.post('/api/messages/send', {
-                    leadId: currentConversation.id,
-                    phone: currentConversation.phone,
-                    content
+                await api.post('/api/send', {
+                    sessionId: APP.sessionId,
+                    to: currentConversation.phone,
+                    message: content,
+                    type: 'text'
                 });
                 
                 newMessage.status = 'sent';
