@@ -91,6 +91,9 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false
 }));
 
+// Railway/Proxy: confiar no proxy para X-Forwarded-For
+app.set('trust proxy', 1);
+
 // Rate limiting
 const limiter = rateLimit({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000,

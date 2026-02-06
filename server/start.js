@@ -13,8 +13,30 @@ const fs = require('fs');
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 
+function resolveVolumeBase() {
+    const envBase = process.env.RAILWAY_VOLUME_MOUNT_PATH
+        || process.env.RAILWAY_VOLUME
+        || process.env.VOLUME_MOUNT_PATH;
+    if (envBase && fs.existsSync(envBase)) return envBase;
+    if (fs.existsSync('/mnt/data')) return '/mnt/data';
+    return null;
+}
+
+const volumeBase = process.env.NODE_ENV === 'production' ? resolveVolumeBase() : null;
+
+if (volumeBase) {
+    process.env.DATA_DIR = process.env.DATA_DIR || path.join(volumeBase, 'data');
+    process.env.SESSIONS_DIR = process.env.SESSIONS_DIR || path.join(volumeBase, 'sessions');
+    process.env.UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(volumeBase, 'uploads');
+    process.env.DATABASE_PATH = process.env.DATABASE_PATH || path.join(process.env.DATA_DIR, 'self.db');
+}
+
 // Criar diretórios necessários
-[path.join(__dirname, '..', 'sessions'), path.join(__dirname, '..', 'data'), path.join(__dirname, '..', 'uploads')].forEach(dir => {
+[
+    process.env.SESSIONS_DIR || path.join(__dirname, '..', 'sessions'),
+    process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
+    process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads')
+].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
