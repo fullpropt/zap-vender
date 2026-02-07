@@ -1,10 +1,39 @@
-// @ts-nocheck
 // Inbox page logic migrated to module
 
-let conversations = [];
-let currentConversation = null;
-let messages = [];
-let socket = null;
+declare const io:
+    | undefined
+    | ((url?: string, options?: Record<string, unknown>) => {
+          on: (event: string, handler: (data?: any) => void) => void;
+          emit: (event: string, payload?: any) => void;
+      });
+
+type LeadStatus = 1 | 2 | 3 | 4;
+
+type Conversation = {
+    id: number;
+    name: string;
+    phone: string;
+    lastMessage?: string;
+    lastMessageAt?: string;
+    unread?: number;
+    status?: LeadStatus;
+};
+
+type ChatMessage = {
+    id: number | string;
+    content: string;
+    direction: 'outgoing' | 'incoming';
+    status?: string;
+    created_at: string;
+};
+
+type LeadsResponse = { leads?: Array<Record<string, any>> };
+type MessagesResponse = { messages?: Array<Record<string, any>> };
+
+let conversations: Conversation[] = [];
+let currentConversation: Conversation | null = null;
+let messages: ChatMessage[] = [];
+let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     loadConversations();
@@ -13,6 +42,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initSocket() {
     try {
+        if (!io) {
+            console.log('Socket não disponível');
+            return;
+        }
         socket = io();
         
         socket.on('new-message', (data) => {
@@ -24,7 +57,8 @@ function initSocket() {
                     status: data.status || (data.isFromMe ? 'sent' : 'received'),
                     created_at: new Date(data.timestamp || Date.now()).toISOString()
                 });
-                document.getElementById('chatMessages').innerHTML = renderMessages();
+                const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
+                if (chatMessages) chatMessages.innerHTML = renderMessages();
                 scrollToBottom();
             }
             loadConversations();
@@ -40,7 +74,7 @@ function initSocket() {
 
 async function loadConversations() {
     try {
-        const response = await api.get('/api/leads');
+        const response: LeadsResponse = await api.get('/api/leads');
         const leads = response.leads || [];
         conversations = leads.map(l => ({
             id: l.id,
@@ -61,7 +95,8 @@ async function loadConversations() {
 }
 
 function renderConversations() {
-    const list = document.getElementById('conversationsList');
+    const list = document.getElementById('conversationsList') as HTMLElement | null;
+    if (!list) return;
     
     if (conversations.length === 0) {
         list.innerHTML = `
@@ -91,9 +126,10 @@ function renderConversations() {
     `).join('');
 }
 
-function filterConversations(filter) {
+function filterConversations(filter: 'all' | 'unread') {
     document.querySelectorAll('.conversations-tabs button').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
+    const target = (window as any).event?.target as HTMLElement | undefined;
+    target?.classList.add('active');
     
     if (filter === 'unread') {
         const filtered = conversations.filter(c => c.unread > 0);
@@ -103,8 +139,9 @@ function filterConversations(filter) {
     }
 }
 
-function renderFilteredConversations(filtered) {
-    const list = document.getElementById('conversationsList');
+function renderFilteredConversations(filtered: Conversation[]) {
+    const list = document.getElementById('conversationsList') as HTMLElement | null;
+    if (!list) return;
     if (filtered.length === 0) {
         list.innerHTML = `<div class="empty-state" style="padding: 40px;"><p>Nenhuma conversa encontrada</p></div>`;
         return;
@@ -126,7 +163,7 @@ function renderFilteredConversations(filtered) {
 }
 
 function searchConversations() {
-    const search = document.getElementById('searchConversations').value.toLowerCase();
+    const search = (document.getElementById('searchConversations') as HTMLInputElement | null)?.value.toLowerCase() || '';
     const filtered = conversations.filter(c => 
         (c.name && c.name.toLowerCase().includes(search)) ||
         (c.phone && c.phone.includes(search))
@@ -134,7 +171,7 @@ function searchConversations() {
     renderFilteredConversations(filtered);
 }
 
-async function selectConversation(id) {
+async function selectConversation(id: number) {
     currentConversation = conversations.find(c => c.id === id);
     if (!currentConversation) return;
 
@@ -151,7 +188,7 @@ async function selectConversation(id) {
 
 async function loadMessages(leadId) {
     try {
-        const response = await api.get(`/api/messages/${leadId}`);
+        const response: MessagesResponse = await api.get(`/api/messages/${leadId}`);
         messages = (response.messages || []).map(m => ({
             ...m,
             direction: m.direction || (m.is_from_me ? 'outgoing' : 'incoming'),
@@ -163,7 +200,8 @@ async function loadMessages(leadId) {
 }
 
 function renderChat() {
-    const panel = document.getElementById('chatPanel');
+    const panel = document.getElementById('chatPanel') as HTMLElement | null;
+    if (!panel || !currentConversation) return;
     
     panel.innerHTML = `
         <div class="chat-header">
@@ -201,8 +239,9 @@ function renderChat() {
 
     // Mostrar botão voltar em mobile
     if (window.innerWidth <= 768) {
-        document.getElementById('backBtn').style.display = 'block';
-        document.getElementById('conversationsPanel').classList.add('hidden');
+        const backBtn = document.getElementById('backBtn') as HTMLElement | null;
+        if (backBtn) backBtn.style.display = 'block';
+        document.getElementById('conversationsPanel')?.classList.add('hidden');
         panel.classList.add('active');
     }
 
@@ -231,18 +270,20 @@ function renderMessages() {
 }
 
 function scrollToBottom() {
-    const container = document.getElementById('chatMessages');
+    const container = document.getElementById('chatMessages') as HTMLElement | null;
     if (container) {
         container.scrollTop = container.scrollHeight;
     }
 }
 
-function insertQuickReply(text) {
-    document.getElementById('messageInput').value = text;
-    document.getElementById('messageInput').focus();
+function insertQuickReply(text: string) {
+    const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+    if (!input) return;
+    input.value = text;
+    input.focus();
 }
 
-function handleKeyDown(event) {
+function handleKeyDown(event: KeyboardEvent) {
     if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         sendMessage();
@@ -250,8 +291,8 @@ function handleKeyDown(event) {
 }
 
 async function sendMessage() {
-    const input = document.getElementById('messageInput');
-    const content = input.value.trim();
+    const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+    const content = input?.value.trim() || '';
     
     if (!content || !currentConversation) return;
 
@@ -260,7 +301,7 @@ async function sendMessage() {
     }
 
     // Adicionar mensagem localmente
-    const newMessage = {
+    const newMessage: ChatMessage = {
         id: Date.now(),
         content,
         direction: 'outgoing',
@@ -270,9 +311,10 @@ async function sendMessage() {
     messages.push(newMessage);
     
     // Atualizar UI
-    document.getElementById('chatMessages').innerHTML = renderMessages();
+    const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
+    if (chatMessages) chatMessages.innerHTML = renderMessages();
     scrollToBottom();
-    input.value = '';
+    if (input) input.value = '';
 
     try {
         await api.post('/api/send', {
@@ -283,10 +325,10 @@ async function sendMessage() {
         });
         
         newMessage.status = 'sent';
-        document.getElementById('chatMessages').innerHTML = renderMessages();
+        if (chatMessages) chatMessages.innerHTML = renderMessages();
     } catch (error) {
         newMessage.status = 'failed';
-        document.getElementById('chatMessages').innerHTML = renderMessages();
+        if (chatMessages) chatMessages.innerHTML = renderMessages();
         showToast('error', 'Erro', 'Não foi possível enviar a mensagem');
     }
 }
@@ -319,27 +361,31 @@ async function registerCurrentUser() {
         hideLoading();
         showToast('success', 'Sucesso', 'Usuário cadastrado na sua audiência!');
         loadConversations();
-        document.getElementById('inboxRightContent').innerHTML = `
+        const inboxRight = document.getElementById('inboxRightContent') as HTMLElement | null;
+        if (inboxRight) {
+            inboxRight.innerHTML = `
             <span class="inbox-right-panel-robot icon icon-check icon-lg"></span>
             <p><strong>Cliente cadastrado!</strong></p>
             <p>O cartão do usuário está disponível em Contatos.</p>
         `;
+        }
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', error?.response?.data?.error || 'Não foi possível cadastrar');
+        showToast('error', 'Erro', 'Não foi possível cadastrar');
     }
 }
 
 function backToList() {
-    document.getElementById('conversationsPanel').classList.remove('hidden');
-    document.getElementById('chatPanel').classList.remove('active');
+    document.getElementById('conversationsPanel')?.classList.remove('hidden');
+    document.getElementById('chatPanel')?.classList.remove('active');
 }
 
 function updateUnreadBadge() {
     const unread = conversations.reduce((sum, c) => sum + (c.unread || 0), 0);
-    const badge = document.getElementById('unreadBadge');
+    const badge = document.getElementById('unreadBadge') as HTMLElement | null;
+    if (!badge) return;
     if (unread > 0) {
-        badge.textContent = unread;
+        badge.textContent = String(unread);
         badge.style.display = 'inline';
     } else {
         badge.style.display = 'none';
@@ -349,7 +395,20 @@ function updateUnreadBadge() {
 // Atualizar conversas a cada 10 segundos
 setInterval(loadConversations, 10000);
 
-const windowAny = window as any;
+const windowAny = window as Window & {
+    filterConversations?: (filter: 'all' | 'unread') => void;
+    searchConversations?: () => void;
+    selectConversation?: (id: number) => Promise<void>;
+    insertQuickReply?: (text: string) => void;
+    handleKeyDown?: (event: KeyboardEvent) => void;
+    sendMessage?: () => Promise<void>;
+    openWhatsApp?: () => void;
+    viewContact?: () => void;
+    toggleContactInfo?: () => void;
+    registerCurrentUser?: () => Promise<void>;
+    backToList?: () => void;
+    logout?: () => void;
+};
 windowAny.filterConversations = filterConversations;
 windowAny.searchConversations = searchConversations;
 windowAny.selectConversation = selectConversation;

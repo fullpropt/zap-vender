@@ -1,12 +1,60 @@
-// @ts-nocheck
 // Conversas page logic migrated to module
 
 // Estado
-let socket = null;
+declare const io:
+    | undefined
+    | ((url: string, options?: Record<string, unknown>) => {
+          on: (event: string, handler: (data?: any) => void) => void;
+          emit: (event: string, payload?: any) => void;
+      });
+
+type Config = {
+    SOCKET_URL: string;
+    SESSION_ID: string;
+    STORAGE_KEYS: { LEADS: string };
+};
+
+type LeadStored = {
+    telefone: string;
+    nome: string;
+    data: string;
+    status?: number;
+    veiculo?: string;
+    placa?: string;
+};
+
+type Conversation = {
+    jid: string;
+    number: string;
+    name: string;
+    lastMessage: string;
+    lastMessageTime: number;
+    unreadCount: number;
+    status?: number;
+    veiculo?: string;
+    placa?: string;
+};
+
+type ChatMessage = {
+    id: string;
+    text: string;
+    isFromMe: boolean;
+    timestamp: number;
+    status?: string;
+};
+
+type SocketMessage = Partial<ChatMessage> & {
+    from?: string;
+};
+
+declare const CONFIG: Config;
+declare const INITIAL_LEADS: LeadStored[];
+
+let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
 let isConnected = false;
-let currentContact = null;
-let conversations = [];
-let messages = {};
+let currentContact: Conversation | null = null;
+let conversations: Conversation[] = [];
+let messages: Record<string, ChatMessage[]> = {};
 let currentFilter = 'all';
 
 // Inicialização
@@ -32,6 +80,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Inicializar Socket
 function initSocket() {
+    if (!io) {
+        console.warn('Socket.IO não carregado');
+        return;
+    }
     socket = io(CONFIG.SOCKET_URL, {
         transports: ['websocket', 'polling'],
         reconnection: true,
@@ -80,7 +132,7 @@ function initSocket() {
         }
     });
     
-    socket.on('new-message', function(data) {
+    socket.on('new-message', function(data: SocketMessage) {
         // Adicionar mensagem ao chat
         if (data.from) {
             if (!messages[data.from]) {
@@ -90,7 +142,7 @@ function initSocket() {
             // Evitar duplicatas
             const exists = messages[data.from].find(m => m.id === data.id);
             if (!exists) {
-                messages[data.from].push(data);
+                messages[data.from].push(data as ChatMessage);
                 
                 // Atualizar UI se for o chat atual
                 if (currentContact && currentContact.jid === data.from) {
@@ -120,15 +172,15 @@ function initSocket() {
 
 // Atualizar aviso de conexão
 function updateConnectionWarning() {
-    const warning = document.getElementById('connection-warning');
-    warning.style.display = isConnected ? 'none' : 'flex';
+    const warning = document.getElementById('connection-warning') as HTMLElement | null;
+    if (warning) warning.style.display = isConnected ? 'none' : 'flex';
 }
 
 // Carregar conversas
 function loadConversations() {
     // Carregar leads do localStorage
     const stored = localStorage.getItem(CONFIG.STORAGE_KEYS.LEADS);
-    let leads = stored ? JSON.parse(stored) : INITIAL_LEADS;
+    let leads: LeadStored[] = stored ? JSON.parse(stored) : INITIAL_LEADS;
     
     // Converter leads para formato de conversa
     conversations = leads.map(lead => ({
@@ -147,7 +199,7 @@ function loadConversations() {
 }
 
 // Mesclar contatos do WhatsApp
-function mergeContacts(whatsappContacts) {
+function mergeContacts(whatsappContacts: Array<Partial<Conversation>>) {
     whatsappContacts.forEach(contact => {
         const existing = conversations.find(c => c.jid === contact.jid || c.number === contact.number);
         if (existing) {
@@ -156,9 +208,9 @@ function mergeContacts(whatsappContacts) {
             existing.unreadCount = contact.unreadCount || 0;
         } else {
             conversations.push({
-                jid: contact.jid || formatJid(contact.number),
-                number: contact.number,
-                name: contact.name || contact.number,
+                jid: contact.jid || formatJid(contact.number || ''),
+                number: contact.number || '',
+                name: contact.name || contact.number || '',
                 lastMessage: contact.lastMessage || 'Nova conversa',
                 lastMessageTime: contact.lastMessageTime || Date.now(),
                 unreadCount: contact.unreadCount || 0
@@ -172,7 +224,8 @@ function mergeContacts(whatsappContacts) {
 
 // Renderizar conversas
 function renderConversations() {
-    const container = document.getElementById('conversations-list');
+    const container = document.getElementById('conversations-list') as HTMLElement | null;
+    if (!container) return;
     let filtered = conversations;
     
     // Aplicar filtro
@@ -181,7 +234,7 @@ function renderConversations() {
     }
     
     // Aplicar busca
-    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    const searchTerm = (document.getElementById('search-input') as HTMLInputElement | null)?.value.toLowerCase() || '';
     if (searchTerm) {
         filtered = filtered.filter(c => 
             c.name.toLowerCase().includes(searchTerm) ||
@@ -221,18 +274,27 @@ function renderConversations() {
 }
 
 // Selecionar conversa
-function selectConversation(contact) {
+function selectConversation(contact: Conversation) {
     currentContact = contact;
     
     // Atualizar UI
-    document.getElementById('chat-header').style.display = 'flex';
-    document.getElementById('chat-empty').style.display = 'none';
-    document.getElementById('chat-input-container').style.display = 'block';
-    document.getElementById('quick-templates').style.display = 'flex';
+    const chatHeader = document.getElementById('chat-header') as HTMLElement | null;
+    const chatEmpty = document.getElementById('chat-empty') as HTMLElement | null;
+    const chatInput = document.getElementById('chat-input-container') as HTMLElement | null;
+    const quickTemplates = document.getElementById('quick-templates') as HTMLElement | null;
+    if (chatHeader) chatHeader.style.display = 'flex';
+    if (chatEmpty) chatEmpty.style.display = 'none';
+    if (chatInput) chatInput.style.display = 'block';
+    if (quickTemplates) quickTemplates.style.display = 'flex';
     
-    document.getElementById('chat-avatar').innerHTML = contact.name ? contact.name.charAt(0).toUpperCase() : '<span class="icon icon-user icon-sm"></span>';
-    document.getElementById('chat-name').textContent = contact.name;
-    document.getElementById('chat-phone').textContent = formatPhone(contact.number);
+    const chatAvatar = document.getElementById('chat-avatar') as HTMLElement | null;
+    const chatName = document.getElementById('chat-name') as HTMLElement | null;
+    const chatPhone = document.getElementById('chat-phone') as HTMLElement | null;
+    if (chatAvatar) {
+        chatAvatar.innerHTML = contact.name ? contact.name.charAt(0).toUpperCase() : '<span class="icon icon-user icon-sm"></span>';
+    }
+    if (chatName) chatName.textContent = contact.name;
+    if (chatPhone) chatPhone.textContent = formatPhone(contact.number);
     
     // Marcar como lido
     const conv = conversations.find(c => c.jid === contact.jid);
@@ -245,11 +307,11 @@ function selectConversation(contact) {
     
     // Carregar mensagens
     if (isConnected) {
-        socket.emit('get-messages', { 
+        socket?.emit('get-messages', { 
             sessionId: CONFIG.SESSION_ID, 
             contactJid: contact.jid 
         });
-        socket.emit('mark-read', {
+        socket?.emit('mark-read', {
             sessionId: CONFIG.SESSION_ID,
             contactJid: contact.jid
         });
@@ -259,25 +321,29 @@ function selectConversation(contact) {
     if (messages[contact.jid]) {
         renderMessages(messages[contact.jid]);
     } else {
-        document.getElementById('chat-messages').innerHTML = `
+        const chatMessages = document.getElementById('chat-messages') as HTMLElement | null;
+        if (chatMessages) {
+            chatMessages.innerHTML = `
             <div class="chat-empty">
                 <span class="icon icon-empty icon-lg"></span>
                 <h3>Inicie a conversa</h3>
                 <p>Envie uma mensagem para ${contact.name}</p>
             </div>
         `;
+        }
     }
     
     // Mobile: esconder lista
     if (window.innerWidth <= 900) {
-        document.getElementById('inbox-sidebar').classList.add('hidden');
-        document.getElementById('chat-area').classList.remove('hidden');
+        document.getElementById('inbox-sidebar')?.classList.add('hidden');
+        document.getElementById('chat-area')?.classList.remove('hidden');
     }
 }
 
 // Renderizar mensagens
-function renderMessages(msgs) {
-    const container = document.getElementById('chat-messages');
+function renderMessages(msgs: ChatMessage[]) {
+    const container = document.getElementById('chat-messages') as HTMLElement | null;
+    if (!container) return;
     
     if (!msgs || msgs.length === 0) {
         container.innerHTML = `
@@ -316,8 +382,8 @@ function renderMessages(msgs) {
 }
 
 // Agrupar mensagens por data
-function groupMessagesByDate(msgs) {
-    const groups = {};
+function groupMessagesByDate(msgs: ChatMessage[]) {
+    const groups: Record<string, ChatMessage[]> = {};
     
     msgs.forEach(msg => {
         const date = new Date(msg.timestamp);
@@ -345,8 +411,8 @@ function groupMessagesByDate(msgs) {
 
 // Enviar mensagem
 function sendMessage() {
-    const input = document.getElementById('message-input');
-    const message = input.value.trim();
+    const input = document.getElementById('message-input') as HTMLTextAreaElement | null;
+    const message = input?.value.trim() || '';
     
     if (!message || !currentContact) return;
     
@@ -356,7 +422,7 @@ function sendMessage() {
     }
     
     // Enviar via socket
-    socket.emit('send-message', {
+    socket?.emit('send-message', {
         sessionId: CONFIG.SESSION_ID,
         to: currentContact.number,
         message: message,
@@ -364,7 +430,7 @@ function sendMessage() {
     });
     
     // Adicionar mensagem localmente
-    const newMessage = {
+    const newMessage: ChatMessage = {
         id: 'temp_' + Date.now(),
         text: message,
         isFromMe: true,
@@ -381,15 +447,17 @@ function sendMessage() {
     renderMessages(messages[currentContact.jid]);
     
     // Limpar input
-    input.value = '';
-    input.style.height = 'auto';
+    if (input) {
+        input.value = '';
+        input.style.height = 'auto';
+    }
     
     // Atualizar preview da conversa
     updateConversationPreview(currentContact.jid, newMessage);
 }
 
 // Atualizar preview da conversa
-function updateConversationPreview(jid, message) {
+function updateConversationPreview(jid: string, message: ChatMessage) {
     const conv = conversations.find(c => c.jid === jid);
     if (conv) {
         conv.lastMessage = message.text.substring(0, 50) + (message.text.length > 50 ? '...' : '');
@@ -402,10 +470,10 @@ function updateConversationPreview(jid, message) {
 }
 
 // Atualizar status da mensagem
-function updateMessageStatus(messageId, status) {
-    const msgEl = document.querySelector(`[data-id="${messageId}"]`);
+function updateMessageStatus(messageId: string, status: string) {
+    const msgEl = document.querySelector(`[data-id="${messageId}"]`) as HTMLElement | null;
     if (msgEl) {
-        const statusEl = msgEl.querySelector('.status-icon');
+        const statusEl = msgEl.querySelector('.status-icon') as HTMLElement | null;
         if (statusEl) {
             statusEl.textContent = getStatusIcon(status);
             if (status === 'read') {
@@ -416,21 +484,23 @@ function updateMessageStatus(messageId, status) {
 }
 
 // Usar template
-function useTemplate(text) {
-    const input = document.getElementById('message-input');
+function useTemplate(text: string) {
+    const input = document.getElementById('message-input') as HTMLTextAreaElement | null;
+    if (!input) return;
     input.value = text;
     input.focus();
 }
 
 // Filtrar conversas
-function filterConversations(filter) {
+function filterConversations(filter: string) {
     currentFilter = filter;
     
     // Atualizar botões
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.classList.remove('active');
     });
-    event.target.classList.add('active');
+    const target = (window as any).event?.target as HTMLElement | undefined;
+    target?.classList.add('active');
     
     renderConversations();
 }
@@ -442,8 +512,8 @@ function searchConversations() {
 
 // Voltar para lista (mobile)
 function showConversationsList() {
-    document.getElementById('inbox-sidebar').classList.remove('hidden');
-    document.getElementById('chat-area').classList.add('hidden');
+    document.getElementById('inbox-sidebar')?.classList.remove('hidden');
+    document.getElementById('chat-area')?.classList.add('hidden');
 }
 
 // Abrir WhatsApp Web
@@ -470,7 +540,7 @@ function formatJid(phone) {
     return cleaned + '@s.whatsapp.net';
 }
 
-function formatPhone(phone) {
+function formatPhone(phone: string) {
     if (!phone) return '';
     const cleaned = phone.replace(/[^0-9]/g, '');
     if (cleaned.length === 11) {
@@ -481,7 +551,7 @@ function formatPhone(phone) {
     return phone;
 }
 
-function formatTime(timestamp) {
+function formatTime(timestamp: number) {
     if (!timestamp) return '';
     const date = new Date(timestamp);
     const now = new Date();
@@ -499,12 +569,12 @@ function formatTime(timestamp) {
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
-function formatMessageTime(timestamp) {
+function formatMessageTime(timestamp: number) {
     if (!timestamp) return '';
     return new Date(timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-function getStatusIcon(status) {
+function getStatusIcon(status: string) {
     switch (status) {
         case 'pending': return '•';
         case 'sent': return '✓';
@@ -514,7 +584,7 @@ function getStatusIcon(status) {
     }
 }
 
-function escapeHtml(text) {
+function escapeHtml(text: string) {
     if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
@@ -522,24 +592,25 @@ function escapeHtml(text) {
 }
 
 function scrollToBottom() {
-    const container = document.getElementById('chat-messages');
-    container.scrollTop = container.scrollHeight;
+    const container = document.getElementById('chat-messages') as HTMLElement | null;
+    if (container) container.scrollTop = container.scrollHeight;
 }
 
-function handleKeyDown(event) {
+function handleKeyDown(event: KeyboardEvent) {
     if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         sendMessage();
     }
 }
 
-function autoResize(textarea) {
+function autoResize(textarea: HTMLTextAreaElement) {
     textarea.style.height = 'auto';
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
 }
 
-function showToast(type, message) {
-    const container = document.getElementById('toast-container');
+function showToast(type: 'success' | 'error' | 'warning' | 'info', message: string) {
+    const container = document.getElementById('toast-container') as HTMLElement | null;
+    if (!container) return;
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     
@@ -557,8 +628,8 @@ function showToast(type, message) {
 }
 
 function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('active');
-    document.querySelector('.sidebar-overlay').classList.toggle('active');
+    document.getElementById('sidebar')?.classList.toggle('active');
+    document.querySelector('.sidebar-overlay')?.classList.toggle('active');
 }
 
 function logout() {
@@ -566,7 +637,20 @@ function logout() {
     window.location.href = 'login.html';
 }
 
-const windowAny = window as any;
+const windowAny = window as Window & {
+    selectConversation?: (contact: Conversation) => void;
+    sendMessage?: () => void;
+    handleKeyDown?: (event: KeyboardEvent) => void;
+    autoResize?: (textarea: HTMLTextAreaElement) => void;
+    useTemplate?: (text: string) => void;
+    filterConversations?: (filter: string) => void;
+    searchConversations?: () => void;
+    showConversationsList?: () => void;
+    openWhatsAppWeb?: () => void;
+    viewLeadDetails?: () => void;
+    toggleSidebar?: () => void;
+    logout?: () => void;
+};
 windowAny.selectConversation = selectConversation;
 windowAny.sendMessage = sendMessage;
 windowAny.handleKeyDown = handleKeyDown;

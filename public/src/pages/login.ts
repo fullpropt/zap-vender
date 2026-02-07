@@ -1,12 +1,27 @@
-// @ts-nocheck
 // Login page logic migrated to module
 
-async function handleLogin(e) {
+type LoginResponse = {
+    token?: string;
+    refreshToken?: string;
+    user?: { name?: string };
+    error?: string;
+};
+
+function getInputValue(id: string): string {
+    const input = document.getElementById(id) as HTMLInputElement | null;
+    return input?.value ?? '';
+}
+
+function getErrorMessageElement(): HTMLElement | null {
+    return document.getElementById('errorMsg');
+}
+
+async function handleLogin(e: Event) {
     e.preventDefault();
 
-    const identifier = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value;
-    const errorMsg = document.getElementById('errorMsg');
+    const identifier = getInputValue('username').trim();
+    const password = getInputValue('password');
+    const errorMsg = getErrorMessageElement();
 
     try {
         const response = await fetch(`${window.location.origin}/api/auth/login`, {
@@ -20,7 +35,7 @@ async function handleLogin(e) {
             })
         });
 
-        const data = await response.json();
+        const data: LoginResponse = await response.json();
 
         if (!response.ok || !data?.token) {
             throw new Error(data?.error || 'Credenciais inválidas');
@@ -35,11 +50,13 @@ async function handleLogin(e) {
 
         window.location.href = 'dashboard.html';
     } catch (error) {
-        errorMsg.style.display = 'block';
-        errorMsg.textContent = error.message || 'Falha ao realizar login';
-        setTimeout(() => {
-            errorMsg.style.display = 'none';
-        }, 4000);
+        if (errorMsg) {
+            errorMsg.style.display = 'block';
+            errorMsg.textContent = error instanceof Error ? error.message : 'Falha ao realizar login';
+            setTimeout(() => {
+                errorMsg.style.display = 'none';
+            }, 4000);
+        }
     }
 
     return false;
@@ -53,7 +70,7 @@ if (sessionStorage.getItem('selfDashboardToken')) {
     }
 }
 
-const windowAny = window as any;
+const windowAny = window as Window & { handleLogin?: (e: Event) => boolean | Promise<boolean> };
 windowAny.handleLogin = handleLogin;
 
 export {};

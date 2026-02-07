@@ -1,15 +1,44 @@
-// @ts-nocheck
 /**
  * SELF Proteção Veicular - JavaScript Global
  * Sistema estilo BotConversa
  * Versão: 4.0.0
  */
 
+declare const io:
+    | undefined
+    | ((url: string, options?: Record<string, unknown>) => {
+          on: (event: string, handler: (data?: any) => void) => void;
+          emit: (event: string, payload?: any) => void;
+      });
+
+type WhatsAppStatus = 'connected' | 'disconnected' | 'connecting' | 'qr';
+
+type AppState = {
+    version: string;
+    socketUrl: string;
+    sessionId: string;
+    countryCode: string;
+    socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void };
+    whatsappStatus: WhatsAppStatus;
+    user: string | null;
+};
+
+type WindowHandlers = {
+    handleQRCode?: (qr: string) => void;
+    handleNewMessage?: (data: unknown) => void;
+    handleMessageSent?: (data: unknown) => void;
+};
+
+type ApiRequestOptions = RequestInit & {
+    body?: any;
+    headers?: Record<string, string>;
+};
+
 // ============================================
 // CONFIGURAÇÃO GLOBAL
 // ============================================
 
-const APP = {
+const APP: AppState = {
     version: '4.0.0',
     socketUrl: window.location.hostname === 'localhost' 
         ? 'http://localhost:3001' 
@@ -99,7 +128,13 @@ function initSocket() {
     }
 
     const token = sessionStorage.getItem('selfDashboardToken');
-    const socketOptions = {
+    const socketOptions: {
+        transports: string[];
+        reconnection: boolean;
+        reconnectionAttempts: number;
+        reconnectionDelay: number;
+        auth?: { token: string };
+    } = {
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: 10,
@@ -123,7 +158,7 @@ function initSocket() {
     });
     
     APP.socket.on('whatsapp-status', (data) => {
-        updateWhatsAppStatus(data.status);
+        updateWhatsAppStatus(data?.status as WhatsAppStatus);
     });
     
     APP.socket.on('connected', (data) => {
@@ -137,22 +172,19 @@ function initSocket() {
     
     APP.socket.on('qr', (data) => {
         updateWhatsAppStatus('qr');
-        if (typeof handleQRCode === 'function') {
-            handleQRCode(data.qr);
-        }
+        const handlers = window as Window & WindowHandlers;
+        handlers.handleQRCode?.(data?.qr);
     });
     
     APP.socket.on('new-message', (data) => {
-        if (typeof handleNewMessage === 'function') {
-            handleNewMessage(data);
-        }
+        const handlers = window as Window & WindowHandlers;
+        handlers.handleNewMessage?.(data);
         updateUnreadCount();
     });
     
     APP.socket.on('message-sent', (data) => {
-        if (typeof handleMessageSent === 'function') {
-            handleMessageSent(data);
-        }
+        const handlers = window as Window & WindowHandlers;
+        handlers.handleMessageSent?.(data);
     });
     
     APP.socket.on('error', (data) => {
@@ -160,7 +192,7 @@ function initSocket() {
     });
 }
 
-function updateWhatsAppStatus(status) {
+function updateWhatsAppStatus(status: WhatsAppStatus) {
     APP.whatsappStatus = status;
 
     const indicators = document.querySelectorAll('.status-indicator');
@@ -177,7 +209,7 @@ function updateWhatsAppStatus(status) {
     
     const statusTexts = document.querySelectorAll('.whatsapp-status-text');
     statusTexts.forEach(el => {
-        const texts = {
+        const texts: Record<WhatsAppStatus, string> = {
             connected: 'Conectado',
             disconnected: 'Desconectado',
             connecting: 'Conectando...',
@@ -192,9 +224,9 @@ function updateWhatsAppStatus(status) {
 // ============================================
 
 function initSidebar() {
-    const toggle = document.querySelector('.mobile-menu-toggle');
-    const sidebar = document.querySelector('.sidebar');
-    const overlay = document.querySelector('.sidebar-overlay');
+    const toggle = document.querySelector('.mobile-menu-toggle') as HTMLElement | null;
+    const sidebar = document.querySelector('.sidebar') as HTMLElement | null;
+    const overlay = document.querySelector('.sidebar-overlay') as HTMLElement | null;
     
     if (toggle) {
         toggle.addEventListener('click', () => {
@@ -230,7 +262,7 @@ function initModals() {
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) {
-                closeModal(overlay.id);
+                closeModal((overlay as HTMLElement).id);
             }
         });
     });
@@ -238,7 +270,7 @@ function initModals() {
     // Fechar modal com botão X
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', () => {
-            const modal = btn.closest('.modal-overlay');
+            const modal = btn.closest('.modal-overlay') as HTMLElement | null;
             if (modal) {
                 closeModal(modal.id);
             }
@@ -276,8 +308,8 @@ function closeModal(modalId) {
 // TOAST NOTIFICATIONS
 // ============================================
 
-function showToast(type, title, message, duration = 5000) {
-    let container = document.querySelector('.toast-container');
+function showToast(type: 'success' | 'error' | 'warning' | 'info', title: string, message: string, duration = 5000) {
+    let container = document.querySelector('.toast-container') as HTMLElement | null;
     if (!container) {
         container = document.createElement('div');
         container.className = 'toast-container';
@@ -318,25 +350,28 @@ function showToast(type, title, message, duration = 5000) {
 // API HELPERS
 // ============================================
 
-async function apiRequest(endpoint, options = {}) {
+async function apiRequest(endpoint: string, options: ApiRequestOptions = {}) {
     const url = `${APP.socketUrl}${endpoint}`;
     const token = sessionStorage.getItem('selfDashboardToken');
     
-    const defaultOptions = {
+    const defaultOptions: ApiRequestOptions = {
         headers: {
             'Content-Type': 'application/json'
         }
     };
     
-    const config = { ...defaultOptions, ...options };
+    const config: ApiRequestOptions = { ...defaultOptions, ...options };
 
     config.headers = {
-        ...defaultOptions.headers,
+        ...(defaultOptions.headers || {}),
         ...(options.headers || {})
     };
 
     if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+        config.headers = {
+            ...config.headers,
+            Authorization: `Bearer ${token}`
+        };
     }
     
     if (options.body && typeof options.body === 'object') {
@@ -365,17 +400,17 @@ async function apiRequest(endpoint, options = {}) {
 
 // Atalhos para métodos HTTP
 const api = {
-    get: (endpoint) => apiRequest(endpoint, { method: 'GET' }),
-    post: (endpoint, body) => apiRequest(endpoint, { method: 'POST', body }),
-    put: (endpoint, body) => apiRequest(endpoint, { method: 'PUT', body }),
-    delete: (endpoint) => apiRequest(endpoint, { method: 'DELETE' })
+    get: (endpoint: string) => apiRequest(endpoint, { method: 'GET' }),
+    post: (endpoint: string, body?: any) => apiRequest(endpoint, { method: 'POST', body }),
+    put: (endpoint: string, body?: any) => apiRequest(endpoint, { method: 'PUT', body }),
+    delete: (endpoint: string) => apiRequest(endpoint, { method: 'DELETE' })
 };
 
 // ============================================
 // FORMATADORES
 // ============================================
 
-function formatPhone(phone) {
+function formatPhone(phone: string) {
     if (!phone) return '';
     const cleaned = phone.replace(/\D/g, '');
     if (cleaned.length === 11) {
@@ -386,43 +421,45 @@ function formatPhone(phone) {
     return phone;
 }
 
-function formatDate(date, format = 'short') {
+function formatDate(date: Date | string | number, format: keyof typeof DATE_FORMATS = 'short') {
     if (!date) return '';
     const d = new Date(date);
 
-    const options = {
-        short: { day: '2-digit', month: '2-digit', year: 'numeric' },
-        medium: { day: '2-digit', month: 'short', year: 'numeric' },
-        long: { day: '2-digit', month: 'long', year: 'numeric' },
-        full: { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' },
-        time: { hour: '2-digit', minute: '2-digit' },
-        datetime: { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }
-    };
+    const options = DATE_FORMATS;
     
     return d.toLocaleDateString('pt-BR', options[format] || options.short);
 }
 
-function formatCurrency(value) {
+const DATE_FORMATS: Record<string, Intl.DateTimeFormatOptions> = {
+    short: { day: '2-digit', month: '2-digit', year: 'numeric' },
+    medium: { day: '2-digit', month: 'short', year: 'numeric' },
+    long: { day: '2-digit', month: 'long', year: 'numeric' },
+    full: { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' },
+    time: { hour: '2-digit', minute: '2-digit' },
+    datetime: { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }
+};
+
+function formatCurrency(value: number) {
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
         currency: 'BRL'
     }).format(value || 0);
 }
 
-function formatNumber(value) {
+function formatNumber(value: number) {
     return new Intl.NumberFormat('pt-BR').format(value || 0);
 }
 
-function formatPercent(value, decimals = 1) {
+function formatPercent(value: number, decimals = 1) {
     return `${(value || 0).toFixed(decimals)}%`;
 }
 
-function timeAgo(date) {
+function timeAgo(date: Date | string | number) {
     if (!date) return '';
 
     const seconds = Math.floor((new Date() - new Date(date)) / 1000);
     
-    const intervals = {
+    const intervals: Record<string, number> = {
         ano: 31536000,
         mês: 2592000,
         semana: 604800,
@@ -446,21 +483,21 @@ function timeAgo(date) {
 // UTILIDADES
 // ============================================
 
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
+function debounce<T extends (...args: any[]) => void>(func: T, wait: number) {
+    let timeout: number | undefined;
+    return function executedFunction(...args: Parameters<T>) {
         const later = () => {
             clearTimeout(timeout);
             func(...args);
         };
         clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
+        timeout = window.setTimeout(later, wait);
     };
 }
 
-function throttle(func, limit) {
-    let inThrottle;
-    return function executedFunction(...args) {
+function throttle<T extends (...args: any[]) => void>(func: T, limit: number) {
+    let inThrottle = false;
+    return function executedFunction(...args: Parameters<T>) {
         if (!inThrottle) {
             func(...args);
             inThrottle = true;
@@ -477,7 +514,7 @@ function generateUUID() {
     });
 }
 
-function getInitials(name) {
+function getInitials(name: string) {
     if (!name) return '?';
     return name.split(' ')
         .map(word => word[0])
@@ -486,7 +523,7 @@ function getInitials(name) {
         .toUpperCase();
 }
 
-function getAvatarColor(name) {
+function getAvatarColor(name: string) {
     const colors = [
         '#5a2a6b', '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
         '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316'
@@ -502,7 +539,7 @@ function getAvatarColor(name) {
     return colors[Math.abs(hash) % colors.length];
 }
 
-function copyToClipboard(text) {
+function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text).then(() => {
         showToast('success', 'Copiado!', 'Texto copiado para a área de transferência');
     }).catch(() => {
@@ -510,7 +547,7 @@ function copyToClipboard(text) {
     });
 }
 
-function downloadFile(data, filename, type = 'text/plain') {
+function downloadFile(data: string, filename: string, type = 'text/plain') {
     const blob = new Blob([data], { type });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -522,16 +559,16 @@ function downloadFile(data, filename, type = 'text/plain') {
     URL.revokeObjectURL(url);
 }
 
-function parseCSV(text) {
+function parseCSV(text: string) {
     const lines = text.split('\n');
     const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-    const data = [];
+    const data: Array<Record<string, string>> = [];
     
     for (let i = 1; i < lines.length; i++) {
         if (!lines[i].trim()) continue;
         
         const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-        const row = {};
+        const row: Record<string, string> = {};
         
         headers.forEach((header, index) => {
             row[header] = values[index] || '';
@@ -543,7 +580,7 @@ function parseCSV(text) {
     return data;
 }
 
-function exportToCSV(data, filename) {
+function exportToCSV(data: Array<Record<string, string | number | null | undefined>>, filename: string) {
     if (!data.length) return;
     
     const headers = Object.keys(data[0]);
@@ -559,17 +596,17 @@ function exportToCSV(data, filename) {
 // VALIDAÇÕES
 // ============================================
 
-function validatePhone(phone) {
+function validatePhone(phone: string) {
     const cleaned = phone.replace(/\D/g, '');
     return cleaned.length >= 10 && cleaned.length <= 11;
 }
 
-function validateEmail(email) {
+function validateEmail(email: string) {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return re.test(email);
 }
 
-function validateRequired(value) {
+function validateRequired(value: string | number | null | undefined) {
     return value !== null && value !== undefined && value.toString().trim() !== '';
 }
 
@@ -578,7 +615,7 @@ function validateRequired(value) {
 // ============================================
 
 function showLoading(message = 'Carregando...') {
-    let overlay = document.querySelector('.loading-overlay');
+    let overlay = document.querySelector('.loading-overlay') as HTMLElement | null;
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.className = 'loading-overlay';
@@ -588,13 +625,16 @@ function showLoading(message = 'Carregando...') {
         `;
         document.body.appendChild(overlay);
     } else {
-        overlay.querySelector('.loading-text').textContent = message;
+        const text = overlay.querySelector('.loading-text') as HTMLElement | null;
+        if (text) {
+            text.textContent = message;
+        }
         overlay.style.display = 'flex';
     }
 }
 
 function hideLoading() {
-    const overlay = document.querySelector('.loading-overlay');
+    const overlay = document.querySelector('.loading-overlay') as HTMLElement | null;
     if (overlay) {
         overlay.style.display = 'none';
     }
@@ -621,15 +661,16 @@ async function loadInitialData() {
 async function updateUnreadCount() {
     try {
         const response = await api.get('/api/conversations?status=active');
-        const unread = response.conversations?.filter(c => c.unread_count > 0).length || 0;
+        const unread = response.conversations?.filter((c: { unread_count?: number }) => (c.unread_count || 0) > 0).length || 0;
         
         const badges = document.querySelectorAll('.nav-link[href="conversas.html"] .badge, .nav-link[href="inbox.html"] .badge');
         badges.forEach(badge => {
+            const badgeEl = badge as HTMLElement;
             if (unread > 0) {
-                badge.textContent = unread > 99 ? '99+' : unread;
-                badge.style.display = 'inline-flex';
+                badgeEl.textContent = unread > 99 ? '99+' : String(unread);
+                badgeEl.style.display = 'inline-flex';
             } else {
-                badge.style.display = 'none';
+                badgeEl.style.display = 'none';
             }
         });
     } catch (error) {
@@ -641,19 +682,19 @@ async function updateUnreadCount() {
 // STATUS DOS LEADS
 // ============================================
 
-const LEAD_STATUS = {
+const LEAD_STATUS: Record<number, { label: string; color: string }> = {
     1: { label: 'Novo', color: 'info' },
     2: { label: 'Em Andamento', color: 'warning' },
     3: { label: 'Concluído', color: 'success' },
     4: { label: 'Perdido', color: 'danger' }
 };
 
-function getStatusBadge(status) {
+function getStatusBadge(status: number) {
     const s = LEAD_STATUS[status] || LEAD_STATUS[1];
     return `<span class="badge badge-${s.color}">${s.label}</span>`;
 }
 
-function getStatusLabel(status) {
+function getStatusLabel(status: number) {
     return LEAD_STATUS[status]?.label || 'Desconhecido';
 }
 
@@ -661,7 +702,7 @@ function getStatusLabel(status) {
 // ETAPAS DO FUNIL
 // ============================================
 
-const FUNNEL_STAGES = [
+const FUNNEL_STAGES: Array<{ id: number; name: string; label: string }> = [
     { id: 1, name: 'Etapa 1', label: 'Novo Lead' },
     { id: 2, name: 'Etapa 2', label: 'Em Contato' },
     { id: 3, name: 'Etapa 3', label: 'Negociação' },
@@ -672,7 +713,30 @@ const FUNNEL_STAGES = [
 // EXPORTAR FUNÇÕES GLOBAIS
 // ============================================
 
-const windowAny = window as any;
+const windowAny = window as Window & {
+    APP?: AppState;
+    api?: typeof api;
+    showToast?: typeof showToast;
+    openModal?: typeof openModal;
+    closeModal?: typeof closeModal;
+    showLoading?: typeof showLoading;
+    hideLoading?: typeof hideLoading;
+    formatPhone?: typeof formatPhone;
+    formatDate?: typeof formatDate;
+    formatNumber?: typeof formatNumber;
+    formatPercent?: typeof formatPercent;
+    timeAgo?: typeof timeAgo;
+    getInitials?: typeof getInitials;
+    getAvatarColor?: typeof getAvatarColor;
+    copyToClipboard?: typeof copyToClipboard;
+    exportToCSV?: typeof exportToCSV;
+    parseCSV?: typeof parseCSV;
+    debounce?: typeof debounce;
+    logout?: typeof logout;
+    getStatusBadge?: typeof getStatusBadge;
+    LEAD_STATUS?: typeof LEAD_STATUS;
+    FUNNEL_STAGES?: typeof FUNNEL_STAGES;
+};
 windowAny.APP = APP;
 windowAny.api = api;
 windowAny.showToast = showToast;

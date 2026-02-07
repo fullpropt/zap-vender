@@ -1,10 +1,61 @@
-// @ts-nocheck
 /**
  * CONFIGURAÇÕES DO SISTEMA - SELF Proteção Veicular v2.0.0
  * Altere estas configurações conforme seu ambiente
  */
 
-const CONFIG = {
+type StorageKeys = {
+    LEADS: string;
+    TEMPLATES: string;
+    WHATSAPP_CONNECTED: string;
+    WHATSAPP_USER: string;
+    MESSAGES: string;
+    CONTACTS: string;
+};
+
+type Config = {
+    SOCKET_URL: string;
+    SESSION_ID: string;
+    COUNTRY_CODE: string;
+    BULK_MESSAGE_DELAY: number;
+    SEND_TIMEOUT: number;
+    QR_REFRESH_INTERVAL: number;
+    QR_TIMEOUT: number;
+    STORAGE_KEYS: StorageKeys;
+    VERSION: string;
+};
+
+type SampleLead = {
+    id: number;
+    data: string;
+    nome: string;
+    telefone: string;
+    placa: string;
+    veiculo: string;
+    status: number;
+};
+
+type SampleTemplate = {
+    id: number;
+    nome: string;
+    mensagem: string;
+};
+
+type SampleData = {
+    leads: SampleLead[];
+    templates: SampleTemplate[];
+    contatos: unknown[];
+    messages: unknown[];
+};
+
+type UtilsType = {
+    formatPhoneDisplay: (phone: string) => string;
+    formatPhoneNumber: (phone: string) => string;
+    formatPhoneToWhatsApp: (phone: string) => string;
+    formatDate: (dateStr: string) => string;
+    formatDateTime: (dateStr: string) => string;
+};
+
+const CONFIG: Config = {
     // URL do servidor WhatsApp (Node.js com Baileys)
     // Em produção no Railway, usa a mesma origem (sem porta específica)
     SOCKET_URL: window.location.origin,
@@ -43,7 +94,7 @@ const CONFIG = {
 // DADOS DE EXEMPLO PARA DEMONSTRAÇÃO
 // ============================================
 
-const SAMPLE_DATA = {
+const SAMPLE_DATA: SampleData = {
     leads: [
         {
             id: 1,
@@ -127,7 +178,7 @@ const SAMPLE_DATA = {
 // UTILITÁRIOS GERAIS
 // ============================================
 
-const Utils = {
+const Utils: UtilsType = {
     formatPhoneDisplay: (phone) => {
         if (!phone) return '';
         
@@ -176,7 +227,11 @@ const Utils = {
 console.log(`SELF Proteção Veicular v${CONFIG.VERSION}`);
 console.log(`Socket URL: ${CONFIG.SOCKET_URL}`);
 
-const windowAny = window as any;
+const windowAny = window as Window & {
+    CONFIG?: Config;
+    SAMPLE_DATA?: SampleData;
+    Utils?: UtilsType;
+};
 windowAny.CONFIG = CONFIG;
 windowAny.SAMPLE_DATA = SAMPLE_DATA;
 windowAny.Utils = Utils;

@@ -1,9 +1,24 @@
-// @ts-nocheck
 // Funil page logic migrated to module
 
-let leads = [];
-let currentView = 'kanban';
-let currentLead = null;
+type LeadStatus = 1 | 2 | 3 | 4;
+
+type Lead = {
+    id: number;
+    name?: string;
+    phone?: string;
+    vehicle?: string;
+    plate?: string;
+    status: LeadStatus;
+    created_at: string;
+};
+
+type LeadsResponse = {
+    leads?: Lead[];
+};
+
+let leads: Lead[] = [];
+let currentView: 'kanban' | 'funnel' = 'kanban';
+let currentLead: Lead | null = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     loadFunnel();
@@ -13,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadFunnel() {
     try {
         showLoading('Carregando funil...');
-        const response = await api.get('/api/leads');
+        const response: LeadsResponse = await api.get('/api/leads');
         leads = response.leads || [];
         updateFunnelStats();
         renderKanban();
@@ -31,27 +46,40 @@ function updateFunnelStats() {
     const stage3 = leads.filter(l => l.status === 3).length;
     const stage4 = leads.filter(l => l.status === 4).length;
 
-    document.getElementById('stage1Count').textContent = formatNumber(stage1);
-    document.getElementById('stage2Count').textContent = formatNumber(stage2);
-    document.getElementById('stage3Count').textContent = formatNumber(stage3);
-    document.getElementById('stage4Count').textContent = formatNumber(stage4);
+    const stage1Count = document.getElementById('stage1Count') as HTMLElement | null;
+    const stage2Count = document.getElementById('stage2Count') as HTMLElement | null;
+    const stage3Count = document.getElementById('stage3Count') as HTMLElement | null;
+    const stage4Count = document.getElementById('stage4Count') as HTMLElement | null;
+    const stage2Percent = document.getElementById('stage2Percent') as HTMLElement | null;
+    const stage3Percent = document.getElementById('stage3Percent') as HTMLElement | null;
+    const stage4Percent = document.getElementById('stage4Percent') as HTMLElement | null;
+    const kanban1Count = document.getElementById('kanban1Count') as HTMLElement | null;
+    const kanban2Count = document.getElementById('kanban2Count') as HTMLElement | null;
+    const kanban3Count = document.getElementById('kanban3Count') as HTMLElement | null;
+    const kanban4Count = document.getElementById('kanban4Count') as HTMLElement | null;
+
+    if (stage1Count) stage1Count.textContent = formatNumber(stage1);
+    if (stage2Count) stage2Count.textContent = formatNumber(stage2);
+    if (stage3Count) stage3Count.textContent = formatNumber(stage3);
+    if (stage4Count) stage4Count.textContent = formatNumber(stage4);
 
     if (total > 0) {
-        document.getElementById('stage2Percent').textContent = formatPercent(stage2 / total * 100);
-        document.getElementById('stage3Percent').textContent = formatPercent(stage3 / total * 100);
-        document.getElementById('stage4Percent').textContent = formatPercent(stage4 / total * 100);
+        if (stage2Percent) stage2Percent.textContent = formatPercent(stage2 / total * 100);
+        if (stage3Percent) stage3Percent.textContent = formatPercent(stage3 / total * 100);
+        if (stage4Percent) stage4Percent.textContent = formatPercent(stage4 / total * 100);
     }
 
-    document.getElementById('kanban1Count').textContent = stage1;
-    document.getElementById('kanban2Count').textContent = stage2;
-    document.getElementById('kanban3Count').textContent = stage3;
-    document.getElementById('kanban4Count').textContent = stage4;
+    if (kanban1Count) kanban1Count.textContent = String(stage1);
+    if (kanban2Count) kanban2Count.textContent = String(stage2);
+    if (kanban3Count) kanban3Count.textContent = String(stage3);
+    if (kanban4Count) kanban4Count.textContent = String(stage4);
 }
 
 function renderKanban() {
     for (let stage = 1; stage <= 4; stage++) {
         const stageLeads = leads.filter(l => l.status === stage);
-        const body = document.getElementById(`kanban${stage}Body`);
+        const body = document.getElementById(`kanban${stage}Body`) as HTMLElement | null;
+        if (!body) continue;
         
         if (stageLeads.length === 0) {
             body.innerHTML = `<div class="text-center text-muted py-4">Nenhum lead</div>`;
@@ -78,41 +106,46 @@ function renderKanban() {
 
 function initDragAndDrop() {
     document.addEventListener('dragstart', (e) => {
-        if (e.target.classList.contains('kanban-card')) {
-            e.target.classList.add('dragging');
-            e.dataTransfer.setData('text/plain', e.target.dataset.id);
+        const target = e.target as HTMLElement | null;
+        if (target?.classList.contains('kanban-card')) {
+            target.classList.add('dragging');
+            e.dataTransfer?.setData('text/plain', target.dataset.id || '');
         }
     });
 
     document.addEventListener('dragend', (e) => {
-        if (e.target.classList.contains('kanban-card')) {
-            e.target.classList.remove('dragging');
+        const target = e.target as HTMLElement | null;
+        if (target?.classList.contains('kanban-card')) {
+            target.classList.remove('dragging');
         }
     });
 
     document.querySelectorAll('.kanban-body').forEach(body => {
         body.addEventListener('dragover', (e) => {
             e.preventDefault();
-            body.style.background = 'rgba(var(--primary-rgb), 0.1)';
+            (body as HTMLElement).style.background = 'rgba(var(--primary-rgb), 0.1)';
         });
 
         body.addEventListener('dragleave', () => {
-            body.style.background = '';
+            (body as HTMLElement).style.background = '';
         });
 
         body.addEventListener('drop', async (e) => {
             e.preventDefault();
-            body.style.background = '';
+            (body as HTMLElement).style.background = '';
             
-            const leadId = parseInt(e.dataTransfer.getData('text/plain'));
-            const newStage = parseInt(body.parentElement.dataset.stage);
+            const leadId = parseInt(e.dataTransfer?.getData('text/plain') || '0', 10);
+            const parent = (body as HTMLElement).parentElement as HTMLElement | null;
+            const newStage = parseInt(parent?.dataset.stage || '0', 10);
             
-            await updateLeadStage(leadId, newStage);
+            if (leadId && newStage) {
+                await updateLeadStage(leadId, newStage as LeadStatus);
+            }
         });
     });
 }
 
-async function updateLeadStage(leadId, newStage) {
+async function updateLeadStage(leadId: number, newStage: LeadStatus) {
     try {
         await api.put(`/api/leads/${leadId}`, { status: newStage });
         
@@ -131,19 +164,24 @@ async function updateLeadStage(leadId, newStage) {
     }
 }
 
-function viewLead(id) {
+function viewLead(id: number) {
     currentLead = leads.find(l => l.id === id);
     if (!currentLead) return;
 
-    document.getElementById('leadModalTitle').innerHTML = `<span class="icon icon-user icon-sm"></span> ${currentLead.name || 'Lead'}`;
-    document.getElementById('leadModalBody').innerHTML = `
+    const leadModalTitle = document.getElementById('leadModalTitle') as HTMLElement | null;
+    const leadModalBody = document.getElementById('leadModalBody') as HTMLElement | null;
+    if (leadModalTitle) {
+        leadModalTitle.innerHTML = `<span class="icon icon-user icon-sm"></span> ${currentLead.name || 'Lead'}`;
+    }
+    if (leadModalBody) {
+        leadModalBody.innerHTML = `
         <div class="form-group">
             <label class="form-label">Nome</label>
             <p>${currentLead.name || '-'}</p>
         </div>
         <div class="form-group">
             <label class="form-label">WhatsApp</label>
-            <p><a href="https://wa.me/55${currentLead.phone}" target="_blank" style="color: var(--whatsapp);">${formatPhone(currentLead.phone)}</a></p>
+            <p><a href="https://wa.me/55${currentLead.phone || ''}" target="_blank" style="color: var(--whatsapp);">${formatPhone(currentLead.phone || '')}</a></p>
         </div>
         <div class="form-row">
             <div class="form-group">
@@ -169,12 +207,13 @@ function viewLead(id) {
             <p>${formatDate(currentLead.created_at, 'datetime')}</p>
         </div>
     `;
+    }
 
     openModal('leadModal');
 }
 
-async function changeLeadStatus(id, status) {
-    await updateLeadStage(id, parseInt(status));
+async function changeLeadStatus(id: number, status: string) {
+    await updateLeadStage(id, parseInt(status, 10) as LeadStatus);
 }
 
 function openLeadWhatsApp() {
@@ -183,15 +222,16 @@ function openLeadWhatsApp() {
     }
 }
 
-function quickWhatsApp(phone) {
+function quickWhatsApp(phone: string) {
     window.open(`https://wa.me/55${phone}`, '_blank');
 }
 
 function toggleView() {
-    const funnel = document.getElementById('funnelVisual');
-    const kanban = document.getElementById('kanbanView');
-    const icon = document.getElementById('viewIcon');
-    const text = document.getElementById('viewText');
+    const funnel = document.getElementById('funnelVisual') as HTMLElement | null;
+    const kanban = document.getElementById('kanbanView') as HTMLElement | null;
+    const icon = document.getElementById('viewIcon') as HTMLElement | null;
+    const text = document.getElementById('viewText') as HTMLElement | null;
+    if (!funnel || !kanban || !icon || !text) return;
 
     if (currentView === 'kanban') {
         funnel.style.display = 'flex';
@@ -208,7 +248,7 @@ function toggleView() {
     }
 }
 
-function filterByStage(stage) {
+function filterByStage(stage: number | string) {
     window.location.href = `contatos.html?status=${stage}`;
 }
 
@@ -217,7 +257,15 @@ function saveStagesConfig() {
     closeModal('configModal');
 }
 
-const windowAny = window as any;
+const windowAny = window as Window & {
+    viewLead?: (id: number) => void;
+    changeLeadStatus?: (id: number, status: string) => Promise<void>;
+    openLeadWhatsApp?: () => void;
+    quickWhatsApp?: (phone: string) => void;
+    toggleView?: () => void;
+    filterByStage?: (stage: number | string) => void;
+    saveStagesConfig?: () => void;
+};
 windowAny.viewLead = viewLead;
 windowAny.changeLeadStatus = changeLeadStatus;
 windowAny.openLeadWhatsApp = openLeadWhatsApp;

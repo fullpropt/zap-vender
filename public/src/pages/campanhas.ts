@@ -1,7 +1,30 @@
-// @ts-nocheck
 // Campanhas page logic migrated to module
 
-let campaigns = [];
+type CampaignStatus = 'active' | 'paused' | 'completed' | 'draft';
+type CampaignType = 'trigger' | 'broadcast' | 'drip';
+
+type Campaign = {
+    id: number;
+    name: string;
+    description?: string;
+    type: CampaignType;
+    status: CampaignStatus;
+    sent?: number;
+    delivered?: number;
+    read?: number;
+    replied?: number;
+    created_at: string;
+    segment?: string;
+    message?: string;
+    delay?: number;
+    start_at?: string;
+};
+
+type CampaignResponse = {
+    campaigns?: Campaign[];
+};
+
+let campaigns: Campaign[] = [];
 
 document.addEventListener('DOMContentLoaded', () => {
     loadCampaigns();
@@ -10,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadCampaigns() {
     try {
         showLoading('Carregando campanhas...');
-        const response = await api.get('/api/campaigns');
+        const response: CampaignResponse = await api.get('/api/campaigns');
         campaigns = response.campaigns || [];
         updateStats();
         renderCampaigns();
@@ -50,19 +73,27 @@ async function loadCampaigns() {
 }
 
 function updateStats() {
-    document.getElementById('totalCampaigns').textContent = campaigns.length;
-    document.getElementById('activeCampaigns').textContent = campaigns.filter(c => c.status === 'active').length;
+    const totalCampaigns = document.getElementById('totalCampaigns') as HTMLElement | null;
+    const activeCampaigns = document.getElementById('activeCampaigns') as HTMLElement | null;
+    const totalSentEl = document.getElementById('totalSent') as HTMLElement | null;
+    const avgResponseEl = document.getElementById('avgResponse') as HTMLElement | null;
+
+    if (totalCampaigns) totalCampaigns.textContent = String(campaigns.length);
+    if (activeCampaigns) {
+        activeCampaigns.textContent = String(campaigns.filter(c => c.status === 'active').length);
+    }
     
     const totalSent = campaigns.reduce((sum, c) => sum + (c.sent || 0), 0);
-    document.getElementById('totalSent').textContent = formatNumber(totalSent);
+    if (totalSentEl) totalSentEl.textContent = formatNumber(totalSent);
     
     const totalReplied = campaigns.reduce((sum, c) => sum + (c.replied || 0), 0);
     const avgResponse = totalSent > 0 ? (totalReplied / totalSent * 100) : 0;
-    document.getElementById('avgResponse').textContent = formatPercent(avgResponse);
+    if (avgResponseEl) avgResponseEl.textContent = formatPercent(avgResponse);
 }
 
 function renderCampaigns() {
-    const container = document.getElementById('campaignsList');
+    const container = document.getElementById('campaignsList') as HTMLElement | null;
+    if (!container) return;
     
     if (campaigns.length === 0) {
         container.innerHTML = `
@@ -134,16 +165,16 @@ function renderCampaigns() {
     }).join('');
 }
 
-async function saveCampaign(status) {
+async function saveCampaign(status: CampaignStatus) {
     const data = {
-        name: document.getElementById('campaignName').value.trim(),
-        description: document.getElementById('campaignDescription').value.trim(),
-        type: document.getElementById('campaignType').value,
+        name: (document.getElementById('campaignName') as HTMLInputElement | null)?.value.trim() || '',
+        description: (document.getElementById('campaignDescription') as HTMLInputElement | null)?.value.trim() || '',
+        type: ((document.getElementById('campaignType') as HTMLSelectElement | null)?.value || 'trigger') as CampaignType,
         status: status,
-        segment: document.getElementById('campaignSegment').value,
-        message: document.getElementById('campaignMessage').value.trim(),
-        delay: parseInt(document.getElementById('campaignDelay').value),
-        start_at: document.getElementById('campaignStart').value
+        segment: (document.getElementById('campaignSegment') as HTMLSelectElement | null)?.value || '',
+        message: (document.getElementById('campaignMessage') as HTMLTextAreaElement | null)?.value.trim() || '',
+        delay: parseInt((document.getElementById('campaignDelay') as HTMLInputElement | null)?.value || '0', 10),
+        start_at: (document.getElementById('campaignStart') as HTMLInputElement | null)?.value || ''
     };
 
     if (!data.name || !data.message) {
@@ -155,7 +186,8 @@ async function saveCampaign(status) {
         showLoading('Salvando campanha...');
         await api.post('/api/campaigns', data);
         closeModal('newCampaignModal');
-        document.getElementById('campaignForm').reset();
+        const form = document.getElementById('campaignForm') as HTMLFormElement | null;
+        form?.reset();
         await loadCampaigns();
         showToast('success', 'Sucesso', 'Campanha criada com sucesso!');
     } catch (error) {
@@ -171,19 +203,25 @@ async function saveCampaign(status) {
             created_at: new Date().toISOString()
         });
         closeModal('newCampaignModal');
-        document.getElementById('campaignForm').reset();
+        const form = document.getElementById('campaignForm') as HTMLFormElement | null;
+        form?.reset();
         renderCampaigns();
         showToast('success', 'Sucesso', 'Campanha criada com sucesso!');
     }
 }
 
-function viewCampaign(id) {
+function viewCampaign(id: number) {
     const campaign = campaigns.find(c => c.id === id);
     if (!campaign) return;
 
-    document.getElementById('detailsTitle').innerHTML = `<span class="icon icon-campaigns icon-sm"></span> ${campaign.name}`;
+    const detailsTitle = document.getElementById('detailsTitle') as HTMLElement | null;
+    const campaignOverview = document.getElementById('campaignOverview') as HTMLElement | null;
+    if (detailsTitle) {
+        detailsTitle.innerHTML = `<span class="icon icon-campaigns icon-sm"></span> ${campaign.name}`;
+    }
     
-    document.getElementById('campaignOverview').innerHTML = `
+    if (campaignOverview) {
+        campaignOverview.innerHTML = `
         <div class="stats-grid" style="margin-bottom: 20px;">
             <div class="stat-card">
                 <div class="stat-content">
@@ -215,11 +253,12 @@ function viewCampaign(id) {
         <p><strong>Status:</strong> ${campaign.status}</p>
         <p><strong>Criada em:</strong> ${formatDate(campaign.created_at, 'datetime')}</p>
     `;
+    }
 
     openModal('campaignDetailsModal');
 }
 
-async function startCampaign(id) {
+async function startCampaign(id: number) {
     if (!confirm('Iniciar esta campanha?')) return;
     showToast('success', 'Sucesso', 'Campanha iniciada!');
     const campaign = campaigns.find(c => c.id === id);
@@ -227,7 +266,7 @@ async function startCampaign(id) {
     renderCampaigns();
 }
 
-async function pauseCampaign(id) {
+async function pauseCampaign(id: number) {
     if (!confirm('Pausar esta campanha?')) return;
     showToast('success', 'Sucesso', 'Campanha pausada!');
     const campaign = campaigns.find(c => c.id === id);
@@ -235,21 +274,30 @@ async function pauseCampaign(id) {
     renderCampaigns();
 }
 
-async function deleteCampaign(id) {
+async function deleteCampaign(id: number) {
     if (!confirm('Excluir esta campanha?')) return;
     campaigns = campaigns.filter(c => c.id !== id);
     renderCampaigns();
     showToast('success', 'Sucesso', 'Campanha excluída!');
 }
 
-function switchCampaignTab(tab) {
+function switchCampaignTab(tab: string) {
     document.querySelectorAll('#campaignDetailsModal .tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('#campaignDetailsModal .tab-content').forEach(c => c.classList.remove('active'));
-    document.querySelector(`#campaignDetailsModal .tab[onclick="switchCampaignTab('${tab}')"]`).classList.add('active');
-    document.getElementById(`tab-${tab}`).classList.add('active');
+    const activeTab = document.querySelector(`#campaignDetailsModal .tab[onclick="switchCampaignTab('${tab}')"]`);
+    const activeContent = document.getElementById(`tab-${tab}`);
+    activeTab?.classList.add('active');
+    activeContent?.classList.add('active');
 }
 
-const windowAny = window as any;
+const windowAny = window as Window & {
+    saveCampaign?: (status: CampaignStatus) => Promise<void>;
+    viewCampaign?: (id: number) => void;
+    startCampaign?: (id: number) => Promise<void>;
+    pauseCampaign?: (id: number) => Promise<void>;
+    deleteCampaign?: (id: number) => Promise<void>;
+    switchCampaignTab?: (tab: string) => void;
+};
 windowAny.saveCampaign = saveCampaign;
 windowAny.viewCampaign = viewCampaign;
 windowAny.startCampaign = startCampaign;

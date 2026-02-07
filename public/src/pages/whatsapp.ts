@@ -1,5 +1,11 @@
-// @ts-nocheck
 // WhatsApp page logic migrated to module
+
+declare const io:
+    | undefined
+    | ((url: string, options?: Record<string, unknown>) => {
+          on: (event: string, handler: (data?: any) => void) => void;
+          emit: (event: string, payload?: any) => void;
+      });
 
 // Configurações
 const CONFIG = {
@@ -9,12 +15,13 @@ const CONFIG = {
 };
 
 // Estado
-let socket = null;
+let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
 let isConnected = false;
 let isConnecting = false;
-let qrTimer = null;
+let qrTimer: number | null = null;
 let timerCountdown = 30;
-let contacts = [];
+type WhatsAppContact = { number: string; name?: string };
+let contacts: WhatsAppContact[] = [];
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', function() {
@@ -38,7 +45,14 @@ function initSocket() {
     console.log('🔌 Conectando ao servidor:', CONFIG.SOCKET_URL);
 
     const token = sessionStorage.getItem('selfDashboardToken');
-    const socketOptions = {
+    const socketOptions: {
+        transports: string[];
+        reconnection: boolean;
+        reconnectionAttempts: number;
+        reconnectionDelay: number;
+        timeout: number;
+        auth?: { token: string };
+    } = {
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: 10,
@@ -50,6 +64,10 @@ function initSocket() {
         socketOptions.auth = { token };
     }
 
+    if (!io) {
+        console.warn('Socket.IO não carregado');
+        return;
+    }
     socket = io(CONFIG.SOCKET_URL, socketOptions);
     
     socket.on('connect', function() {
@@ -85,8 +103,10 @@ function initSocket() {
         displayQRCode(data.qr);
         startQRTimer();
         // Garantir que o botão de conectar suma e o timer apareça
-        document.getElementById('connect-btn').style.display = 'none';
-        document.getElementById('qr-timer').style.display = 'block';
+        const connectBtn = document.getElementById('connect-btn') as HTMLElement | null;
+        const qrTimerEl = document.getElementById('qr-timer') as HTMLElement | null;
+        if (connectBtn) connectBtn.style.display = 'none';
+        if (qrTimerEl) qrTimerEl.style.display = 'block';
     });
     
     socket.on('connecting', function(data) {
@@ -140,27 +160,28 @@ function startConnection() {
     showQRLoading('Gerando QR Code...');
     
     console.log('🚀 Iniciando conexão...');
-    socket.emit('start-session', { sessionId: CONFIG.SESSION_ID });
+    socket?.emit('start-session', { sessionId: CONFIG.SESSION_ID });
 }
 
 // Desconectar
 function disconnect() {
     if (confirm('Tem certeza que deseja desconectar o WhatsApp?')) {
-        socket.emit('logout', { sessionId: CONFIG.SESSION_ID });
+        socket?.emit('logout', { sessionId: CONFIG.SESSION_ID });
         handleDisconnected();
         showToast('info', 'WhatsApp desconectado');
     }
 }
 
 // Exibir QR Code
-function displayQRCode(qrData) {
+function displayQRCode(qrData: string) {
     console.log('🖼️ Renderizando QR Code...');
-    const qrContainer = document.getElementById('qr-code');
+    const qrContainer = document.getElementById('qr-code') as HTMLElement | null;
     
     if (!qrData) {
         console.error('❌ Dados do QR Code vazios');
         return;
     }
+    if (!qrContainer) return;
     
     // Criar imagem do QR Code
     const img = document.createElement('img');
@@ -173,12 +194,14 @@ function displayQRCode(qrData) {
     
     isConnecting = false;
     updateConnectButton(false);
-    document.getElementById('connect-btn').style.display = 'none';
+    const connectBtn = document.getElementById('connect-btn') as HTMLElement | null;
+    if (connectBtn) connectBtn.style.display = 'none';
 }
 
 // Mostrar loading do QR
-function showQRLoading(message) {
-    const qrContainer = document.getElementById('qr-code');
+function showQRLoading(message: string) {
+    const qrContainer = document.getElementById('qr-code') as HTMLElement | null;
+    if (!qrContainer) return;
     qrContainer.innerHTML = `
         <div class="qr-loading">
             <div class="spinner"></div>
@@ -189,49 +212,53 @@ function showQRLoading(message) {
 
 // Timer do QR Code
 function startQRTimer() {
-    clearInterval(qrTimer);
+    if (qrTimer) clearInterval(qrTimer);
     timerCountdown = 30;
     
-    const timerEl = document.getElementById('qr-timer');
-    const countdownEl = document.getElementById('timer-countdown');
-    timerEl.style.display = 'block';
+    const timerEl = document.getElementById('qr-timer') as HTMLElement | null;
+    const countdownEl = document.getElementById('timer-countdown') as HTMLElement | null;
+    if (timerEl) timerEl.style.display = 'block';
     
-    qrTimer = setInterval(function() {
+    qrTimer = window.setInterval(function() {
         timerCountdown--;
-        countdownEl.textContent = timerCountdown;
+        if (countdownEl) countdownEl.textContent = String(timerCountdown);
         
         if (timerCountdown <= 0) {
-            clearInterval(qrTimer);
-            timerEl.style.display = 'none';
+            if (qrTimer) clearInterval(qrTimer);
+            if (timerEl) timerEl.style.display = 'none';
             
             // Solicitar novo QR
             if (!isConnected) {
                 showQRLoading('Atualizando QR Code...');
-                socket.emit('refresh-qr', { sessionId: CONFIG.SESSION_ID });
+                socket?.emit('refresh-qr', { sessionId: CONFIG.SESSION_ID });
             }
         }
     }, 1000);
 }
 
 // Handle conexão estabelecida
-function handleConnected(user) {
+function handleConnected(user: { name?: string; phone?: string } | undefined) {
     isConnected = true;
     isConnecting = false;
-    clearInterval(qrTimer);
+    if (qrTimer) clearInterval(qrTimer);
     
     // Atualizar UI
     updateStatus('connected', 'Conectado');
-    document.getElementById('disconnected-state').style.display = 'none';
-    document.getElementById('connected-state').style.display = 'block';
+    const disconnected = document.getElementById('disconnected-state') as HTMLElement | null;
+    const connected = document.getElementById('connected-state') as HTMLElement | null;
+    if (disconnected) disconnected.style.display = 'none';
+    if (connected) connected.style.display = 'block';
     
     // Atualizar informações do usuário
     if (user) {
-        document.getElementById('user-name').textContent = user.name || '-';
-        document.getElementById('user-phone').textContent = user.phone ? formatPhone(user.phone) : '-';
+        const userName = document.getElementById('user-name') as HTMLElement | null;
+        const userPhone = document.getElementById('user-phone') as HTMLElement | null;
+        if (userName) userName.textContent = user.name || '-';
+        if (userPhone) userPhone.textContent = user.phone ? formatPhone(user.phone) : '-';
     }
     
     // Carregar contatos
-    socket.emit('get-contacts', { sessionId: CONFIG.SESSION_ID });
+    socket?.emit('get-contacts', { sessionId: CONFIG.SESSION_ID });
     
     showToast('success', 'WhatsApp conectado com sucesso!');
 }
@@ -240,34 +267,41 @@ function handleConnected(user) {
 function handleDisconnected() {
     isConnected = false;
     isConnecting = false;
-    clearInterval(qrTimer);
+    if (qrTimer) clearInterval(qrTimer);
     
     // Atualizar UI
     updateStatus('disconnected', 'Desconectado');
-    document.getElementById('disconnected-state').style.display = 'block';
-    document.getElementById('connected-state').style.display = 'none';
-    document.getElementById('connect-btn').style.display = 'flex';
-    document.getElementById('qr-timer').style.display = 'none';
+    const disconnected = document.getElementById('disconnected-state') as HTMLElement | null;
+    const connected = document.getElementById('connected-state') as HTMLElement | null;
+    const connectBtn = document.getElementById('connect-btn') as HTMLElement | null;
+    const qrTimerEl = document.getElementById('qr-timer') as HTMLElement | null;
+    if (disconnected) disconnected.style.display = 'block';
+    if (connected) connected.style.display = 'none';
+    if (connectBtn) connectBtn.style.display = 'flex';
+    if (qrTimerEl) qrTimerEl.style.display = 'none';
     
     showQRLoading('Aguardando conexão...');
     
     // Esconder contatos
-    document.getElementById('contacts-empty').style.display = 'block';
-    document.getElementById('contacts-list-wrapper').style.display = 'none';
+    const empty = document.getElementById('contacts-empty') as HTMLElement | null;
+    const listWrapper = document.getElementById('contacts-list-wrapper') as HTMLElement | null;
+    if (empty) empty.style.display = 'block';
+    if (listWrapper) listWrapper.style.display = 'none';
 }
 
 // Atualizar status
-function updateStatus(status, text) {
-    const badge = document.getElementById('status-badge');
-    const textEl = document.getElementById('status-text');
+function updateStatus(status: 'connected' | 'disconnected' | 'connecting' | 'qr', text: string) {
+    const badge = document.getElementById('status-badge') as HTMLElement | null;
+    const textEl = document.getElementById('status-text') as HTMLElement | null;
     
-    badge.className = 'status-badge ' + status;
-    textEl.textContent = text;
+    if (badge) badge.className = 'status-badge ' + status;
+    if (textEl) textEl.textContent = text;
 }
 
 // Atualizar botão de conexão
-function updateConnectButton(loading) {
-    const btn = document.getElementById('connect-btn');
+function updateConnectButton(loading: boolean) {
+    const btn = document.getElementById('connect-btn') as HTMLButtonElement | null;
+    if (!btn) return;
     if (loading) {
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner" style="width: 20px; height: 20px; border-width: 2px; margin: 0;"></span> Conectando...';
@@ -279,10 +313,11 @@ function updateConnectButton(loading) {
 
 // Renderizar contatos
 function renderContacts() {
-    const listWrapper = document.getElementById('contacts-list-wrapper');
-    const emptyState = document.getElementById('contacts-empty');
-    const listEl = document.getElementById('contacts-list');
-    const countEl = document.getElementById('contacts-count');
+    const listWrapper = document.getElementById('contacts-list-wrapper') as HTMLElement | null;
+    const emptyState = document.getElementById('contacts-empty') as HTMLElement | null;
+    const listEl = document.getElementById('contacts-list') as HTMLElement | null;
+    const countEl = document.getElementById('contacts-count') as HTMLElement | null;
+    if (!listWrapper || !emptyState || !listEl || !countEl) return;
     
     if (contacts.length === 0) {
         emptyState.style.display = 'block';
@@ -292,7 +327,7 @@ function renderContacts() {
     
     emptyState.style.display = 'none';
     listWrapper.style.display = 'block';
-    countEl.textContent = contacts.length;
+    countEl.textContent = String(contacts.length);
     
     listEl.innerHTML = contacts.slice(0, 20).map(contact => `
         <div class="contact-item" onclick="openChat('${contact.number}', '${contact.name || contact.number}')">
@@ -311,13 +346,13 @@ function renderContacts() {
 }
 
 // Abrir chat
-function openChat(phone, name) {
+function openChat(phone: string, name: string) {
     const params = new URLSearchParams({ phone, name });
     window.location.href = `conversas.html?${params.toString()}`;
 }
 
 // Formatar telefone
-function formatPhone(phone) {
+function formatPhone(phone: string) {
     if (!phone) return '';
     const cleaned = phone.replace(/[^0-9]/g, '');
     if (cleaned.length === 13) {
@@ -329,8 +364,9 @@ function formatPhone(phone) {
 }
 
 // Toast
-function showToast(type, message) {
-    const container = document.getElementById('toast-container');
+function showToast(type: 'success' | 'error' | 'warning' | 'info', message: string) {
+    const container = document.getElementById('toast-container') as HTMLElement | null;
+    if (!container) return;
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     
@@ -352,8 +388,8 @@ function showToast(type, message) {
 
 // Toggle sidebar
 function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('active');
-    document.querySelector('.sidebar-overlay').classList.toggle('active');
+    document.getElementById('sidebar')?.classList.toggle('active');
+    document.querySelector('.sidebar-overlay')?.classList.toggle('active');
 }
 
 // Logout
@@ -365,7 +401,13 @@ function logout() {
     window.location.href = 'login.html';
 }
 
-const windowAny = window as any;
+const windowAny = window as Window & {
+    startConnection?: () => void;
+    disconnect?: () => void;
+    openChat?: (phone: string, name: string) => void;
+    toggleSidebar?: () => void;
+    logout?: () => void;
+};
 windowAny.startConnection = startConnection;
 windowAny.disconnect = disconnect;
 windowAny.openChat = openChat;

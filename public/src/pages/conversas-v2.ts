@@ -1,15 +1,56 @@
-// @ts-nocheck
 // Conversas V2 page logic migrated to module
 
 // ============================================
 // CONFIGURAÇÃO
 // ============================================
+declare const io:
+    | undefined
+    | ((url?: string, options?: Record<string, unknown>) => {
+          on: (event: string, handler: (data?: any) => void) => void;
+          emit: (event: string, payload?: any) => void;
+      });
+
+type Contact = {
+    jid: string;
+    number: string;
+    name?: string;
+    lastMessage?: string;
+    lastMessageTime?: number;
+    unreadCount?: number;
+    botActive?: boolean;
+    leadId?: number;
+    conversationId?: string | number;
+};
+
+type Message = {
+    id: string | number;
+    messageId?: string;
+    text?: string;
+    content?: string;
+    isFromMe?: boolean;
+    is_from_me?: boolean;
+    sender_type?: string;
+    timestamp?: number;
+    sent_at?: string;
+    created_at?: string;
+    status?: string;
+    media_type?: string;
+    media_url?: string;
+};
+
+type SocketMessage = Message & {
+    from?: string;
+    fromNumber?: string;
+    pushName?: string;
+    mediaType?: string;
+};
+
 const SESSION_ID = 'self_whatsapp_session';
-let socket;
-let currentContact = null;
-let contacts = [];
-let messages = {};
-let typingContacts = new Set();
+let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
+let currentContact: Contact | null = null;
+let contacts: Contact[] = [];
+let messages: Record<string, Message[]> = {};
+let typingContacts = new Set<string>();
 let isConnected = false;
 
 // ============================================
@@ -26,6 +67,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============================================
 function initSocket() {
     const serverUrl = window.location.origin;
+    if (!io) {
+        console.warn('Socket.IO não carregado');
+        return;
+    }
     socket = io(serverUrl, {
         transports: ['websocket', 'polling'],
         reconnection: true,
@@ -62,7 +107,7 @@ function initSocket() {
         showToast('warning', 'WhatsApp Desconectado', 'Conexão perdida');
     });
     
-    socket.on('new-message', (message) => {
+    socket.on('new-message', (message: SocketMessage) => {
         handleNewMessage(message);
     });
     
@@ -81,7 +126,9 @@ function initSocket() {
     
     socket.on('messages-list', (data) => {
         if (data.leadId === currentContact?.leadId || data.contactJid === currentContact?.jid) {
-            messages[currentContact.jid] = data.messages || [];
+            if (currentContact) {
+                messages[currentContact.jid] = data.messages || [];
+            }
             renderMessages();
         }
     });
@@ -100,8 +147,9 @@ function initSocket() {
 // ============================================
 function setupEventListeners() {
     // Busca de contatos
-    document.getElementById('searchContacts').addEventListener('input', (e) => {
-        filterContacts(e.target.value);
+    const searchContacts = document.getElementById('searchContacts') as HTMLInputElement | null;
+    searchContacts?.addEventListener('input', (e) => {
+        filterContacts((e.target as HTMLInputElement).value);
     });
     
     // Tabs de filtro
@@ -109,18 +157,21 @@ function setupEventListeners() {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            filterContacts(document.getElementById('searchContacts').value, btn.dataset.filter);
+            filterContacts((searchContacts?.value || ''), btn.dataset.filter);
         });
     });
     
     // Input de mensagem
-    const messageInput = document.getElementById('messageInput');
-    messageInput.addEventListener('input', () => {
-        document.getElementById('btnSend').disabled = !messageInput.value.trim();
+    const messageInput = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+    const btnSend = document.getElementById('btnSend') as HTMLButtonElement | null;
+    messageInput?.addEventListener('input', () => {
+        if (btnSend && messageInput) {
+            btnSend.disabled = !messageInput.value.trim();
+        }
         autoResizeTextarea(messageInput);
     });
     
-    messageInput.addEventListener('keydown', (e) => {
+    messageInput?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
@@ -128,39 +179,43 @@ function setupEventListeners() {
     });
     
     // Botão de enviar
-    document.getElementById('btnSend').addEventListener('click', sendMessage);
+    btnSend?.addEventListener('click', sendMessage);
     
     // Quick replies
     document.querySelectorAll('.quick-reply-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            messageInput.value = btn.dataset.message;
-            document.getElementById('btnSend').disabled = false;
-            messageInput.focus();
+            if (messageInput) {
+                messageInput.value = (btn as HTMLElement).dataset.message || '';
+                if (btnSend) btnSend.disabled = false;
+                messageInput.focus();
+            }
         });
     });
     
     // Botão de anexo
-    document.getElementById('btnAttach').addEventListener('click', () => {
-        document.getElementById('attachModal').classList.add('active');
+    document.getElementById('btnAttach')?.addEventListener('click', () => {
+        document.getElementById('attachModal')?.classList.add('active');
     });
     
     // File input
-    document.getElementById('fileInput').addEventListener('change', (e) => {
-        previewFile(e.target.files[0]);
+    const fileInput = document.getElementById('fileInput') as HTMLInputElement | null;
+    fileInput?.addEventListener('change', (e) => {
+        const target = e.target as HTMLInputElement;
+        previewFile(target.files?.[0] || null);
     });
     
     // Botão de toggle bot
-    document.getElementById('btnToggleBot').addEventListener('click', toggleBot);
+    document.getElementById('btnToggleBot')?.addEventListener('click', toggleBot);
     
     // Botão de abrir WhatsApp
-    document.getElementById('btnOpenWhatsApp').addEventListener('click', () => {
+    document.getElementById('btnOpenWhatsApp')?.addEventListener('click', () => {
         if (currentContact) {
             window.open(`https://wa.me/${currentContact.number}`, '_blank');
         }
     });
     
     // Botão de ver lead
-    document.getElementById('btnViewLead').addEventListener('click', () => {
+    document.getElementById('btnViewLead')?.addEventListener('click', () => {
         if (currentContact?.leadId) {
             window.location.href = `funil.html?lead=${currentContact.leadId}`;
         }
@@ -171,11 +226,12 @@ function setupEventListeners() {
 // CONTATOS
 // ============================================
 function loadContacts() {
-    socket.emit('get-contacts', { sessionId: SESSION_ID });
+    socket?.emit('get-contacts', { sessionId: SESSION_ID });
 }
 
-function renderContacts(filteredContacts = null) {
-    const container = document.getElementById('contactsList');
+function renderContacts(filteredContacts: Contact[] | null = null) {
+    const container = document.getElementById('contactsList') as HTMLElement | null;
+    if (!container) return;
     const list = filteredContacts || contacts;
     
     if (list.length === 0) {
@@ -227,7 +283,7 @@ function renderContacts(filteredContacts = null) {
     }).join('');
 }
 
-function filterContacts(search, filter = 'all') {
+function filterContacts(search: string, filter = 'all') {
     let filtered = contacts;
     
     if (search) {
@@ -247,24 +303,33 @@ function filterContacts(search, filter = 'all') {
     renderContacts(filtered);
 }
 
-function selectContact(jid) {
+function selectContact(jid: string) {
     const contact = contacts.find(c => c.jid === jid);
     if (!contact) return;
     
     currentContact = contact;
     
     // Atualizar UI
-    document.getElementById('emptyState').style.display = 'none';
-    document.getElementById('chatHeader').style.display = 'flex';
-    document.getElementById('messagesContainer').style.display = 'flex';
-    document.getElementById('chatInputArea').style.display = 'block';
+    const emptyState = document.getElementById('emptyState') as HTMLElement | null;
+    const chatHeader = document.getElementById('chatHeader') as HTMLElement | null;
+    const messagesContainer = document.getElementById('messagesContainer') as HTMLElement | null;
+    const chatInputArea = document.getElementById('chatInputArea') as HTMLElement | null;
+    if (emptyState) emptyState.style.display = 'none';
+    if (chatHeader) chatHeader.style.display = 'flex';
+    if (messagesContainer) messagesContainer.style.display = 'flex';
+    if (chatInputArea) chatInputArea.style.display = 'block';
     
     // Atualizar header
     const initial = (contact.name || contact.number || '?')[0].toUpperCase();
-    document.getElementById('chatAvatar').textContent = initial;
-    document.getElementById('chatName').textContent = contact.name || contact.number;
-    document.getElementById('chatStatus').textContent = typingContacts.has(jid) ? 'Digitando...' : 'Online';
-    document.getElementById('chatStatus').className = 'chat-header-status' + (typingContacts.has(jid) ? ' typing' : ' online');
+    const chatAvatar = document.getElementById('chatAvatar') as HTMLElement | null;
+    const chatName = document.getElementById('chatName') as HTMLElement | null;
+    const chatStatus = document.getElementById('chatStatus') as HTMLElement | null;
+    if (chatAvatar) chatAvatar.textContent = initial;
+    if (chatName) chatName.textContent = contact.name || contact.number;
+    if (chatStatus) {
+        chatStatus.textContent = typingContacts.has(jid) ? 'Digitando...' : 'Online';
+        chatStatus.className = 'chat-header-status' + (typingContacts.has(jid) ? ' typing' : ' online');
+    }
     
     // Atualizar lista
     renderContacts();
@@ -273,14 +338,14 @@ function selectContact(jid) {
     loadMessages(contact);
     
     // Marcar como lido
-    socket.emit('mark-read', { sessionId: SESSION_ID, contactJid: jid });
+    socket?.emit('mark-read', { sessionId: SESSION_ID, contactJid: jid });
 }
 
 // ============================================
 // MENSAGENS
 // ============================================
-function loadMessages(contact) {
-    socket.emit('get-messages', { 
+function loadMessages(contact: Contact) {
+    socket?.emit('get-messages', { 
         sessionId: SESSION_ID, 
         contactJid: contact.jid,
         leadId: contact.leadId
@@ -288,7 +353,8 @@ function loadMessages(contact) {
 }
 
 function renderMessages() {
-    const container = document.getElementById('messagesContainer');
+    const container = document.getElementById('messagesContainer') as HTMLElement | null;
+    if (!container) return;
     const messageList = messages[currentContact?.jid] || [];
     
     if (messageList.length === 0) {
@@ -346,7 +412,7 @@ function renderMessages() {
     container.scrollTop = container.scrollHeight;
 }
 
-function handleNewMessage(message) {
+function handleNewMessage(message: SocketMessage) {
     // Atualizar contato na lista
     const contactIndex = contacts.findIndex(c => c.jid === message.from || c.number === message.fromNumber);
     
@@ -391,7 +457,7 @@ function handleNewMessage(message) {
         renderMessages();
         
         // Marcar como lido
-        socket.emit('mark-read', { sessionId: SESSION_ID, contactJid: currentContact.jid });
+        socket?.emit('mark-read', { sessionId: SESSION_ID, contactJid: currentContact.jid });
     }
     
     // Notificação sonora
@@ -400,7 +466,7 @@ function handleNewMessage(message) {
     }
 }
 
-function updateMessageStatus(messageId, status) {
+function updateMessageStatus(messageId: string, status: string) {
     if (!currentContact || !messages[currentContact.jid]) return;
     
     const msg = messages[currentContact.jid].find(m => m.messageId === messageId);
@@ -411,12 +477,12 @@ function updateMessageStatus(messageId, status) {
 }
 
 function sendMessage() {
-    const input = document.getElementById('messageInput');
-    const text = input.value.trim();
+    const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+    const text = input?.value.trim() || '';
     
     if (!text || !currentContact || !isConnected) return;
     
-    socket.emit('send-message', {
+    socket?.emit('send-message', {
         sessionId: SESSION_ID,
         to: currentContact.number,
         message: text,
@@ -439,15 +505,18 @@ function sendMessage() {
     renderMessages();
     
     // Limpar input
-    input.value = '';
-    document.getElementById('btnSend').disabled = true;
-    autoResizeTextarea(input);
+    if (input) {
+        input.value = '';
+        const btnSend = document.getElementById('btnSend') as HTMLButtonElement | null;
+        if (btnSend) btnSend.disabled = true;
+        autoResizeTextarea(input);
+    }
 }
 
 // ============================================
 // TYPING STATUS
 // ============================================
-function handleTypingStatus(data) {
+function handleTypingStatus(data: { jid: string; isTyping: boolean }) {
     if (data.isTyping) {
         typingContacts.add(data.jid);
     } else {
@@ -459,9 +528,11 @@ function handleTypingStatus(data) {
     
     // Atualizar header se for o contato atual
     if (currentContact?.jid === data.jid) {
-        const statusEl = document.getElementById('chatStatus');
-        statusEl.textContent = data.isTyping ? 'Digitando...' : 'Online';
-        statusEl.className = 'chat-header-status' + (data.isTyping ? ' typing' : ' online');
+        const statusEl = document.getElementById('chatStatus') as HTMLElement | null;
+        if (statusEl) {
+            statusEl.textContent = data.isTyping ? 'Digitando...' : 'Online';
+            statusEl.className = 'chat-header-status' + (data.isTyping ? ' typing' : ' online');
+        }
     }
 }
 
@@ -473,7 +544,7 @@ function toggleBot() {
     
     const newState = !currentContact.botActive;
     
-    socket.emit('toggle-bot', {
+    socket?.emit('toggle-bot', {
         conversationId: currentContact.conversationId,
         active: newState
     });
@@ -490,10 +561,11 @@ function toggleBot() {
 // ============================================
 // ARQUIVOS
 // ============================================
-function previewFile(file) {
+function previewFile(file: File | null) {
     if (!file) return;
     
-    const preview = document.getElementById('filePreview');
+    const preview = document.getElementById('filePreview') as HTMLElement | null;
+    if (!preview) return;
     
     if (file.type.startsWith('image/')) {
         const reader = new FileReader();
@@ -515,9 +587,9 @@ function previewFile(file) {
 }
 
 async function sendFile() {
-    const fileInput = document.getElementById('fileInput');
-    const caption = document.getElementById('fileCaption').value;
-    const file = fileInput.files[0];
+    const fileInput = document.getElementById('fileInput') as HTMLInputElement | null;
+    const caption = (document.getElementById('fileCaption') as HTMLInputElement | null)?.value || '';
+    const file = fileInput?.files?.[0];
     
     if (!file || !currentContact) return;
     
@@ -536,7 +608,7 @@ async function sendFile() {
         if (result.success) {
             const type = file.type.startsWith('image/') ? 'image' : 'document';
             
-            socket.emit('send-message', {
+            socket?.emit('send-message', {
                 sessionId: SESSION_ID,
                 to: currentContact.number,
                 message: result.file.url,
@@ -560,18 +632,22 @@ async function sendFile() {
 }
 
 function closeAttachModal() {
-    document.getElementById('attachModal').classList.remove('active');
-    document.getElementById('fileInput').value = '';
-    document.getElementById('fileCaption').value = '';
-    document.getElementById('filePreview').innerHTML = '';
+    document.getElementById('attachModal')?.classList.remove('active');
+    const fileInput = document.getElementById('fileInput') as HTMLInputElement | null;
+    const fileCaption = document.getElementById('fileCaption') as HTMLInputElement | null;
+    const filePreview = document.getElementById('filePreview') as HTMLElement | null;
+    if (fileInput) fileInput.value = '';
+    if (fileCaption) fileCaption.value = '';
+    if (filePreview) filePreview.innerHTML = '';
 }
 
 // ============================================
 // UTILITÁRIOS
 // ============================================
-function updateConnectionStatus(connected, user = null) {
+function updateConnectionStatus(connected: boolean, user: { name?: string } | null = null) {
     isConnected = connected;
-    const badge = document.getElementById('connectionStatus');
+    const badge = document.getElementById('connectionStatus') as HTMLElement | null;
+    if (!badge) return;
     
     if (connected) {
         badge.className = 'connection-badge connected';
@@ -588,7 +664,7 @@ function updateConnectionStatus(connected, user = null) {
     }
 }
 
-function formatTime(timestamp) {
+function formatTime(timestamp: number | string) {
     if (!timestamp) return '';
     
     const date = new Date(typeof timestamp === 'number' ? timestamp : Date.parse(timestamp));
@@ -602,19 +678,20 @@ function formatTime(timestamp) {
     }
 }
 
-function formatFileSize(bytes) {
+function formatFileSize(bytes: number) {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-function escapeHtml(text) {
+function escapeHtml(text: string) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-function autoResizeTextarea(textarea) {
+function autoResizeTextarea(textarea: HTMLTextAreaElement | null) {
+    if (!textarea) return;
     textarea.style.height = 'auto';
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
 }
@@ -627,8 +704,9 @@ function playNotificationSound() {
     } catch (e) {}
 }
 
-function showToast(type, title, message) {
-    const container = document.getElementById('toastContainer');
+function showToast(type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) {
+    const container = document.getElementById('toastContainer') as HTMLElement | null;
+    if (!container) return;
     
     const icons = {
         success: 'OK',
@@ -655,7 +733,13 @@ function showToast(type, title, message) {
     }, 4000);
 }
 
-const windowAny = window as any;
+const windowAny = window as Window & {
+    selectContact?: (jid: string) => void;
+    sendMessage?: () => void;
+    closeAttachModal?: () => void;
+    sendFile?: () => Promise<void>;
+    toggleBot?: () => void;
+};
 windowAny.selectContact = selectContact;
 windowAny.sendMessage = sendMessage;
 windowAny.closeAttachModal = closeAttachModal;

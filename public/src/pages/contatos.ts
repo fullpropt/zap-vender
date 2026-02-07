@@ -1,12 +1,34 @@
-// @ts-nocheck
 // Contatos page logic migrated to module
 
-let allContacts = [];
-let filteredContacts = [];
-let selectedContacts = [];
+type LeadStatus = 1 | 2 | 3 | 4;
+
+type Contact = {
+    id: number;
+    name?: string;
+    phone?: string;
+    vehicle?: string;
+    plate?: string;
+    email?: string;
+    status: LeadStatus;
+    tags?: string;
+    last_message_at?: string;
+    created_at: string;
+    notes?: string;
+};
+
+type Tag = { id: number; name: string };
+type Template = { id: number; name: string; content: string };
+
+type LeadsResponse = { leads?: Contact[] };
+type TagsResponse = { tags?: Tag[] };
+type TemplatesResponse = { templates?: Template[] };
+
+let allContacts: Contact[] = [];
+let filteredContacts: Contact[] = [];
+let selectedContacts: number[] = [];
 let currentPage = 1;
 const perPage = 20;
-let tags = [];
+let tags: Tag[] = [];
 
 document.addEventListener('DOMContentLoaded', () => {
     loadContacts();
@@ -17,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadContacts() {
     try {
         showLoading('Carregando contatos...');
-        const response = await api.get('/api/leads');
+        const response: LeadsResponse = await api.get('/api/leads');
         allContacts = response.leads || [];
         filteredContacts = [...allContacts];
         updateStats();
@@ -31,9 +53,10 @@ async function loadContacts() {
 
 async function loadTags() {
     try {
-        const response = await api.get('/api/tags');
+        const response: TagsResponse = await api.get('/api/tags');
         tags = response.tags || [];
-        const select = document.getElementById('filterTag');
+        const select = document.getElementById('filterTag') as HTMLSelectElement | null;
+        if (!select) return;
         tags.forEach(tag => {
             select.innerHTML += `<option value="${tag.id}">${tag.name}</option>`;
         });
@@ -42,9 +65,10 @@ async function loadTags() {
 
 async function loadTemplates() {
     try {
-        const response = await api.get('/api/templates');
+        const response: TemplatesResponse = await api.get('/api/templates');
         const templates = response.templates || [];
-        const select = document.getElementById('bulkTemplate');
+        const select = document.getElementById('bulkTemplate') as HTMLSelectElement | null;
+        if (!select) return;
         templates.forEach(t => {
             select.innerHTML += `<option value="${t.id}" data-content="${encodeURIComponent(t.content)}">${t.name}</option>`;
         });
@@ -52,29 +76,45 @@ async function loadTemplates() {
 }
 
 function loadTemplate() {
-    const select = document.getElementById('bulkTemplate');
+    const select = document.getElementById('bulkTemplate') as HTMLSelectElement | null;
+    if (!select) return;
     const option = select.options[select.selectedIndex];
-    if (option.dataset.content) {
-        document.getElementById('bulkMessage').value = decodeURIComponent(option.dataset.content);
+    if (option?.dataset?.content) {
+        const bulkMessage = document.getElementById('bulkMessage') as HTMLTextAreaElement | null;
+        if (bulkMessage) {
+            bulkMessage.value = decodeURIComponent(option.dataset.content);
+        }
     }
 }
 
 function updateStats() {
-    document.getElementById('totalContacts').textContent = formatNumber(allContacts.length);
-    document.getElementById('activeContacts').textContent = formatNumber(allContacts.filter(c => c.status !== 4).length);
+    const totalContacts = document.getElementById('totalContacts') as HTMLElement | null;
+    const activeContacts = document.getElementById('activeContacts') as HTMLElement | null;
+    const newContacts = document.getElementById('newContacts') as HTMLElement | null;
+    const withWhatsapp = document.getElementById('withWhatsapp') as HTMLElement | null;
+
+    if (totalContacts) totalContacts.textContent = formatNumber(allContacts.length);
+    if (activeContacts) {
+        activeContacts.textContent = formatNumber(allContacts.filter(c => c.status !== 4).length);
+    }
     
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
-    document.getElementById('newContacts').textContent = formatNumber(
-        allContacts.filter(c => new Date(c.created_at) > weekAgo).length
-    );
-    document.getElementById('withWhatsapp').textContent = formatNumber(
-        allContacts.filter(c => c.phone).length
-    );
+    if (newContacts) {
+        newContacts.textContent = formatNumber(
+            allContacts.filter(c => new Date(c.created_at) > weekAgo).length
+        );
+    }
+    if (withWhatsapp) {
+        withWhatsapp.textContent = formatNumber(
+            allContacts.filter(c => c.phone).length
+        );
+    }
 }
 
 function renderContacts() {
-    const tbody = document.getElementById('contactsTableBody');
+    const tbody = document.getElementById('contactsTableBody') as HTMLElement | null;
+    if (!tbody) return;
     const start = (currentPage - 1) * perPage;
     const end = start + perPage;
     const pageContacts = filteredContacts.slice(start, end);
@@ -114,20 +154,25 @@ function renderContacts() {
     // Paginação
     const total = filteredContacts.length;
     const totalPages = Math.ceil(total / perPage);
-    document.getElementById('paginationInfo').textContent = `Mostrando ${start + 1}-${Math.min(end, total)} de ${total} contatos`;
-    document.getElementById('prevPage').disabled = currentPage === 1;
-    document.getElementById('nextPage').disabled = currentPage >= totalPages;
+    const paginationInfo = document.getElementById('paginationInfo') as HTMLElement | null;
+    const prevPage = document.getElementById('prevPage') as HTMLButtonElement | null;
+    const nextPage = document.getElementById('nextPage') as HTMLButtonElement | null;
+    if (paginationInfo) {
+        paginationInfo.textContent = `Mostrando ${start + 1}-${Math.min(end, total)} de ${total} contatos`;
+    }
+    if (prevPage) prevPage.disabled = currentPage === 1;
+    if (nextPage) nextPage.disabled = currentPage >= totalPages;
 }
 
-function changePage(delta) {
+function changePage(delta: number) {
     currentPage += delta;
     renderContacts();
 }
 
 function filterContacts() {
-    const search = document.getElementById('searchContacts').value.toLowerCase();
-    const status = document.getElementById('filterStatus').value;
-    const tag = document.getElementById('filterTag').value;
+    const search = (document.getElementById('searchContacts') as HTMLInputElement | null)?.value.toLowerCase() || '';
+    const status = (document.getElementById('filterStatus') as HTMLSelectElement | null)?.value || '';
+    const tag = (document.getElementById('filterTag') as HTMLSelectElement | null)?.value || '';
 
     filteredContacts = allContacts.filter(c => {
         const matchSearch = !search || 
@@ -135,7 +180,7 @@ function filterContacts() {
             (c.phone && c.phone.includes(search)) ||
             (c.vehicle && c.vehicle.toLowerCase().includes(search)) ||
             (c.plate && c.plate.toLowerCase().includes(search));
-        const matchStatus = !status || c.status == status;
+        const matchStatus = !status || c.status == (parseInt(status, 10) as LeadStatus);
         const matchTag = !tag || (c.tags && c.tags.includes(tag));
         return matchSearch && matchStatus && matchTag;
     });
@@ -145,32 +190,40 @@ function filterContacts() {
 }
 
 function toggleSelectAll() {
-    const checked = document.getElementById('selectAll').checked;
-    document.querySelectorAll('.contact-checkbox').forEach(cb => cb.checked = checked);
+    const checked = (document.getElementById('selectAll') as HTMLInputElement | null)?.checked || false;
+    document.querySelectorAll('.contact-checkbox').forEach(cb => {
+        (cb as HTMLInputElement).checked = checked;
+    });
     updateSelection();
 }
 
 function updateSelection() {
-    selectedContacts = Array.from(document.querySelectorAll('.contact-checkbox:checked')).map(cb => parseInt(cb.value));
-    document.getElementById('bulkActions').style.display = selectedContacts.length > 0 ? 'block' : 'none';
-    document.getElementById('selectedCount').textContent = selectedContacts.length;
+    selectedContacts = Array.from(document.querySelectorAll('.contact-checkbox:checked'))
+        .map(cb => parseInt((cb as HTMLInputElement).value, 10));
+    const bulkActions = document.getElementById('bulkActions') as HTMLElement | null;
+    const selectedCount = document.getElementById('selectedCount') as HTMLElement | null;
+    if (bulkActions) bulkActions.style.display = selectedContacts.length > 0 ? 'block' : 'none';
+    if (selectedCount) selectedCount.textContent = String(selectedContacts.length);
 }
 
 function clearSelection() {
-    document.getElementById('selectAll').checked = false;
-    document.querySelectorAll('.contact-checkbox').forEach(cb => cb.checked = false);
+    const selectAll = document.getElementById('selectAll') as HTMLInputElement | null;
+    if (selectAll) selectAll.checked = false;
+    document.querySelectorAll('.contact-checkbox').forEach(cb => {
+        (cb as HTMLInputElement).checked = false;
+    });
     updateSelection();
 }
 
 async function saveContact() {
     const data = {
-        name: document.getElementById('contactName').value.trim(),
-        phone: document.getElementById('contactPhone').value.replace(/\D/g, ''),
-        vehicle: document.getElementById('contactVehicle').value.trim(),
-        plate: document.getElementById('contactPlate').value.trim().toUpperCase(),
-        email: document.getElementById('contactEmail').value.trim(),
-        status: parseInt(document.getElementById('contactStatus').value),
-        source: document.getElementById('contactSource').value
+        name: (document.getElementById('contactName') as HTMLInputElement | null)?.value.trim() || '',
+        phone: (document.getElementById('contactPhone') as HTMLInputElement | null)?.value.replace(/\D/g, '') || '',
+        vehicle: (document.getElementById('contactVehicle') as HTMLInputElement | null)?.value.trim() || '',
+        plate: (document.getElementById('contactPlate') as HTMLInputElement | null)?.value.trim().toUpperCase() || '',
+        email: (document.getElementById('contactEmail') as HTMLInputElement | null)?.value.trim() || '',
+        status: parseInt((document.getElementById('contactStatus') as HTMLSelectElement | null)?.value || '1', 10) as LeadStatus,
+        source: (document.getElementById('contactSource') as HTMLSelectElement | null)?.value || ''
     };
 
     if (!data.name || !data.phone) {
@@ -182,40 +235,49 @@ async function saveContact() {
         showLoading('Salvando...');
         await api.post('/api/leads', data);
         closeModal('addContactModal');
-        document.getElementById('addContactForm').reset();
+        (document.getElementById('addContactForm') as HTMLFormElement | null)?.reset();
         await loadContacts();
         showToast('success', 'Sucesso', 'Contato adicionado!');
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', error.message);
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Erro ao salvar');
     }
 }
 
-function editContact(id) {
+function editContact(id: number) {
     const contact = allContacts.find(c => c.id === id);
     if (!contact) return;
 
-    document.getElementById('editContactId').value = contact.id;
-    document.getElementById('editContactName').value = contact.name || '';
-    document.getElementById('editContactPhone').value = contact.phone || '';
-    document.getElementById('editContactVehicle').value = contact.vehicle || '';
-    document.getElementById('editContactPlate').value = contact.plate || '';
-    document.getElementById('editContactEmail').value = contact.email || '';
-    document.getElementById('editContactStatus').value = contact.status || 1;
-    document.getElementById('editContactNotes').value = contact.notes || '';
+    const editContactId = document.getElementById('editContactId') as HTMLInputElement | null;
+    const editContactName = document.getElementById('editContactName') as HTMLInputElement | null;
+    const editContactPhone = document.getElementById('editContactPhone') as HTMLInputElement | null;
+    const editContactVehicle = document.getElementById('editContactVehicle') as HTMLInputElement | null;
+    const editContactPlate = document.getElementById('editContactPlate') as HTMLInputElement | null;
+    const editContactEmail = document.getElementById('editContactEmail') as HTMLInputElement | null;
+    const editContactStatus = document.getElementById('editContactStatus') as HTMLSelectElement | null;
+    const editContactNotes = document.getElementById('editContactNotes') as HTMLTextAreaElement | null;
+
+    if (editContactId) editContactId.value = String(contact.id);
+    if (editContactName) editContactName.value = contact.name || '';
+    if (editContactPhone) editContactPhone.value = contact.phone || '';
+    if (editContactVehicle) editContactVehicle.value = contact.vehicle || '';
+    if (editContactPlate) editContactPlate.value = contact.plate || '';
+    if (editContactEmail) editContactEmail.value = contact.email || '';
+    if (editContactStatus) editContactStatus.value = String(contact.status || 1);
+    if (editContactNotes) editContactNotes.value = contact.notes || '';
 
     openModal('editContactModal');
 }
 
 async function updateContact() {
-    const id = document.getElementById('editContactId').value;
+    const id = (document.getElementById('editContactId') as HTMLInputElement | null)?.value || '';
     const data = {
-        name: document.getElementById('editContactName').value.trim(),
-        phone: document.getElementById('editContactPhone').value.replace(/\D/g, ''),
-        vehicle: document.getElementById('editContactVehicle').value.trim(),
-        plate: document.getElementById('editContactPlate').value.trim().toUpperCase(),
-        email: document.getElementById('editContactEmail').value.trim(),
-        status: parseInt(document.getElementById('editContactStatus').value)
+        name: (document.getElementById('editContactName') as HTMLInputElement | null)?.value.trim() || '',
+        phone: (document.getElementById('editContactPhone') as HTMLInputElement | null)?.value.replace(/\D/g, '') || '',
+        vehicle: (document.getElementById('editContactVehicle') as HTMLInputElement | null)?.value.trim() || '',
+        plate: (document.getElementById('editContactPlate') as HTMLInputElement | null)?.value.trim().toUpperCase() || '',
+        email: (document.getElementById('editContactEmail') as HTMLInputElement | null)?.value.trim() || '',
+        status: parseInt((document.getElementById('editContactStatus') as HTMLSelectElement | null)?.value || '1', 10) as LeadStatus
     };
 
     try {
@@ -226,11 +288,11 @@ async function updateContact() {
         showToast('success', 'Sucesso', 'Contato atualizado!');
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', error.message);
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Erro ao salvar');
     }
 }
 
-async function deleteContact(id) {
+async function deleteContact(id: number) {
     if (!confirm('Excluir este contato?')) return;
     try {
         showLoading('Excluindo...');
@@ -239,11 +301,11 @@ async function deleteContact(id) {
         showToast('success', 'Sucesso', 'Contato excluído!');
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', error.message);
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Erro ao excluir');
     }
 }
 
-function quickMessage(id) {
+function quickMessage(id: number) {
     const contact = allContacts.find(c => c.id === id);
     if (contact) {
         window.open(`https://wa.me/55${contact.phone}`, '_blank');
@@ -251,20 +313,21 @@ function quickMessage(id) {
 }
 
 function openWhatsApp() {
-    const phone = document.getElementById('editContactPhone').value.replace(/\D/g, '');
+    const phone = (document.getElementById('editContactPhone') as HTMLInputElement | null)?.value.replace(/\D/g, '') || '';
     if (phone) {
         window.open(`https://wa.me/55${phone}`, '_blank');
     }
 }
 
 function bulkSendMessage() {
-    document.getElementById('bulkRecipients').textContent = selectedContacts.length;
+    const bulkRecipients = document.getElementById('bulkRecipients') as HTMLElement | null;
+    if (bulkRecipients) bulkRecipients.textContent = String(selectedContacts.length);
     openModal('bulkMessageModal');
 }
 
 async function sendBulkMessage() {
-    const message = document.getElementById('bulkMessage').value.trim();
-    const delay = parseInt(document.getElementById('bulkDelay').value);
+    const message = (document.getElementById('bulkMessage') as HTMLTextAreaElement | null)?.value.trim() || '';
+    const delay = parseInt((document.getElementById('bulkDelay') as HTMLInputElement | null)?.value || '0', 10);
 
     if (!message) {
         showToast('error', 'Erro', 'Digite uma mensagem');
@@ -293,7 +356,7 @@ async function sendBulkMessage() {
         hideLoading();
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', error.message);
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Erro ao enviar');
     }
 }
 
@@ -310,7 +373,7 @@ async function bulkDelete() {
         showToast('success', 'Sucesso', 'Contatos excluídos!');
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', error.message);
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Erro ao excluir');
     }
 }
 
@@ -327,12 +390,12 @@ function bulkAddTag() {
 }
 
 async function importContacts() {
-    const fileInput = document.getElementById('importFile');
-    const textInput = document.getElementById('importText').value.trim();
-    const status = parseInt(document.getElementById('importStatus').value);
+    const fileInput = document.getElementById('importFile') as HTMLInputElement | null;
+    const textInput = (document.getElementById('importText') as HTMLTextAreaElement | null)?.value.trim() || '';
+    const status = parseInt((document.getElementById('importStatus') as HTMLSelectElement | null)?.value || '1', 10) as LeadStatus;
 
-    let data = [];
-    if (fileInput.files.length > 0) {
+    let data: Array<Record<string, string>> = [];
+    if (fileInput?.files && fileInput.files.length > 0) {
         const text = await fileInput.files[0].text();
         data = parseCSV(text);
     } else if (textInput) {
@@ -387,18 +450,39 @@ function exportContacts() {
     showToast('success', 'Sucesso', 'Contatos exportados!');
 }
 
-function switchTab(tab) {
+function switchTab(tab: string) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active');
-    document.getElementById(`tab-${tab}`).classList.add('active');
+    document.querySelector(`.tab[onclick="switchTab('${tab}')"]`)?.classList.add('active');
+    document.getElementById(`tab-${tab}`)?.classList.add('active');
 }
 
-function getStatusLabel(status) {
+function getStatusLabel(status: number) {
     return LEAD_STATUS[status]?.label || 'Desconhecido';
 }
 
-const windowAny = window as any;
+const windowAny = window as Window & {
+    changePage?: (delta: number) => void;
+    filterContacts?: () => void;
+    toggleSelectAll?: () => void;
+    updateSelection?: () => void;
+    clearSelection?: () => void;
+    saveContact?: () => Promise<void>;
+    editContact?: (id: number) => void;
+    updateContact?: () => Promise<void>;
+    deleteContact?: (id: number) => Promise<void>;
+    quickMessage?: (id: number) => void;
+    openWhatsApp?: () => void;
+    bulkSendMessage?: () => void;
+    sendBulkMessage?: () => Promise<void>;
+    bulkDelete?: () => Promise<void>;
+    bulkChangeStatus?: () => void;
+    bulkAddTag?: () => void;
+    importContacts?: () => Promise<void>;
+    exportContacts?: () => void;
+    switchTab?: (tab: string) => void;
+    loadTemplate?: () => void;
+};
 windowAny.changePage = changePage;
 windowAny.filterContacts = filterContacts;
 windowAny.toggleSelectAll = toggleSelectAll;
