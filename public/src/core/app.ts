@@ -38,8 +38,9 @@ type ApiRequestOptions = RequestInit & {
 // CONFIGURAÇÃO GLOBAL
 // ============================================
 
+const BUILD_ID = '2026-02-09T16:00:00Z';
 const APP: AppState = {
-    version: '4.0.0',
+    version: '4.1.1',
     socketUrl: window.location.hostname === 'localhost' 
         ? 'http://localhost:3001' 
         : window.location.origin,
@@ -767,8 +768,11 @@ const windowAny = window as Window & {
     getStatusBadge?: typeof getStatusBadge;
     LEAD_STATUS?: typeof LEAD_STATUS;
     FUNNEL_STAGES?: typeof FUNNEL_STAGES;
+    BUILD_ID?: string;
 };
 windowAny.APP = APP;
+windowAny.BUILD_ID = BUILD_ID;
+console.info('SELF build', BUILD_ID);
 windowAny.api = api;
 windowAny.showToast = showToast;
 windowAny.openModal = openModal;

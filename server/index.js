@@ -142,7 +142,13 @@ app.use('/api', (req, res, next) => {
 });
 
 // Arquivos estáticos
-app.use(express.static(STATIC_DIR));
+app.use(express.static(STATIC_DIR, {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('app.html')) {
+            res.setHeader('Cache-Control', 'no-store');
+        }
+    }
+}));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Upload de arquivos
@@ -1467,6 +1473,7 @@ app.post('/api/upload', authenticate, upload.single('file'), (req, res) => {
 // ============================================
 
 app.get('/', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.join(STATIC_DIR, 'app.html'));
 });
 
@@ -1475,11 +1482,10 @@ app.get('*', (req, res) => {
     if (fs.existsSync(requestedFile)) {
         res.sendFile(requestedFile);
     } else {
+        res.setHeader('Cache-Control', 'no-store');
         res.sendFile(path.join(STATIC_DIR, 'app.html'));
     }
 });
-
-// ============================================
 // TRATAMENTO DE ERROS
 // ============================================
 
@@ -1571,3 +1577,7 @@ process.on('uncaughtException', (error) => {
         process.exit(0);
     });
 };
+
+
+
+
