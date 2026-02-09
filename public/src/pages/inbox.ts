@@ -11,6 +11,7 @@ type LeadStatus = 1 | 2 | 3 | 4;
 
 type Conversation = {
     id: number;
+    leadId: number;
     name: string;
     phone: string;
     lastMessage?: string;
@@ -27,7 +28,7 @@ type ChatMessage = {
     created_at: string;
 };
 
-type LeadsResponse = { leads?: Array<Record<string, any>> };
+type ConversationsResponse = { conversations?: Array<Record<string, any>> };
 type MessagesResponse = { messages?: Array<Record<string, any>> };
 
 let conversations: Conversation[] = [];
@@ -68,7 +69,10 @@ function initSocket() {
         socket = io();
         
         socket.on('new-message', (data) => {
-            if (currentConversation && data.leadId === currentConversation.id) {
+            const isCurrent =
+                currentConversation &&
+                (data.conversationId === currentConversation.id || data.leadId === currentConversation.leadId);
+            if (isCurrent) {
                 messages.push({
                     id: data.id || Date.now(),
                     content: data.text || '',
@@ -93,16 +97,17 @@ function initSocket() {
 
 async function loadConversations() {
     try {
-        const response: LeadsResponse = await api.get('/api/leads');
-        const leads = response.leads || [];
-        conversations = leads.map(l => ({
-            id: l.id,
-            name: l.name || l.phone,
-            phone: l.phone,
-            lastMessage: l.last_message || 'Clique para iniciar conversa',
-            lastMessageAt: l.last_message_at || l.updated_at || l.created_at,
-            unread: l.unread_count || 0,
-            status: l.status
+        const response: ConversationsResponse = await api.get('/api/conversations');
+        const items = response.conversations || [];
+        conversations = items.map((c) => ({
+            id: c.id,
+            leadId: c.lead_id || c.leadId || c.id,
+            name: c.name || c.lead_name || c.phone,
+            phone: c.phone,
+            lastMessage: c.lastMessage || c.last_message || 'Clique para iniciar conversa',
+            lastMessageAt: c.lastMessageAt || c.last_message_at || c.updated_at || c.created_at,
+            unread: c.unread || c.unread_count || 0,
+            status: c.status
         }));
 
         renderConversations();
@@ -199,13 +204,13 @@ async function selectConversation(id: number) {
     document.querySelector(`.conversation-item[onclick="selectConversation(${id})"]`)?.classList.add('active');
 
     // Carregar mensagens
-    await loadMessages(id);
+    await loadMessages(currentConversation.leadId);
 
     // Renderizar chat
     renderChat();
 }
 
-async function loadMessages(leadId) {
+async function loadMessages(leadId: number) {
     try {
         const response: MessagesResponse = await api.get(`/api/messages/${leadId}`);
         messages = (response.messages || []).map(m => ({
@@ -360,7 +365,7 @@ function openWhatsApp() {
 
 function viewContact() {
     if (currentConversation) {
-        window.location.href = getContatosUrl(currentConversation.id);
+        window.location.href = getContatosUrl(currentConversation.leadId);
     }
 }
 

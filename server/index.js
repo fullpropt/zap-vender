@@ -597,6 +597,157 @@ async function createSession(sessionId, socket, attempt = 0) {
     }
 }
 
+function normalizeAutomationText(value = '') {
+    return String(value)
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+}
+
+function extractAutomationKeywords(value = '') {
+    return String(value)
+        .split(',')
+        .map((keyword) => normalizeAutomationText(keyword))
+        .filter(Boolean);
+}
+
+function buildAutomationVariables(lead, messageText = '') {
+    return {
+        nome: lead?.name || 'Cliente',
+        telefone: lead?.phone || '',
+        veiculo: lead?.vehicle || '',
+        placa: lead?.plate || '',
+        mensagem: messageText || ''
+    };
+}
+
+function applyAutomationTemplate(template = '', variables = {}) {
+    return String(template).replace(/\{\{\s*([\w-]+)\s*\}\}/gi, (match, key) => {
+        const normalizedKey = String(key).toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(variables, normalizedKey)) {
+            return variables[normalizedKey] ?? '';
+        }
+        if (Object.prototype.hasOwnProperty.call(variables, key)) {
+            return variables[key] ?? '';
+        }
+        return '';
+    });
+}
+
+function shouldTriggerAutomation(automation, context, normalizedText) {
+    const triggerType = automation?.trigger_type;
+
+    if (triggerType === 'keyword') {
+        if (!normalizedText) return false;
+        const keywords = extractAutomationKeywords(automation.trigger_value || '');
+        if (keywords.length === 0) return false;
+        return keywords.some((keyword) => normalizedText.includes(keyword));
+    }
+
+    if (triggerType === 'message_received') {
+        return true;
+    }
+
+    if (triggerType === 'new_lead') {
+        return !!context?.leadCreated;
+    }
+
+    return false;
+}
+
+async function executeAutomationAction(automation, context) {
+    const { lead, conversation, sessionId, text } = context || {};
+
+    if (!automation || !lead) return;
+
+    const variables = buildAutomationVariables(lead, text);
+    const actionType = automation.action_type;
+    const actionValue = automation.action_value || '';
+
+    switch (actionType) {
+        case 'send_message': {
+            const content = applyAutomationTemplate(actionValue, variables).trim();
+            if (!content) return;
+            await sendMessage(sessionId, lead.phone, content, 'text');
+            break;
+        }
+        case 'change_status': {
+            const nextStatus = parseInt(actionValue, 10);
+            if (!Number.isFinite(nextStatus)) return;
+            Lead.update(lead.id, { status: nextStatus });
+            break;
+        }
+        case 'add_tag': {
+            const tag = String(actionValue || '').trim();
+            if (!tag) return;
+            let tags = [];
+            try {
+                tags = Array.isArray(lead.tags) ? lead.tags : JSON.parse(lead.tags || '[]');
+            } catch (e) {
+                tags = [];
+            }
+            if (!tags.includes(tag)) {
+                tags.push(tag);
+                Lead.update(lead.id, { tags });
+            }
+            break;
+        }
+        case 'start_flow': {
+            const flowId = parseInt(actionValue, 10);
+            if (!Number.isFinite(flowId)) return;
+            const flow = Flow.findById(flowId);
+            if (!flow) return;
+            if (conversation && conversation.is_bot_active) {
+                await flowService.startFlow(flow, lead, conversation, { text });
+            }
+            break;
+        }
+        case 'notify': {
+            const message = applyAutomationTemplate(actionValue, variables).trim();
+            webhookService.trigger('automation.notify', {
+                automationId: automation.id,
+                message,
+                lead: { id: lead.id, name: lead.name, phone: lead.phone }
+            });
+            break;
+        }
+        default:
+            return;
+    }
+
+    run(
+        `UPDATE automations SET executions = executions + 1, last_execution = ?, updated_at = datetime('now') WHERE id = ?`,
+        [new Date().toISOString(), automation.id]
+    );
+}
+
+function scheduleAutomations(context) {
+    const automations = Automation.list({ is_active: 1 });
+    if (!automations || automations.length === 0) return;
+
+    const normalizedText = normalizeAutomationText(context?.text || '');
+
+    for (const automation of automations) {
+        if (!shouldTriggerAutomation(automation, context, normalizedText)) continue;
+
+        const delaySeconds = Number(automation.delay || 0);
+        const delayMs = Number.isFinite(delaySeconds) && delaySeconds > 0 ? delaySeconds * 1000 : 0;
+
+        if (delayMs > 0) {
+            setTimeout(() => {
+                executeAutomationAction(automation, context).catch((error) => {
+                    console.error(`❌ Erro ao executar automação ${automation.id}:`, error.message);
+                });
+            }, delayMs);
+        } else {
+            executeAutomationAction(automation, context).catch((error) => {
+                console.error(`❌ Erro ao executar automação ${automation.id}:`, error.message);
+            });
+        }
+    }
+}
+
 /**
  * Processar mensagem recebida
  */
@@ -708,6 +859,16 @@ async function processIncomingMessage(sessionId, msg) {
                 conversation
             );
         }
+
+        scheduleAutomations({
+            sessionId,
+            text,
+            mediaType,
+            lead,
+            conversation,
+            leadCreated,
+            conversationCreated: convCreated
+        });
     }
 }
 
@@ -1249,13 +1410,40 @@ app.get('/api/conversations', optionalAuth, (req, res) => {
         offset: offset ? parseInt(offset) : 0
     });
 
-    const normalized = conversations.map((c) => ({
-        ...c,
-        unread: c.unread_count || 0,
-        lastMessageAt: c.updated_at,
-        name: c.lead_name,
-        phone: c.phone
-    }));
+    const previewForMedia = (mediaType) => {
+        switch (mediaType) {
+            case 'image':
+                return '[imagem]';
+            case 'video':
+                return '[video]';
+            case 'audio':
+                return '[audio]';
+            case 'document':
+                return '[documento]';
+            case 'sticker':
+                return '[sticker]';
+            default:
+                return '[mensagem]';
+        }
+    };
+
+    const normalized = conversations.map((c) => {
+        const lastMessage = Message.getLastMessage(c.id);
+        const decrypted = lastMessage?.content_encrypted
+            ? decryptMessage(lastMessage.content_encrypted)
+            : lastMessage?.content;
+        const lastMessageText = (decrypted || '').trim() || (lastMessage ? previewForMedia(lastMessage.media_type) : 'Clique para iniciar conversa');
+        const lastMessageAt = lastMessage?.sent_at || lastMessage?.created_at || c.updated_at;
+
+        return {
+            ...c,
+            unread: c.unread_count || 0,
+            lastMessage: lastMessageText,
+            lastMessageAt,
+            name: c.lead_name,
+            phone: c.phone
+        };
+    });
 
     res.json({ success: true, conversations: normalized });
 });
@@ -1741,6 +1929,4 @@ process.on('uncaughtException', (error) => {
         process.exit(0);
     });
 };
-
-
 
