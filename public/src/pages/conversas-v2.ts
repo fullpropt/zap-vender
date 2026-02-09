@@ -65,13 +65,8 @@ function onReady(callback: () => void) {
 }
 
 
-function isAppShell() {
-    return window.location.pathname.includes('app.html');
-}
-
 function getFunilUrl(leadId: string | number) {
-    const base = isAppShell() ? 'app.html#/funil' : 'funil.html';
-    return `${base}?lead=${leadId}`;
+    return `app.html#/funil?lead=${leadId}`;
 }
 
 // ============================================

@@ -33,17 +33,12 @@ function onReady(callback: () => void) {
 }
 
 
-function isAppShell() {
-    return window.location.pathname.includes('app.html');
-}
-
 function getLoginUrl() {
-    return isAppShell() ? 'app.html#/login' : 'login.html';
+    return 'app.html#/login';
 }
 
 function getConversasUrl(params: URLSearchParams) {
-    const base = isAppShell() ? 'app.html#/conversas' : 'conversas.html';
-    return `${base}?${params.toString()}`;
+    return `app.html#/conversas?${params.toString()}`;
 }
 
 // InicializaÃ§Ã£o

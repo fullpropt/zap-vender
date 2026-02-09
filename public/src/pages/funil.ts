@@ -29,13 +29,8 @@ function onReady(callback: () => void) {
 }
 
 
-function isAppShell() {
-    return window.location.pathname.includes('app.html');
-}
-
 function getContatosUrl(stage: number | string) {
-    const base = isAppShell() ? 'app.html#/contatos' : 'contatos.html';
-    return `${base}?status=${stage}`;
+    return `app.html#/contatos?status=${stage}`;
 }
 
 function initFunil() {

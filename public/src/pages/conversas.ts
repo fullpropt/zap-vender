@@ -67,12 +67,8 @@ function onReady(callback: () => void) {
 }
 
 
-function isAppShell() {
-    return window.location.pathname.includes('app.html');
-}
-
 function getLoginUrl() {
-    return isAppShell() ? 'app.html#/login' : 'login.html';
+    return 'app.html#/login';
 }
 
 function getQueryParams() {

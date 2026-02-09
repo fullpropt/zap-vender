@@ -1467,7 +1467,7 @@ app.post('/api/upload', authenticate, upload.single('file'), (req, res) => {
 // ============================================
 
 app.get('/', (req, res) => {
-    res.sendFile(path.join(STATIC_DIR, 'login.html'));
+    res.sendFile(path.join(STATIC_DIR, 'app.html'));
 });
 
 app.get('*', (req, res) => {
@@ -1475,7 +1475,7 @@ app.get('*', (req, res) => {
     if (fs.existsSync(requestedFile)) {
         res.sendFile(requestedFile);
     } else {
-        res.sendFile(path.join(STATIC_DIR, 'login.html'));
+        res.sendFile(path.join(STATIC_DIR, 'app.html'));
     }
 });
 

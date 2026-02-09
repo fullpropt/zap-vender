@@ -52,7 +52,7 @@ const APP: AppState = {
 
 
 function isAppShell() {
-    return window.location.pathname.includes('app.html');
+    return true;
 }
 
 function buildAppUrl(path: string, query?: string) {
@@ -66,14 +66,11 @@ function buildLegacyUrl(page: string, query?: string) {
 }
 
 function isLoginRoute() {
-    if (isAppShell()) {
-        return window.location.hash.startsWith('#/login');
-    }
-    return window.location.pathname.includes('login.html');
+    return window.location.hash.startsWith('#/login');
 }
 
 function getLoginUrl() {
-    return isAppShell() ? buildAppUrl('login') : buildLegacyUrl('login');
+    return buildAppUrl('login');
 }
 
 // ============================================
@@ -275,9 +272,7 @@ function initSidebar() {
     }
     
     // Marcar item ativo no menu
-    const currentPage = isAppShell()
-        ? `app.html${window.location.hash}`
-        : (window.location.pathname.split('/').pop() || 'dashboard.html');
+    const currentPage = `app.html${window.location.hash || '#/dashboard'}`;
     const navLinks = document.querySelectorAll('.nav-link');
     navLinks.forEach(link => {
         const href = link.getAttribute('href');
@@ -698,8 +693,7 @@ async function updateUnreadCount() {
         const unread = response.conversations?.filter((c: { unread_count?: number }) => (c.unread_count || 0) > 0).length || 0;
         
         const badges = document.querySelectorAll(
-            '.nav-link[href="app.html#/conversas"] .badge, .nav-link[href="app.html#/inbox"] .badge, ' +
-            '.nav-link[href="conversas.html"] .badge, .nav-link[href="inbox.html"] .badge'
+            '.nav-link[href="app.html#/conversas"] .badge, .nav-link[href="app.html#/inbox"] .badge'
         );
         badges.forEach(badge => {
             const badgeEl = badge as HTMLElement;

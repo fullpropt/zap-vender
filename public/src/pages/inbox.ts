@@ -45,13 +45,8 @@ function onReady(callback: () => void) {
 }
 
 
-function isAppShell() {
-    return window.location.pathname.includes('app.html');
-}
-
 function getContatosUrl(id: string | number) {
-    const base = isAppShell() ? 'app.html#/contatos' : 'contatos.html';
-    return `${base}?id=${id}`;
+    return `app.html#/contatos?id=${id}`;
 }
 
 function initInbox() {
