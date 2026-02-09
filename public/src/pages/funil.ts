@@ -280,6 +280,7 @@ function saveStagesConfig() {
 
 const windowAny = window as Window & {
     initFunil?: () => void;
+    loadFunnel?: () => void;
     viewLead?: (id: number) => void;
     changeLeadStatus?: (id: number, status: string) => Promise<void>;
     openLeadWhatsApp?: () => void;
@@ -289,6 +290,7 @@ const windowAny = window as Window & {
     saveStagesConfig?: () => void;
 };
 windowAny.initFunil = initFunil;
+windowAny.loadFunnel = loadFunnel;
 windowAny.viewLead = viewLead;
 windowAny.changeLeadStatus = changeLeadStatus;
 windowAny.openLeadWhatsApp = openLeadWhatsApp;

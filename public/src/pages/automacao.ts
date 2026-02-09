@@ -381,6 +381,7 @@ async function deleteAutomation(id: number) {
 
 const windowAny = window as Window & {
     initAutomacao?: () => void;
+    loadAutomations?: () => void;
     updateTriggerOptions?: () => void;
     updateActionOptions?: () => void;
     toggleAutomation?: (id: number, active: boolean) => Promise<void>;
@@ -389,6 +390,7 @@ const windowAny = window as Window & {
     deleteAutomation?: (id: number) => Promise<void>;
 };
 windowAny.initAutomacao = initAutomacao;
+windowAny.loadAutomations = loadAutomations;
 windowAny.updateTriggerOptions = updateTriggerOptions;
 windowAny.updateActionOptions = updateActionOptions;
 windowAny.toggleAutomation = toggleAutomation;

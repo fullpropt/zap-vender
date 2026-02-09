@@ -302,6 +302,7 @@ function switchCampaignTab(tab: string) {
 
 const windowAny = window as Window & {
     initCampanhas?: () => void;
+    loadCampaigns?: () => void;
     saveCampaign?: (status: CampaignStatus) => Promise<void>;
     viewCampaign?: (id: number) => void;
     startCampaign?: (id: number) => Promise<void>;
@@ -310,6 +311,7 @@ const windowAny = window as Window & {
     switchCampaignTab?: (tab: string) => void;
 };
 windowAny.initCampanhas = initCampanhas;
+windowAny.loadCampaigns = loadCampaigns;
 windowAny.saveCampaign = saveCampaign;
 windowAny.viewCampaign = viewCampaign;
 windowAny.startCampaign = startCampaign;

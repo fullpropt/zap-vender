@@ -431,6 +431,7 @@ function deleteFlow(id: number) {
 
 const windowAny = window as Window & {
     initFluxos?: () => void;
+    loadFlows?: () => void;
     addStep?: () => void;
     removeStep?: (step: number) => void;
     saveFlow?: () => Promise<void>;
@@ -440,6 +441,7 @@ const windowAny = window as Window & {
     deleteFlow?: (id: number) => void;
 };
 windowAny.initFluxos = initFluxos;
+windowAny.loadFlows = loadFlows;
 windowAny.addStep = addStep;
 windowAny.removeStep = removeStep;
 windowAny.saveFlow = saveFlow;

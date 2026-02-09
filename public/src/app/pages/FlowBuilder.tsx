@@ -1,8 +1,16 @@
 import { useEffect } from 'react';
-import { flowBuilderMarkup } from '../legacy/flowBuilderMarkup';
 
 type FlowBuilderGlobals = {
   initFlowBuilder?: () => void;
+  openFlowsModal?: () => void;
+  createNewFlow?: () => void;
+  clearCanvas?: () => void;
+  saveFlow?: () => void;
+  zoomIn?: () => void;
+  zoomOut?: () => void;
+  resetZoom?: () => void;
+  insertVariable?: (value: string) => void;
+  closeFlowsModal?: () => void;
 };
 
 export default function FlowBuilder() {
@@ -10,7 +18,7 @@ export default function FlowBuilder() {
     let cancelled = false;
 
     const boot = async () => {
-      await import('../../core/config');
+      await import('../../core/app');
       const mod = await import('../../pages/flow-builder');
 
       if (cancelled) return;
@@ -30,5 +38,775 @@ export default function FlowBuilder() {
     };
   }, []);
 
-  return <div dangerouslySetInnerHTML={{ __html: flowBuilderMarkup }} />;
+  const globals = window as Window & FlowBuilderGlobals;
+
+  return (
+    <div className="flow-builder-react">
+      <style>{`
+:root {
+            --primary: #5a2a6b;
+            --primary-light: #7a3a8b;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
+            --dark: #1e293b;
+            --gray: #64748b;
+            --light: #f1f5f9;
+            --lighter: #f8fafc;
+            --white: #ffffff;
+            --border: #e2e8f0;
+        }
+        
+        .flow-container {
+            display: grid;
+            grid-template-columns: 280px 1fr 320px;
+            height: calc(100vh - 100px);
+            gap: 0;
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 25px rgba(0,0,0,0.08);
+        }
+        
+        /* Painel de Nós */
+        .nodes-panel {
+            background: var(--lighter);
+            border-right: 1px solid var(--border);
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .nodes-panel h3 {
+            font-size: 14px;
+            color: var(--gray);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 15px;
+        }
+        
+        .node-category {
+            margin-bottom: 25px;
+        }
+        
+        .node-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            background: white;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 10px;
+            cursor: grab;
+            transition: all 0.2s;
+        }
+        
+        .node-item:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(90, 42, 107, 0.15);
+        }
+        
+        .node-item:active {
+            cursor: grabbing;
+        }
+        
+        .node-item .icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        
+        .node-item .icon.trigger { background: rgba(16, 185, 129, 0.15); }
+        .node-item .icon.message { background: rgba(59, 130, 246, 0.15); }
+        .node-item .icon.condition { background: rgba(245, 158, 11, 0.15); }
+        .node-item .icon.action { background: rgba(139, 92, 246, 0.15); }
+        .node-item .icon.delay { background: rgba(100, 116, 139, 0.15); }
+        
+        .node-item .info {
+            flex: 1;
+        }
+        
+        .node-item .info .name {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--dark);
+        }
+        
+        .node-item .info .desc {
+            font-size: 12px;
+            color: var(--gray);
+        }
+        
+        /* Canvas do Fluxo */
+        .flow-canvas {
+            position: relative;
+            background: #f8f9fa;
+            background-image: 
+                radial-gradient(circle, #ddd 1px, transparent 1px);
+            background-size: 20px 20px;
+            overflow: hidden;
+        }
+        
+        .canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform-origin: 0 0;
+        }
+        
+        .flow-node {
+            position: absolute;
+            min-width: 200px;
+            background: white;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            cursor: move;
+            user-select: none;
+        }
+        
+        .flow-node.selected {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(90, 42, 107, 0.2);
+        }
+        
+        .flow-node-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            border-radius: 10px 10px 0 0;
+        }
+        
+        .flow-node-header.trigger { background: rgba(16, 185, 129, 0.1); }
+        .flow-node-header.message { background: rgba(59, 130, 246, 0.1); }
+        .flow-node-header.condition { background: rgba(245, 158, 11, 0.1); }
+        .flow-node-header.wait { background: rgba(100, 116, 139, 0.1); }
+        .flow-node-header.action { background: rgba(139, 92, 246, 0.1); }
+        .flow-node-header.delay { background: rgba(100, 116, 139, 0.1); }
+        .flow-node-header.transfer { background: rgba(239, 68, 68, 0.1); }
+        
+        .flow-node-header .icon {
+            font-size: 18px;
+        }
+        
+        .flow-node-header .title {
+            flex: 1;
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--dark);
+        }
+        
+        .flow-node-header .delete-btn {
+            background: none;
+            border: none;
+            color: var(--gray);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            opacity: 0;
+            transition: all 0.2s;
+        }
+        
+        .flow-node:hover .delete-btn {
+            opacity: 1;
+        }
+        
+        .flow-node-header .delete-btn:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+        }
+        
+        .flow-node-body {
+            padding: 12px 14px;
+            font-size: 13px;
+            color: var(--gray);
+            max-height: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .flow-node-ports {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 14px;
+            border-top: 1px solid var(--border);
+        }
+        
+        .port {
+            width: 14px;
+            height: 14px;
+            background: var(--border);
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: crosshair;
+            transition: all 0.2s;
+        }
+        
+        .port:hover {
+            background: var(--primary);
+            transform: scale(1.3);
+        }
+        
+        .port.input { margin-left: -7px; }
+        .port.output { margin-right: -7px; }
+        
+        /* Conexões SVG */
+        .connections-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .connection-line {
+            fill: none;
+            stroke: var(--gray);
+            stroke-width: 2;
+            pointer-events: stroke;
+            cursor: pointer;
+        }
+        
+        .connection-line:hover {
+            stroke: var(--danger);
+            stroke-width: 3;
+        }
+        
+        /* Painel de Propriedades */
+        .properties-panel {
+            background: white;
+            border-left: 1px solid var(--border);
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .properties-panel h3 {
+            font-size: 16px;
+            color: var(--dark);
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .property-group {
+            margin-bottom: 20px;
+        }
+        
+        .property-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--dark);
+            margin-bottom: 8px;
+        }
+        
+        .property-group input,
+        .property-group select,
+        .property-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .property-group input:focus,
+        .property-group select:focus,
+        .property-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        .property-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .property-group .hint {
+            font-size: 12px;
+            color: var(--gray);
+            margin-top: 5px;
+        }
+        
+        .variables-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+        
+        .variable-tag {
+            background: rgba(90, 42, 107, 0.1);
+            color: var(--primary);
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        .variable-tag:hover {
+            background: rgba(90, 42, 107, 0.2);
+        }
+        
+        /* Toolbar */
+        .flow-toolbar {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            z-index: 100;
+        }
+        
+        .toolbar-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .toolbar-btn.primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .toolbar-btn.primary:hover {
+            background: var(--primary-light);
+        }
+        
+        .toolbar-btn.secondary {
+            background: var(--light);
+            color: var(--dark);
+        }
+        
+        .toolbar-btn.secondary:hover {
+            background: var(--border);
+        }
+        
+        /* Zoom Controls */
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            background: white;
+            padding: 8px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .zoom-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: var(--light);
+            border-radius: 8px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .zoom-btn:hover {
+            background: var(--border);
+        }
+        
+        .zoom-level {
+            text-align: center;
+            font-size: 12px;
+            color: var(--gray);
+            padding: 5px 0;
+        }
+        
+        /* Empty State */
+        .empty-canvas {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: var(--gray);
+        }
+        
+        .empty-canvas .icon {
+            font-size: 60px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+        
+        .empty-canvas h3 {
+            font-size: 18px;
+            color: var(--dark);
+            margin-bottom: 8px;
+        }
+        
+        .empty-canvas p {
+            font-size: 14px;
+        }
+        
+        /* Conditions Editor */
+        .conditions-editor {
+            margin-top: 15px;
+        }
+        
+        .condition-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        
+        .condition-row input {
+            flex: 1;
+        }
+        
+        .condition-row .remove-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        
+        .add-condition-btn {
+            width: 100%;
+            padding: 10px;
+            border: 2px dashed var(--border);
+            background: transparent;
+            border-radius: 8px;
+            color: var(--gray);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .add-condition-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        
+        /* Flow List Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+        }
+        
+        .modal {
+            background: white;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow: hidden;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .modal-header h2 {
+            font-size: 18px;
+            color: var(--dark);
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: var(--gray);
+            cursor: pointer;
+        }
+        
+        .modal-body {
+            padding: 20px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        
+        .flow-list-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .flow-list-item:hover {
+            border-color: var(--primary);
+            background: var(--lighter);
+        }
+        
+        .flow-list-item .icon {
+            width: 45px;
+            height: 45px;
+            background: rgba(90, 42, 107, 0.1);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        
+        .flow-list-item .info {
+            flex: 1;
+        }
+        
+        .flow-list-item .name {
+            font-weight: 600;
+            color: var(--dark);
+            margin-bottom: 4px;
+        }
+        
+        .flow-list-item .meta {
+            font-size: 12px;
+            color: var(--gray);
+        }
+        
+        .flow-list-item .status {
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .flow-list-item .status.active {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+        }
+        
+        .flow-list-item .status.inactive {
+            background: rgba(100, 116, 139, 0.15);
+            color: var(--gray);
+        }
+      `}</style>
+          <nav className="sidebar">
+              <div className="sidebar-logo">
+                  <img src="img/logo-self.png" alt="SELF" onError={(event) => { (event.currentTarget as HTMLElement).style.display = 'none'; }} />
+              </div>
+              <ul className="sidebar-menu">
+                  <li><a href="app.html#/dashboard"><span className="icon icon-dashboard"></span> Dashboard</a></li>
+                  <li><a href="app.html#/funil"><span className="icon icon-funnel"></span> Funil de Vendas</a></li>
+                  <li><a href="app.html#/whatsapp"><span className="icon icon-whatsapp"></span> WhatsApp</a></li>
+                  <li><a href="app.html#/conversas"><span className="icon icon-message"></span> Conversas</a></li>
+                  <li><a href="app.html#/flow-builder" className="active"><span className="icon icon-flows"></span> Fluxos</a></li>
+                  <li><a href="app.html#/configuracoes"><span className="icon icon-settings"></span> Configurações</a></li>
+              </ul>
+              <div className="sidebar-footer">
+                  <a href="app.html#/login" className="btn-logout">Sair</a>
+              </div>
+          </nav>
+          
+          <main className="main-content">
+              <div className="header">
+                  <div className="header-title">
+                      <h1><span className="icon icon-flows icon-sm"></span> Construtor de Fluxos</h1>
+                      <p>Crie automações visuais para suas conversas</p>
+                  </div>
+                  <div className="header-actions">
+                      <button className="toolbar-btn secondary" onClick={() => globals.openFlowsModal?.()}>
+                          <span className="icon icon-list icon-sm"></span> Meus Fluxos
+                      </button>
+                      <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
+                          <span className="icon icon-add icon-sm"></span> Novo Fluxo
+                      </button>
+                  </div>
+              </div>
+              
+              <div className="flow-container">
+                  <div className="nodes-panel">
+                      <div className="node-category">
+                          <h3>Gatilhos</h3>
+                          <div className="node-item" draggable="true" data-type="trigger" data-subtype="new_contact">
+                              <div className="icon trigger icon-user"></div>
+                              <div className="info">
+                                  <div className="name">Novo Contato</div>
+                                  <div className="desc">Inicia quando um novo lead entra</div>
+                              </div>
+                          </div>
+                          <div className="node-item" draggable="true" data-type="trigger" data-subtype="keyword">
+                              <div className="icon trigger icon-lock"></div>
+                              <div className="info">
+                                  <div className="name">Palavra-chave</div>
+                                  <div className="desc">Inicia com palavra específica</div>
+                              </div>
+                          </div>
+                      </div>
+                      
+                      <div className="node-category">
+                          <h3>Mensagens</h3>
+                          <div className="node-item" draggable="true" data-type="message">
+                              <div className="icon message icon-message"></div>
+                              <div className="info">
+                                  <div className="name">Enviar Mensagem</div>
+                                  <div className="desc">Envia texto ou mídia</div>
+                              </div>
+                          </div>
+                          <div className="node-item" draggable="true" data-type="wait">
+                              <div className="icon delay icon-clock"></div>
+                              <div className="info">
+                                  <div className="name">Aguardar Resposta</div>
+                                  <div className="desc">Espera input do usuário</div>
+                              </div>
+                          </div>
+                      </div>
+                      
+                      <div className="node-category">
+                          <h3>Lógica</h3>
+                          <div className="node-item" draggable="true" data-type="condition">
+                              <div className="icon condition icon-bolt"></div>
+                              <div className="info">
+                                  <div className="name">Condição</div>
+                                  <div className="desc">Ramifica baseado em resposta</div>
+                              </div>
+                          </div>
+                          <div className="node-item" draggable="true" data-type="delay">
+                              <div className="icon delay icon-clock"></div>
+                              <div className="info">
+                                  <div className="name">Delay</div>
+                                  <div className="desc">Aguarda tempo específico</div>
+                              </div>
+                          </div>
+                      </div>
+                      
+                      <div className="node-category">
+                          <h3>Ações</h3>
+                          <div className="node-item" draggable="true" data-type="transfer">
+                              <div className="icon action icon-user"></div>
+                              <div className="info">
+                                  <div className="name">Transferir</div>
+                                  <div className="desc">Passa para atendente</div>
+                              </div>
+                          </div>
+                          <div className="node-item" draggable="true" data-type="tag">
+                              <div className="icon action icon-tag"></div>
+                              <div className="info">
+                                  <div className="name">Adicionar Tag</div>
+                                  <div className="desc">Marca o lead com tag</div>
+                              </div>
+                          </div>
+                          <div className="node-item" draggable="true" data-type="status">
+                              <div className="icon action icon-chart-bar"></div>
+                              <div className="info">
+                                  <div className="name">Alterar Status</div>
+                                  <div className="desc">Muda status do lead</div>
+                              </div>
+                          </div>
+                          <div className="node-item" draggable="true" data-type="webhook">
+                              <div className="icon action icon-link"></div>
+                              <div className="info">
+                                  <div className="name">Webhook</div>
+                                  <div className="desc">Envia dados para URL</div>
+                              </div>
+                          </div>
+                          <div className="node-item" draggable="true" data-type="end">
+                              <div className="icon action icon-check"></div>
+                              <div className="info">
+                                  <div className="name">Finalizar</div>
+                                  <div className="desc">Encerra o fluxo</div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+                  
+                  <div className="flow-canvas" id="flowCanvas">
+                      <div className="flow-toolbar">
+                          <input type="text" id="flowName" placeholder="Nome do fluxo" style={{ border: '2px solid var(--border)', borderRadius: '8px', padding: '8px 12px', width: '200px' }} />
+                          <button className="toolbar-btn secondary" onClick={() => globals.clearCanvas?.()}><span className="icon icon-delete icon-sm"></span> Limpar</button>
+                          <button className="toolbar-btn primary" onClick={() => globals.saveFlow?.()}><span className="icon icon-save icon-sm"></span> Salvar</button>
+                      </div>
+                      
+                      <svg className="connections-svg" id="connectionsSvg"></svg>
+                      
+                      <div className="canvas-container" id="canvasContainer">
+                          <div className="empty-canvas" id="emptyCanvas">
+                              <div className="icon icon-flows"></div>
+                              <h3>Arraste os blocos para começar</h3>
+                              <p>Crie seu fluxo de automação visual</p>
+                          </div>
+                      </div>
+                      
+                      <div className="zoom-controls">
+                          <button className="zoom-btn" onClick={() => globals.zoomIn?.()}>+</button>
+                          <div className="zoom-level" id="zoomLevel">100%</div>
+                          <button className="zoom-btn" onClick={() => globals.zoomOut?.()}>-</button>
+                          <button className="zoom-btn" onClick={() => globals.resetZoom?.()}>⟲</button>
+                      </div>
+                  </div>
+                  
+                  <div className="properties-panel" id="propertiesPanel">
+                      <h3>Propriedades</h3>
+                      <div id="propertiesContent">
+                          <p style={{ color: 'var(--gray)', fontSize: '14px' }}>Selecione um bloco para editar suas propriedades</p>
+                      </div>
+                      
+                      <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
+                          <h4 style={{ fontSize: '13px', color: 'var(--gray)', marginBottom: '10px' }}>Variáveis Disponíveis</h4>
+                          <div className="variables-list">
+                              <span className="variable-tag" onClick={() => globals.insertVariable?.('nome')}>{'{{nome}}'}</span>
+                              <span className="variable-tag" onClick={() => globals.insertVariable?.('telefone')}>{'{{telefone}}'}</span>
+                              <span className="variable-tag" onClick={() => globals.insertVariable?.('veiculo')}>{'{{veiculo}}'}</span>
+                              <span className="variable-tag" onClick={() => globals.insertVariable?.('placa')}>{'{{placa}}'}</span>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </main>
+          
+          <div className="modal-overlay" id="flowsModal">
+              <div className="modal">
+                  <div className="modal-header">
+                      <h2>Meus Fluxos</h2>
+                      <button className="modal-close" onClick={() => globals.closeFlowsModal?.()}>&times;</button>
+                  </div>
+                  <div className="modal-body" id="flowsList">
+                  </div>
+              </div>
+          </div>
+          
+    </div>
+  );
 }

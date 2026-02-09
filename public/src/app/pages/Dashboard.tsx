@@ -1,11 +1,5 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  dashboardAfterMarkup,
-  dashboardContentBottomMarkup,
-  dashboardContentTopMarkup,
-  dashboardShellMarkup
-} from '../legacy/dashboardMarkup';
 
 type DashboardGlobals = {
   initDashboard?: () => void;
@@ -19,7 +13,33 @@ type DashboardGlobals = {
   importLeads?: () => void;
   saveLead?: () => void;
   updateLead?: () => void;
+  logout?: () => void;
 };
+
+function DashboardStyles() {
+  return (
+    <style>{`
+        .dashboard-botconversa { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px; }
+        @media (max-width: 900px) { .dashboard-botconversa { grid-template-columns: 1fr; } }
+        .stats-period-card, .stats-general-card, .events-personalized-card { background: white; border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); padding: 24px; border: 1px solid var(--border-color); }
+        .stats-period-card h3, .stats-general-card h3, .events-personalized-card h3 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+        .stats-period-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; }
+        .stats-period-controls .form-input, .stats-period-controls .form-select { height: 38px; padding: 0 12px; }
+        .chart-type-toggle { display: flex; gap: 4px; }
+        .chart-type-toggle .chart-btn { padding: 8px 12px; border: 1px solid var(--border-color); background: white; border-radius: 8px; cursor: pointer; }
+        .chart-type-toggle .chart-btn.active { background: rgba(var(--primary-rgb), 0.1); border-color: var(--primary); color: var(--primary); }
+        .stats-general-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--gray-100); }
+        .stats-general-item:last-child { border-bottom: none; }
+        .stats-general-label { font-size: 13px; color: var(--gray-600); }
+        .stats-general-value { font-weight: 700; font-size: 18px; }
+        .events-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .events-header h3 { margin: 0; }
+        .info-icon { cursor: help; opacity: 0.7; }
+        .events-empty { text-align: center; padding: 40px 20px; color: var(--gray-500); }
+        .events-empty-emoji { width: 48px; height: 48px; display: block; margin-bottom: 16px; opacity: 0.6; background-color: var(--gray-400); }
+      `}</style>
+  );
+}
 
 function DashboardHeader() {
   const navigate = useNavigate();
@@ -485,20 +505,137 @@ export default function Dashboard() {
     };
   }, []);
 
+  const globals = window as Window & DashboardGlobals;
+  const toggleSidebar = () => {
+    document.querySelector('.sidebar')?.classList.toggle('open');
+    document.querySelector('.sidebar-overlay')?.classList.toggle('active');
+  };
+
   return (
     <div className="dashboard-react">
-      <div dangerouslySetInnerHTML={{ __html: dashboardShellMarkup }} />
+      <DashboardStyles />
+      <button className="mobile-menu-toggle" type="button" onClick={toggleSidebar}>
+        {'\u2630'}
+      </button>
+      <div className="sidebar-overlay" onClick={toggleSidebar}></div>
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <a href="app.html#/dashboard" className="sidebar-logo">
+            <img src="img/logo-self.png" alt="SELF" />
+            <span>SELF</span>
+          </a>
+        </div>
+
+        <nav className="sidebar-nav">
+          <div className="nav-section">
+            <ul className="nav-menu">
+              <li className="nav-item">
+                <a href="app.html#/dashboard" className="nav-link active">
+                  <span className="icon icon-dashboard"></span>
+                  Painel de Controle
+                </a>
+              </li>
+              <li className="nav-item">
+                <a href="app.html#/contatos" className="nav-link">
+                  <span className="icon icon-contacts"></span>
+                  Contatos
+                </a>
+              </li>
+              <li className="nav-item">
+                <a href="app.html#/campanhas" className="nav-link">
+                  <span className="icon icon-campaigns"></span>
+                  Campanhas
+                </a>
+              </li>
+              <li className="nav-item">
+                <a href="app.html#/transmissao" className="nav-link">
+                  <span className="icon icon-broadcast"></span>
+                  TransmissÃ£o
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div className="nav-section">
+            <div className="nav-section-title">Conversas</div>
+            <ul className="nav-menu">
+              <li className="nav-item">
+                <a href="app.html#/inbox" className="nav-link">
+                  <span className="icon icon-inbox"></span>
+                  Inbox
+                  <span className="badge" style={{ display: 'none' }}>0</span>
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div className="nav-section">
+            <div className="nav-section-title">AutomaÃ§Ã£o</div>
+            <ul className="nav-menu">
+              <li className="nav-item">
+                <a href="app.html#/automacao" className="nav-link">
+                  <span className="icon icon-automation"></span>
+                  AutomaÃ§Ã£o
+                </a>
+              </li>
+              <li className="nav-item">
+                <a href="app.html#/fluxos" className="nav-link">
+                  <span className="icon icon-flows"></span>
+                  Fluxos de Conversa
+                </a>
+              </li>
+              <li className="nav-item">
+                <a href="app.html#/funil" className="nav-link">
+                  <span className="icon icon-funnel"></span>
+                  Funil de Vendas
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div className="nav-section">
+            <div className="nav-section-title">Sistema</div>
+            <ul className="nav-menu">
+              <li className="nav-item">
+                <a href="app.html#/whatsapp" className="nav-link">
+                  <span className="icon icon-whatsapp"></span>
+                  WhatsApp
+                </a>
+              </li>
+              <li className="nav-item">
+                <a href="app.html#/configuracoes" className="nav-link">
+                  <span className="icon icon-settings"></span>
+                  ConfiguraÃ§Ãµes
+                </a>
+              </li>
+              <li className="nav-item">
+                <a href="app.html#/configuracoes?panel=copys" className="nav-link">
+                  <span className="icon icon-templates"></span>
+                  Modelos
+                </a>
+              </li>
+            </ul>
+          </div>
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className="whatsapp-status">
+            <span className="status-indicator disconnected"></span>
+            <span className="whatsapp-status-text">Desconectado</span>
+          </div>
+          <button className="btn-logout" type="button" onClick={() => globals.logout?.()}>
+            Sair
+          </button>
+        </div>
+      </aside>
       <main className="main-content">
         <DashboardHeader />
-        <div dangerouslySetInnerHTML={{ __html: dashboardContentTopMarkup }} />
         <StatsPeriod />
         <EventsCard />
         <StatsCards />
         <Funnel />
         <LeadsTable />
-        <div dangerouslySetInnerHTML={{ __html: dashboardContentBottomMarkup }} />
       </main>
-      <div dangerouslySetInnerHTML={{ __html: dashboardAfterMarkup }} />
       <LeadModals />
       <FloatingAddLeadButton />
     </div>
