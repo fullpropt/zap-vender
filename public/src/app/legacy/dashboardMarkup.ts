@@ -1,0 +1,473 @@
+export const dashboardShellMarkup = `
+<style>
+
+        .dashboard-botconversa { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px; }
+        @media (max-width: 900px) { .dashboard-botconversa { grid-template-columns: 1fr; } }
+        .stats-period-card, .stats-general-card, .events-personalized-card { background: white; border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); padding: 24px; border: 1px solid var(--border-color); }
+        .stats-period-card h3, .stats-general-card h3, .events-personalized-card h3 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+        .stats-period-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; }
+        .stats-period-controls .form-input, .stats-period-controls .form-select { height: 38px; padding: 0 12px; }
+        .chart-type-toggle { display: flex; gap: 4px; }
+        .chart-type-toggle .chart-btn { padding: 8px 12px; border: 1px solid var(--border-color); background: white; border-radius: 8px; cursor: pointer; }
+        .chart-type-toggle .chart-btn.active { background: rgba(var(--primary-rgb), 0.1); border-color: var(--primary); color: var(--primary); }
+        .stats-general-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--gray-100); }
+        .stats-general-item:last-child { border-bottom: none; }
+        .stats-general-label { font-size: 13px; color: var(--gray-600); }
+        .stats-general-value { font-weight: 700; font-size: 18px; }
+        .events-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .events-header h3 { margin: 0; }
+        .info-icon { cursor: help; opacity: 0.7; }
+        .events-empty { text-align: center; padding: 40px 20px; color: var(--gray-500); }
+        .events-empty-emoji { width: 48px; height: 48px; display: block; margin-bottom: 16px; opacity: 0.6; background-color: var(--gray-400); }
+    
+</style>
+<!-- Mobile Menu Toggle -->
+    <button class="mobile-menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open'); document.querySelector('.sidebar-overlay').classList.toggle('active')">
+        ☰
+    </button>
+    <div class="sidebar-overlay"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <a href="dashboard.html" class="sidebar-logo">
+                <img src="img/logo-self.png" alt="SELF">
+                <span>SELF</span>
+            </a>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <ul class="nav-menu">
+                    <li class="nav-item">
+                        <a href="dashboard.html" class="nav-link active">
+                            <span class="icon icon-dashboard"></span>
+                            Painel de Controle
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="contatos.html" class="nav-link">
+                            <span class="icon icon-contacts"></span>
+                            Contatos
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="campanhas.html" class="nav-link">
+                            <span class="icon icon-campaigns"></span>
+                            Campanhas
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="transmissao.html" class="nav-link">
+                            <span class="icon icon-broadcast"></span>
+                            Transmissão
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <div class="nav-section">
+                <div class="nav-section-title">Conversas</div>
+                <ul class="nav-menu">
+                    <li class="nav-item">
+                        <a href="inbox.html" class="nav-link">
+                            <span class="icon icon-inbox"></span>
+                            Inbox
+                            <span class="badge" style="display: none;">0</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <div class="nav-section">
+                <div class="nav-section-title">Automação</div>
+                <ul class="nav-menu">
+                    <li class="nav-item">
+                        <a href="automacao.html" class="nav-link">
+                            <span class="icon icon-automation"></span>
+                            Automação
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="fluxos.html" class="nav-link">
+                            <span class="icon icon-flows"></span>
+                            Fluxos de Conversa
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="funil.html" class="nav-link">
+                            <span class="icon icon-funnel"></span>
+                            Funil de Vendas
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            
+            <div class="nav-section">
+                <div class="nav-section-title">Sistema</div>
+                <ul class="nav-menu">
+                    <li class="nav-item">
+                        <a href="whatsapp.html" class="nav-link">
+                            <span class="icon icon-whatsapp"></span>
+                            WhatsApp
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="configuracoes.html" class="nav-link">
+                            <span class="icon icon-settings"></span>
+                            Configurações
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="configuracoes.html#copys" class="nav-link">
+                            <span class="icon icon-templates"></span>
+                            Modelos
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <div class="whatsapp-status">
+                <span class="status-indicator disconnected"></span>
+                <span class="whatsapp-status-text">Desconectado</span>
+            </div>
+            <button class="btn-logout" onclick="logout()">Sair</button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+`;
+
+export const dashboardContentMarkup = `
+<!-- Header -->
+        
+            <div class="page-actions">
+                <button class="btn btn-outline" onclick="loadDashboardData()">
+                    <span class="icon icon-refresh icon-sm"></span>
+                    Atualizar
+                </button>
+                <button class="btn btn-outline" onclick="openModal('importModal')">
+                    <span class="icon icon-import icon-sm"></span>
+                    Importar
+                </button>
+                <button class="btn btn-success" onclick="exportLeads()">
+                    <span class="icon icon-export icon-sm"></span>
+                    Exportar
+                </button>
+                <button class="btn btn-whatsapp" onclick="window.location.href='transmissao.html'">
+                    <span class="icon icon-batch icon-sm"></span>
+                    Lote
+                </button>
+                <button class="btn btn-outline-danger" onclick="confirmReset()">
+                    <span class="icon icon-reset icon-sm"></span>
+                    Reset
+                </button>
+            </div>
+        </div>
+
+        <!-- Estatísticas por período (estilo BotConversa) -->
+        <div class="dashboard-botconversa">
+            <div class="stats-period-card">
+                <h3>Estatísticas por período</h3>
+                <div class="stats-period-controls">
+                    <input type="date" class="form-input" id="statsStartDate">
+                    <input type="date" class="form-input" id="statsEndDate">
+                    <select class="form-select" id="statsMetric" style="width: auto;">
+                        <option value="novos_contatos">Novos Contatos</option>
+                        <option value="mensagens">Mensagens</option>
+                        <option value="interacoes">Interações</option>
+                    </select>
+                    <div class="chart-type-toggle">
+                        <button type="button" class="chart-btn active" title="Gráfico de linhas">
+                            <span class="icon icon-chart-line icon-sm"></span>
+                        </button>
+                        <button type="button" class="chart-btn" title="Gráfico de barras">
+                            <span class="icon icon-chart-bar icon-sm"></span>
+                        </button>
+                    </div>
+                </div>
+                <div class="stats-period-chart" id="statsPeriodChart">
+                    <canvas id="statsChart" style="max-height: 200px;"></canvas>
+                </div>
+            </div>
+            <div class="stats-general-card">
+                <h3>Estatísticas gerais</h3>
+                <div class="stats-general-item">
+                    <span class="stats-general-label">Contatos que interagiram</span>
+                    <span class="stats-general-value" id="statsContacts">0</span>
+                </div>
+                <div class="stats-general-item">
+                    <span class="stats-general-label">Mensagem enviada pelo contato</span>
+                    <span class="stats-general-value" id="statsMessages">0</span>
+                </div>
+                <div class="stats-general-item">
+                    <span class="stats-general-label">Interações/Inscrito</span>
+                    <span class="stats-general-value" id="statsInteractionsPer">0</span>
+                </div>
+            </div>
+        </div>
+        <div class="events-personalized-card" style="margin-bottom: 24px;">
+            <div class="events-header">
+                <h3>Eventos personalizados <span class="info-icon" title="Crie eventos personalizados, integre-os em fluxos com o Bloco de Ação e rastreie suas estatísticas."><span class="icon icon-info icon-sm"></span></span></h3>
+                <select class="form-select" style="width: auto;">
+                    <option>Este mês</option>
+                    <option>Semana</option>
+                    <option>Ano</option>
+                </select>
+                <button class="btn btn-primary btn-sm">Criar</button>
+            </div>
+            <div class="events-empty">
+                <span class="events-empty-emoji icon icon-empty"></span>
+                <p><strong>Nenhum evento personalizado ainda</strong></p>
+                <p class="text-muted">Crie eventos personalizados, integre-os em fluxos com o Bloco de Ação e rastreie suas estatísticas.</p>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon primary"><span class="icon icon-contacts"></span></div>
+                <div class="stat-content">
+                    <div class="stat-value" id="totalLeads">0</div>
+                    <div class="stat-label">Total de Leads</div>
+                    <div class="stat-change positive" id="leadsChange">+0%</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon success"><span class="icon icon-check"></span></div>
+                <div class="stat-content">
+                    <div class="stat-value" id="completedLeads">0</div>
+                    <div class="stat-label">Concluídos</div>
+                    <div class="stat-change positive" id="completedChange">+0%</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon warning"><span class="icon icon-clock"></span></div>
+                <div class="stat-content">
+                    <div class="stat-value" id="pendingLeads">0</div>
+                    <div class="stat-label">Em Andamento</div>
+                    <div class="stat-change negative" id="pendingChange">-0%</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon info"><span class="icon icon-chart-bar"></span></div>
+                <div class="stat-content">
+                    <div class="stat-value" id="conversionRate">0.0%</div>
+                    <div class="stat-label">Conversão</div>
+                    <div class="stat-change positive" id="conversionChange">+0%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Funil de Conversão -->
+        <div class="funnel-container">
+            <div class="funnel-title"><span class="icon icon-funnel icon-sm"></span> Funil de Conversão</div>
+            <div class="funnel-stages" id="funnelStages">
+                <div class="funnel-stage" data-stage="1">
+                    <div class="funnel-value" id="funnel1">0</div>
+                    <div class="funnel-label">Etapa 1</div>
+                    <div class="funnel-percent">100%</div>
+                </div>
+                <div class="funnel-arrow">→</div>
+                <div class="funnel-stage" data-stage="2">
+                    <div class="funnel-value" id="funnel2">0</div>
+                    <div class="funnel-label">Etapa 2</div>
+                    <div class="funnel-percent" id="funnel2Percent">0%</div>
+                </div>
+                <div class="funnel-arrow">→</div>
+                <div class="funnel-stage" data-stage="3">
+                    <div class="funnel-value" id="funnel3">0</div>
+                    <div class="funnel-label">Etapa 3</div>
+                    <div class="funnel-percent" id="funnel3Percent">0%</div>
+                </div>
+                <div class="funnel-arrow">→</div>
+                <div class="funnel-stage" data-stage="4">
+                    <div class="funnel-value" id="funnel4">0</div>
+                    <div class="funnel-label">Concluído</div>
+                    <div class="funnel-percent" id="funnel4Percent">0%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Leads Recentes -->
+        <div class="table-container">
+            <div class="table-header">
+                <div class="table-title"><span class="icon icon-contacts icon-sm"></span> Leads Recentes</div>
+                <div class="table-filters">
+                    <div class="search-box">
+                        <span class="search-icon icon icon-search icon-sm"></span>
+                        <input type="text" id="searchLeads" placeholder="Buscar por nome, telefone..." onkeyup="filterLeads()">
+                    </div>
+                    <select class="form-select" id="filterStatus" onchange="filterLeads()" style="width: auto;">
+                        <option value="">Todos os Status</option>
+                        <option value="1">Novo</option>
+                        <option value="2">Em Andamento</option>
+                        <option value="3">Concluído</option>
+                        <option value="4">Perdido</option>
+                    </select>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>
+                                <label class="checkbox-wrapper">
+                                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                                    <span class="checkbox-custom"></span>
+                                </label>
+                            </th>
+                            <th>Data/Hora</th>
+                            <th>Nome</th>
+                            <th>WhatsApp</th>
+                            <th>Placa</th>
+                            <th>Veículo</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leadsTableBody">
+                        <tr>
+                            <td colspan="8" class="table-empty">
+                                <div class="table-empty-icon icon icon-empty icon-lg"></div>
+                                <p>Carregando leads...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+`;
+
+export const dashboardAfterMarkup = `
+<!-- Modal: Importar Leads -->
+    <div class="modal-overlay" id="importModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h3 class="modal-title"><span class="icon icon-import icon-sm"></span> Importar Leads</h3>
+                <button class="modal-close" onclick="closeModal('importModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Arquivo CSV</label>
+                    <input type="file" class="form-input" id="importFile" accept=".csv,.txt">
+                    <p class="form-help">Formato esperado: nome, telefone, veiculo, placa (separados por vírgula)</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Ou cole os dados aqui</label>
+                    <textarea class="form-textarea" id="importText" rows="10" placeholder="nome,telefone,veiculo,placa
+João Silva,27999999999,Honda Civic 2020,ABC1234
+Maria Santos,27988888888,Toyota Corolla 2021,XYZ5678"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('importModal')">Cancelar</button>
+                <button class="btn btn-primary" onclick="importLeads()">Importar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Adicionar Lead -->
+    <div class="modal-overlay" id="addLeadModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title"><span class="icon icon-add icon-sm"></span> Adicionar Lead</h3>
+                <button class="modal-close" onclick="closeModal('addLeadModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="addLeadForm">
+                    <div class="form-group">
+                        <label class="form-label required">Nome</label>
+                        <input type="text" class="form-input" id="leadName" required placeholder="Nome completo">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label required">WhatsApp</label>
+                        <input type="tel" class="form-input" id="leadPhone" required placeholder="27999999999">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Veículo</label>
+                            <input type="text" class="form-input" id="leadVehicle" placeholder="Ex: Honda Civic 2020">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Placa</label>
+                            <input type="text" class="form-input" id="leadPlate" placeholder="ABC1234">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-input" id="leadEmail" placeholder="email@exemplo.com">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Status Inicial</label>
+                        <select class="form-select" id="leadStatus">
+                            <option value="1">Novo</option>
+                            <option value="2">Em Andamento</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('addLeadModal')">Cancelar</button>
+                <button class="btn btn-primary" onclick="saveLead()">Salvar Lead</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Editar Lead -->
+    <div class="modal-overlay" id="editLeadModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title"><span class="icon icon-edit icon-sm"></span> Editar Lead</h3>
+                <button class="modal-close" onclick="closeModal('editLeadModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="editLeadForm">
+                    <input type="hidden" id="editLeadId">
+                    <div class="form-group">
+                        <label class="form-label required">Nome</label>
+                        <input type="text" class="form-input" id="editLeadName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label required">WhatsApp</label>
+                        <input type="tel" class="form-input" id="editLeadPhone" required>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Veículo</label>
+                            <input type="text" class="form-input" id="editLeadVehicle">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Placa</label>
+                            <input type="text" class="form-input" id="editLeadPlate">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-input" id="editLeadEmail">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="editLeadStatus">
+                            <option value="1">Novo</option>
+                            <option value="2">Em Andamento</option>
+                            <option value="3">Concluído</option>
+                            <option value="4">Perdido</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('editLeadModal')">Cancelar</button>
+                <button class="btn btn-primary" onclick="updateLead()">Salvar Alterações</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Action Button -->
+    <button class="btn btn-whatsapp btn-icon" style="position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px; border-radius: 50%; box-shadow: var(--shadow-lg);" onclick="openModal('addLeadModal')" title="Adicionar Lead">
+        <span class="icon icon-add icon-lg"></span>
+    </button>
+`;

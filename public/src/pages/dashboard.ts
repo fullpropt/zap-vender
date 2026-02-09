@@ -27,8 +27,16 @@ let selectedLeads: number[] = [];
 
 let statsChartInstance: { destroy?: () => void } | null = null;
 
+function onReady(callback: () => void) {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', callback);
+    } else {
+        callback();
+    }
+}
+
 // Carregar dados ao iniciar
-document.addEventListener('DOMContentLoaded', () => {
+function initDashboard() {
     const today = new Date();
     const weekAgo = new Date(today);
     weekAgo.setDate(weekAgo.getDate() - 7);
@@ -38,7 +46,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (statsEnd) statsEnd.value = today.toISOString().slice(0, 10);
     initStatsChart();
     loadDashboardData();
-});
+}
+
+onReady(initDashboard);
 
 // Carregar dados do dashboard
 async function loadDashboardData() {
@@ -433,6 +443,7 @@ function confirmReset() {
 }
 
 const windowAny = window as Window & {
+    initDashboard?: () => void;
     loadDashboardData?: () => Promise<void>;
     updateStats?: () => void;
     updateFunnel?: () => void;
@@ -449,6 +460,7 @@ const windowAny = window as Window & {
     exportLeads?: () => void;
     confirmReset?: () => void;
 };
+windowAny.initDashboard = initDashboard;
 windowAny.loadDashboardData = loadDashboardData;
 windowAny.updateStats = updateStats;
 windowAny.updateFunnel = updateFunnel;
@@ -465,4 +477,4 @@ windowAny.importLeads = importLeads;
 windowAny.exportLeads = exportLeads;
 windowAny.confirmReset = confirmReset;
 
-export {};
+export { initDashboard };

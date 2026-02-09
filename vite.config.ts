@@ -1,15 +1,18 @@
 import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
   root: 'public',
   publicDir: false,
   base: './',
+  plugins: [react()],
   build: {
     outDir: '../dist',
     emptyOutDir: true,
     rollupOptions: {
       input: {
+        app: path.resolve(__dirname, 'public', 'app.html'),
         dashboard: path.resolve(__dirname, 'public', 'dashboard.html'),
         contatos: path.resolve(__dirname, 'public', 'contatos.html'),
         campanhas: path.resolve(__dirname, 'public', 'campanhas.html'),

@@ -54,9 +54,15 @@ const APP: AppState = {
 // INICIALIZAÇÃO
 // ============================================
 
-document.addEventListener('DOMContentLoaded', () => {
-    initApp();
-});
+function onReady(callback: () => void) {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', callback);
+    } else {
+        callback();
+    }
+}
+
+onReady(initApp);
 
 function initApp() {
     // Verificar autenticação
