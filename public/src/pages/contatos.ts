@@ -30,11 +30,21 @@ let currentPage = 1;
 const perPage = 20;
 let tags: Tag[] = [];
 
-document.addEventListener('DOMContentLoaded', () => {
+function onReady(callback: () => void) {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', callback);
+    } else {
+        callback();
+    }
+}
+
+function initContacts() {
     loadContacts();
     loadTags();
     loadTemplates();
-});
+}
+
+onReady(initContacts);
 
 async function loadContacts() {
     try {
@@ -462,6 +472,7 @@ function getStatusLabel(status: number) {
 }
 
 const windowAny = window as Window & {
+    initContacts?: () => void;
     changePage?: (delta: number) => void;
     filterContacts?: () => void;
     toggleSelectAll?: () => void;
@@ -483,6 +494,7 @@ const windowAny = window as Window & {
     switchTab?: (tab: string) => void;
     loadTemplate?: () => void;
 };
+windowAny.initContacts = initContacts;
 windowAny.changePage = changePage;
 windowAny.filterContacts = filterContacts;
 windowAny.toggleSelectAll = toggleSelectAll;
@@ -504,4 +516,4 @@ windowAny.exportContacts = exportContacts;
 windowAny.switchTab = switchTab;
 windowAny.loadTemplate = loadTemplate;
 
-export {};
+export { initContacts };
