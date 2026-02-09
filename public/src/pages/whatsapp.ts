@@ -40,8 +40,6 @@ function initWhatsapp() {
 }
 
 onReady(initWhatsapp);
-    }
-});
 
 function checkAuth() {
     const token = sessionStorage.getItem('selfDashboardToken');

@@ -88,23 +88,6 @@ function initConversas() {
 }
 
 onReady(initConversas);
-    loadConversations();
-    
-    // Verificar parâmetros da URL
-    const params = new URLSearchParams(window.location.search);
-    const phone = params.get('phone');
-    const name = params.get('name');
-    
-    if (phone) {
-        setTimeout(() => {
-            selectConversation({
-                number: phone,
-                name: name || phone,
-                jid: formatJid(phone)
-            });
-        }, 500);
-    }
-});
 
 // Inicializar Socket
 function initSocket() {

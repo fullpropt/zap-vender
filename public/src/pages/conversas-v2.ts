@@ -74,9 +74,6 @@ function initConversasV2() {
 }
 
 onReady(initConversasV2);
-    setupEventListeners();
-    loadContacts();
-});
 
 // ============================================
 // SOCKET.IO

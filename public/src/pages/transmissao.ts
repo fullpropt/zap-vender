@@ -36,7 +36,6 @@ function onReady(callback: () => void) {
 }
 
 function initTransmissao() {
-
     loadContacts();
     loadTemplates();
     loadQueueStatus();
@@ -47,13 +46,15 @@ function initTransmissao() {
         if (!scheduledTimeGroup) return;
         scheduledTimeGroup.style.display = 
             (e.target as HTMLSelectElement).value === 'scheduled' ? 'block' : 'none';
+    });
+
+    // Atualizar fila a cada 5 segundos
+    if (queueInterval === null) {
+        queueInterval = window.setInterval(loadQueueStatus, 5000);
+    }
 }
 
 onReady(initTransmissao);
-
-    // Atualizar fila a cada 5 segundos
-    queueInterval = setInterval(loadQueueStatus, 5000);
-});
 
 async function loadContacts() {
     try {
