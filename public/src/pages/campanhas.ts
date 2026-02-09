@@ -26,9 +26,19 @@ type CampaignResponse = {
 
 let campaigns: Campaign[] = [];
 
-document.addEventListener('DOMContentLoaded', () => {
+function onReady(callback: () => void) {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', callback);
+    } else {
+        callback();
+    }
+}
+
+function initCampanhas() {
     loadCampaigns();
-});
+}
+
+onReady(initCampanhas);
 
 async function loadCampaigns() {
     try {
@@ -291,6 +301,7 @@ function switchCampaignTab(tab: string) {
 }
 
 const windowAny = window as Window & {
+    initCampanhas?: () => void;
     saveCampaign?: (status: CampaignStatus) => Promise<void>;
     viewCampaign?: (id: number) => void;
     startCampaign?: (id: number) => Promise<void>;
@@ -298,6 +309,7 @@ const windowAny = window as Window & {
     deleteCampaign?: (id: number) => Promise<void>;
     switchCampaignTab?: (tab: string) => void;
 };
+windowAny.initCampanhas = initCampanhas;
 windowAny.saveCampaign = saveCampaign;
 windowAny.viewCampaign = viewCampaign;
 windowAny.startCampaign = startCampaign;
@@ -305,4 +317,4 @@ windowAny.pauseCampaign = pauseCampaign;
 windowAny.deleteCampaign = deleteCampaign;
 windowAny.switchCampaignTab = switchCampaignTab;
 
-export {};
+export { initCampanhas };
