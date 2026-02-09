@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { Link } from 'react-router-dom';
 type ContatosGlobals = {
   initContacts?: () => void;
   loadContacts?: () => void;
@@ -66,33 +67,33 @@ export default function Contatos() {
 
       <aside className="sidebar">
         <div className="sidebar-header">
-          <a href="#/dashboard" className="sidebar-logo">
+          <Link to="/dashboard" className="sidebar-logo">
             <img src="img/logo-self.png" alt="SELF" />
             <span>SELF</span>
-          </a>
+          </Link>
         </div>
         <nav className="sidebar-nav">
           <div className="nav-section">
             <ul className="nav-menu">
               <li className="nav-item">
-                <a href="#/dashboard" className="nav-link">
+                <Link to="/dashboard" className="nav-link">
                   <span className="icon icon-dashboard"></span>Painel de Controle
-                </a>
+                </Link>
               </li>
               <li className="nav-item">
-                <a href="#/contatos" className="nav-link active">
+                <Link to="/contatos" className="nav-link active">
                   <span className="icon icon-contacts"></span>Contatos
-                </a>
+                </Link>
               </li>
               <li className="nav-item">
-                <a href="#/campanhas" className="nav-link">
+                <Link to="/campanhas" className="nav-link">
                   <span className="icon icon-campaigns"></span>Campanhas
-                </a>
+                </Link>
               </li>
               <li className="nav-item">
-                <a href="#/transmissao" className="nav-link">
+                <Link to="/transmissao" className="nav-link">
                   <span className="icon icon-broadcast"></span>Transmiss??o
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
@@ -100,10 +101,10 @@ export default function Contatos() {
             <div className="nav-section-title">Conversas</div>
             <ul className="nav-menu">
               <li className="nav-item">
-                <a href="#/inbox" className="nav-link">
+                <Link to="/inbox" className="nav-link">
                   <span className="icon icon-inbox"></span>Inbox
                   <span className="badge" style={{ display: 'none' }}>0</span>
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
@@ -111,19 +112,19 @@ export default function Contatos() {
             <div className="nav-section-title">Automa????o</div>
             <ul className="nav-menu">
               <li className="nav-item">
-                <a href="#/automacao" className="nav-link">
+                <Link to="/automacao" className="nav-link">
                   <span className="icon icon-automation"></span>Automa????o
-                </a>
+                </Link>
               </li>
               <li className="nav-item">
-                <a href="#/fluxos" className="nav-link">
+                <Link to="/fluxos" className="nav-link">
                   <span className="icon icon-flows"></span>Fluxos de Conversa
-                </a>
+                </Link>
               </li>
               <li className="nav-item">
-                <a href="#/funil" className="nav-link">
+                <Link to="/funil" className="nav-link">
                   <span className="icon icon-funnel"></span>Funil de Vendas
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
@@ -131,14 +132,14 @@ export default function Contatos() {
             <div className="nav-section-title">Sistema</div>
             <ul className="nav-menu">
               <li className="nav-item">
-                <a href="#/whatsapp" className="nav-link">
+                <Link to="/whatsapp" className="nav-link">
                   <span className="icon icon-whatsapp"></span>WhatsApp
-                </a>
+                </Link>
               </li>
               <li className="nav-item">
-                <a href="#/configuracoes" className="nav-link">
+                <Link to="/configuracoes" className="nav-link">
                   <span className="icon icon-settings"></span>Configura????es
-                </a>
+                </Link>
               </li>
             </ul>
           </div>

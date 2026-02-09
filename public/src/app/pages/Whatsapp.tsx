@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { Link } from 'react-router-dom';
 type WhatsappGlobals = {
   initWhatsapp?: () => void;
   startConnection?: () => void;
@@ -796,34 +797,34 @@ export default function Whatsapp() {
               
               <ul className="sidebar-menu">
                   <li>
-                      <a href="#/dashboard">
+                      <Link to="/dashboard">
                           <span className="icon icon-dashboard"></span>
                           Dashboard
-                      </a>
+                      </Link>
                   </li>
                   <li>
-                      <a href="#/funil">
+                      <Link to="/funil">
                           <span className="icon icon-funnel"></span>
                           Funil de Vendas
-                      </a>
+                      </Link>
                   </li>
                   <li>
-                      <a href="#/whatsapp" className="active">
+                      <Link to="/whatsapp" className="active">
                           <span className="icon icon-whatsapp"></span>
                           WhatsApp
-                      </a>
+                      </Link>
                   </li>
                   <li>
-                      <a href="#/conversas">
+                      <Link to="/conversas">
                           <span className="icon icon-message"></span>
                           Conversas
-                      </a>
+                      </Link>
                   </li>
                   <li>
-                      <a href="#/configuracoes">
+                      <Link to="/configuracoes">
                           <span className="icon icon-settings"></span>
                           Configurações
-                      </a>
+                      </Link>
                   </li>
               </ul>
               
@@ -921,7 +922,7 @@ export default function Whatsapp() {
                                   </div>
                                   
                                   <div style={{ display: 'flex', gap: '15px', flexDirection: 'column' }}>
-                                      <a href="#/conversas" className="btn btn-primary">Ir para Conversas</a>
+                                      <Link to="/conversas" className="btn btn-primary">Ir para Conversas</Link>
                                       <button className="btn btn-danger" onClick={() => globals.disconnect?.()}>Desconectar</button>
                                   </div>
                               </div>

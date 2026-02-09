@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { Link } from 'react-router-dom';
 type FlowBuilderGlobals = {
   initFlowBuilder?: () => void;
   openFlowsModal?: () => void;
@@ -628,15 +629,15 @@ export default function FlowBuilder() {
                   <img src="img/logo-self.png" alt="SELF" onError={(event) => { (event.currentTarget as HTMLElement).style.display = 'none'; }} />
               </div>
               <ul className="sidebar-menu">
-                  <li><a href="#/dashboard"><span className="icon icon-dashboard"></span> Dashboard</a></li>
-                  <li><a href="#/funil"><span className="icon icon-funnel"></span> Funil de Vendas</a></li>
-                  <li><a href="#/whatsapp"><span className="icon icon-whatsapp"></span> WhatsApp</a></li>
-                  <li><a href="#/conversas"><span className="icon icon-message"></span> Conversas</a></li>
-                  <li><a href="#/flow-builder" className="active"><span className="icon icon-flows"></span> Fluxos</a></li>
-                  <li><a href="#/configuracoes"><span className="icon icon-settings"></span> Configurações</a></li>
+                  <li><Link to="/dashboard"><span className="icon icon-dashboard"></span> Dashboard</Link></li>
+                  <li><Link to="/funil"><span className="icon icon-funnel"></span> Funil de Vendas</Link></li>
+                  <li><Link to="/whatsapp"><span className="icon icon-whatsapp"></span> WhatsApp</Link></li>
+                  <li><Link to="/conversas"><span className="icon icon-message"></span> Conversas</Link></li>
+                  <li><Link to="/flow-builder" className="active"><span className="icon icon-flows"></span> Fluxos</Link></li>
+                  <li><Link to="/configuracoes"><span className="icon icon-settings"></span> Configurações</Link></li>
               </ul>
               <div className="sidebar-footer">
-                  <a href="#/login" className="btn-logout">Sair</a>
+                  <Link to="/login" className="btn-logout">Sair</Link>
               </div>
           </nav>
           

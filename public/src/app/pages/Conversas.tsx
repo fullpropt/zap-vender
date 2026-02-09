@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { Link } from 'react-router-dom';
 type ConversasGlobals = {
   initConversas?: () => void;
   filterConversations?: (filter: string) => void;
@@ -659,34 +660,34 @@ export default function Conversas() {
               
               <ul className="sidebar-menu">
                   <li>
-                      <a href="#/dashboard">
+                      <Link to="/dashboard">
                           <span className="icon icon-dashboard"></span>
                           Dashboard
-                      </a>
+                      </Link>
                   </li>
                   <li>
-                      <a href="#/funil">
+                      <Link to="/funil">
                           <span className="icon icon-funnel"></span>
                           Funil de Vendas
-                      </a>
+                      </Link>
                   </li>
                   <li>
-                      <a href="#/whatsapp">
+                      <Link to="/whatsapp">
                           <span className="icon icon-whatsapp"></span>
                           WhatsApp
-                      </a>
+                      </Link>
                   </li>
                   <li>
-                      <a href="#/conversas" className="active">
+                      <Link to="/conversas" className="active">
                           <span className="icon icon-message"></span>
                           Conversas
-                      </a>
+                      </Link>
                   </li>
                   <li>
-                      <a href="#/configuracoes">
+                      <Link to="/configuracoes">
                           <span className="icon icon-settings"></span>
                           Configurações
-                      </a>
+                      </Link>
                   </li>
               </ul>
               
@@ -709,7 +710,7 @@ export default function Conversas() {
               <div className="connection-warning" id="connection-warning" style={{ display: 'none', marginBottom: '20px', borderRadius: '12px' }}>
                   <span className="icon icon-warning icon-sm"></span>
                   <span>WhatsApp não está conectado.</span>
-                  <a href="#/whatsapp">Conectar agora →</a>
+                  <Link to="/whatsapp">Conectar agora →</Link>
               </div>
               
               <div className="inbox-container">

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { Link } from 'react-router-dom';
 type ConfiguracoesGlobals = {
   initConfiguracoes?: () => void;
   showPanel?: (panel: string) => void;
@@ -143,39 +144,39 @@ export default function Configuracoes() {
       
           <aside className="sidebar">
               <div className="sidebar-header">
-                  <a href="#/dashboard" className="sidebar-logo">
+                  <Link to="/dashboard" className="sidebar-logo">
                       <img src="img/logo-self.png" alt="SELF" /><span>SELF</span>
-                  </a>
+                  </Link>
               </div>
               <nav className="sidebar-nav">
                   <div className="nav-section">
                       <ul className="nav-menu">
-                          <li className="nav-item"><a href="#/dashboard" className="nav-link"><span className="icon icon-dashboard"></span>Painel de Controle</a></li>
-                          <li className="nav-item"><a href="#/contatos" className="nav-link"><span className="icon icon-contacts"></span>Contatos</a></li>
-                          <li className="nav-item"><a href="#/campanhas" className="nav-link"><span className="icon icon-campaigns"></span>Campanhas</a></li>
-                          <li className="nav-item"><a href="#/transmissao" className="nav-link"><span className="icon icon-broadcast"></span>Transmissão</a></li>
+                          <li className="nav-item"><Link to="/dashboard" className="nav-link"><span className="icon icon-dashboard"></span>Painel de Controle</Link></li>
+                          <li className="nav-item"><Link to="/contatos" className="nav-link"><span className="icon icon-contacts"></span>Contatos</Link></li>
+                          <li className="nav-item"><Link to="/campanhas" className="nav-link"><span className="icon icon-campaigns"></span>Campanhas</Link></li>
+                          <li className="nav-item"><Link to="/transmissao" className="nav-link"><span className="icon icon-broadcast"></span>Transmissão</Link></li>
                       </ul>
                   </div>
                   <div className="nav-section">
                       <div className="nav-section-title">Conversas</div>
                       <ul className="nav-menu">
-                          <li className="nav-item"><a href="#/inbox" className="nav-link"><span className="icon icon-inbox"></span>Inbox</a></li>
+                          <li className="nav-item"><Link to="/inbox" className="nav-link"><span className="icon icon-inbox"></span>Inbox</Link></li>
                       </ul>
                   </div>
                   <div className="nav-section">
                       <div className="nav-section-title">Automação</div>
                       <ul className="nav-menu">
-                          <li className="nav-item"><a href="#/automacao" className="nav-link"><span className="icon icon-automation"></span>Automação</a></li>
-                          <li className="nav-item"><a href="#/fluxos" className="nav-link"><span className="icon icon-flows"></span>Fluxos de Conversa</a></li>
-                          <li className="nav-item"><a href="#/funil" className="nav-link"><span className="icon icon-funnel"></span>Funil de Vendas</a></li>
+                          <li className="nav-item"><Link to="/automacao" className="nav-link"><span className="icon icon-automation"></span>Automação</Link></li>
+                          <li className="nav-item"><Link to="/fluxos" className="nav-link"><span className="icon icon-flows"></span>Fluxos de Conversa</Link></li>
+                          <li className="nav-item"><Link to="/funil" className="nav-link"><span className="icon icon-funnel"></span>Funil de Vendas</Link></li>
                       </ul>
                   </div>
                   <div className="nav-section">
                       <div className="nav-section-title">Sistema</div>
                       <ul className="nav-menu">
-                          <li className="nav-item"><a href="#/whatsapp" className="nav-link"><span className="icon icon-whatsapp"></span>WhatsApp</a></li>
-                          <li className="nav-item"><a href="#/configuracoes" className="nav-link active"><span className="icon icon-settings"></span>Configurações</a></li>
-                          <li className="nav-item"><a href="#/configuracoes?panel=copys" className="nav-link"><span className="icon icon-templates"></span>Modelos</a></li>
+                          <li className="nav-item"><Link to="/whatsapp" className="nav-link"><span className="icon icon-whatsapp"></span>WhatsApp</Link></li>
+                          <li className="nav-item"><Link to="/configuracoes" className="nav-link active"><span className="icon icon-settings"></span>Configurações</Link></li>
+                          <li className="nav-item"><Link to="/configuracoes?panel=copys" className="nav-link"><span className="icon icon-templates"></span>Modelos</Link></li>
                       </ul>
                   </div>
               </nav>
@@ -227,7 +228,7 @@ export default function Configuracoes() {
                               <div className="connection-disconnected" id="connectionDisconnected">
                                   <div className="connection-icon disconnected">!</div>
                                   <h4>WhatsApp desconectado</h4>
-                                  <p>Conecte seu WhatsApp em <a href="#/whatsapp">WhatsApp → Conectar</a> para ativar a automação.</p>
+                                  <p>Conecte seu WhatsApp em <Link to="/whatsapp">WhatsApp → Conectar</Link> para ativar a automação.</p>
                               </div>
                           </div>
                       </div>
