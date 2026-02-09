@@ -420,6 +420,10 @@ function updateUnreadBadge() {
 
 const windowAny = window as Window & {
     initInbox?: () => void;
+    filterConversations?: (filter: string) => void;
+    searchConversations?: () => void;
+    registerCurrentUser?: () => void;
+    logout?: () => void;
     filterConversations?: (filter: 'all' | 'unread') => void;
     searchConversations?: () => void;
     selectConversation?: (id: number) => Promise<void>;
@@ -434,6 +438,10 @@ const windowAny = window as Window & {
     logout?: () => void;
 };
 windowAny.initInbox = initInbox;
+windowAny.filterConversations = filterConversations;
+windowAny.searchConversations = searchConversations;
+windowAny.registerCurrentUser = registerCurrentUser;
+windowAny.logout = logout;
 windowAny.filterConversations = filterConversations;
 windowAny.searchConversations = searchConversations;
 windowAny.selectConversation = selectConversation;
