@@ -83,8 +83,41 @@ function setSelectValue(select: HTMLSelectElement | null, value: string) {
     }
 }
 
+function getHashQueryParams() {
+    const hash = window.location.hash || '';
+    const queryIndex = hash.indexOf('?');
+    if (queryIndex === -1) return new URLSearchParams();
+    return new URLSearchParams(hash.slice(queryIndex + 1));
+}
+
+function clearHashQuery() {
+    const hash = window.location.hash || '';
+    const queryIndex = hash.indexOf('?');
+    if (queryIndex === -1) return;
+    const base = hash.slice(0, queryIndex);
+    window.history.replaceState(null, '', base);
+}
+
+function openBroadcastModal() {
+    openCampaignModal();
+
+    setSelectValue(document.getElementById('campaignType') as HTMLSelectElement | null, 'broadcast');
+    setSelectValue(document.getElementById('campaignSegment') as HTMLSelectElement | null, 'all');
+
+    const delaySelect = document.getElementById('campaignDelay') as HTMLSelectElement | null;
+    if (delaySelect) {
+        setSelectValue(delaySelect, '5000');
+    }
+}
+
 function initCampanhas() {
-    loadCampaigns();
+    loadCampaigns().finally(() => {
+        const params = getHashQueryParams();
+        if (params.get('quick') === 'broadcast') {
+            openBroadcastModal();
+            clearHashQuery();
+        }
+    });
 }
 
 onReady(initCampanhas);

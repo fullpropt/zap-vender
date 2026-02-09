@@ -124,7 +124,7 @@ export default function Campanhas() {
                           <li className="nav-item"><Link to="/dashboard" className="nav-link"><span className="icon icon-dashboard"></span>Painel de Controle</Link></li>
                           <li className="nav-item"><Link to="/contatos" className="nav-link"><span className="icon icon-contacts"></span>Contatos</Link></li>
                           <li className="nav-item"><Link to="/campanhas" className="nav-link active"><span className="icon icon-campaigns"></span>Campanhas</Link></li>
-                          <li className="nav-item"><Link to="/transmissao" className="nav-link"><span className="icon icon-broadcast"></span>Transmissão</Link></li>
+                          <li className="nav-item"><Link to="/campanhas?quick=broadcast" className="nav-link"><span className="icon icon-broadcast"></span>Transmissão</Link></li>
                       </ul>
                   </div>
                   <div className="nav-section">

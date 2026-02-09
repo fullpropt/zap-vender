@@ -67,7 +67,7 @@ function DashboardHeader() {
           <span className="icon icon-export icon-sm"></span>
           Exportar
         </button>
-        <button type="button" className="btn btn-whatsapp" onClick={() => navigate('/transmissao')}>
+        <button type="button" className="btn btn-whatsapp" onClick={() => navigate('/campanhas?quick=broadcast')}>
           <span className="icon icon-batch icon-sm"></span>
           Lote
         </button>
@@ -548,7 +548,7 @@ export default function Dashboard() {
                 </Link>
               </li>
               <li className="nav-item">
-                <Link to="/transmissao" className="nav-link">
+                <Link to="/campanhas?quick=broadcast" className="nav-link">
                   <span className="icon icon-broadcast"></span>
                   Transmissão
                 </Link>

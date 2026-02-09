@@ -103,7 +103,7 @@ export default function Contatos() {
                 </Link>
               </li>
               <li className="nav-item">
-                <Link to="/transmissao" className="nav-link">
+                <Link to="/campanhas?quick=broadcast" className="nav-link">
                   <span className="icon icon-broadcast"></span>Transmissão
                 </Link>
               </li>
