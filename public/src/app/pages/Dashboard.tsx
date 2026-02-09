@@ -10,10 +10,14 @@ type DashboardGlobals = {
   initDashboard?: () => void;
   loadDashboardData?: () => void;
   openModal?: (id: string) => void;
+  closeModal?: (id: string) => void;
   exportLeads?: () => void;
   confirmReset?: () => void;
   filterLeads?: () => void;
   toggleSelectAll?: () => void;
+  importLeads?: () => void;
+  saveLead?: () => void;
+  updateLead?: () => void;
 };
 
 function DashboardHeader() {
@@ -190,6 +194,194 @@ function LeadsTable() {
   );
 }
 
+function LeadModals() {
+  const globals = window as Window & DashboardGlobals;
+
+  return (
+    <>
+      <div className="modal-overlay" id="importModal">
+        <div className="modal modal-lg">
+          <div className="modal-header">
+            <h3 className="modal-title"><span className="icon icon-import icon-sm"></span> Importar Leads</h3>
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => globals.closeModal?.('importModal')}
+            >
+              ×
+            </button>
+          </div>
+          <div className="modal-body">
+            <div className="form-group">
+              <label className="form-label">Arquivo CSV</label>
+              <input type="file" className="form-input" id="importFile" accept=".csv,.txt" />
+              <p className="form-help">
+                Formato esperado: nome, telefone, veiculo, placa (separados por vírgula)
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Ou cole os dados aqui</label>
+              <textarea
+                className="form-textarea"
+                id="importText"
+                rows={10}
+                placeholder={`nome,telefone,veiculo,placa\nJoão Silva,27999999999,Honda Civic 2020,ABC1234\nMaria Santos,27988888888,Toyota Corolla 2021,XYZ5678`}
+              ></textarea>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline" onClick={() => globals.closeModal?.('importModal')}>
+              Cancelar
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => globals.importLeads?.()}>
+              Importar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-overlay" id="addLeadModal">
+        <div className="modal">
+          <div className="modal-header">
+            <h3 className="modal-title"><span className="icon icon-add icon-sm"></span> Adicionar Lead</h3>
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => globals.closeModal?.('addLeadModal')}
+            >
+              ×
+            </button>
+          </div>
+          <div className="modal-body">
+            <form id="addLeadForm">
+              <div className="form-group">
+                <label className="form-label required">Nome</label>
+                <input type="text" className="form-input" id="leadName" required placeholder="Nome completo" />
+              </div>
+              <div className="form-group">
+                <label className="form-label required">WhatsApp</label>
+                <input type="tel" className="form-input" id="leadPhone" required placeholder="27999999999" />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Veículo</label>
+                  <input type="text" className="form-input" id="leadVehicle" placeholder="Ex: Honda Civic 2020" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Placa</label>
+                  <input type="text" className="form-input" id="leadPlate" placeholder="ABC1234" />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <input type="email" className="form-input" id="leadEmail" placeholder="email@exemplo.com" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Status Inicial</label>
+                <select className="form-select" id="leadStatus">
+                  <option value="1">Novo</option>
+                  <option value="2">Em Andamento</option>
+                </select>
+              </div>
+            </form>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline" onClick={() => globals.closeModal?.('addLeadModal')}>
+              Cancelar
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => globals.saveLead?.()}>
+              Salvar Lead
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-overlay" id="editLeadModal">
+        <div className="modal">
+          <div className="modal-header">
+            <h3 className="modal-title"><span className="icon icon-edit icon-sm"></span> Editar Lead</h3>
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => globals.closeModal?.('editLeadModal')}
+            >
+              ×
+            </button>
+          </div>
+          <div className="modal-body">
+            <form id="editLeadForm">
+              <input type="hidden" id="editLeadId" />
+              <div className="form-group">
+                <label className="form-label required">Nome</label>
+                <input type="text" className="form-input" id="editLeadName" required />
+              </div>
+              <div className="form-group">
+                <label className="form-label required">WhatsApp</label>
+                <input type="tel" className="form-input" id="editLeadPhone" required />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Veículo</label>
+                  <input type="text" className="form-input" id="editLeadVehicle" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Placa</label>
+                  <input type="text" className="form-input" id="editLeadPlate" />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <input type="email" className="form-input" id="editLeadEmail" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Status</label>
+                <select className="form-select" id="editLeadStatus">
+                  <option value="1">Novo</option>
+                  <option value="2">Em Andamento</option>
+                  <option value="3">Concluído</option>
+                  <option value="4">Perdido</option>
+                </select>
+              </div>
+            </form>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline" onClick={() => globals.closeModal?.('editLeadModal')}>
+              Cancelar
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => globals.updateLead?.()}>
+              Salvar Alterações
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function FloatingAddLeadButton() {
+  const globals = window as Window & DashboardGlobals;
+
+  return (
+    <button
+      type="button"
+      className="btn btn-whatsapp btn-icon"
+      style={{
+        position: 'fixed',
+        bottom: '30px',
+        right: '30px',
+        width: '60px',
+        height: '60px',
+        borderRadius: '50%',
+        boxShadow: 'var(--shadow-lg)'
+      }}
+      onClick={() => globals.openModal?.('addLeadModal')}
+      title="Adicionar Lead"
+    >
+      <span className="icon icon-add icon-lg"></span>
+    </button>
+  );
+}
+
 export default function Dashboard() {
   useEffect(() => {
     let cancelled = false;
@@ -227,6 +419,8 @@ export default function Dashboard() {
         <div dangerouslySetInnerHTML={{ __html: dashboardContentBottomMarkup }} />
       </main>
       <div dangerouslySetInnerHTML={{ __html: dashboardAfterMarkup }} />
+      <LeadModals />
+      <FloatingAddLeadButton />
     </div>
   );
 }
