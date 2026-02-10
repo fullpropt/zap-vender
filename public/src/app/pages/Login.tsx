@@ -74,7 +74,7 @@ export default function Login() {
 
         .login-title {
             text-align: center;
-            color: #5a2a6b;
+            color: #166534;
             margin-bottom: 30px;
             font-size: 24px;
         }
@@ -89,17 +89,17 @@ export default function Login() {
         .auth-tab {
             padding: 10px 12px;
             border-radius: 10px;
-            border: 2px solid #e0e0e0;
-            background: #f9f5fb;
-            color: #5a2a6b;
+            border: 2px solid #d1d5db;
+            background: #f0fdf4;
+            color: #166534;
             font-weight: 700;
             cursor: pointer;
         }
 
         .auth-tab.active {
-            background: #5a2a6b;
+            background: #16a34a;
             color: #fff;
-            border-color: #5a2a6b;
+            border-color: #16a34a;
         }
 
         .form-group {
@@ -124,14 +124,14 @@ export default function Login() {
 
         .form-input:focus {
             outline: none;
-            border-color: #5a2a6b;
-            box-shadow: 0 0 0 3px rgba(90, 42, 107, 0.1);
+            border-color: #16a34a;
+            box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
         }
 
         .btn-login {
             width: 100%;
             padding: 16px;
-            background: linear-gradient(135deg, #5a2a6b 0%, #7a3a8b 100%);
+            background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
             color: white;
             border: none;
             border-radius: 10px;
@@ -143,7 +143,7 @@ export default function Login() {
 
         .btn-login:hover {
             transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(90, 42, 107, 0.4);
+            box-shadow: 0 10px 30px rgba(22, 163, 74, 0.35);
         }
 
         .error-message {
