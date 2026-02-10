@@ -1,14 +1,2 @@
-const logoSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1FAE5E"/>
-      <stop offset="1" stop-color="#0F6D35"/>
-    </linearGradient>
-  </defs>
-  <rect width="256" height="256" rx="56" fill="url(#g)"/>
-  <circle cx="128" cy="128" r="88" fill="#0B4F28"/>
-  <text x="128" y="148" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="700" fill="#FFFFFF">ZV</text>
-</svg>`;
-
-export const brandLogoUrl = `data:image/svg+xml;utf8,${encodeURIComponent(logoSvg)}`;
 export const brandName = 'ZapVender';
+export const brandLogoUrl = '/img/logo-zapvender.svg?v=20260210-modern';
