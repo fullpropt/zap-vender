@@ -16,20 +16,6 @@ type TemplateItem = {
     media_url?: string;
 };
 
-const CORE_TEMPLATES = [
-    { key: 'welcome', name: 'Boas-vindas', textareaId: 'copyWelcome' },
-    { key: 'quote', name: 'Cotação', textareaId: 'copyQuote' },
-    { key: 'followup', name: 'Follow-up', textareaId: 'copyFollowup' },
-    { key: 'closing', name: 'Fechamento', textareaId: 'copyClosing' }
-];
-
-const coreTemplateIds: Record<string, number | null> = {
-    welcome: null,
-    quote: null,
-    followup: null,
-    closing: null
-};
-
 let templatesCache: TemplateItem[] = [];
 
 function onReady(callback: () => void) {
@@ -61,6 +47,11 @@ function initConfiguracoes() {
     loadSettings();
     loadTemplates();
     checkWhatsAppStatus();
+    updateNewTemplateForm();
+    const typeSelect = document.getElementById('newTemplateType') as HTMLSelectElement | null;
+    if (typeSelect) {
+        typeSelect.addEventListener('change', updateNewTemplateForm);
+    }
     const panelFromUrl = getPanelFromLocation();
     if (panelFromUrl) {
         const panel = document.getElementById(`panel-${panelFromUrl}`);
@@ -127,10 +118,25 @@ async function loadTemplates() {
     try {
         const response = await api.get('/api/templates');
         templatesCache = response.templates || [];
-        syncCoreTemplates();
-        renderCustomTemplates();
+        renderTemplatesList();
     } catch (error) {
         templatesCache = [];
+        renderTemplatesList();
+    }
+}
+
+function updateNewTemplateForm() {
+    const typeSelect = document.getElementById('newTemplateType') as HTMLSelectElement | null;
+    const textGroup = document.getElementById('newTemplateTextGroup') as HTMLElement | null;
+    const audioGroup = document.getElementById('newTemplateAudioGroup') as HTMLElement | null;
+    if (!typeSelect || !textGroup || !audioGroup) return;
+    const type = typeSelect.value || 'text';
+    if (type === 'audio') {
+        textGroup.style.display = 'none';
+        audioGroup.style.display = 'block';
+    } else {
+        textGroup.style.display = 'block';
+        audioGroup.style.display = 'none';
     }
 }
 
@@ -151,116 +157,127 @@ function escapeHtml(value: string) {
         .replace(/'/g, '&#039;');
 }
 
-function findCoreTemplate(def: { name: string }) {
-    const target = normalizeName(def.name);
-    return templatesCache.find((template) => normalizeName(template.name) === target);
-}
 
-function syncCoreTemplates() {
-    for (const def of CORE_TEMPLATES) {
-        const template = findCoreTemplate(def);
-        if (template?.id) {
-            coreTemplateIds[def.key] = template.id;
-        }
-        const textarea = document.getElementById(def.textareaId) as HTMLTextAreaElement | null;
-        if (textarea && template?.content) {
-            textarea.value = template.content;
-            textarea.dataset.templateId = String(template.id);
-        }
-    }
-}
-
-function renderCustomTemplates() {
-    const container = document.getElementById('customTemplatesList');
+function renderTemplatesList() {
+    const container = document.getElementById('templatesList');
+    const empty = document.getElementById('templatesEmpty');
     if (!container) return;
 
-    const coreNames = new Set(CORE_TEMPLATES.map((t) => normalizeName(t.name)));
-    const customTemplates = templatesCache.filter((t) => !coreNames.has(normalizeName(t.name)));
-
-    if (customTemplates.length === 0) {
-        container.innerHTML = `<p class="text-muted" style="margin: 8px 0;">Nenhum template personalizado criado.</p>`;
+    if (!templatesCache.length) {
+        container.innerHTML = '';
+        if (empty) empty.style.display = 'block';
         return;
     }
 
-    container.innerHTML = customTemplates.map((template) => `
-        <div class="copy-card custom-template-card" data-template-id="${template.id}">
+    if (empty) empty.style.display = 'none';
+    container.innerHTML = templatesCache.map(renderTemplateCard).join('');
+}
+
+function getMediaUrl(url?: string | null) {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    const base = (window as any).APP?.socketUrl || '';
+    return `${base}${url}`;
+}
+
+function renderTemplateCard(template: TemplateItem) {
+    const safeName = escapeHtml(template.name || '');
+    const mediaType = template.media_type || 'text';
+    const safeContent = escapeHtml(template.content || '');
+    const audioUrl = mediaType === 'audio' && template.media_url ? getMediaUrl(template.media_url) : '';
+    const mediaUrlAttr = template.media_url ? escapeHtml(template.media_url) : '';
+
+    const body = mediaType === 'audio'
+        ? `
+            <div class="template-audio">
+                ${audioUrl ? `<audio controls preload="metadata" src="${audioUrl}"></audio>` : `<p class="text-muted">Nenhum audio enviado.</p>`}
+                <input type="file" class="form-input template-audio-input" accept="audio/*" onchange="replaceTemplateAudio(${template.id}, event)" />
+                <small class="text-muted">Envie um novo audio para substituir o atual.</small>
+            </div>
+        `
+        : `
+            <textarea class="form-textarea template-content" rows="4">${safeContent}</textarea>
+        `;
+
+    return `
+        <div class="copy-card template-card" data-template-id="${template.id}" data-media-type="${mediaType}" data-media-url="${mediaUrlAttr}">
             <div class="copy-card-header" style="display: flex; gap: 12px; align-items: center; justify-content: space-between;">
-                <input class="form-input template-name" value="${escapeHtml(template.name)}" />
+                <input class="form-input template-name" value="${safeName}" />
                 <div style="display: flex; gap: 8px;">
                     <button class="btn btn-sm btn-outline" onclick="saveTemplate(${template.id})">Salvar</button>
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteTemplate(${template.id})">Excluir</button>
                 </div>
             </div>
-            <textarea class="form-textarea template-content" rows="4">${escapeHtml(template.content || '')}</textarea>
+            ${body}
         </div>
-    `).join('');
+    `;
 }
 
-async function upsertTemplate(def: { key: string; name: string; textareaId: string }) {
-    const textarea = document.getElementById(def.textareaId) as HTMLTextAreaElement | null;
-    if (!textarea) return;
-    const content = textarea.value || '';
-    const payload = {
-        name: def.name,
-        category: 'core',
-        content,
-        variables: ['nome', 'telefone', 'veiculo', 'placa', 'empresa']
+async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) {
+    const id = card.dataset.templateId;
+    const mediaType = card.dataset.mediaType || 'text';
+    const mediaUrl = card.dataset.mediaUrl || '';
+    const nameInput = card.querySelector('.template-name') as HTMLInputElement | null;
+    const contentInput = card.querySelector('.template-content') as HTMLTextAreaElement | null;
+    const name = nameInput?.value.trim() || '';
+
+    if (!id || !name) {
+        if (showToastMessage) showToast('warning', 'Aviso', 'Preencha o nome do template');
+        return;
+    }
+
+    const payload: Record<string, any> = {
+        name,
+        category: 'custom'
     };
 
-    const currentId = coreTemplateIds[def.key];
-    if (currentId) {
-        await api.put(`/api/templates/${currentId}`, payload);
-    } else {
-        const response = await api.post('/api/templates', payload);
-        if (response?.template?.id) {
-            coreTemplateIds[def.key] = response.template.id;
+    if (mediaType === 'audio') {
+        if (!mediaUrl) {
+            if (showToastMessage) showToast('warning', 'Aviso', 'Envie um audio para o template');
+            return;
         }
+        payload.media_type = 'audio';
+        payload.media_url = mediaUrl;
+    } else {
+        const content = contentInput?.value.trim() || '';
+        if (!content) {
+            if (showToastMessage) showToast('warning', 'Aviso', 'Preencha a mensagem do template');
+            return;
+        }
+        payload.content = content;
     }
-}
 
-async function saveCustomTemplates() {
-    const cards = Array.from(document.querySelectorAll('.custom-template-card')) as HTMLElement[];
-    if (cards.length === 0) return;
-
-    await Promise.all(cards.map(async (card) => {
-        const id = card.dataset.templateId;
-        const nameInput = card.querySelector('.template-name') as HTMLInputElement | null;
-        const contentInput = card.querySelector('.template-content') as HTMLTextAreaElement | null;
-        if (!id || !nameInput || !contentInput) return;
-        const name = nameInput.value.trim();
-        const content = contentInput.value.trim();
-        if (!name || !content) return;
-        await api.put(`/api/templates/${id}`, {
-            name,
-            category: 'custom',
-            content,
-            variables: ['nome', 'telefone', 'veiculo', 'placa', 'empresa']
-        });
-    }));
+    await api.put(`/api/templates/${id}`, payload);
+    if (showToastMessage) {
+        showToast('success', 'Sucesso', 'Template atualizado!');
+    }
 }
 
 async function saveTemplate(id: number) {
-    const card = document.querySelector(`.custom-template-card[data-template-id="${id}"]`) as HTMLElement | null;
+    const card = document.querySelector(`.template-card[data-template-id="${id}"]`) as HTMLElement | null;
     if (!card) return;
-    const nameInput = card.querySelector('.template-name') as HTMLInputElement | null;
-    const contentInput = card.querySelector('.template-content') as HTMLTextAreaElement | null;
-    if (!nameInput || !contentInput) return;
-    const name = nameInput.value.trim();
-    const content = contentInput.value.trim();
-    if (!name || !content) {
-        showToast('warning', 'Aviso', 'Preencha nome e mensagem');
+    try {
+        await saveTemplateInternal(card, true);
+    } catch (error) {
+        showToast('error', 'Erro', 'Nao foi possivel salvar');
+    }
+}
+
+async function saveCopysSettings() {
+    const cards = Array.from(document.querySelectorAll('.template-card')) as HTMLElement[];
+    if (!cards.length) {
+        showToast('info', 'Info', 'Nenhum template para salvar');
         return;
     }
+
     try {
-        await api.put(`/api/templates/${id}`, {
-            name,
-            category: 'custom',
-            content,
-            variables: ['nome', 'telefone', 'veiculo', 'placa', 'empresa']
-        });
-        showToast('success', 'Sucesso', 'Template atualizado!');
+        for (const card of cards) {
+            await saveTemplateInternal(card, false);
+        }
+        await loadTemplates();
+        showToast('success', 'Sucesso', 'Templates salvos!');
     } catch (error) {
-        showToast('error', 'Erro', 'Não foi possível salvar');
+        showToast('error', 'Erro', 'Nao foi possivel salvar os templates');
     }
 }
 
@@ -271,21 +288,59 @@ async function deleteTemplate(id: number) {
         await loadTemplates();
         showToast('success', 'Sucesso', 'Template removido!');
     } catch (error) {
-        showToast('error', 'Erro', 'Não foi possível remover');
+        showToast('error', 'Erro', 'Nao foi possivel remover');
     }
 }
 
-async function saveCopysSettings() {
+async function replaceTemplateAudio(id: number, event: Event) {
+    const target = event.target as HTMLInputElement | null;
+    const file = target?.files?.[0];
+    if (!file) return;
+
     try {
-        for (const def of CORE_TEMPLATES) {
-            await upsertTemplate(def);
-        }
-        await saveCustomTemplates();
+        showLoading('Enviando audio...');
+        const uploaded = await uploadFile(file);
+        hideLoading();
+
+        const card = document.querySelector(`.template-card[data-template-id="${id}"]`) as HTMLElement | null;
+        const nameInput = card?.querySelector('.template-name') as HTMLInputElement | null;
+        const name = nameInput?.value.trim() || '';
+
+        await api.put(`/api/templates/${id}`, {
+            name: name || `Template ${id}`,
+            category: 'custom',
+            media_type: 'audio',
+            media_url: uploaded.url,
+            content: ''
+        });
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Templates salvos!');
+        showToast('success', 'Sucesso', 'Audio atualizado!');
     } catch (error) {
-        showToast('error', 'Erro', 'Não foi possível salvar os templates');
+        hideLoading();
+        showToast('error', 'Erro', 'Nao foi possivel atualizar o audio');
+    } finally {
+        if (target) target.value = '';
     }
+}
+
+async function uploadFile(file: File) {
+    const baseUrl = (window as any).APP?.socketUrl || '';
+    const token = sessionStorage.getItem('selfDashboardToken');
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${baseUrl}/api/upload`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.error || 'Falha no upload');
+    }
+
+    return data.file;
 }
 
 function insertVariable(variable: string) {
@@ -300,39 +355,52 @@ function insertVariable(variable: string) {
     }
 }
 
-function testCopy(type: 'welcome' | 'quote' | 'followup' | 'closing') {
-    const testData = { nome: 'João Silva', telefone: '(11) 99999-9999', veiculo: 'Honda Civic 2020', placa: 'ABC-1234', empresa: 'SELF Proteção Veicular' };
-    let message = '';
-    switch (type) {
-        case 'welcome': message = (document.getElementById('copyWelcome') as HTMLTextAreaElement | null)?.value || ''; break;
-        case 'quote': message = (document.getElementById('copyQuote') as HTMLTextAreaElement | null)?.value || ''; break;
-        case 'followup': message = (document.getElementById('copyFollowup') as HTMLTextAreaElement | null)?.value || ''; break;
-        case 'closing': message = (document.getElementById('copyClosing') as HTMLTextAreaElement | null)?.value || ''; break;
-    }
-    Object.keys(testData).forEach(key => { message = message.replace(new RegExp(`{{${key}}}`, 'g'), testData[key]); });
-    alert('Preview da mensagem:\n\n' + message);
-}
-
 async function saveNewTemplate() {
     const name = (document.getElementById('newTemplateName') as HTMLInputElement | null)?.value.trim() || '';
+    const type = (document.getElementById('newTemplateType') as HTMLSelectElement | null)?.value || 'text';
     const message = (document.getElementById('newTemplateMessage') as HTMLTextAreaElement | null)?.value.trim() || '';
-    if (!name || !message) { showToast('error', 'Erro', 'Preencha todos os campos'); return; }
+    const audioInput = document.getElementById('newTemplateAudio') as HTMLInputElement | null;
+    const audioFile = audioInput?.files?.[0];
+    if (!name) { showToast('error', 'Erro', 'Preencha o nome do template'); return; }
     try {
-        await api.post('/api/templates', {
-            name,
-            category: 'custom',
-            content: message,
-            variables: ['nome', 'telefone', 'veiculo', 'placa', 'empresa']
-        });
+        if (type === 'audio') {
+            if (!audioFile) {
+                showToast('error', 'Erro', 'Selecione um arquivo de audio');
+                return;
+            }
+            showLoading('Enviando audio...');
+            const uploaded = await uploadFile(audioFile);
+            hideLoading();
+            await api.post('/api/templates', {
+                name,
+                category: 'custom',
+                content: '',
+                media_type: 'audio',
+                media_url: uploaded.url
+            });
+        } else {
+            if (!message) { showToast('error', 'Erro', 'Preencha a mensagem'); return; }
+            await api.post('/api/templates', {
+                name,
+                category: 'custom',
+                content: message,
+                variables: ['nome', 'telefone', 'veiculo', 'placa', 'empresa']
+            });
+        }
         closeModal('addTemplateModal');
         const newTemplateName = document.getElementById('newTemplateName') as HTMLInputElement | null;
         const newTemplateMessage = document.getElementById('newTemplateMessage') as HTMLTextAreaElement | null;
+        const newTemplateType = document.getElementById('newTemplateType') as HTMLSelectElement | null;
         if (newTemplateName) newTemplateName.value = '';
         if (newTemplateMessage) newTemplateMessage.value = '';
+        if (audioInput) audioInput.value = '';
+        if (newTemplateType) newTemplateType.value = 'text';
+        updateNewTemplateForm();
         await loadTemplates();
         showToast('success', 'Sucesso', 'Template adicionado!');
     } catch (error) {
-        showToast('error', 'Erro', 'Não foi possível adicionar o template');
+        hideLoading();
+        showToast('error', 'Erro', 'Nao foi possivel adicionar o template');
     }
 }
 
@@ -448,10 +516,11 @@ const windowAny = window as Window & {
     saveFunnelSettings?: () => void;
     saveCopysSettings?: () => void;
     insertVariable?: (variable: string) => void;
-    testCopy?: (type: 'welcome' | 'quote' | 'followup' | 'closing') => void;
     saveNewTemplate?: () => void;
     saveTemplate?: (id: number) => void;
     deleteTemplate?: (id: number) => void;
+    replaceTemplateAudio?: (id: number, event: Event) => void;
+    updateNewTemplateForm?: () => void;
     connectWhatsApp?: () => Promise<void>;
     disconnectWhatsApp?: () => Promise<void>;
     saveWhatsAppSettings?: () => void;
@@ -469,10 +538,11 @@ windowAny.saveGeneralSettings = saveGeneralSettings;
 windowAny.saveFunnelSettings = saveFunnelSettings;
 windowAny.saveCopysSettings = saveCopysSettings;
 windowAny.insertVariable = insertVariable;
-windowAny.testCopy = testCopy;
 windowAny.saveNewTemplate = saveNewTemplate;
 windowAny.saveTemplate = saveTemplate;
 windowAny.deleteTemplate = deleteTemplate;
+windowAny.replaceTemplateAudio = replaceTemplateAudio;
+windowAny.updateNewTemplateForm = updateNewTemplateForm;
 windowAny.connectWhatsApp = connectWhatsApp;
 windowAny.disconnectWhatsApp = disconnectWhatsApp;
 windowAny.saveWhatsAppSettings = saveWhatsAppSettings;

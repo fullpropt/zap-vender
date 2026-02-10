@@ -292,7 +292,10 @@ function renderTemplateOptions() {
         return `<option value="">Sem templates</option>`;
     }
     const options = templates
-        .map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`)
+        .map((t) => {
+            const label = t.media_type === 'audio' ? `Audio: ${t.name}` : t.name;
+            return `<option value="${t.id}">${escapeHtml(label)}</option>`;
+        })
         .join('');
     return `<option value="">Selecionar mensagem...</option>${options}`;
 }
@@ -315,9 +318,54 @@ function insertSelectedTemplate() {
     if (!id) return;
     const template = templates.find((t) => t.id === id);
     if (!template) return;
+    if (template.media_type === 'audio') {
+        sendTemplateAudio(template);
+        select.value = '';
+        return;
+    }
     const text = applyTemplateVariables(template.content || '');
     input.value = text;
     input.focus();
+}
+
+async function sendTemplateAudio(template: TemplateItem) {
+    if (!currentConversation) return;
+    if (!template.media_url) {
+        showToast('warning', 'Aviso', 'Template de audio sem arquivo');
+        return;
+    }
+    const mediaUrl = template.media_url;
+
+    const newMessage: ChatMessage = {
+        id: Date.now(),
+        content: 'Audio',
+        direction: 'outgoing',
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        media_type: 'audio',
+        media_url: mediaUrl
+    };
+    messages.push(newMessage);
+
+    const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
+    if (chatMessages) chatMessages.innerHTML = renderMessages();
+    scrollToBottom();
+
+    try {
+        await api.post('/api/send', {
+            sessionId: APP.sessionId,
+            to: currentConversation.phone,
+            message: mediaUrl,
+            type: 'audio',
+            options: { url: mediaUrl }
+        });
+        newMessage.status = 'sent';
+        if (chatMessages) chatMessages.innerHTML = renderMessages();
+    } catch (error) {
+        newMessage.status = 'failed';
+        if (chatMessages) chatMessages.innerHTML = renderMessages();
+        showToast('error', 'Erro', 'Nao foi possivel enviar o audio');
+    }
 }
 
 function getMediaUrl(url?: string | null) {

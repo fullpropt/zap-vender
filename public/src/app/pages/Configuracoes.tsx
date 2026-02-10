@@ -8,10 +8,11 @@ type ConfiguracoesGlobals = {
   saveFunnelSettings?: () => void;
   saveCopysSettings?: () => void;
   insertVariable?: (value: string) => void;
-  testCopy?: (kind: string) => void;
   saveNewTemplate?: () => void;
   saveTemplate?: (id: number) => void;
   deleteTemplate?: (id: number) => void;
+  replaceTemplateAudio?: (id: number, event: Event) => void;
+  updateNewTemplateForm?: () => void;
   connectWhatsApp?: () => void;
   disconnectWhatsApp?: () => void;
   saveWhatsAppSettings?: () => void;
@@ -350,7 +351,7 @@ export default function Configuracoes() {
                       <div className="settings-panel" id="panel-copys">
                           <div className="settings-section">
                               <h3 className="settings-section-title"><span className="icon icon-templates icon-sm"></span> Templates de Mensagens</h3>
-                              <p className="text-muted mb-3">Configure os templates de mensagens automáticas. Use as variáveis:</p>
+                              <p className="text-muted mb-3">Crie e gerencie templates de mensagens. Use as vari??veis:</p>
                               
                               <div className="mb-4">
                                   <span className="variable-tag" onClick={() => globals.insertVariable?.('{{nome}}')}>{'{{nome}}'}</span>
@@ -359,72 +360,20 @@ export default function Configuracoes() {
                                   <span className="variable-tag" onClick={() => globals.insertVariable?.('{{placa}}')}>{'{{placa}}'}</span>
                                   <span className="variable-tag" onClick={() => globals.insertVariable?.('{{empresa}}')}>{'{{empresa}}'}</span>
                               </div>
-      
+
                               <div className="copy-card">
-                                  <div className="copy-card-header">
-                                      <span className="copy-card-title">Boas-vindas</span>
-                                      <button className="btn btn-sm btn-outline" onClick={() => globals.testCopy?.('welcome')}>Testar</button>
-                                  </div>
-                                  <textarea className="form-textarea" id="copyWelcome" rows="4" defaultValue={`Olá {{nome}}!
-      
-      Seja bem-vindo à SELF Proteção Veicular!
-      
-      Somos especialistas em proteção veicular com os melhores preços do mercado.
-      
-      Como posso ajudar você hoje?`} />
-                              </div>
-      
-                              <div className="copy-card">
-                                  <div className="copy-card-header">
-                                      <span className="copy-card-title">Cotação</span>
-                                      <button className="btn btn-sm btn-outline" onClick={() => globals.testCopy?.('quote')}>Testar</button>
-                                  </div>
-                                  <textarea className="form-textarea" id="copyQuote" rows="4" defaultValue={`Olá {{nome}}!
-      
-      Preparamos uma cotação especial para seu veículo:
-      
-      Veículo: {{veiculo}}
-      Placa: {{placa}}
-      
-      Entre em contato para mais detalhes!`} />
-                              </div>
-      
-                              <div className="copy-card">
-                                  <div className="copy-card-header">
-                                      <span className="copy-card-title">Follow-up</span>
-                                      <button className="btn btn-sm btn-outline" onClick={() => globals.testCopy?.('followup')}>Testar</button>
-                                  </div>
-                                  <textarea className="form-textarea" id="copyFollowup" rows="4" defaultValue={`Olá {{nome}}!
-      
-      Vi que você demonstrou interesse em proteção veicular.
-      
-      Temos condições especiais essa semana! Posso te enviar mais informações?`} />
-                              </div>
-      
-                              <div className="copy-card">
-                                  <div className="copy-card-header">
-                                      <span className="copy-card-title">Fechamento</span>
-                                      <button className="btn btn-sm btn-outline" onClick={() => globals.testCopy?.('closing')}>Testar</button>
-                                  </div>
-                                  <textarea className="form-textarea" id="copyClosing" rows="4" defaultValue={`Parabéns {{nome}}!
-      
-      Seu veículo {{veiculo}} agora está protegido pela SELF!
-      
-      Qualquer dúvida, estamos à disposição. Obrigado pela confiança!`} />
-                              </div>
-      
-                              <div className="copy-card" style={{ marginTop: '16px' }}>
                                   <div className="copy-card-header">
                                       <span className="copy-card-title">Templates personalizados</span>
                                   </div>
-                                  <div id="customTemplatesList"></div>
+                                  <div id="templatesList"></div>
+                                  <p className="text-muted" id="templatesEmpty" style={{ marginTop: '12px' }}>Nenhum template criado ainda.</p>
                               </div>
 
                               <button className="btn btn-outline w-100 mt-3" onClick={() => globals.openModal?.('addTemplateModal')}><span className="icon icon-add icon-sm"></span> Adicionar Template</button>
                           </div>
                           <button className="btn btn-primary" onClick={() => globals.saveCopysSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Templates</button>
                       </div>
-      
+
                       <div className="settings-panel" id="panel-whatsapp">
                           <div className="settings-section">
                               <h3 className="settings-section-title"><span className="icon icon-whatsapp icon-sm"></span> Conexão WhatsApp</h3>
@@ -615,8 +564,22 @@ export default function Configuracoes() {
                           <input type="text" className="form-input" id="newTemplateName" required placeholder="Ex: Promoção" />
                       </div>
                       <div className="form-group">
-                          <label className="form-label required">Mensagem</label>
-                          <textarea className="form-textarea" id="newTemplateMessage" rows="6" required placeholder="Digite a mensagem..."></textarea>
+                          <label className="form-label required">Tipo</label>
+                          <select className="form-select" id="newTemplateType" onChange={() => globals.updateNewTemplateForm?.()}>
+                              <option value="text">Texto</option>
+                              <option value="audio">Áudio</option>
+                          </select>
+                      </div>
+                      <div className="form-group">
+                          <div id="newTemplateTextGroup">
+                              <label className="form-label required">Mensagem</label>
+                              <textarea className="form-textarea" id="newTemplateMessage" rows="6" required placeholder="Digite a mensagem..."></textarea>
+                          </div>
+                          <div id="newTemplateAudioGroup" style={{ display: 'none' }}>
+                              <label className="form-label required">Arquivo de áudio</label>
+                              <input type="file" className="form-input" id="newTemplateAudio" accept="audio/*" />
+                              <small className="text-muted">Envie um áudio (ogg/mp3/wav). Ele ficará salvo para uso no Inbox.</small>
+                          </div>
                       </div>
                   </div>
                   <div className="modal-footer">
