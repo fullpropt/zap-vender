@@ -2059,17 +2059,45 @@ app.get('/api/conversations', optionalAuth, (req, res) => {
             metadataLastAt ||
             c.updated_at;
 
+        let name = c.lead_name;
+        const sessionPhone = getSessionPhone(c.session_id);
+        if (sessionPhone && String(c.phone || '') === String(sessionPhone)) {
+            const sessionName = getSessionDisplayName(c.session_id) || 'Usuario';
+            name = `${sessionName} (Você)`;
+        }
+
         return {
             ...c,
             unread: c.unread_count || 0,
             lastMessage: lastMessageText,
             lastMessageAt,
-            name: c.lead_name,
+            name,
             phone: c.phone
         };
     });
 
-    res.json({ success: true, conversations: normalized });
+    const deduped = new Map();
+    for (const conv of normalized) {
+        const key = String(conv.lead_id || conv.id);
+        if (!deduped.has(key)) {
+            deduped.set(key, conv);
+            continue;
+        }
+        const existing = deduped.get(key);
+        const existingTime = existing?.lastMessageAt ? new Date(existing.lastMessageAt).getTime() : 0;
+        const currentTime = conv?.lastMessageAt ? new Date(conv.lastMessageAt).getTime() : 0;
+        if (currentTime >= existingTime) {
+            deduped.set(key, conv);
+        }
+    }
+
+    const sorted = Array.from(deduped.values()).sort((a, b) => {
+        const aTime = a?.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+        const bTime = b?.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+        return bTime - aTime;
+    });
+
+    res.json({ success: true, conversations: sorted });
 });
 
 app.post('/api/send', authenticate, async (req, res) => {
