@@ -29,7 +29,9 @@ function formatJid(phone) {
  */
 function extractNumber(jid) {
     if (!jid) return '';
-    return String(jid).replace('@s.whatsapp.net', '').replace('@g.us', '');
+    const jidStr = String(jid);
+    if (jidStr.includes('@lid')) return '';
+    return jidStr.replace(/[^0-9]/g, '');
 }
 
 /**

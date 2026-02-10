@@ -78,6 +78,7 @@ try {
     migrate();
     console.log('✅ Banco de dados inicializado');
     cleanupDuplicateMessages();
+    cleanupLidLeads();
 } catch (error) {
     console.error('❌ Erro ao inicializar banco de dados:', error.message);
 }
@@ -393,6 +394,23 @@ function cleanupDuplicateMessages() {
         `);
     } catch (error) {
         console.warn('⚠️ Falha ao limpar mensagens duplicadas:', error.message);
+    }
+}
+
+
+function cleanupLidLeads() {
+    try {
+        const lidLeads = query(
+            "SELECT id FROM leads WHERE jid LIKE '%@lid%' OR phone LIKE '%@lid%'"
+        );
+        if (!lidLeads || lidLeads.length === 0) return;
+
+        for (const lead of lidLeads) {
+            run('DELETE FROM leads WHERE id = ?', [lead.id]);
+        }
+        console.log(`Removidos ${lidLeads.length} leads com @lid`);
+    } catch (error) {
+        console.warn('Falha ao limpar leads @lid:', error.message);
     }
 }
 
@@ -1197,6 +1215,10 @@ async function processIncomingMessage(sessionId, msg) {
     }
 
     const phone = extractNumber(from);
+    if (!phone) {
+        console.warn(`[${sessionId}] Ignorando mensagem com JID invalido: ${from}`);
+        return;
+    }
     const isSelfChat = sessionPhone && phone === sessionPhone;
     const selfName = sessionDisplayName ? `${sessionDisplayName} (Você)` : 'Você';
     
