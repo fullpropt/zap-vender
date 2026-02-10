@@ -47,8 +47,8 @@ export default function Conversas() {
     <div className="conversas-react">
       <style>{`
 :root {
-            --primary: #5a2a6b;
-            --primary-light: #7a3a8b;
+            --primary: #25D366;
+            --primary-light: #34D399;
             --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
@@ -654,9 +654,7 @@ export default function Conversas() {
         }
       `}</style>
           <aside className="sidebar" id="sidebar">
-              <div className="sidebar-logo">
-                  <img src="img/logo-self.png" alt="SELF Proteção Veicular" />
-              </div>
+              <div className="sidebar-logo"><span className="brand-text">ZapVender</span></div>
               
               <ul className="sidebar-menu">
                   <li>

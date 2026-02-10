@@ -1,5 +1,5 @@
-/**
- * SELF Proteção Veicular - JavaScript Global
+﻿/**
+ * ZapVender - JavaScript Global
  * Sistema estilo BotConversa
  * Versão: 4.0.0
  */
@@ -772,7 +772,7 @@ const windowAny = window as Window & {
 };
 windowAny.APP = APP;
 windowAny.BUILD_ID = BUILD_ID;
-console.info('SELF build', BUILD_ID);
+console.info('ZapVender build', BUILD_ID);
 windowAny.api = api;
 windowAny.showToast = showToast;
 windowAny.openModal = openModal;
@@ -796,5 +796,6 @@ windowAny.LEAD_STATUS = LEAD_STATUS;
 windowAny.FUNNEL_STAGES = FUNNEL_STAGES;
 
 export {};
+
 
 

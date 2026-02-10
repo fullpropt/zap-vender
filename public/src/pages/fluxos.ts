@@ -210,7 +210,7 @@ async function loadFlows() {
                 trigger: 'new_lead',
                 is_active: true,
                 steps: [
-                    { message: 'OlÃ¡ {{nome}}! Bem-vindo Ã  SELF ProteÃ§Ã£o Veicular!', delay: 0 },
+                    { message: 'OlÃ¡ {{nome}}! Bem-vindo Ã  ZapVender!', delay: 0 },
                     { message: 'Somos especialistas em proteÃ§Ã£o veicular com os melhores preÃ§os do mercado.', delay: 300 },
                     { message: 'Posso ajudar com alguma informaÃ§Ã£o sobre seu veÃ­culo {{veiculo}}?', delay: 600 }
                 ],
@@ -670,3 +670,4 @@ windowAny.toggleFlow = toggleFlow;
 windowAny.deleteFlow = deleteFlow;
 
 export { initFluxos };
+

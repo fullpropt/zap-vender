@@ -120,7 +120,7 @@ async function loadCampaigns() {
                 type: 'trigger',
                 status: 'active',
                 segment: 'new',
-                message: 'Olá {{nome}}! Seja bem-vindo à SELF.',
+                message: 'Olá {{nome}}! Seja bem-vindo à ZapVender.',
                 delay: 5000,
                 start_at: new Date().toISOString(),
                 sent: 156,

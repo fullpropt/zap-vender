@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 
 import { Link } from 'react-router-dom';
 type ConfiguracoesGlobals = {
@@ -147,9 +147,7 @@ export default function Configuracoes() {
       
           <aside className="sidebar">
               <div className="sidebar-header">
-                  <Link to="/dashboard" className="sidebar-logo">
-                      <img src="img/logo-self.png" alt="SELF" /><span>SELF</span>
-                  </Link>
+                  <Link to="/dashboard" className="sidebar-logo"><span className="brand-text">ZapVender</span></Link>
               </div>
               <nav className="sidebar-nav">
                                     <div className="nav-section">
@@ -240,7 +238,7 @@ export default function Configuracoes() {
                               <h3 className="settings-section-title"><span className="icon icon-building icon-sm"></span> Informações da Empresa</h3>
                               <div className="form-group">
                                   <label className="form-label">Nome da Empresa</label>
-                                  <input type="text" className="form-input" id="companyName" defaultValue="SELF Proteção Veicular" />
+                                  <input type="text" className="form-input" id="companyName" defaultValue="ZapVender" />
                               </div>
                               <div className="form-row">
                                   <div className="form-group">
@@ -592,3 +590,4 @@ export default function Configuracoes() {
     </div>
   );
 }
+

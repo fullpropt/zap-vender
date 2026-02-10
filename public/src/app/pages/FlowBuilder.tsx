@@ -45,8 +45,8 @@ export default function FlowBuilder() {
     <div className="flow-builder-react">
       <style>{`
 :root {
-            --primary: #5a2a6b;
-            --primary-light: #7a3a8b;
+            --primary: #25D366;
+            --primary-light: #34D399;
             --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
@@ -625,9 +625,7 @@ export default function FlowBuilder() {
         }
       `}</style>
           <nav className="sidebar">
-              <div className="sidebar-logo">
-                  <img src="img/logo-self.png" alt="SELF" onError={(event) => { (event.currentTarget as HTMLElement).style.display = 'none'; }} />
-              </div>
+              <div className="sidebar-logo"><span className="brand-text">ZapVender</span></div>
               <ul className="sidebar-menu">
                   <li><Link to="/dashboard"><span className="icon icon-dashboard"></span> Painel de Controle</Link></li>
                   <li><Link to="/funil"><span className="icon icon-funnel"></span> Funil de Vendas</Link></li>

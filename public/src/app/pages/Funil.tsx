@@ -171,9 +171,7 @@ export default function Funil() {
       
           <aside className="sidebar">
               <div className="sidebar-header">
-                  <Link to="/dashboard" className="sidebar-logo">
-                      <img src="img/logo-self.png" alt="SELF" /><span>SELF</span>
-                  </Link>
+                  <Link to="/dashboard" className="sidebar-logo"><span className="brand-text">ZapVender</span></Link>
               </div>
               <nav className="sidebar-nav">
                                     <div className="nav-section">

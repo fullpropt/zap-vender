@@ -1,4 +1,4 @@
-// Inbox page logic migrated to module
+﻿// Inbox page logic migrated to module
 
 declare const io:
     | undefined
@@ -307,7 +307,7 @@ function applyTemplateVariables(content: string) {
         .replace(/\{\{\s*telefone\s*\}\}/gi, formatPhone(currentConversation.phone || ''))
         .replace(/\{\{\s*veiculo\s*\}\}/gi, '')
         .replace(/\{\{\s*placa\s*\}\}/gi, '')
-        .replace(/\{\{\s*empresa\s*\}\}/gi, 'SELF Proteção Veicular');
+        .replace(/\{\{\s*empresa\s*\}\}/gi, 'ZapVender');
 }
 
 function insertSelectedTemplate() {
@@ -700,4 +700,5 @@ windowAny.backToList = backToList;
 windowAny.logout = logout;
 
 export { initInbox };
+
 

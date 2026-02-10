@@ -40,9 +40,7 @@ export default function ConversasV2() {
 
       `}</style>
           <nav className="sidebar">
-              <div className="sidebar-logo">
-                  <img src="img/logo-self.png" alt="SELF" onError={(event) => { (event.currentTarget as HTMLElement).style.display = 'none'; }} />
-              </div>
+              <div className="sidebar-logo"><span className="brand-text">ZapVender</span></div>
               <ul className="sidebar-menu">
                   <li><Link to="/dashboard"><span className="icon icon-dashboard"></span> Painel de Controle</Link></li>
                   <li><Link to="/funil"><span className="icon icon-funnel"></span> Funil de Vendas</Link></li>

@@ -1,5 +1,5 @@
 /**
- * SELF Proteção Veicular - CSS Global
+ * ZapVender - CSS Global
  * Sistema estilo BotConversa
  * Versão: 4.0.0
  */
@@ -16,10 +16,10 @@
 
 :root {
     /* Cores Primarias */
-    --primary: #6d28d9;
-    --primary-light: #7c3aed;
-    --primary-dark: #5b21b6;
-    --primary-rgb: 109, 40, 217;
+    --primary: #25D366;
+    --primary-light: #34D399;
+    --primary-dark: #16A34A;
+    --primary-rgb: 37, 211, 102;
     
     /* Cores de Status */
     --success: #10b981;
@@ -105,7 +105,7 @@ body {
     top: 0;
     width: var(--sidebar-width);
     height: 100vh;
-    background: linear-gradient(180deg, #4c1d95 0%, #3b136f 100%);
+    background: linear-gradient(180deg, #25D366 0%, #16A34A 100%);
     color: white;
     z-index: 1000;
     transition: all var(--transition);
@@ -136,6 +136,11 @@ body {
 .sidebar-logo span {
     font-size: 20px;
     font-weight: 700;
+}
+
+.sidebar-logo .brand-text {
+    color: #25D366;
+    letter-spacing: 0.2px;
 }
 
 .sidebar-nav {
@@ -1333,14 +1338,14 @@ tr:last-child td {
 
 .progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%);
+    background: linear-gradient(180deg, #25D366 0%, #16A34A 100%);
     border-radius: var(--border-radius-full);
     transition: width var(--transition);
 }
 
-.progress-bar.success { background: linear-gradient(90deg, var(--success) 0%, var(--success-light) 100%); }
-.progress-bar.warning { background: linear-gradient(90deg, var(--warning) 0%, var(--warning-light) 100%); }
-.progress-bar.danger { background: linear-gradient(90deg, var(--danger) 0%, var(--danger-light) 100%); }
+.progress-bar.success { background: linear-gradient(180deg, #10B981 0%, #059669 100%); }
+.progress-bar.warning { background: linear-gradient(180deg, #F59E0B 0%, #D97706 100%); }
+.progress-bar.danger { background: linear-gradient(180deg, #EF4444 0%, #DC2626 100%); }
 
 /* ============================================
    EMPTY STATE
@@ -1552,4 +1557,11 @@ tr:last-child td {
         margin-left: 0;
         padding: 0;
     }
+}
+
+.login-logo .brand-text {
+    color: var(--primary);
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
 }

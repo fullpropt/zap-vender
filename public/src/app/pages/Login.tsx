@@ -167,9 +167,7 @@ export default function Login() {
         }
       `}</style>
       <div className="login-container">
-        <div className="login-logo">
-          <img src="img/logo-self.png" alt="SELF" />
-        </div>
+        <div className="login-logo"><span className="brand-text">ZapVender</span></div>
         <h1 className="login-title">Acesso ao Dashboard</h1>
 
         <div className="auth-tabs">

@@ -1,5 +1,5 @@
-/**
- * CONFIGURAÇÕES DO SISTEMA - SELF Proteção Veicular v2.0.0
+﻿/**
+ * CONFIGURAÇÕES DO SISTEMA - ZapVender v2.0.0
  * Altere estas configurações conforme seu ambiente
  */
 
@@ -156,12 +156,12 @@ const SAMPLE_DATA: SampleData = {
         {
             id: 1,
             nome: 'Boas-vindas',
-            mensagem: 'Oi {{nome}}, tudo bem? Aqui é da *SELF Proteção Veicular*! Vi que você tem interesse em proteger seu veículo. Posso te ajudar?'
+            mensagem: 'Oi {{nome}}, tudo bem? Aqui é da *ZapVender*! Vi que você tem interesse em proteger seu veículo. Posso te ajudar?'
         },
         {
             id: 2,
             nome: 'Promoção Especial',
-            mensagem: 'Oi {{nome}}, feliz ano novo! Aqui é o *Thyago* da *SELF Proteção Veicular* Te chamei porque vi que você demonstrou interesse em proteger seu veículo. Ainda está interessado?'
+            mensagem: 'Oi {{nome}}, feliz ano novo! Aqui é o *Thyago* da *ZapVender* Te chamei porque vi que você demonstrou interesse em proteger seu veículo. Ainda está interessado?'
         },
         {
             id: 3,
@@ -224,7 +224,7 @@ const Utils: UtilsType = {
     }
 };
 
-console.log(`SELF Proteção Veicular v${CONFIG.VERSION}`);
+console.log(`ZapVender v${CONFIG.VERSION}`);
 console.log(`Socket URL: ${CONFIG.SOCKET_URL}`);
 
 const windowAny = window as Window & {
@@ -237,3 +237,4 @@ windowAny.SAMPLE_DATA = SAMPLE_DATA;
 windowAny.Utils = Utils;
 
 export {};
+

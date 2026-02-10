@@ -195,7 +195,7 @@ async function loadAutomations() {
                 trigger_type: 'new_lead',
                 trigger_value: '',
                 action_type: 'send_message',
-                action_value: 'Olá {{nome}}! Seja bem-vindo à SELF.',
+                action_value: 'Olá {{nome}}! Seja bem-vindo à ZapVender.',
                 delay: 0,
                 is_active: true,
                 executions: 156,
