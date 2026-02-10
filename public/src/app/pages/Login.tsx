@@ -1,4 +1,4 @@
-﻿import { useEffect } from 'react';
+import { useEffect } from 'react';
 import { brandLogoUrl, brandName } from '../lib/brand';
 
 type LoginGlobals = {
@@ -46,7 +46,7 @@ export default function Login() {
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #5a2a6b 0%, #7a3a8b 100%);
+            background: linear-gradient(135deg, #0f172a 0%, #111827 55%, #020617 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
