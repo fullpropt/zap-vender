@@ -177,17 +177,17 @@ export default function Login() {
         </div>
 
         <div className="error-message" id="errorMsg">
-          Usu?rio ou senha incorretos
+          Usuário ou senha incorretos
         </div>
 
         <form id="loginForm" onSubmit={(event) => globals.handleLogin?.(event as unknown as Event)}>
           <div className="form-group">
-            <label className="form-label">Usu?rio</label>
+            <label className="form-label">Usuário</label>
             <input
               type="text"
               className="form-input"
               id="username"
-              placeholder="Digite seu e-mail ou usu?rio"
+              placeholder="Digite seu e-mail ou usuário"
               required
               autoComplete="off"
             />
@@ -244,7 +244,7 @@ export default function Login() {
         </form>
 
         <div className="security-badge">
-          Conex?o segura e criptografada
+          Conexão segura e criptografada
         </div>
       </div>
     </div>
