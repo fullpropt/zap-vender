@@ -26,14 +26,27 @@ type ChatMessage = {
     direction: 'outgoing' | 'incoming';
     status?: string;
     created_at: string;
+    media_type?: string;
+    media_url?: string;
 };
 
 type ConversationsResponse = { conversations?: Array<Record<string, any>> };
 type MessagesResponse = { messages?: Array<Record<string, any>> };
+type TemplatesResponse = { templates?: Array<Record<string, any>> };
+
+type TemplateItem = {
+    id: number;
+    name: string;
+    content: string;
+    category?: string;
+    media_type?: string;
+    media_url?: string;
+};
 
 let conversations: Conversation[] = [];
 let currentConversation: Conversation | null = null;
 let messages: ChatMessage[] = [];
+let templates: TemplateItem[] = [];
 let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
 let socketBound = false;
 let refreshInterval: number | null = null;
@@ -62,6 +75,7 @@ function getContatosUrl(id: string | number) {
 
 function initInbox() {
     loadConversations();
+    loadTemplates();
     initSocket();
     if (refreshInterval === null) {
         refreshInterval = window.setInterval(loadConversations, 10000);
@@ -248,16 +262,76 @@ async function loadMessages(leadId: number) {
         messages = (response.messages || []).map(m => ({
             ...m,
             direction: m.direction || (m.is_from_me ? 'outgoing' : 'incoming'),
-            created_at: m.created_at || m.sent_at || new Date().toISOString()
+            created_at: m.created_at || m.sent_at || new Date().toISOString(),
+            media_type: m.media_type || 'text',
+            media_url: m.media_url || null
         }));
     } catch (error) {
         messages = [];
     }
 }
 
+async function loadTemplates() {
+    try {
+        const response: TemplatesResponse = await api.get('/api/templates');
+        templates = (response.templates || []).map((t) => ({
+            id: t.id,
+            name: t.name,
+            content: t.content || '',
+            category: t.category,
+            media_type: t.media_type,
+            media_url: t.media_url
+        }));
+    } catch (error) {
+        templates = [];
+    }
+}
+
+function renderTemplateOptions() {
+    if (!templates.length) {
+        return `<option value="">Sem templates</option>`;
+    }
+    const options = templates
+        .map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`)
+        .join('');
+    return `<option value="">Selecionar mensagem...</option>${options}`;
+}
+
+function applyTemplateVariables(content: string) {
+    if (!currentConversation) return content;
+    return content
+        .replace(/\{\{\s*nome\s*\}\}/gi, currentConversation.name || '')
+        .replace(/\{\{\s*telefone\s*\}\}/gi, formatPhone(currentConversation.phone || ''))
+        .replace(/\{\{\s*veiculo\s*\}\}/gi, '')
+        .replace(/\{\{\s*placa\s*\}\}/gi, '')
+        .replace(/\{\{\s*empresa\s*\}\}/gi, 'SELF Proteção Veicular');
+}
+
+function insertSelectedTemplate() {
+    const select = document.getElementById('templateSelect') as HTMLSelectElement | null;
+    const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+    if (!select || !input) return;
+    const id = Number(select.value || 0);
+    if (!id) return;
+    const template = templates.find((t) => t.id === id);
+    if (!template) return;
+    const text = applyTemplateVariables(template.content || '');
+    input.value = text;
+    input.focus();
+}
+
+function getMediaUrl(url?: string | null) {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    const base = (window as any).APP?.socketUrl || '';
+    return `${base}${url}`;
+}
+
 function renderChat() {
     const panel = document.getElementById('chatPanel') as HTMLElement | null;
     if (!panel || !currentConversation) return;
+
+    const templateOptions = renderTemplateOptions();
     
     panel.innerHTML = `
         <div class="chat-header">
@@ -280,14 +354,23 @@ function renderChat() {
             ${renderMessages()}
         </div>
 
-        <div class="quick-replies">
+                <div class="quick-replies">
             <div class="quick-reply" onclick="insertQuickReply('Olá! Tudo bem?')">Olá! Tudo bem?</div>
             <div class="quick-reply" onclick="insertQuickReply('Posso ajudar?')">Posso ajudar?</div>
             <div class="quick-reply" onclick="insertQuickReply('Obrigado pelo contato!')">Obrigado!</div>
             <div class="quick-reply" onclick="insertQuickReply('Vou verificar e retorno em breve.')">Vou verificar</div>
         </div>
 
+        <div class="template-bar">
+            <select id="templateSelect" class="template-select">
+                ${templateOptions}
+            </select>
+            <button class="btn btn-sm btn-outline" onclick="insertSelectedTemplate()">Inserir</button>
+        </div>
+
         <div class="chat-input">
+            <input type="file" id="audioFileInput" accept="audio/*" style="display:none" onchange="handleAudioUpload(event)" />
+            <button class="btn btn-sm btn-outline btn-icon audio-btn" onclick="triggerAudioUpload()" title="Enviar áudio">Audio</button>
             <textarea id="messageInput" placeholder="Digite uma mensagem..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
             <button onclick="sendMessage()" title="Enviar"><span class="icon icon-send icon-sm"></span></button>
         </div>
@@ -314,15 +397,23 @@ function renderMessages() {
         `;
     }
 
-    return messages.map(m => `
+    return messages.map(m => {
+        let contentHtml = escapeHtml(m.content || '');
+        if (m.media_type === 'audio' && m.media_url) {
+            const audioUrl = getMediaUrl(m.media_url);
+            contentHtml = `<audio controls preload="metadata" src="${audioUrl}"></audio>`;
+        }
+
+        return `
         <div class="message ${m.direction === 'outgoing' ? 'sent' : 'received'}">
-            <div class="message-content">${escapeHtml(m.content)}</div>
+            <div class="message-content">${contentHtml}</div>
             <div class="message-time">
                 ${formatDate(m.created_at, 'time')}
-                ${m.direction === 'outgoing' ? `<span class="message-status">${m.status === 'read' ? '✓✓' : m.status === 'delivered' ? '✓✓' : '✓'}</span>` : ''}
+                ${m.direction === 'outgoing' ? `<span class="message-status">${m.status === 'read' ? 'vv' : m.status === 'delivered' ? 'vv' : 'v'}</span>` : ''}
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 function scrollToBottom() {
@@ -387,6 +478,73 @@ async function sendMessage() {
         if (chatMessages) chatMessages.innerHTML = renderMessages();
         showToast('error', 'Erro', 'Não foi possível enviar a mensagem');
     }
+}
+
+function triggerAudioUpload() {
+    const input = document.getElementById('audioFileInput') as HTMLInputElement | null;
+    if (input) input.click();
+}
+
+async function handleAudioUpload(event: Event) {
+    const target = event.target as HTMLInputElement | null;
+    const file = target?.files?.[0];
+    if (!file || !currentConversation) return;
+
+    try {
+        showLoading('Enviando Ã¡udio...');
+        const uploaded = await uploadFile(file);
+        hideLoading();
+
+        const newMessage: ChatMessage = {
+            id: Date.now(),
+            content: 'Ãudio',
+            direction: 'outgoing',
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            media_type: 'audio',
+            media_url: uploaded.url
+        };
+        messages.push(newMessage);
+        const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
+        if (chatMessages) chatMessages.innerHTML = renderMessages();
+        scrollToBottom();
+
+        await api.post('/api/send', {
+            sessionId: APP.sessionId,
+            to: currentConversation.phone,
+            message: uploaded.url,
+            type: 'audio',
+            options: { url: uploaded.url, mimetype: file.type }
+        });
+
+        newMessage.status = 'sent';
+        if (chatMessages) chatMessages.innerHTML = renderMessages();
+    } catch (error) {
+        hideLoading();
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel enviar o Ã¡udio');
+    } finally {
+        if (target) target.value = '';
+    }
+}
+
+async function uploadFile(file: File) {
+    const baseUrl = (window as any).APP?.socketUrl || '';
+    const token = sessionStorage.getItem('selfDashboardToken');
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${baseUrl}/api/upload`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.error || 'Falha no upload');
+    }
+
+    return data.file;
 }
 
 function openWhatsApp() {
@@ -462,6 +620,9 @@ const windowAny = window as Window & {
     insertQuickReply?: (text: string) => void;
     handleKeyDown?: (event: KeyboardEvent) => void;
     sendMessage?: () => Promise<void>;
+    insertSelectedTemplate?: () => void;
+    triggerAudioUpload?: () => void;
+    handleAudioUpload?: (event: Event) => void;
     openWhatsApp?: () => void;
     viewContact?: () => void;
     toggleContactInfo?: () => void;
@@ -480,6 +641,9 @@ windowAny.selectConversation = selectConversation;
 windowAny.insertQuickReply = insertQuickReply;
 windowAny.handleKeyDown = handleKeyDown;
 windowAny.sendMessage = sendMessage;
+windowAny.insertSelectedTemplate = insertSelectedTemplate;
+windowAny.triggerAudioUpload = triggerAudioUpload;
+windowAny.handleAudioUpload = handleAudioUpload;
 windowAny.openWhatsApp = openWhatsApp;
 windowAny.viewContact = viewContact;
 windowAny.toggleContactInfo = toggleContactInfo;
@@ -488,3 +652,4 @@ windowAny.backToList = backToList;
 windowAny.logout = logout;
 
 export { initInbox };
+

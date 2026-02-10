@@ -245,6 +245,31 @@ export default function Inbox() {
             transition: transform 0.2s;
         }
         .chat-input button:hover { transform: scale(1.05); }
+        .chat-input .audio-btn {
+            width: auto;
+            height: 40px;
+            padding: 0 14px;
+            border-radius: 20px;
+            background: var(--gray-100);
+            color: var(--gray-700);
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .chat-input .audio-btn:hover { transform: translateY(-1px); }
+        .template-bar {
+            display: flex;
+            gap: 10px;
+            padding: 10px 20px 0;
+            align-items: center;
+        }
+        .template-select {
+            flex: 1;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 13px;
+            background: white;
+        }
         .chat-empty {
             flex: 1;
             display: flex;

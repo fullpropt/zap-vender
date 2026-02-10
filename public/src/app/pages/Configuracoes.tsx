@@ -10,6 +10,8 @@ type ConfiguracoesGlobals = {
   insertVariable?: (value: string) => void;
   testCopy?: (kind: string) => void;
   saveNewTemplate?: () => void;
+  saveTemplate?: (id: number) => void;
+  deleteTemplate?: (id: number) => void;
   connectWhatsApp?: () => void;
   disconnectWhatsApp?: () => void;
   saveWhatsAppSettings?: () => void;
@@ -411,6 +413,13 @@ export default function Configuracoes() {
       Qualquer dúvida, estamos à disposição. Obrigado pela confiança!`} />
                               </div>
       
+                              <div className="copy-card" style={{ marginTop: '16px' }}>
+                                  <div className="copy-card-header">
+                                      <span className="copy-card-title">Templates personalizados</span>
+                                  </div>
+                                  <div id="customTemplatesList"></div>
+                              </div>
+
                               <button className="btn btn-outline w-100 mt-3" onClick={() => globals.openModal?.('addTemplateModal')}><span className="icon icon-add icon-sm"></span> Adicionar Template</button>
                           </div>
                           <button className="btn btn-primary" onClick={() => globals.saveCopysSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Templates</button>

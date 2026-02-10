@@ -2,10 +2,35 @@
 
 type Settings = {
     company?: { name?: string; cnpj?: string; phone?: string; email?: string };
-    copys?: { welcome?: string; quote?: string; followup?: string; closing?: string };
     funnel?: Array<{ name?: string; color?: string; description?: string }>;
     whatsapp?: { interval?: string; messagesPerHour?: string; workStart?: string; workEnd?: string };
 };
+
+type TemplateItem = {
+    id: number;
+    name: string;
+    category?: string;
+    content: string;
+    variables?: string[];
+    media_type?: string;
+    media_url?: string;
+};
+
+const CORE_TEMPLATES = [
+    { key: 'welcome', name: 'Boas-vindas', textareaId: 'copyWelcome' },
+    { key: 'quote', name: 'Cotação', textareaId: 'copyQuote' },
+    { key: 'followup', name: 'Follow-up', textareaId: 'copyFollowup' },
+    { key: 'closing', name: 'Fechamento', textareaId: 'copyClosing' }
+];
+
+const coreTemplateIds: Record<string, number | null> = {
+    welcome: null,
+    quote: null,
+    followup: null,
+    closing: null
+};
+
+let templatesCache: TemplateItem[] = [];
 
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -34,6 +59,7 @@ function getPanelFromLocation() {
 
 function initConfiguracoes() {
     loadSettings();
+    loadTemplates();
     checkWhatsAppStatus();
     const panelFromUrl = getPanelFromLocation();
     if (panelFromUrl) {
@@ -69,16 +95,6 @@ function loadSettings() {
         if (companyPhone) companyPhone.value = settings.company.phone || '';
         if (companyEmail) companyEmail.value = settings.company.email || '';
     }
-    if (settings.copys) {
-        const copyWelcome = document.getElementById('copyWelcome') as HTMLTextAreaElement | null;
-        const copyQuote = document.getElementById('copyQuote') as HTMLTextAreaElement | null;
-        const copyFollowup = document.getElementById('copyFollowup') as HTMLTextAreaElement | null;
-        const copyClosing = document.getElementById('copyClosing') as HTMLTextAreaElement | null;
-        if (copyWelcome) copyWelcome.value = settings.copys.welcome || copyWelcome.value;
-        if (copyQuote) copyQuote.value = settings.copys.quote || copyQuote.value;
-        if (copyFollowup) copyFollowup.value = settings.copys.followup || copyFollowup.value;
-        if (copyClosing) copyClosing.value = settings.copys.closing || copyClosing.value;
-    }
 }
 
 function saveGeneralSettings() {
@@ -107,16 +123,169 @@ function saveFunnelSettings() {
     showToast('success', 'Sucesso', 'Funil salvo!');
 }
 
-function saveCopysSettings() {
-    const settings: Settings = JSON.parse(localStorage.getItem('selfSettings') || '{}');
-    settings.copys = {
-        welcome: (document.getElementById('copyWelcome') as HTMLTextAreaElement | null)?.value || '',
-        quote: (document.getElementById('copyQuote') as HTMLTextAreaElement | null)?.value || '',
-        followup: (document.getElementById('copyFollowup') as HTMLTextAreaElement | null)?.value || '',
-        closing: (document.getElementById('copyClosing') as HTMLTextAreaElement | null)?.value || ''
+async function loadTemplates() {
+    try {
+        const response = await api.get('/api/templates');
+        templatesCache = response.templates || [];
+        syncCoreTemplates();
+        renderCustomTemplates();
+    } catch (error) {
+        templatesCache = [];
+    }
+}
+
+function normalizeName(value: string) {
+    return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+}
+
+function escapeHtml(value: string) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function findCoreTemplate(def: { name: string }) {
+    const target = normalizeName(def.name);
+    return templatesCache.find((template) => normalizeName(template.name) === target);
+}
+
+function syncCoreTemplates() {
+    for (const def of CORE_TEMPLATES) {
+        const template = findCoreTemplate(def);
+        if (template?.id) {
+            coreTemplateIds[def.key] = template.id;
+        }
+        const textarea = document.getElementById(def.textareaId) as HTMLTextAreaElement | null;
+        if (textarea && template?.content) {
+            textarea.value = template.content;
+            textarea.dataset.templateId = String(template.id);
+        }
+    }
+}
+
+function renderCustomTemplates() {
+    const container = document.getElementById('customTemplatesList');
+    if (!container) return;
+
+    const coreNames = new Set(CORE_TEMPLATES.map((t) => normalizeName(t.name)));
+    const customTemplates = templatesCache.filter((t) => !coreNames.has(normalizeName(t.name)));
+
+    if (customTemplates.length === 0) {
+        container.innerHTML = `<p class="text-muted" style="margin: 8px 0;">Nenhum template personalizado criado.</p>`;
+        return;
+    }
+
+    container.innerHTML = customTemplates.map((template) => `
+        <div class="copy-card custom-template-card" data-template-id="${template.id}">
+            <div class="copy-card-header" style="display: flex; gap: 12px; align-items: center; justify-content: space-between;">
+                <input class="form-input template-name" value="${escapeHtml(template.name)}" />
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-sm btn-outline" onclick="saveTemplate(${template.id})">Salvar</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteTemplate(${template.id})">Excluir</button>
+                </div>
+            </div>
+            <textarea class="form-textarea template-content" rows="4">${escapeHtml(template.content || '')}</textarea>
+        </div>
+    `).join('');
+}
+
+async function upsertTemplate(def: { key: string; name: string; textareaId: string }) {
+    const textarea = document.getElementById(def.textareaId) as HTMLTextAreaElement | null;
+    if (!textarea) return;
+    const content = textarea.value || '';
+    const payload = {
+        name: def.name,
+        category: 'core',
+        content,
+        variables: ['nome', 'telefone', 'veiculo', 'placa', 'empresa']
     };
-    localStorage.setItem('selfSettings', JSON.stringify(settings));
-    showToast('success', 'Sucesso', 'Templates salvos!');
+
+    const currentId = coreTemplateIds[def.key];
+    if (currentId) {
+        await api.put(`/api/templates/${currentId}`, payload);
+    } else {
+        const response = await api.post('/api/templates', payload);
+        if (response?.template?.id) {
+            coreTemplateIds[def.key] = response.template.id;
+        }
+    }
+}
+
+async function saveCustomTemplates() {
+    const cards = Array.from(document.querySelectorAll('.custom-template-card')) as HTMLElement[];
+    if (cards.length === 0) return;
+
+    await Promise.all(cards.map(async (card) => {
+        const id = card.dataset.templateId;
+        const nameInput = card.querySelector('.template-name') as HTMLInputElement | null;
+        const contentInput = card.querySelector('.template-content') as HTMLTextAreaElement | null;
+        if (!id || !nameInput || !contentInput) return;
+        const name = nameInput.value.trim();
+        const content = contentInput.value.trim();
+        if (!name || !content) return;
+        await api.put(`/api/templates/${id}`, {
+            name,
+            category: 'custom',
+            content,
+            variables: ['nome', 'telefone', 'veiculo', 'placa', 'empresa']
+        });
+    }));
+}
+
+async function saveTemplate(id: number) {
+    const card = document.querySelector(`.custom-template-card[data-template-id="${id}"]`) as HTMLElement | null;
+    if (!card) return;
+    const nameInput = card.querySelector('.template-name') as HTMLInputElement | null;
+    const contentInput = card.querySelector('.template-content') as HTMLTextAreaElement | null;
+    if (!nameInput || !contentInput) return;
+    const name = nameInput.value.trim();
+    const content = contentInput.value.trim();
+    if (!name || !content) {
+        showToast('warning', 'Aviso', 'Preencha nome e mensagem');
+        return;
+    }
+    try {
+        await api.put(`/api/templates/${id}`, {
+            name,
+            category: 'custom',
+            content,
+            variables: ['nome', 'telefone', 'veiculo', 'placa', 'empresa']
+        });
+        showToast('success', 'Sucesso', 'Template atualizado!');
+    } catch (error) {
+        showToast('error', 'Erro', 'Não foi possível salvar');
+    }
+}
+
+async function deleteTemplate(id: number) {
+    if (!confirm('Excluir este template?')) return;
+    try {
+        await api.delete(`/api/templates/${id}`);
+        await loadTemplates();
+        showToast('success', 'Sucesso', 'Template removido!');
+    } catch (error) {
+        showToast('error', 'Erro', 'Não foi possível remover');
+    }
+}
+
+async function saveCopysSettings() {
+    try {
+        for (const def of CORE_TEMPLATES) {
+            await upsertTemplate(def);
+        }
+        await saveCustomTemplates();
+        await loadTemplates();
+        showToast('success', 'Sucesso', 'Templates salvos!');
+    } catch (error) {
+        showToast('error', 'Erro', 'Não foi possível salvar os templates');
+    }
 }
 
 function insertVariable(variable: string) {
@@ -144,23 +313,27 @@ function testCopy(type: 'welcome' | 'quote' | 'followup' | 'closing') {
     alert('Preview da mensagem:\n\n' + message);
 }
 
-function saveNewTemplate() {
+async function saveNewTemplate() {
     const name = (document.getElementById('newTemplateName') as HTMLInputElement | null)?.value.trim() || '';
     const message = (document.getElementById('newTemplateMessage') as HTMLTextAreaElement | null)?.value.trim() || '';
     if (!name || !message) { showToast('error', 'Erro', 'Preencha todos os campos'); return; }
-    const container = document.querySelector('#panel-copys .settings-section') as HTMLElement | null;
-    if (!container) return;
-    const newCard = document.createElement('div');
-    newCard.className = 'copy-card';
-    newCard.innerHTML = `<div class="copy-card-header"><span class="copy-card-title">${name}</span><button class="btn btn-sm btn-outline-danger" onclick="this.closest('.copy-card').remove()"><span class="icon icon-delete icon-sm"></span></button></div><textarea class="form-textarea" rows="4">${message}</textarea>`;
-    const target = container.querySelector('button.w-100');
-    if (target) container.insertBefore(newCard, target);
-    closeModal('addTemplateModal');
-    const newTemplateName = document.getElementById('newTemplateName') as HTMLInputElement | null;
-    const newTemplateMessage = document.getElementById('newTemplateMessage') as HTMLTextAreaElement | null;
-    if (newTemplateName) newTemplateName.value = '';
-    if (newTemplateMessage) newTemplateMessage.value = '';
-    showToast('success', 'Sucesso', 'Template adicionado!');
+    try {
+        await api.post('/api/templates', {
+            name,
+            category: 'custom',
+            content: message,
+            variables: ['nome', 'telefone', 'veiculo', 'placa', 'empresa']
+        });
+        closeModal('addTemplateModal');
+        const newTemplateName = document.getElementById('newTemplateName') as HTMLInputElement | null;
+        const newTemplateMessage = document.getElementById('newTemplateMessage') as HTMLTextAreaElement | null;
+        if (newTemplateName) newTemplateName.value = '';
+        if (newTemplateMessage) newTemplateMessage.value = '';
+        await loadTemplates();
+        showToast('success', 'Sucesso', 'Template adicionado!');
+    } catch (error) {
+        showToast('error', 'Erro', 'Não foi possível adicionar o template');
+    }
 }
 
 async function checkWhatsAppStatus() {
@@ -277,6 +450,8 @@ const windowAny = window as Window & {
     insertVariable?: (variable: string) => void;
     testCopy?: (type: 'welcome' | 'quote' | 'followup' | 'closing') => void;
     saveNewTemplate?: () => void;
+    saveTemplate?: (id: number) => void;
+    deleteTemplate?: (id: number) => void;
     connectWhatsApp?: () => Promise<void>;
     disconnectWhatsApp?: () => Promise<void>;
     saveWhatsAppSettings?: () => void;
@@ -296,6 +471,8 @@ windowAny.saveCopysSettings = saveCopysSettings;
 windowAny.insertVariable = insertVariable;
 windowAny.testCopy = testCopy;
 windowAny.saveNewTemplate = saveNewTemplate;
+windowAny.saveTemplate = saveTemplate;
+windowAny.deleteTemplate = deleteTemplate;
 windowAny.connectWhatsApp = connectWhatsApp;
 windowAny.disconnectWhatsApp = disconnectWhatsApp;
 windowAny.saveWhatsAppSettings = saveWhatsAppSettings;
