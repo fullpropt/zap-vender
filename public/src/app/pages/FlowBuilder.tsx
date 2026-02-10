@@ -45,8 +45,8 @@ export default function FlowBuilder() {
     <div className="flow-builder-react">
       <style>{`
 :root {
-            --primary: #25D366;
-            --primary-light: #34D399;
+            --primary: #178C49;
+            --primary-light: #1FAE5E;
             --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
@@ -625,7 +625,7 @@ export default function FlowBuilder() {
         }
       `}</style>
           <nav className="sidebar">
-              <div className="sidebar-logo"><span className="brand-text">ZapVender</span></div>
+              <div className="sidebar-logo"><img src="img/logo-zapvender.svg" alt="ZapVender" className="brand-logo" /><span className="brand-text">ZapVender</span></div>
               <ul className="sidebar-menu">
                   <li><Link to="/dashboard"><span className="icon icon-dashboard"></span> Painel de Controle</Link></li>
                   <li><Link to="/funil"><span className="icon icon-funnel"></span> Funil de Vendas</Link></li>

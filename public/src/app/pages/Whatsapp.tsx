@@ -44,9 +44,9 @@ export default function Whatsapp() {
     <div className="whatsapp-react">
             <style>{`
         .whatsapp-react {
-            --primary: #25D366;
-            --primary-light: #34D399;
-            --primary-dark: #16A34A;
+            --primary: #178C49;
+            --primary-light: #1FAE5E;
+            --primary-dark: #0F6D35;
             --success: #10b981;
             --success-light: #34d399;
             --warning: #f59e0b;
@@ -616,7 +616,7 @@ export default function Whatsapp() {
 
       <aside className="sidebar" id="sidebar">
         <div className="sidebar-header">
-          <Link to="/dashboard" className="sidebar-logo"><span className="brand-text">ZapVender</span></Link>
+          <Link to="/dashboard" className="sidebar-logo"><img src="img/logo-zapvender.svg" alt="ZapVender" className="brand-logo" /><span className="brand-text">ZapVender</span></Link>
         </div>
         <nav className="sidebar-nav">
           <div className="nav-section">

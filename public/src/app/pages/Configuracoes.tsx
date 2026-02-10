@@ -147,7 +147,7 @@ export default function Configuracoes() {
       
           <aside className="sidebar">
               <div className="sidebar-header">
-                  <Link to="/dashboard" className="sidebar-logo"><span className="brand-text">ZapVender</span></Link>
+                  <Link to="/dashboard" className="sidebar-logo"><img src="img/logo-zapvender.svg" alt="ZapVender" className="brand-logo" /><span className="brand-text">ZapVender</span></Link>
               </div>
               <nav className="sidebar-nav">
                                     <div className="nav-section">

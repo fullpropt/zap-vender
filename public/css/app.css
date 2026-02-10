@@ -16,10 +16,10 @@
 
 :root {
     /* Cores Primarias */
-    --primary: #1FAA59;
-    --primary-light: #2FBF71;
-    --primary-dark: #128C3A;
-    --primary-rgb: 31, 170, 89;
+    --primary: #178C49;
+    --primary-light: #1FAE5E;
+    --primary-dark: #0F6D35;
+    --primary-rgb: 23, 140, 73;
     
     /* Cores de Status */
     --success: #10b981;
@@ -105,7 +105,7 @@ body {
     top: 0;
     width: var(--sidebar-width);
     height: 100vh;
-    background: linear-gradient(180deg, #25D366 0%, #16A34A 100%);
+    background: linear-gradient(180deg, #0F6D35 0%, #0B4F28 100%);
     color: white;
     z-index: 1000;
     transition: all var(--transition);
@@ -1564,4 +1564,11 @@ tr:last-child td {
     font-size: 28px;
     font-weight: 800;
     letter-spacing: 0.4px;
+}
+
+.brand-logo {
+    height: 36px;
+    width: 36px;
+    border-radius: 10px;
+    display: inline-block;
 }

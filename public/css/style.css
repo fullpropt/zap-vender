@@ -5,9 +5,9 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-    --primary: #25D366;
-    --primary-light: #34D399;
-    --primary-dark: #16A34A;
+    --primary: #178C49;
+    --primary-light: #1FAE5E;
+    --primary-dark: #0F6D35;
     --success: #10b981;
     --warning: #f59e0b;
     --danger: #ef4444;
@@ -41,7 +41,7 @@ body {
     top: 0;
     width: 260px;
     height: 100vh;
-    background: linear-gradient(180deg, #16A34A 0%, #15803D 100%);
+    background: linear-gradient(180deg, #0F6D35 0%, #0B4F28 100%);
     color: white;
     padding: 20px;
     z-index: 1000;
@@ -781,7 +781,7 @@ body {
 .contact-avatar {
     width: 56px;
     height: 56px;
-    background: linear-gradient(180deg, #16A34A 0%, #15803D 100%);
+    background: linear-gradient(180deg, #0F6D35 0%, #0B4F28 100%);
     border-radius: 50%;
     display: flex;
     align-items: center;
