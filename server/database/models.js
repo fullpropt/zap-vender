@@ -213,6 +213,24 @@ const Conversation = {
         return run("UPDATE conversations SET unread_count = unread_count + 1, updated_at = datetime('now') WHERE id = ?", [id]);
     },
     
+    touch(id, lastMessageId = null, sentAt = null) {
+        const updates = ["updated_at = datetime('now')"];
+        const params = [];
+
+        if (lastMessageId) {
+            updates.push('last_message_id = ?');
+            params.push(lastMessageId);
+        }
+
+        if (sentAt) {
+            updates.push('updated_at = ?');
+            params.push(sentAt);
+        }
+
+        params.push(id);
+        return run(`UPDATE conversations SET ${updates.join(', ')} WHERE id = ?`, params);
+    },
+    
     markAsRead(id) {
         return run("UPDATE conversations SET unread_count = 0, updated_at = datetime('now') WHERE id = ?", [id]);
     },
@@ -314,7 +332,7 @@ const Message = {
         let sql = 'SELECT * FROM messages WHERE conversation_id = ?';
         const params = [conversationId];
         
-        sql += ' ORDER BY created_at ASC';
+        sql += " ORDER BY COALESCE(sent_at, created_at) ASC, id ASC";
         
         if (options.limit) {
             sql += ' LIMIT ?';
@@ -333,7 +351,7 @@ const Message = {
         let sql = 'SELECT * FROM messages WHERE lead_id = ?';
         const params = [leadId];
         
-        sql += ' ORDER BY created_at ASC';
+        sql += " ORDER BY COALESCE(sent_at, created_at) ASC, id ASC";
         
         if (options.limit) {
             sql += ' LIMIT ?';
@@ -344,11 +362,11 @@ const Message = {
     },
 
     getLastByLead(leadId) {
-        return queryOne('SELECT * FROM messages WHERE lead_id = ? ORDER BY created_at DESC LIMIT 1', [leadId]);
+        return queryOne("SELECT * FROM messages WHERE lead_id = ? ORDER BY COALESCE(sent_at, created_at) DESC, id DESC LIMIT 1", [leadId]);
     },
     
     getLastMessage(conversationId) {
-        return queryOne('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1', [conversationId]);
+        return queryOne("SELECT * FROM messages WHERE conversation_id = ? ORDER BY COALESCE(sent_at, created_at) DESC, id DESC LIMIT 1", [conversationId]);
     }
 };
 

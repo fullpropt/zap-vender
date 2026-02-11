@@ -2857,7 +2857,7 @@ async function processIncomingMessage(sessionId, msg) {
 
     const savedMessage = Message.create(messageData);
 
-    
+    const messageTimestampIso = messageData.sent_at || new Date().toISOString();
 
     // Atualizar conversa
 
@@ -2865,7 +2865,13 @@ async function processIncomingMessage(sessionId, msg) {
 
         Conversation.incrementUnread(conversation.id);
 
-        Lead.update(lead.id, { last_message_at: new Date().toISOString() });
+        Conversation.touch(conversation.id, savedMessage.id, messageTimestampIso);
+
+        Lead.update(lead.id, { last_message_at: messageTimestampIso });
+
+    } else {
+
+        Conversation.touch(conversation.id, savedMessage.id, messageTimestampIso);
 
     }
 
@@ -3150,6 +3156,8 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
     }
 
     
+
+    Conversation.touch(conversation.id, savedMessage?.id || null, new Date().toISOString());
 
     // Webhook
 
