@@ -39,11 +39,11 @@ class FlowService extends EventEmitter {
         
         // Procurar fluxo por palavra-chave
         const text = message.text?.toLowerCase().trim() || '';
-        let flow = Flow.findByKeyword(text);
+        let flow = await Flow.findByKeyword(text);
         
         // Se não encontrou por keyword, verificar se é novo contato
         if (!flow && conversation?.created) {
-            flow = Flow.findByTrigger('new_contact');
+            flow = await Flow.findByTrigger('new_contact');
         }
         
         if (flow) {
@@ -60,7 +60,7 @@ class FlowService extends EventEmitter {
         const executionUuid = generateUUID();
         
         // Criar registro de execução
-        const result = run(`
+        const result = await run(`
             INSERT INTO flow_executions (uuid, flow_id, conversation_id, lead_id, current_node, variables, status)
             VALUES (?, ?, ?, ?, ?, ?, 'running')
         `, [
@@ -155,7 +155,7 @@ class FlowService extends EventEmitter {
         execution.currentNode = nodeId;
         
         // Atualizar registro
-        run(`
+        await run(`
             UPDATE flow_executions 
             SET current_node = ?, variables = ?
             WHERE id = ?
@@ -216,7 +216,7 @@ class FlowService extends EventEmitter {
                     
                     // Desativar bot para esta conversa
                     if (execution.conversation?.id) {
-                        Conversation.update(execution.conversation.id, { is_bot_active: 0 });
+                        await Conversation.update(execution.conversation.id, { is_bot_active: 0 });
                     }
                     
                     await this.endFlow(execution, 'completed');
@@ -233,14 +233,14 @@ class FlowService extends EventEmitter {
                     const currentTags = JSON.parse(execution.lead.tags || '[]');
                     if (!currentTags.includes(node.data.tag)) {
                         currentTags.push(node.data.tag);
-                        Lead.update(execution.lead.id, { tags: currentTags });
+                        await Lead.update(execution.lead.id, { tags: currentTags });
                     }
                     await this.goToNextNode(execution, node);
                     break;
                     
                 case 'status':
                     // Alterar status do lead
-                    Lead.update(execution.lead.id, { status: node.data.status });
+                    await Lead.update(execution.lead.id, { status: node.data.status });
                     await this.goToNextNode(execution, node);
                     break;
                     
@@ -316,9 +316,9 @@ class FlowService extends EventEmitter {
      * Encerrar fluxo
      */
     async endFlow(execution, status, errorMessage = null) {
-        run(`
+        await run(`
             UPDATE flow_executions 
-            SET status = ?, completed_at = datetime('now'), error_message = ?
+            SET status = ?, completed_at = CURRENT_TIMESTAMP, error_message = ?
             WHERE id = ?
         `, [status, errorMessage, execution.id]);
         
@@ -368,10 +368,10 @@ class FlowService extends EventEmitter {
     /**
      * Pausar execução
      */
-    pauseExecution(conversationId) {
+    async pauseExecution(conversationId) {
         const execution = this.activeExecutions.get(conversationId);
         if (execution) {
-            run(`UPDATE flow_executions SET status = 'paused' WHERE id = ?`, [execution.id]);
+            await run(`UPDATE flow_executions SET status = 'paused' WHERE id = ?`, [execution.id]);
             this.activeExecutions.delete(conversationId);
         }
     }
@@ -379,10 +379,10 @@ class FlowService extends EventEmitter {
     /**
      * Cancelar execução
      */
-    cancelExecution(conversationId) {
+    async cancelExecution(conversationId) {
         const execution = this.activeExecutions.get(conversationId);
         if (execution) {
-            run(`UPDATE flow_executions SET status = 'cancelled' WHERE id = ?`, [execution.id]);
+            await run(`UPDATE flow_executions SET status = 'cancelled' WHERE id = ?`, [execution.id]);
             this.activeExecutions.delete(conversationId);
         }
     }

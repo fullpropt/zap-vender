@@ -9,10 +9,10 @@ const path = require('path');
 /**
  * Verifica se o banco de dados está acessível
  */
-function checkDatabase() {
+async function checkDatabase() {
     try {
         const { query } = require('../database/connection');
-        const result = query('SELECT 1 as test');
+        await query('SELECT 1 as test');
         return {
             status: 'healthy',
             message: 'Banco de dados conectado',
@@ -66,13 +66,13 @@ function checkWhatsAppSessions() {
 /**
  * Verifica status da fila de mensagens
  */
-function checkMessageQueue() {
+async function checkMessageQueue() {
     try {
         const { query } = require('../database/connection');
         
-        const pending = query("SELECT COUNT(*) as count FROM message_queue WHERE status = 'pending'")[0]?.count || 0;
-        const processing = query("SELECT COUNT(*) as count FROM message_queue WHERE status = 'processing'")[0]?.count || 0;
-        const failed = query("SELECT COUNT(*) as count FROM message_queue WHERE status = 'failed'")[0]?.count || 0;
+        const pending = (await query("SELECT COUNT(*) as count FROM message_queue WHERE status = 'pending'"))[0]?.count || 0;
+        const processing = (await query("SELECT COUNT(*) as count FROM message_queue WHERE status = 'processing'"))[0]?.count || 0;
+        const failed = (await query("SELECT COUNT(*) as count FROM message_queue WHERE status = 'failed'"))[0]?.count || 0;
         
         return {
             status: 'healthy',
@@ -178,13 +178,13 @@ function checkMemory() {
 /**
  * Health check completo
  */
-function getHealthStatus() {
+async function getHealthStatus() {
     const startTime = Date.now();
     
     const checks = {
-        database: checkDatabase(),
+        database: await checkDatabase(),
         whatsapp: checkWhatsAppSessions(),
-        messageQueue: checkMessageQueue(),
+        messageQueue: await checkMessageQueue(),
         disk: checkDiskSpace(),
         memory: checkMemory()
     };

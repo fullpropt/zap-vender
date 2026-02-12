@@ -26,7 +26,7 @@
     "update:commit": "AUTO_COMMIT=true node scripts/auto-update.js",
     "backup": "node server/utils/backup.js",
     "backup:list": "node -e \"require('./server/utils/backup').listBackups().forEach(b => console.log(b))\"",
-    "health:check": "node -e \"console.log(JSON.stringify(require('./server/utils/healthCheck').getHealthStatus(), null, 2))\""
+    "health:check": "node -e \"require('./server/utils/healthCheck').getHealthStatus().then(r => console.log(JSON.stringify(r, null, 2))).catch(err => { console.error(err); process.exit(1); })\""
   },
   "keywords": [
     "whatsapp",
@@ -45,12 +45,8 @@
     "url": "https://github.com/fullpropt/self-protecao-veicular.git"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0",
     "@whiskeysockets/baileys": "^6.7.16",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.7.0",
     "bull": "^4.16.5",
     "cors": "^2.8.5",
     "crypto-js": "^4.2.0",
@@ -60,19 +56,26 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
+    "pg": "^8.11.5",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.3",
     "uuid": "^11.0.5"
   },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.7.0"
+  },
   "devDependencies": {
+    "@types/node": "^22.10.5",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "@types/node": "^22.10.5",
     "jest": "^29.7.0",
     "nodemon": "^3.1.9",
     "typescript": "^5.7.3",

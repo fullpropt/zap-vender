@@ -189,7 +189,7 @@ async function startSession(opts) {
  */
 async function rehydrateSessions(io, sessionsDir, query, persistSession, connectionFixer, getMessage, onMessagesUpsert, onMessagesUpdate) {
     try {
-        const rows = query('SELECT session_id FROM whatsapp_sessions') || [];
+        const rows = await query('SELECT session_id FROM whatsapp_sessions') || [];
         const list = Array.isArray(rows) ? rows : rows.rows || [];
         for (const row of list) {
             const sessionId = row.session_id;
