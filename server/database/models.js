@@ -214,7 +214,7 @@ const Conversation = {
     },
     
     async touch(id, lastMessageId = null, sentAt = null) {
-        const updates = ["updated_at = CURRENT_TIMESTAMP"];
+        const updates = [];
         const params = [];
 
         if (lastMessageId) {
@@ -225,6 +225,8 @@ const Conversation = {
         if (sentAt) {
             updates.push('updated_at = ?');
             params.push(sentAt);
+        } else {
+            updates.push('updated_at = CURRENT_TIMESTAMP');
         }
 
         params.push(id);
