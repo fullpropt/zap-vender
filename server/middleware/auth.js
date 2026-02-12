@@ -84,54 +84,61 @@ function verifyToken(token) {
 /**
  * Middleware de autenticação
  */
-function authenticate(req, res, next) {
-    // Verificar header Authorization
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ 
-            error: 'Token não fornecido',
-            code: 'NO_TOKEN'
+async function authenticate(req, res, next) {
+    try {
+        // Verificar header Authorization
+        const authHeader = req.headers.authorization;
+        
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ 
+                error: 'Token n?o fornecido',
+                code: 'NO_TOKEN'
+            });
+        }
+        
+        const token = authHeader.split(' ')[1];
+        const decoded = verifyToken(token);
+        
+        if (!decoded) {
+            return res.status(401).json({ 
+                error: 'Token inv?lido ou expirado',
+                code: 'INVALID_TOKEN'
+            });
+        }
+        
+        // Verificar se usu?rio existe
+        const user = await User.findById(decoded.id);
+        
+        if (!user) {
+            return res.status(401).json({ 
+                error: 'Usu?rio n?o encontrado',
+                code: 'USER_NOT_FOUND'
+            });
+        }
+        
+        if (!user.is_active) {
+            return res.status(401).json({ 
+                error: 'Usu?rio desativado',
+                code: 'USER_INACTIVE'
+            });
+        }
+        
+        // Adicionar usu?rio ? requisi??o
+        req.user = {
+            id: user.id,
+            uuid: user.uuid,
+            email: user.email,
+            name: user.name,
+            role: user.role
+        };
+        
+        next();
+    } catch (error) {
+        return res.status(500).json({
+            error: 'Erro interno de autentica??o',
+            code: 'AUTH_INTERNAL_ERROR'
         });
     }
-    
-    const token = authHeader.split(' ')[1];
-    const decoded = verifyToken(token);
-    
-    if (!decoded) {
-        return res.status(401).json({ 
-            error: 'Token inválido ou expirado',
-            code: 'INVALID_TOKEN'
-        });
-    }
-    
-    // Verificar se usuário existe
-    const user = User.findById(decoded.id);
-    
-    if (!user) {
-        return res.status(401).json({ 
-            error: 'Usuário não encontrado',
-            code: 'USER_NOT_FOUND'
-        });
-    }
-    
-    if (!user.is_active) {
-        return res.status(401).json({ 
-            error: 'Usuário desativado',
-            code: 'USER_INACTIVE'
-        });
-    }
-    
-    // Adicionar usuário à requisição
-    req.user = {
-        id: user.id,
-        uuid: user.uuid,
-        email: user.email,
-        name: user.name,
-        role: user.role
-    };
-    
-    next();
 }
 
 /**
@@ -160,25 +167,29 @@ function authorize(...roles) {
 /**
  * Middleware opcional de autenticação (não bloqueia)
  */
-function optionalAuth(req, res, next) {
-    const authHeader = req.headers.authorization;
-    
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split(' ')[1];
-        const decoded = verifyToken(token);
+async function optionalAuth(req, res, next) {
+    try {
+        const authHeader = req.headers.authorization;
         
-        if (decoded) {
-            const user = User.findById(decoded.id);
-            if (user && user.is_active) {
-                req.user = {
-                    id: user.id,
-                    uuid: user.uuid,
-                    email: user.email,
-                    name: user.name,
-                    role: user.role
-                };
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.split(' ')[1];
+            const decoded = verifyToken(token);
+            
+            if (decoded) {
+                const user = await User.findById(decoded.id);
+                if (user && user.is_active) {
+                    req.user = {
+                        id: user.id,
+                        uuid: user.uuid,
+                        email: user.email,
+                        name: user.name,
+                        role: user.role
+                    };
+                }
             }
         }
+    } catch (error) {
+        // Autentica??o opcional n?o deve quebrar a request
     }
     
     next();
