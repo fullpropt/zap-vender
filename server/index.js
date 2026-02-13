@@ -4552,6 +4552,130 @@ app.delete('/api/templates/:id', authenticate, async (req, res) => {
 
 
 
+
+function sanitizeCampaignPayload(input = {}) {
+
+    const payload = { ...input };
+
+
+    if (payload.start_at === '') {
+
+        payload.start_at = null;
+
+    }
+
+
+    if (payload.delay !== undefined) {
+
+        const delay = Number(payload.delay);
+
+        payload.delay = Number.isFinite(delay) && delay >= 0 ? delay : 0;
+
+    }
+
+
+    return payload;
+
+}
+
+
+async function resolveCampaignLeadIds(segment = 'all') {
+
+    const normalizedSegment = String(segment || 'all').toLowerCase();
+
+    let sql = 'SELECT id FROM leads WHERE is_blocked = 0';
+
+    const params = [];
+
+
+    if (normalizedSegment === 'new') {
+
+        sql += ' AND status = ?';
+
+        params.push(1);
+
+    } else if (normalizedSegment === 'progress') {
+
+        sql += ' AND status = ?';
+
+        params.push(2);
+
+    } else if (normalizedSegment === 'concluded') {
+
+        sql += ' AND status = ?';
+
+        params.push(3);
+
+    }
+
+
+    sql += ' ORDER BY updated_at DESC';
+
+
+    const rows = await query(sql, params);
+
+    return rows.map((row) => row.id);
+
+}
+
+
+async function queueCampaignMessages(campaign) {
+
+    const message = String(campaign?.message || '').trim();
+
+    if (!message) {
+
+        throw new Error('Campanha sem mensagem configurada');
+
+    }
+
+
+    if (campaign.type === 'trigger') {
+
+        return { queued: 0, recipients: 0 };
+
+    }
+
+
+    const leadIds = await resolveCampaignLeadIds(campaign.segment || 'all');
+
+    if (!leadIds.length) {
+
+        return { queued: 0, recipients: 0 };
+
+    }
+
+
+    const startAt = campaign.start_at ? new Date(campaign.start_at).toISOString() : null;
+
+    const delay = Number(campaign.delay);
+
+    const delayMs = Number.isFinite(delay) && delay > 0 ? delay : undefined;
+
+
+    const results = await queueService.addBulk(leadIds, message, {
+
+        startAt,
+
+        delayMs
+
+    });
+
+
+    await Campaign.update(campaign.id, {
+
+        status: 'active',
+
+        sent: results.length
+
+    });
+
+
+    return { queued: results.length, recipients: leadIds.length };
+
+}
+
+
 app.get('/api/campaigns', optionalAuth, async (req, res) => {
 
     const { status, type, limit, offset, search } = req.query;
@@ -4598,19 +4722,25 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
 
     try {
 
-        const payload = {
+        const payload = sanitizeCampaignPayload({
 
             ...req.body,
 
             created_by: req.user?.id
 
-        };
+        });
 
         const result = await Campaign.create(payload);
 
-        const campaign = await Campaign.findById(result.id);
+        let campaign = await Campaign.findById(result.id);
+        let queueResult = { queued: 0, recipients: 0 };
 
-        res.json({ success: true, campaign });
+        if (campaign?.status === 'active') {
+            queueResult = await queueCampaignMessages(campaign);
+            campaign = await Campaign.findById(result.id);
+        }
+
+        res.json({ success: true, campaign, queue: queueResult });
 
     } catch (error) {
 
@@ -4624,21 +4754,36 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
 
 app.put('/api/campaigns/:id', authenticate, async (req, res) => {
 
-    const campaign = await Campaign.findById(req.params.id);
+    try {
 
-    if (!campaign) {
+        const campaign = await Campaign.findById(req.params.id);
 
-        return res.status(404).json({ error: 'Campanha não encontrada' });
+        if (!campaign) {
+
+            return res.status(404).json({ error: 'Campanha nao encontrada' });
+
+        }
+
+        const payload = sanitizeCampaignPayload(req.body);
+        const shouldQueue = campaign.status !== 'active' && payload.status === 'active';
+
+        await Campaign.update(req.params.id, payload);
+
+        let updatedCampaign = await Campaign.findById(req.params.id);
+        let queueResult = { queued: 0, recipients: 0 };
+
+        if (shouldQueue && updatedCampaign) {
+            queueResult = await queueCampaignMessages(updatedCampaign);
+            updatedCampaign = await Campaign.findById(req.params.id);
+        }
+
+        res.json({ success: true, campaign: updatedCampaign, queue: queueResult });
+
+    } catch (error) {
+
+        res.status(400).json({ error: error.message });
 
     }
-
-
-
-    await Campaign.update(req.params.id, req.body);
-
-    const updatedCampaign = await Campaign.findById(req.params.id);
-
-    res.json({ success: true, campaign: updatedCampaign });
 
 });
 

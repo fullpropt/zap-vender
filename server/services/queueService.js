@@ -65,14 +65,22 @@ class QueueService extends EventEmitter {
      * Adicionar múltiplas mensagens (disparo em massa)
      */
     async addBulk(leadIds, content, options = {}) {
+        if (!Array.isArray(leadIds) || leadIds.length === 0) {
+            return [];
+        }
+
         const results = [];
+        const delayMs = Number(options.delayMs);
+        const stepDelay = Number.isFinite(delayMs) && delayMs > 0 ? delayMs : this.defaultDelay;
+        const startAtMs = options.startAt ? Date.parse(options.startAt) : null;
+        const hasValidStartAt = Number.isFinite(startAtMs);
         
         for (let i = 0; i < leadIds.length; i++) {
             const leadId = leadIds[i];
             
             // Calcular tempo de agendamento baseado na posição na fila
-            const scheduledAt = options.startAt 
-                ? new Date(new Date(options.startAt).getTime() + (i * this.defaultDelay)).toISOString()
+            const scheduledAt = hasValidStartAt
+                ? new Date(startAtMs + (i * stepDelay)).toISOString()
                 : null;
             
             const result = await this.add({
