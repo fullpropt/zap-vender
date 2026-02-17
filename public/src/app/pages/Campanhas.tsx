@@ -258,6 +258,11 @@ export default function Campanhas() {
                                   <option value="concluded">Concluídos (Etapa 3)</option>
                               </select>
                           </div>
+
+                          <div className="form-group">
+                              <label className="form-label">Filtrar por Tag (opcional)</label>
+                              <input type="text" className="form-input" id="campaignTagFilter" placeholder="Ex: vip" />
+                          </div>
       
                           <div className="form-group">
                               <label className="form-label required">Mensagem</label>

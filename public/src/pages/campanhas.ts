@@ -15,6 +15,7 @@ type Campaign = {
     replied?: number;
     created_at: string;
     segment?: string;
+    tag_filter?: string;
     message?: string;
     delay?: number;
     delay_min?: number;
@@ -294,6 +295,7 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         type: ((document.getElementById('campaignType') as HTMLSelectElement | null)?.value || 'trigger') as CampaignType,
         status,
         segment: (document.getElementById('campaignSegment') as HTMLSelectElement | null)?.value || '',
+        tag_filter: (document.getElementById('campaignTagFilter') as HTMLInputElement | null)?.value.trim() || '',
         message: (document.getElementById('campaignMessage') as HTMLTextAreaElement | null)?.value.trim() || '',
         delay: delayMinMs,
         delay_min: delayMinMs,
@@ -390,6 +392,7 @@ function viewCampaign(id: number) {
         <p><strong>Descri??o:</strong> ${campaign.description || 'Sem descri??o'}</p>
         <p><strong>Tipo:</strong> ${campaign.type}</p>
         <p><strong>Status:</strong> ${campaign.status}</p>
+        <p><strong>Tag:</strong> ${campaign.tag_filter || 'Todas'}</p>
         <p><strong>Criada em:</strong> ${formatDate(campaign.created_at, 'datetime')}</p>
     `;
     }
@@ -413,6 +416,8 @@ function editCampaign(id: number) {
     setSelectValue(document.getElementById('campaignType') as HTMLSelectElement | null, campaign.type || 'broadcast');
     setSelectValue(document.getElementById('campaignStatus') as HTMLSelectElement | null, campaign.status || 'draft');
     setSelectValue(document.getElementById('campaignSegment') as HTMLSelectElement | null, campaign.segment || 'all');
+    const tagFilterInput = document.getElementById('campaignTagFilter') as HTMLInputElement | null;
+    if (tagFilterInput) tagFilterInput.value = campaign.tag_filter || '';
 
     const messageInput = document.getElementById('campaignMessage') as HTMLTextAreaElement | null;
     if (messageInput) messageInput.value = campaign.message || '';

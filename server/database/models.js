@@ -633,8 +633,8 @@ const Campaign = {
         const uuid = generateUUID();
 
         const result = await run(`
-            INSERT INTO campaigns (uuid, name, description, type, status, segment, message, delay, delay_min, delay_max, start_at, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO campaigns (uuid, name, description, type, status, segment, tag_filter, message, delay, delay_min, delay_max, start_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             data.name,
@@ -642,6 +642,7 @@ const Campaign = {
             data.type || 'broadcast',
             data.status || 'draft',
             data.segment,
+            data.tag_filter || null,
             data.message,
             data.delay || data.delay_min || 0,
             data.delay_min || data.delay || 0,
@@ -701,7 +702,7 @@ const Campaign = {
         const values = [];
 
         const allowedFields = [
-            'name', 'description', 'type', 'status', 'segment',
+            'name', 'description', 'type', 'status', 'segment', 'tag_filter',
             'message', 'delay', 'delay_min', 'delay_max', 'start_at', 'sent', 'delivered', 'read', 'replied'
         ];
 

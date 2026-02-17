@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     type TEXT DEFAULT 'broadcast' CHECK(type IN ('trigger', 'broadcast', 'drip')),
     status TEXT DEFAULT 'draft' CHECK(status IN ('active', 'paused', 'completed', 'draft')),
     segment TEXT,
+    tag_filter TEXT,
     message TEXT,
     delay INTEGER DEFAULT 0,
     delay_min INTEGER DEFAULT 0,
@@ -266,6 +267,7 @@ ALTER TABLE messages ADD COLUMN campaign_id INTEGER;
 ALTER TABLE message_queue ADD COLUMN campaign_id INTEGER;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS delay_min INTEGER;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS delay_max INTEGER;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS tag_filter TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone);
 CREATE INDEX IF NOT EXISTS idx_leads_jid ON leads(jid);

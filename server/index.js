@@ -4874,6 +4874,11 @@ function sanitizeCampaignPayload(input = {}) {
         payload.delay = delay;
     }
 
+    if (Object.prototype.hasOwnProperty.call(payload, 'tag_filter')) {
+        const normalizedTagFilter = String(payload.tag_filter || '').trim();
+        payload.tag_filter = normalizedTagFilter || null;
+    }
+
 
     return payload;
 
@@ -4938,11 +4943,53 @@ function parseCampaignStartAt(startAt) {
 }
 
 
-async function resolveCampaignLeadIds(segment = 'all') {
+function parseLeadTags(rawTags) {
+    if (Array.isArray(rawTags)) {
+        return rawTags
+            .map((tag) => String(tag || '').trim())
+            .filter(Boolean);
+    }
+
+    const raw = String(rawTags || '').trim();
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+            return parsed
+                .map((tag) => String(tag || '').trim())
+                .filter(Boolean);
+        }
+    } catch {
+        // Valor legado pode estar em formato livre.
+    }
+
+    return raw
+        .split(',')
+        .map((tag) => String(tag || '').trim())
+        .filter(Boolean);
+}
+
+function normalizeCampaignTag(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function leadMatchesCampaignTag(lead, tagFilter = '') {
+    const normalizedTagFilter = normalizeCampaignTag(tagFilter);
+    if (!normalizedTagFilter) return true;
+
+    const leadTags = parseLeadTags(lead?.tags);
+    return leadTags.some((tag) => normalizeCampaignTag(tag) === normalizedTagFilter);
+}
+
+async function resolveCampaignLeadIds(options = {}) {
+
+    const segment = typeof options === 'string' ? options : options.segment;
+    const tagFilter = typeof options === 'string' ? '' : options.tagFilter;
 
     const normalizedSegment = String(segment || 'all').toLowerCase();
 
-    let sql = 'SELECT id FROM leads WHERE is_blocked = 0';
+    let sql = 'SELECT id, tags FROM leads WHERE is_blocked = 0';
 
     const params = [];
 
@@ -4973,7 +5020,9 @@ async function resolveCampaignLeadIds(segment = 'all') {
 
     const rows = await query(sql, params);
 
-    return rows.map((row) => row.id);
+    return rows
+        .filter((row) => leadMatchesCampaignTag(row, tagFilter))
+        .map((row) => row.id);
 
 }
 
@@ -4986,6 +5035,11 @@ function leadMatchesCampaignSegment(lead, segment = 'all') {
     if (normalizedSegment === 'progress') return leadStatus === 2;
     if (normalizedSegment === 'concluded') return leadStatus === 3;
     return true;
+}
+
+function leadMatchesCampaignFilters(lead, campaign = {}) {
+    if (!leadMatchesCampaignSegment(lead, campaign?.segment)) return false;
+    return leadMatchesCampaignTag(lead, campaign?.tag_filter);
 }
 
 function resolveCampaignScheduledAt(campaign) {
@@ -5021,7 +5075,7 @@ async function triggerCampaignsForIncomingLead({ lead, conversation }) {
             continue;
         }
 
-        if (!leadMatchesCampaignSegment(lead, campaign.segment)) {
+        if (!leadMatchesCampaignFilters(lead, campaign)) {
             continue;
         }
 
@@ -5070,7 +5124,10 @@ async function queueCampaignMessages(campaign) {
     }
 
 
-    const leadIds = await resolveCampaignLeadIds(campaign.segment || 'all');
+    const leadIds = await resolveCampaignLeadIds({
+        segment: campaign.segment || 'all',
+        tagFilter: campaign.tag_filter || ''
+    });
 
     if (!leadIds.length) {
 
@@ -5886,8 +5943,6 @@ process.on('uncaughtException', (error) => {
     });
 
 };
-
-
 
 
 
