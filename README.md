@@ -141,10 +141,10 @@ self-protecao-veicular/
 ├── server/
 │   ├── index.js              # Servidor principal
 │   ├── database/
-│   │   ├── connection.js     # Conexão SQLite
+│   │   ├── connection.js     # Conexão Postgres
 │   │   ├── migrate.js        # Script de migração
 │   │   ├── models.js         # Modelos de dados
-│   │   ├── schema.sql        # Esquema do banco
+│   │   ├── schema.pg.sql     # Esquema do banco (Postgres)
 │   │   └── seed.js           # Dados de exemplo
 │   ├── middleware/
 │   │   └── auth.js           # Middleware de autenticação
@@ -173,7 +173,7 @@ self-protecao-veicular/
 │   ├── configuracoes.html    # Configurações
 │   └── login.html            # Página de login
 ├── sessions/                 # Sessões WhatsApp (auto-gerado)
-├── data/                     # Banco de dados SQLite (auto-gerado)
+├── data/                     # Dados auxiliares locais (opcional)
 ├── uploads/                  # Arquivos enviados (auto-gerado)
 ├── docs/
 │   └── ARCHITECTURE.md       # Documentação de arquitetura
@@ -441,8 +441,7 @@ sudo certbot --nginx -d seu-dominio.com
 | `PORT` | Porta do servidor | 3001 |
 | `NODE_ENV` | Ambiente | development |
 | `SESSIONS_DIR` | Diretório de sessões | ./sessions |
-| `DATA_DIR` | Diretório de dados | ./data |
-| `DATABASE_PATH` | Caminho do banco SQLite | ./data/self.db |
+| `DATABASE_URL` | String de conexão Postgres | - |
 | `JWT_SECRET` | Chave secreta JWT | - |
 | `ENCRYPTION_KEY` | Chave de criptografia | - |
 | `MAX_RECONNECT_ATTEMPTS` | Tentativas de reconexão | 5 |
@@ -473,7 +472,7 @@ sudo certbot --nginx -d seu-dominio.com
 
 ### Erro de banco de dados
 - Execute `npm run db:migrate` para criar/atualizar tabelas
-- Verifique permissões na pasta `data/`
+- Verifique se `DATABASE_URL` está configurada corretamente
 
 ### Deploy no Railway falha
 - Verifique se a versão do Node.js está correta (>=20)

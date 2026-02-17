@@ -10,10 +10,10 @@
     "dev:frontend": "vite --config vite.config.ts",
     "build:frontend": "vite build --config vite.config.ts",
     "preview:frontend": "vite preview --config vite.config.ts",
-    "postinstall": "node -e \"require('fs').mkdirSync('sessions',{recursive:true});require('fs').mkdirSync('data',{recursive:true});require('fs').mkdirSync('uploads',{recursive:true});\"",
+    "postinstall": "node -e \"require('fs').mkdirSync('sessions',{recursive:true});require('fs').mkdirSync('uploads',{recursive:true});\"",
     "db:migrate": "node server/database/migrate.js",
     "db:seed": "node server/database/seed.js",
-    "db:reset": "rm -rf data/self.db && npm run db:migrate && npm run db:seed",
+    "db:reset": "node -e \"console.error('db:reset indisponivel no modo Postgres-only.'); process.exit(1);\"",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "test:unit": "jest tests/ --testPathPattern=unit",
@@ -67,9 +67,6 @@
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.3",
     "uuid": "^11.0.5"
-  },
-  "optionalDependencies": {
-    "better-sqlite3": "^11.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

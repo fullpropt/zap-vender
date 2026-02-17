@@ -31,6 +31,19 @@ let campaigns: Campaign[] = [];
 const DEFAULT_DELAY_MIN_SECONDS = 6;
 const DEFAULT_DELAY_MAX_SECONDS = 24;
 
+function getCampaignStatusLabel(status: CampaignStatus) {
+    if (status === 'active') return 'Ativa';
+    if (status === 'paused') return 'Pausada';
+    if (status === 'completed') return 'Concluida';
+    return 'Rascunho';
+}
+
+function getCampaignTypeLabel(type: CampaignType) {
+    if (type === 'broadcast') return 'Transmissao';
+    if (type === 'drip') return 'Sequencia';
+    return 'Gatilho';
+}
+
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', callback);
@@ -230,11 +243,11 @@ function renderCampaigns() {
                         <div class="campaign-date">Criada em ${formatDate(c.created_at, 'short')}</div>
                     </div>
                     <span class="badge badge-${c.status === 'active' ? 'success' : c.status === 'paused' ? 'warning' : c.status === 'completed' ? 'info' : 'secondary'}">
-                        ${c.status === 'active' ? 'Ativa' : c.status === 'paused' ? 'Pausada' : c.status === 'completed' ? 'Concluída' : 'Rascunho'}
+                        ${getCampaignStatusLabel(c.status)}
                     </span>
                 </div>
                 <div class="campaign-body">
-                    <p style="color: var(--gray-600); margin-bottom: 15px;">${c.description || 'Sem descrição'}</p>
+                    <p style="color: var(--gray-600); margin-bottom: 15px;">${c.description || 'Sem descricao'}</p>
                     <div class="campaign-stats">
                         <div class="campaign-stat">
                             <div class="campaign-stat-value">${formatNumber(c.sent || 0)}</div>
@@ -260,8 +273,8 @@ function renderCampaigns() {
                     </div>
                 </div>
                 <div class="campaign-footer">
-                    <span class="badge badge-secondary">${c.type === 'broadcast' ? 'Transmissão' : c.type === 'drip' ? 'Sequência' : 'Gatilho'}</span>
-                    <div style="display: flex; gap: 10px;">
+                    <span class="badge badge-secondary">${getCampaignTypeLabel(c.type)}</span>
+                    <div class="campaign-actions">
                         <button class="btn btn-sm btn-outline" onclick="viewCampaign(${c.id})"><span class="icon icon-eye icon-sm"></span> Ver</button>
                         <button class="btn btn-sm btn-outline" onclick="editCampaign(${c.id})"><span class="icon icon-edit icon-sm"></span> Editar</button>
                         ${c.status === 'active' ? 
@@ -304,7 +317,7 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
     };
 
     if (!data.name || !data.message) {
-        showToast('error', 'Erro', 'Nome e mensagem s?o obrigat?rios');
+        showToast('error', 'Erro', 'Nome e mensagem sao obrigatorios');
         return;
     }
 
@@ -389,9 +402,9 @@ function viewCampaign(id: number) {
                 </div>
             </div>
         </div>
-        <p><strong>Descri??o:</strong> ${campaign.description || 'Sem descri??o'}</p>
-        <p><strong>Tipo:</strong> ${campaign.type}</p>
-        <p><strong>Status:</strong> ${campaign.status}</p>
+        <p><strong>Descricao:</strong> ${campaign.description || 'Sem descricao'}</p>
+        <p><strong>Tipo:</strong> ${getCampaignTypeLabel(campaign.type)}</p>
+        <p><strong>Status:</strong> ${getCampaignStatusLabel(campaign.status)}</p>
         <p><strong>Tag:</strong> ${campaign.tag_filter || 'Todas'}</p>
         <p><strong>Criada em:</strong> ${formatDate(campaign.created_at, 'datetime')}</p>
     `;
@@ -472,7 +485,7 @@ async function deleteCampaign(id: number) {
     campaigns = campaigns.filter(c => c.id !== id);
     renderCampaigns();
     updateStats();
-    showToast('success', 'Sucesso', 'Campanha exclu?da!');
+    showToast('success', 'Sucesso', 'Campanha excluida!');
 }
 
 function switchCampaignTab(tab: string) {

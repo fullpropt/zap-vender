@@ -105,6 +105,28 @@ export default function Campanhas() {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .campaign-footer > .badge {
+            flex-shrink: 0;
+        }
+        .campaign-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            margin-left: auto;
+        }
+        .campaign-actions .btn {
+            flex: 0 0 auto;
+        }
+        @media (max-width: 900px) {
+            .campaign-actions {
+                width: 100%;
+                margin-left: 0;
+                justify-content: flex-start;
+            }
         }
         .campaigns-grid {
             display: grid;

@@ -1,6 +1,6 @@
 /**
  * SELF PROTEÇÃO VEICULAR - Bootstrap Mínimo
- * Sobe o servidor e /health ANTES de carregar Baileys, SQLite, etc.
+ * Sobe o servidor e /health ANTES de carregar Baileys e demais serviços.
  * Resolve healthcheck falhando no Railway (processo crashava durante require).
  */
 
@@ -41,17 +41,14 @@ function resolveVolumeBase() {
 const volumeBase = process.env.NODE_ENV === 'production' ? resolveVolumeBase() : null;
 
 if (volumeBase) {
-    process.env.DATA_DIR = process.env.DATA_DIR || path.join(volumeBase, 'data');
     process.env.SESSIONS_DIR = process.env.SESSIONS_DIR || path.join(volumeBase, 'sessions');
     process.env.UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(volumeBase, 'uploads');
-    process.env.DATABASE_PATH = process.env.DATABASE_PATH || path.join(process.env.DATA_DIR, 'self.db');
     console.log(`[Bootstrap] Volume persistente: ${volumeBase}`);
 }
 
 // Criar diretórios necessários
 [
     process.env.SESSIONS_DIR || path.join(__dirname, '..', 'sessions'),
-    process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
     process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads')
 ].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

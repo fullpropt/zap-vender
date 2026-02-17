@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getDatabase, query, run, close, USE_POSTGRES } = require('./connection');
+const { getDatabase, query, run, close } = require('./connection');
 
 async function migrate() {
     console.log('?? Iniciando migracao do banco de dados...');
@@ -14,7 +14,7 @@ async function migrate() {
         // Valida conexao uma unica vez para evitar dezenas de erros repetidos por statement.
         getDatabase();
 
-        const schemaPath = path.join(__dirname, USE_POSTGRES ? 'schema.pg.sql' : 'schema.sql');
+        const schemaPath = path.join(__dirname, 'schema.pg.sql');
         const schema = fs.readFileSync(schemaPath, 'utf8');
 
         const cleanedSchema = schema
@@ -75,21 +75,12 @@ async function migrate() {
             console.log(`   - Erros: ${errorCount}`);
         }
 
-        if (USE_POSTGRES) {
-            const tables = await query(
-                "SELECT table_name as name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
-            );
-            console.log('');
-            console.log(`?? Tabelas no banco de dados (${tables.length}):`);
-            tables.forEach(t => console.log(`   - ${t.name}`));
-        } else {
-            const tables = await query(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-            );
-            console.log('');
-            console.log(`?? Tabelas no banco de dados (${tables.length}):`);
-            tables.forEach(t => console.log(`   - ${t.name}`));
-        }
+        const tables = await query(
+            "SELECT table_name as name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
+        );
+        console.log('');
+        console.log(`?? Tabelas no banco de dados (${tables.length}):`);
+        tables.forEach(t => console.log(`   - ${t.name}`));
 
         return true;
     } catch (error) {
