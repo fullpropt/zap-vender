@@ -1568,7 +1568,12 @@ tr:last-child td {
 
 .brand-logo {
     height: 36px;
-    width: 36px;
+    width: auto;
+    max-width: 100%;
     border-radius: 10px;
     display: inline-block;
+}
+
+.sidebar-logo .brand-logo {
+    height: 45px;
 }

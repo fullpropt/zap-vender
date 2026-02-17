@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { brandLogoUrl, brandName } from '../lib/brand';
+import { brandFullLogoUrl, brandName } from '../lib/brand';
 
 type LoginGlobals = {
   initLogin?: () => void;
@@ -63,13 +63,25 @@ export default function Login() {
         }
 
         .login-logo {
-            text-align: center;
+            display: flex;
+            justify-content: center;
             margin-bottom: 30px;
         }
 
+        .login-logo-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 16px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #0f6d35 0%, #0b4f28 100%);
+            box-shadow: 0 10px 24px rgba(11, 79, 40, 0.35);
+        }
+
         .login-logo img {
-            height: 60px;
-            border-radius: 10px;
+            height: 54px;
+            width: auto;
+            display: block;
         }
 
         .login-title {
@@ -168,7 +180,11 @@ export default function Login() {
         }
       `}</style>
       <div className="login-container">
-        <div className="login-logo"><img src={brandLogoUrl} alt={brandName} className="brand-logo" /><span className="brand-text">{brandName}</span></div>
+        <div className="login-logo">
+          <div className="login-logo-badge">
+            <img src={brandFullLogoUrl} alt={brandName} />
+          </div>
+        </div>
         <h1 className="login-title">Acesso ao Dashboard</h1>
 
         <div className="auth-tabs">

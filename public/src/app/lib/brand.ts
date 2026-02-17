@@ -1,30 +1,10 @@
-// Logo SVG embutido como data URL para funcionar tanto em dev quanto em produÃ§Ã£o
-// (publicDir: false no vite.config.ts impede que arquivos estÃ¡ticos de public/ sejam copiados para dist/)
-const logoSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
-  <defs>
-    <linearGradient id="bg" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#22C55E"/>
-      <stop offset="1" stop-color="#0F6D35"/>
-    </linearGradient>
-    <linearGradient id="shine" x1="56" y1="26" x2="188" y2="146" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="zeta" x1="100" y1="90" x2="166" y2="160" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#16A34A"/>
-      <stop offset="1" stop-color="#0B7A3A"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="160%" height="180%">
-      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#064E2B" flood-opacity="0.30"/>
-    </filter>
-  </defs>
-  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
-  <rect x="18" y="18" width="220" height="220" rx="44" fill="url(#shine)"/>
-  <g filter="url(#shadow)">
-    <path d="M62 104c0-25 20-45 45-45h42c25 0 45 20 45 45v24c0 25-20 45-45 45h-22l-23 20c-6 5-16 1-16-8v-14c-15-6-26-21-26-38v-29z" fill="#FFFFFF"/>
-    <path d="M102 88h58c4 0 6 5 3 8l-31 33h30c4 0 6 5 3 8l-40 30c-4 3-9-1-7-5l11-23h-26c-4 0-6-5-3-8l32-36h-24c-4 0-6-5-3-7z" fill="url(#zeta)"/>
-  </g>
-</svg>`;
+import brandFullLogo from '../assets/zapvender-logo.svg';
+import brandSymbol from '../assets/zapvender-symbol.svg';
 
 export const brandName = 'ZapVender';
-export const brandLogoUrl = `data:image/svg+xml;utf8,${encodeURIComponent(logoSvg)}`;
+
+// Use o símbolo quando o nome da marca já aparece ao lado do ícone.
+export const brandLogoUrl = brandSymbol;
+
+// Use a logo completa quando o espaço já reserva marca (sem texto adicional).
+export const brandFullLogoUrl = brandFullLogo;
