@@ -271,13 +271,13 @@ export default function Campanhas() {
       
                           <div className="form-row">
                               <div className="form-group">
-                                  <label className="form-label">Intervalo entre envios (aleatorio)</label>
+                                  <label className="form-label">Intervalo entre envios (aleatório)</label>
                                   <div className="form-row">
                                       <div className="form-group" style={{ marginBottom: 0 }}>
-                                          <input type="number" min={1} step={1} className="form-input" id="campaignDelayMin" defaultValue="6" placeholder="Minimo (s)" />
+                                          <input type="number" min={1} step={1} className="form-input" id="campaignDelayMin" defaultValue="6" placeholder="Mínimo (s)" />
                                       </div>
                                       <div className="form-group" style={{ marginBottom: 0 }}>
-                                          <input type="number" min={1} step={1} className="form-input" id="campaignDelayMax" defaultValue="24" placeholder="Maximo (s)" />
+                                          <input type="number" min={1} step={1} className="form-input" id="campaignDelayMax" defaultValue="24" placeholder="Máximo (s)" />
                                       </div>
                                   </div>
                               </div>
