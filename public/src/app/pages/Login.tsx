@@ -54,10 +54,11 @@ export default function Login() {
         }
 
         .login-container {
-            background: white;
+            background: linear-gradient(160deg, #3a4759 0%, #2f3b4c 100%);
             padding: 40px;
             border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.35);
             width: 100%;
             max-width: 400px;
         }
@@ -68,27 +69,19 @@ export default function Login() {
             margin-bottom: 30px;
         }
 
-        .login-logo-badge {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 10px 16px;
-            border-radius: 14px;
-            background: linear-gradient(135deg, #0f6d35 0%, #0b4f28 100%);
-            box-shadow: 0 10px 24px rgba(11, 79, 40, 0.35);
-        }
-
         .login-logo img {
-            height: 54px;
+            height: 58px;
             width: auto;
             display: block;
+            filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.35));
         }
 
         .login-title {
             text-align: center;
-            color: #166534;
+            color: #eaf6ef;
             margin-bottom: 30px;
             font-size: 24px;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
         }
 
         .auth-tabs {
@@ -101,11 +94,12 @@ export default function Login() {
         .auth-tab {
             padding: 10px 12px;
             border-radius: 10px;
-            border: 2px solid #d1d5db;
-            background: #f0fdf4;
-            color: #166534;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            background: rgba(255, 255, 255, 0.14);
+            color: #effaf3;
             font-weight: 700;
             cursor: pointer;
+            transition: all 0.2s ease;
         }
 
         .auth-tab.active {
@@ -121,23 +115,30 @@ export default function Login() {
         .form-label {
             display: block;
             margin-bottom: 8px;
-            color: #333;
+            color: #effaf3;
             font-weight: 600;
         }
 
         .form-input {
             width: 100%;
             padding: 14px 16px;
-            border: 2px solid #e0e0e0;
+            border: 1px solid rgba(15, 23, 42, 0.2);
             border-radius: 10px;
             font-size: 16px;
+            color: #0f172a;
+            background: #d7e0eb;
             transition: all 0.3s;
+        }
+
+        .form-input::placeholder {
+            color: #64748b;
         }
 
         .form-input:focus {
             outline: none;
             border-color: #16a34a;
             box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
+            background: #e2e8f0;
         }
 
         .btn-login {
@@ -175,15 +176,13 @@ export default function Login() {
         .security-badge {
             text-align: center;
             margin-top: 20px;
-            color: #666;
+            color: #d5deea;
             font-size: 12px;
         }
       `}</style>
       <div className="login-container">
         <div className="login-logo">
-          <div className="login-logo-badge">
-            <img src={brandFullLogoUrl} alt={brandName} />
-          </div>
+          <img src={brandFullLogoUrl} alt={brandName} />
         </div>
         <h1 className="login-title">Acesso ao Dashboard</h1>
 
