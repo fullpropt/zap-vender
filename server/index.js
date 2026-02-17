@@ -663,6 +663,80 @@ function isLeadNameManuallyLocked(lead) {
     return customFields?.__system?.manual_name_locked === true;
 }
 
+function parseLeadTagsForMerge(rawTags) {
+    if (Array.isArray(rawTags)) {
+        return rawTags
+            .map((tag) => String(tag || '').trim())
+            .filter(Boolean);
+    }
+
+    const raw = String(rawTags || '').trim();
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+            return parsed
+                .map((tag) => String(tag || '').trim())
+                .filter(Boolean);
+        }
+    } catch {
+        // formato legado
+    }
+
+    return raw
+        .split(',')
+        .map((tag) => String(tag || '').trim())
+        .filter(Boolean);
+}
+
+function normalizeLeadSource(source) {
+    return String(source || '').trim().toLowerCase();
+}
+
+function resolvePreferredLeadName(primaryLead, duplicateLead) {
+    const primaryName = sanitizeAutoName(primaryLead?.name);
+    const duplicateName = sanitizeAutoName(duplicateLead?.name);
+
+    if (!primaryName && duplicateName) return duplicateName;
+    if (primaryName && !duplicateName) return primaryName;
+    if (!primaryName && !duplicateName) return '';
+
+    const primaryLocked = isLeadNameManuallyLocked(primaryLead);
+    const duplicateLocked = isLeadNameManuallyLocked(duplicateLead);
+    if (duplicateLocked && !primaryLocked) return duplicateName;
+
+    const primarySource = normalizeLeadSource(primaryLead?.source);
+    const duplicateSource = normalizeLeadSource(duplicateLead?.source);
+    if (primarySource === 'whatsapp' && duplicateSource !== 'whatsapp') return duplicateName;
+
+    return primaryName;
+}
+
+function resolveMostRecentTimestamp(first, second) {
+    const firstTime = first ? Date.parse(String(first)) : NaN;
+    const secondTime = second ? Date.parse(String(second)) : NaN;
+
+    if (Number.isFinite(firstTime) && Number.isFinite(secondTime)) {
+        return firstTime >= secondTime ? first : second;
+    }
+    if (Number.isFinite(firstTime)) return first;
+    if (Number.isFinite(secondTime)) return second;
+    return first || second || null;
+}
+
+function getLeadMergeScore(lead) {
+    let score = 0;
+
+    if (sanitizeAutoName(lead?.name)) score += 4;
+    if (isLeadNameManuallyLocked(lead)) score += 3;
+    const source = normalizeLeadSource(lead?.source);
+    if (source && source !== 'whatsapp') score += 2;
+    if (lead?.jid && String(lead.jid).includes('@s.whatsapp.net')) score += 1;
+
+    return score;
+}
+
 function shouldAutoUpdateLeadName(lead, phone, sessionDisplayName = '') {
     if (isLeadNameManuallyLocked(lead)) return false;
 
@@ -1039,6 +1113,44 @@ async function mergeLeads(primaryLead, duplicateLead) {
 
     if (!primaryLead || !duplicateLead || primaryLead.id === duplicateLead.id) return;
 
+    const mergedTags = Array.from(
+        new Set([
+            ...parseLeadTagsForMerge(primaryLead.tags),
+            ...parseLeadTagsForMerge(duplicateLead.tags)
+        ])
+    );
+    const mergedCustomFields = mergeLeadCustomFields(primaryLead.custom_fields, duplicateLead.custom_fields);
+    const preferredName = resolvePreferredLeadName(primaryLead, duplicateLead);
+    const mergedLastMessageAt = resolveMostRecentTimestamp(primaryLead.last_message_at, duplicateLead.last_message_at);
+
+    const updates = {};
+    if (preferredName && preferredName !== String(primaryLead.name || '').trim()) {
+        updates.name = preferredName;
+    }
+    if (!String(primaryLead.email || '').trim() && String(duplicateLead.email || '').trim()) {
+        updates.email = String(duplicateLead.email || '').trim();
+    }
+    if (!String(primaryLead.vehicle || '').trim() && String(duplicateLead.vehicle || '').trim()) {
+        updates.vehicle = String(duplicateLead.vehicle || '').trim();
+    }
+    if (!String(primaryLead.plate || '').trim() && String(duplicateLead.plate || '').trim()) {
+        updates.plate = String(duplicateLead.plate || '').trim();
+    }
+    if (!primaryLead.assigned_to && duplicateLead.assigned_to) {
+        updates.assigned_to = duplicateLead.assigned_to;
+    }
+    if (Number(primaryLead.is_blocked) === 1 && Number(duplicateLead.is_blocked) === 0) {
+        updates.is_blocked = 0;
+    }
+    if (mergedLastMessageAt && mergedLastMessageAt !== primaryLead.last_message_at) {
+        updates.last_message_at = mergedLastMessageAt;
+    }
+    updates.tags = mergedTags;
+    updates.custom_fields = mergedCustomFields;
+
+    if (Object.keys(updates).length > 0) {
+        await Lead.update(primaryLead.id, updates);
+    }
 
 
     // Mesclar conversas e mensagens
@@ -1267,7 +1379,7 @@ async function cleanupDuplicatePhoneSuffixLeads() {
 
     try {
 
-        const leads = await query("SELECT id, phone, jid, name, last_message_at FROM leads WHERE phone IS NOT NULL");
+        const leads = await query("SELECT id, phone, jid, name, source, custom_fields, last_message_at FROM leads WHERE phone IS NOT NULL");
 
         if (!leads || leads.length === 0) return;
 
@@ -1298,24 +1410,10 @@ async function cleanupDuplicatePhoneSuffixLeads() {
 
 
             group.sort((a, b) => {
-
-                const aScore = (a.jid && String(a.jid).includes('@s.whatsapp.net')) ? 2 : 0;
-
-                const bScore = (b.jid && String(b.jid).includes('@s.whatsapp.net')) ? 2 : 0;
+                const aScore = getLeadMergeScore(a);
+                const bScore = getLeadMergeScore(b);
 
                 if (aScore != bScore) return bScore - aScore;
-
-
-
-                const aName = String(a.name || '').trim();
-
-                const bName = String(b.name || '').trim();
-
-                const aNameScore = aName && !aName.match(/^\d+$/) ? 1 : 0;
-
-                const bNameScore = bName && !bName.match(/^\d+$/) ? 1 : 0;
-
-                if (aNameScore != bNameScore) return bNameScore - aNameScore;
 
 
 
@@ -5943,11 +6041,6 @@ process.on('uncaughtException', (error) => {
     });
 
 };
-
-
-
-
-
 
 
 
