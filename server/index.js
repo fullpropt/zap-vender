@@ -2938,6 +2938,7 @@ async function processIncomingMessage(sessionId, msg) {
     const sessionDigits = normalizePhoneDigits(sessionPhone);
 
     let from = resolveMessageJid(msg, sessionPhone);
+    const contentForRouting = unwrapMessageContent(msg.message);
 
     const fromRawDigits = normalizePhoneDigits(extractNumber(fromRaw));
     const isFromRawUser = isUserJid(fromRaw);
@@ -2949,19 +2950,41 @@ async function processIncomingMessage(sessionId, msg) {
         from = fromRaw;
     }
 
-    if (!from || !isUserJid(from)) return;
-
-    const resolvedDigits = normalizePhoneDigits(extractNumber(from));
-    const isFromResolvedSelf = isSelfPhone(resolvedDigits, sessionDigits);
-
-    if (!isFromMe && isFromResolvedSelf) {
-        const contentForFallback = unwrapMessageContent(msg.message);
-        const fallbackCandidates = [
+    // Em mensagens enviadas pelo proprio celular, prioriza o destino explicito.
+    if (isFromMe) {
+        const outgoingCandidates = [
+            msg?.message?.deviceSentMessage?.destinationJid,
+            msg?.key?.remoteJid,
             msg?.key?.participant,
             msg?.participant,
-            msg?.message?.deviceSentMessage?.destinationJid,
             msg?.message?.extendedTextMessage?.contextInfo?.participant,
-            contentForFallback?.extendedTextMessage?.contextInfo?.participant
+            contentForRouting?.extendedTextMessage?.contextInfo?.participant
+        ].filter(Boolean);
+
+        const outgoingTarget = outgoingCandidates.find((candidate) => {
+            if (!isUserJid(candidate)) return false;
+            const candidateDigits = normalizePhoneDigits(extractNumber(candidate));
+            return !isSelfPhone(candidateDigits, sessionDigits);
+        });
+
+        if (outgoingTarget) {
+            from = normalizeJid(outgoingTarget) || outgoingTarget;
+        }
+    }
+
+    if (!from || !isUserJid(from)) return;
+
+    let resolvedDigits = normalizePhoneDigits(extractNumber(from));
+    let isFromResolvedSelf = isSelfPhone(resolvedDigits, sessionDigits);
+
+    if (isFromResolvedSelf) {
+        const fallbackCandidates = [
+            msg?.message?.deviceSentMessage?.destinationJid,
+            msg?.key?.remoteJid,
+            msg?.key?.participant,
+            msg?.participant,
+            msg?.message?.extendedTextMessage?.contextInfo?.participant,
+            contentForRouting?.extendedTextMessage?.contextInfo?.participant
         ].filter(Boolean);
 
         const fallbackJid = fallbackCandidates.find((candidate) => {
@@ -2972,13 +2995,15 @@ async function processIncomingMessage(sessionId, msg) {
 
         if (fallbackJid) {
             from = fallbackJid;
-        } else {
+            resolvedDigits = normalizePhoneDigits(extractNumber(from));
+            isFromResolvedSelf = isSelfPhone(resolvedDigits, sessionDigits);
+        } else if (!isFromMe) {
             console.warn(`[${sessionId}] Ignorando inbound ambiguo roteado para self: ${fromRaw || 'sem-remoteJid'}`);
             return;
         }
     }
 
-    const content = unwrapMessageContent(msg.message);
+    const content = contentForRouting;
     let text = extractTextFromMessageContent(content);
     let mediaType = detectMediaTypeFromMessageContent(content);
 
@@ -3041,7 +3066,7 @@ async function processIncomingMessage(sessionId, msg) {
 
     // Buscar ou criar lead
 
-    const { lead, created: leadCreated } = await Lead.findOrCreate({
+    const leadResult = await Lead.findOrCreate({
 
         phone,
 
@@ -3052,6 +3077,19 @@ async function processIncomingMessage(sessionId, msg) {
         source: 'whatsapp'
 
     });
+    let lead = leadResult.lead;
+    const leadCreated = leadResult.created;
+
+    if (!isSelfChat) {
+        const leadDigits = normalizePhoneDigits(lead?.phone);
+        const shouldSyncIdentity =
+            !!lead &&
+            (lead.jid !== from || !leadDigits || leadDigits !== phoneDigits);
+
+        if (shouldSyncIdentity) {
+            lead = await updateLeadIdentity(lead, from, phone);
+        }
+    }
 
 
 
@@ -5764,8 +5802,6 @@ process.on('uncaughtException', (error) => {
     });
 
 };
-
-
 
 
 

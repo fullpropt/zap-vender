@@ -181,8 +181,33 @@ const Lead = {
     },
     
     async findByPhone(phone) {
-        const cleaned = phone.replace(/\D/g, '');
-        return await queryOne('SELECT * FROM leads WHERE phone = ? OR phone LIKE ?', [cleaned, `%${cleaned}`]);
+        const cleaned = normalizeDigits(phone);
+        if (!cleaned) return null;
+
+        const suffixLength = Math.min(cleaned.length, 11);
+        const suffix = cleaned.slice(-suffixLength);
+
+        return await queryOne(
+            `
+            SELECT *
+            FROM leads
+            WHERE phone = ?
+               OR phone LIKE ?
+               OR (? <> '' AND substr(phone, length(phone) - ${suffixLength} + 1) = ?)
+            ORDER BY
+                CASE
+                    WHEN phone = ? THEN 0
+                    WHEN phone LIKE ? THEN 1
+                    WHEN (? <> '' AND substr(phone, length(phone) - ${suffixLength} + 1) = ?) THEN 2
+                    ELSE 3
+                END,
+                CASE WHEN jid LIKE '%@s.whatsapp.net' THEN 0 ELSE 1 END,
+                COALESCE(last_message_at, updated_at, created_at) DESC,
+                id DESC
+            LIMIT 1
+            `,
+            [cleaned, `%${cleaned}`, suffix, suffix, cleaned, `%${cleaned}`, suffix, suffix]
+        );
     },
     
     async findByJid(jid) {
@@ -190,9 +215,12 @@ const Lead = {
     },
     
     async findOrCreate(data) {
-        let lead = await this.findByPhone(data.phone);
-        if (!lead && data.jid) {
+        let lead = null;
+        if (data.jid) {
             lead = await this.findByJid(data.jid);
+        }
+        if (!lead) {
+            lead = await this.findByPhone(data.phone);
         }
         
         if (lead) {
