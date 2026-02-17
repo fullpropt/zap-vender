@@ -181,37 +181,42 @@ export default function Inbox() {
             flex: 1;
             overflow-y: auto;
             padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            justify-content: flex-start;
-            align-items: stretch;
             min-height: 0;
         }
-        .message {
+        .chat-messages > .chat-messages-stack {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+            gap: 10px;
+            min-height: min-content;
+        }
+        .chat-messages .message {
+            display: block !important;
             max-width: 70%;
             width: fit-content;
             min-width: 76px;
-            margin: 0;
+            margin: 0 !important;
             padding: 10px 15px;
             border-radius: 12px;
             font-size: 14px;
             line-height: 1.4;
             position: relative;
+            word-break: break-word;
         }
-        .message.sent {
+        .chat-messages .message.sent {
             background: rgba(var(--primary-rgb), 0.24);
             color: #ecfff6;
             align-self: flex-end;
-            margin-left: auto;
+            margin-left: auto !important;
             border-bottom-right-radius: 4px;
         }
-        .message.received {
+        .chat-messages .message.received {
             background: var(--surface);
             border: 1px solid var(--border-color);
             color: var(--dark);
             align-self: flex-start;
-            margin-right: auto;
+            margin-right: auto !important;
             border-bottom-left-radius: 4px;
         }
         .message-time {

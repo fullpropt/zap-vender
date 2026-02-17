@@ -144,7 +144,7 @@ function initSocket() {
                     created_at: new Date(data.timestamp || Date.now()).toISOString()
                 });
                 const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
-                if (chatMessages) chatMessages.innerHTML = renderMessages();
+                renderMessagesInto(chatMessages);
                 scrollToBottom();
             }
             loadConversations();
@@ -389,7 +389,7 @@ async function sendTemplateAudio(template: TemplateItem) {
     messages.push(newMessage);
 
     const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
-    if (chatMessages) chatMessages.innerHTML = renderMessages();
+    renderMessagesInto(chatMessages);
     scrollToBottom();
 
     try {
@@ -401,10 +401,10 @@ async function sendTemplateAudio(template: TemplateItem) {
             options: { url: mediaUrl }
         });
         newMessage.status = 'sent';
-        if (chatMessages) chatMessages.innerHTML = renderMessages();
+        renderMessagesInto(chatMessages);
     } catch (error) {
         newMessage.status = 'failed';
-        if (chatMessages) chatMessages.innerHTML = renderMessages();
+        renderMessagesInto(chatMessages);
         showToast('error', 'Erro', 'Nao foi possivel enviar o audio');
     }
 }
@@ -440,7 +440,9 @@ function renderChat() {
         </div>
         
         <div class="chat-messages" id="chatMessages">
-            ${renderMessages()}
+            <div class="chat-messages-stack">
+                ${renderMessages()}
+            </div>
         </div>
 
                 <div class="quick-replies">
@@ -505,6 +507,11 @@ function renderMessages() {
     }).join('');
 }
 
+function renderMessagesInto(container: HTMLElement | null) {
+    if (!container) return;
+    container.innerHTML = `<div class="chat-messages-stack">${renderMessages()}</div>`;
+}
+
 function scrollToBottom() {
     const container = document.getElementById('chatMessages') as HTMLElement | null;
     if (container) {
@@ -548,7 +555,7 @@ async function sendMessage() {
     
     // Atualizar UI
     const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
-    if (chatMessages) chatMessages.innerHTML = renderMessages();
+    renderMessagesInto(chatMessages);
     scrollToBottom();
     if (input) input.value = '';
 
@@ -561,10 +568,10 @@ async function sendMessage() {
         });
         
         newMessage.status = 'sent';
-        if (chatMessages) chatMessages.innerHTML = renderMessages();
+        renderMessagesInto(chatMessages);
     } catch (error) {
         newMessage.status = 'failed';
-        if (chatMessages) chatMessages.innerHTML = renderMessages();
+        renderMessagesInto(chatMessages);
         showToast('error', 'Erro', 'Não foi possível enviar a mensagem');
     }
 }
@@ -595,7 +602,7 @@ async function handleAudioUpload(event: Event) {
         };
         messages.push(newMessage);
         const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
-        if (chatMessages) chatMessages.innerHTML = renderMessages();
+        renderMessagesInto(chatMessages);
         scrollToBottom();
 
         await api.post('/api/send', {
@@ -607,7 +614,7 @@ async function handleAudioUpload(event: Event) {
         });
 
         newMessage.status = 'sent';
-        if (chatMessages) chatMessages.innerHTML = renderMessages();
+        renderMessagesInto(chatMessages);
     } catch (error) {
         hideLoading();
         showToast('error', 'Erro', 'Não foi possível enviar o áudio');
