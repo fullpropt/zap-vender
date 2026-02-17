@@ -28,14 +28,20 @@ class WebhookService {
      * Disparar webhook para um evento
      */
     async trigger(event, data) {
-        const webhooks = Webhook.findByEvent(event);
-        
-        if (!webhooks || webhooks.length === 0) {
-            return { triggered: 0 };
+        let webhooks = [];
+        try {
+            webhooks = await Webhook.findByEvent(event);
+        } catch (error) {
+            console.error(`[WebhookService] Falha ao buscar webhooks do evento "${event}":`, error.message);
+            return { triggered: 0, results: [] };
         }
-        
+
+        if (!Array.isArray(webhooks) || webhooks.length === 0) {
+            return { triggered: 0, results: [] };
+        }
+
         const results = [];
-        
+
         for (const webhook of webhooks) {
             try {
                 const result = await this.send(webhook, event, data);
@@ -52,7 +58,7 @@ class WebhookService {
                 });
             }
         }
-        
+
         return { triggered: results.length, results };
     }
     
@@ -71,6 +77,12 @@ class WebhookService {
             
             const payloadString = JSON.stringify(payload);
             const signature = this.generateSignature(payload, webhook.secret);
+            let customHeaders = {};
+            try {
+                customHeaders = JSON.parse(webhook.headers || '{}');
+            } catch (error) {
+                console.warn(`[WebhookService] Headers invalidos no webhook ${webhook.id}:`, error.message);
+            }
             
             const url = new URL(webhook.url);
             const isHttps = url.protocol === 'https:';
@@ -82,7 +94,7 @@ class WebhookService {
                 'X-Webhook-Signature': signature || '',
                 'X-Webhook-Timestamp': new Date().toISOString(),
                 'User-Agent': 'SELF-Webhook/1.0',
-                ...JSON.parse(webhook.headers || '{}')
+                ...customHeaders
             };
             
             const options = {
@@ -114,7 +126,9 @@ class WebhookService {
                         res.statusCode,
                         responseBody.substring(0, 1000),
                         duration
-                    );
+                    ).catch((error) => {
+                        console.warn('[WebhookService] Falha ao registrar log de webhook:', error.message);
+                    });
                     
                     if (res.statusCode >= 200 && res.statusCode < 300) {
                         resolve({
@@ -143,7 +157,9 @@ class WebhookService {
                     0,
                     error.message,
                     duration
-                );
+                ).catch((logError) => {
+                    console.warn('[WebhookService] Falha ao registrar log de erro de webhook:', logError.message);
+                });
                 
                 reject(error);
             });
