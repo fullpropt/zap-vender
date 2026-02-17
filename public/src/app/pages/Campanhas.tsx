@@ -122,10 +122,17 @@ export default function Campanhas() {
             flex: 0 0 auto;
         }
         @media (max-width: 900px) {
+            .campaign-footer {
+                flex-direction: column;
+                align-items: center;
+            }
+            .campaign-footer > .badge {
+                margin-bottom: 4px;
+            }
             .campaign-actions {
                 width: 100%;
                 margin-left: 0;
-                justify-content: flex-start;
+                justify-content: center;
             }
         }
         .campaigns-grid {

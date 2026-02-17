@@ -5355,6 +5355,56 @@ app.get('/api/campaigns/:id', optionalAuth, async (req, res) => {
 
 });
 
+app.get('/api/campaigns/:id/recipients', optionalAuth, async (req, res) => {
+
+    const campaign = await Campaign.findById(req.params.id);
+
+    if (!campaign) {
+
+        return res.status(404).json({ error: 'Campanha não encontrada' });
+
+    }
+
+    const requestedLimit = parseInt(String(req.query.limit || '200'), 10);
+    const limit = Number.isFinite(requestedLimit)
+        ? Math.max(1, Math.min(requestedLimit, 1000))
+        : 200;
+
+    const leadIds = await resolveCampaignLeadIds({
+        segment: campaign.segment || 'all',
+        tagFilter: campaign.tag_filter || ''
+    });
+
+    if (!leadIds.length) {
+        return res.json({
+            success: true,
+            total: 0,
+            segment: campaign.segment || 'all',
+            tag_filter: campaign.tag_filter || null,
+            recipients: []
+        });
+    }
+
+    const limitedIds = leadIds.slice(0, limit);
+    const placeholders = limitedIds.map(() => '?').join(', ');
+    const recipients = await query(
+        `SELECT id, name, phone, status, tags, vehicle, plate, last_message_at
+         FROM leads
+         WHERE id IN (${placeholders})
+         ORDER BY updated_at DESC`,
+        limitedIds
+    );
+
+    res.json({
+        success: true,
+        total: leadIds.length,
+        segment: campaign.segment || 'all',
+        tag_filter: campaign.tag_filter || null,
+        recipients
+    });
+
+});
+
 
 
 app.post('/api/campaigns', authenticate, async (req, res) => {
@@ -6041,7 +6091,6 @@ process.on('uncaughtException', (error) => {
     });
 
 };
-
 
 
 

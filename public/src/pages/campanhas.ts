@@ -1,4 +1,4 @@
-// Campanhas page logic migrated to module
+﻿// Campanhas page logic migrated to module
 
 type CampaignStatus = 'active' | 'paused' | 'completed' | 'draft';
 type CampaignType = 'trigger' | 'broadcast' | 'drip';
@@ -27,6 +27,23 @@ type CampaignResponse = {
     campaigns?: Campaign[];
 };
 
+type CampaignRecipient = {
+    id: number;
+    name?: string;
+    phone?: string;
+    status?: number;
+    tags?: string;
+    vehicle?: string;
+    plate?: string;
+};
+
+type CampaignRecipientsResponse = {
+    recipients?: CampaignRecipient[];
+    total?: number;
+    segment?: string;
+    tag_filter?: string;
+};
+
 let campaigns: Campaign[] = [];
 const DEFAULT_DELAY_MIN_SECONDS = 6;
 const DEFAULT_DELAY_MAX_SECONDS = 24;
@@ -34,14 +51,153 @@ const DEFAULT_DELAY_MAX_SECONDS = 24;
 function getCampaignStatusLabel(status: CampaignStatus) {
     if (status === 'active') return 'Ativa';
     if (status === 'paused') return 'Pausada';
-    if (status === 'completed') return 'Concluida';
+    if (status === 'completed') return 'Concluída';
     return 'Rascunho';
 }
 
 function getCampaignTypeLabel(type: CampaignType) {
-    if (type === 'broadcast') return 'Transmissao';
-    if (type === 'drip') return 'Sequencia';
+    if (type === 'broadcast') return 'Transmissão';
+    if (type === 'drip') return 'Sequência';
     return 'Gatilho';
+}
+
+function getLeadStatusLabel(status?: number) {
+    if (status === 1) return 'Novo';
+    if (status === 2) return 'Em andamento';
+    if (status === 3) return 'Concluído';
+    if (status === 4) return 'Perdido';
+    return '-';
+}
+
+function parseTagsForDisplay(rawTags: unknown) {
+    if (Array.isArray(rawTags)) {
+        return rawTags.map(tag => String(tag || '').trim()).filter(Boolean);
+    }
+
+    const raw = String(rawTags || '').trim();
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+            return parsed.map(tag => String(tag || '').trim()).filter(Boolean);
+        }
+    } catch (error) {
+        // fallback para formato legado
+    }
+
+    return raw.split(',').map(tag => tag.trim()).filter(Boolean);
+}
+
+function formatCampaignPhone(phone?: string) {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (!digits) return '-';
+    return formatPhone(digits);
+}
+
+function getCampaignSegmentLabel(segment?: string) {
+    const normalized = String(segment || 'all').toLowerCase();
+    if (normalized === 'new') return 'Novos (Etapa 1)';
+    if (normalized === 'progress') return 'Em andamento (Etapa 2)';
+    if (normalized === 'concluded') return 'Concluídos (Etapa 3)';
+    return 'Todos os contatos';
+}
+
+function splitCampaignMessageSteps(campaign: Campaign) {
+    const rawMessage = String(campaign.message || '').trim();
+    if (!rawMessage) return [];
+    if (campaign.type !== 'drip') return [rawMessage];
+    return rawMessage
+        .split(/\n\s*---+\s*\n/g)
+        .map(step => step.trim())
+        .filter(Boolean);
+}
+
+function escapeCampaignText(value: unknown) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function renderCampaignMessages(campaign: Campaign) {
+    const campaignMessages = document.getElementById('campaignMessages') as HTMLElement | null;
+    if (!campaignMessages) return;
+
+    const steps = splitCampaignMessageSteps(campaign);
+    if (!steps.length) {
+        campaignMessages.innerHTML = '<p style="color: var(--gray-500);">Nenhuma mensagem configurada.</p>';
+        return;
+    }
+
+    campaignMessages.innerHTML = steps.map((step, index) => `
+        <div class="copy-card" style="margin-bottom: 12px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">
+                ${campaign.type === 'drip' ? `Etapa ${index + 1}` : 'Mensagem'}
+            </div>
+            <pre style="white-space: pre-wrap; margin: 0; font-family: inherit;">${escapeCampaignText(step)}</pre>
+        </div>
+    `).join('');
+}
+
+async function loadCampaignRecipients(campaign: Campaign) {
+    const campaignRecipients = document.getElementById('campaignRecipients') as HTMLElement | null;
+    if (!campaignRecipients) return;
+
+    campaignRecipients.innerHTML = '<p style="color: var(--gray-500);">Carregando destinatários...</p>';
+
+    try {
+        const response: CampaignRecipientsResponse = await api.get(`/api/campaigns/${campaign.id}/recipients?limit=200`);
+        const recipients = response.recipients || [];
+        const total = Number(response.total || recipients.length);
+        const segmentLabel = getCampaignSegmentLabel(response.segment || campaign.segment);
+        const tagLabel = String(response.tag_filter || campaign.tag_filter || 'Todas');
+
+        if (!recipients.length) {
+            campaignRecipients.innerHTML = `
+                <p style="margin-bottom: 8px;"><strong>Segmentação:</strong> ${escapeCampaignText(segmentLabel)}</p>
+                <p style="margin-bottom: 8px;"><strong>Tag:</strong> ${escapeCampaignText(tagLabel)}</p>
+                <p style="color: var(--gray-500);">Nenhum contato encontrado com esses filtros.</p>
+            `;
+            return;
+        }
+
+        const rows = recipients.map((lead) => {
+            const tags = parseTagsForDisplay(lead.tags).join(', ') || '-';
+            return `
+                <tr>
+                    <td>${escapeCampaignText(lead.name || 'Sem nome')}</td>
+                    <td>${escapeCampaignText(formatCampaignPhone(lead.phone))}</td>
+                    <td>${escapeCampaignText(getLeadStatusLabel(Number(lead.status || 0)))}</td>
+                    <td>${escapeCampaignText(tags)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        campaignRecipients.innerHTML = `
+            <p style="margin-bottom: 8px;"><strong>Segmentação:</strong> ${escapeCampaignText(segmentLabel)}</p>
+            <p style="margin-bottom: 8px;"><strong>Tag:</strong> ${escapeCampaignText(tagLabel)}</p>
+            <p style="margin-bottom: 12px;"><strong>Total filtrado:</strong> ${formatNumber(total)}</p>
+            <div style="overflow-x: auto;">
+                <table class="table" style="min-width: 560px;">
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>WhatsApp</th>
+                            <th>Status</th>
+                            <th>Tags</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+            ${total > recipients.length ? `<p style="color: var(--gray-500); margin-top: 8px;">Mostrando ${formatNumber(recipients.length)} de ${formatNumber(total)} contatos.</p>` : ''}
+        `;
+    } catch (error) {
+        campaignRecipients.innerHTML = '<p style="color: var(--danger);">Não foi possível carregar os destinatários.</p>';
+    }
 }
 
 function onReady(callback: () => void) {
@@ -152,7 +308,7 @@ async function loadCampaigns() {
         hideLoading();
     } catch (error) {
         hideLoading();
-        // Se não houver endpoint, mostrar campanhas de exemplo
+        // Se nÃ£o houver endpoint, mostrar campanhas de exemplo
         campaigns = [
             {
                 id: 1,
@@ -161,7 +317,7 @@ async function loadCampaigns() {
                 type: 'trigger',
                 status: 'active',
                 segment: 'new',
-                message: 'Olá {{nome}}! Seja bem-vindo à ZapVender.',
+                message: 'OlÃ¡ {{nome}}! Seja bem-vindo Ã  ZapVender.',
                 delay: 5000,
                 delay_min: 5000,
                 delay_max: 5000,
@@ -174,12 +330,12 @@ async function loadCampaigns() {
             },
             {
                 id: 2,
-                name: 'Promoção Janeiro',
+                name: 'PromoÃ§Ã£o Janeiro',
                 description: 'Campanha promocional de janeiro',
                 type: 'broadcast',
                 status: 'completed',
                 segment: 'all',
-                message: 'Promoção especial para você!',
+                message: 'PromoÃ§Ã£o especial para vocÃª!',
                 delay: 5000,
                 delay_min: 5000,
                 delay_max: 5000,
@@ -247,7 +403,7 @@ function renderCampaigns() {
                     </span>
                 </div>
                 <div class="campaign-body">
-                    <p style="color: var(--gray-600); margin-bottom: 15px;">${c.description || 'Sem descricao'}</p>
+                    <p style="color: var(--gray-600); margin-bottom: 15px;">${c.description || 'Sem descrição'}</p>
                     <div class="campaign-stats">
                         <div class="campaign-stat">
                             <div class="campaign-stat-value">${formatNumber(c.sent || 0)}</div>
@@ -317,7 +473,7 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
     };
 
     if (!data.name || !data.message) {
-        showToast('error', 'Erro', 'Nome e mensagem sao obrigatorios');
+        showToast('error', 'Erro', 'Nome e mensagem são obrigatórios');
         return;
     }
 
@@ -402,7 +558,7 @@ function viewCampaign(id: number) {
                 </div>
             </div>
         </div>
-        <p><strong>Descricao:</strong> ${campaign.description || 'Sem descricao'}</p>
+        <p><strong>Descrição:</strong> ${campaign.description || 'Sem descrição'}</p>
         <p><strong>Tipo:</strong> ${getCampaignTypeLabel(campaign.type)}</p>
         <p><strong>Status:</strong> ${getCampaignStatusLabel(campaign.status)}</p>
         <p><strong>Tag:</strong> ${campaign.tag_filter || 'Todas'}</p>
@@ -410,7 +566,11 @@ function viewCampaign(id: number) {
     `;
     }
 
+    renderCampaignMessages(campaign);
+    void loadCampaignRecipients(campaign);
+
     openModal('campaignDetailsModal');
+    switchCampaignTab('overview');
 }
 
 function editCampaign(id: number) {
@@ -485,16 +645,30 @@ async function deleteCampaign(id: number) {
     campaigns = campaigns.filter(c => c.id !== id);
     renderCampaigns();
     updateStats();
-    showToast('success', 'Sucesso', 'Campanha excluida!');
+    showToast('success', 'Sucesso', 'Campanha excluída!');
 }
 
 function switchCampaignTab(tab: string) {
-    document.querySelectorAll('#campaignDetailsModal .tab').forEach(t => t.classList.remove('active'));
+    const tabOrder = ['overview', 'messages', 'recipients'];
+    const resolvedTab = tabOrder.includes(tab) ? tab : 'overview';
+    const activeIndex = tabOrder.indexOf(resolvedTab);
+
+    const tabs = Array.from(document.querySelectorAll('#campaignDetailsModal .tab'));
+    tabs.forEach((button, index) => {
+        if (index === activeIndex) {
+            button.classList.add('active');
+        } else {
+            button.classList.remove('active');
+        }
+    });
+
     document.querySelectorAll('#campaignDetailsModal .tab-content').forEach(c => c.classList.remove('active'));
-    const activeTab = document.querySelector(`#campaignDetailsModal .tab[onclick="switchCampaignTab('${tab}')"]`);
-    const activeContent = document.getElementById(`tab-${tab}`);
-    activeTab?.classList.add('active');
+    const activeContent = document.getElementById(`tab-${resolvedTab}`);
+    const fallbackContent = document.getElementById('tab-overview');
     activeContent?.classList.add('active');
+    if (!activeContent) {
+        fallbackContent?.classList.add('active');
+    }
 }
 
 const windowAny = window as Window & {
@@ -523,3 +697,5 @@ windowAny.deleteCampaign = deleteCampaign;
 windowAny.switchCampaignTab = switchCampaignTab;
 
 export { initCampanhas };
+
+
