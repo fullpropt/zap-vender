@@ -42,7 +42,7 @@ const { getDatabase, close: closeDatabase, query, run } = require('./database/co
 
 const { migrate } = require('./database/migrate');
 
-const { Lead, Conversation, Message, MessageQueue, Template, Campaign, Automation, Flow, Settings, User } = require('./database/models');
+const { Lead, Conversation, Message, MessageQueue, Template, Campaign, Automation, Flow, Tag, Settings, User } = require('./database/models');
 
 
 
@@ -4396,6 +4396,22 @@ app.post('/api/auth/refresh', async (req, res) => {
 
 // ============================================
 
+function normalizeTagNameInput(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeTagDescriptionInput(value) {
+    return String(value || '').trim();
+}
+
+function normalizeTagColorInput(value) {
+    const raw = String(value || '').trim();
+    if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(raw)) {
+        return raw;
+    }
+    return '#5a2a6b';
+}
+
 // API DE LEADS
 
 // ============================================
@@ -4553,6 +4569,129 @@ app.delete('/api/leads/:id', authenticate, async (req, res) => {
             success: false,
             error: 'Erro ao excluir lead'
         });
+    }
+});
+
+
+
+// ============================================
+
+// API DE TAGS
+
+// ============================================
+
+app.get('/api/tags', optionalAuth, async (req, res) => {
+    try {
+        await Tag.syncFromLeads();
+        const tags = await Tag.list();
+        res.json({ success: true, tags });
+    } catch (error) {
+        console.error('Falha ao listar tags:', error);
+        res.status(500).json({ success: false, error: 'Erro ao carregar tags' });
+    }
+});
+
+app.post('/api/tags', authenticate, async (req, res) => {
+    try {
+        const name = normalizeTagNameInput(req.body?.name);
+        const color = normalizeTagColorInput(req.body?.color);
+        const description = normalizeTagDescriptionInput(req.body?.description);
+
+        if (!name) {
+            return res.status(400).json({ success: false, error: 'Nome da tag e obrigatorio' });
+        }
+
+        const existing = await Tag.findByName(name);
+        if (existing) {
+            return res.status(409).json({ success: false, error: 'Ja existe uma tag com este nome' });
+        }
+
+        const tag = await Tag.create({ name, color, description });
+        res.status(201).json({ success: true, tag });
+    } catch (error) {
+        console.error('Falha ao criar tag:', error);
+        res.status(500).json({ success: false, error: 'Erro ao criar tag' });
+    }
+});
+
+app.put('/api/tags/:id', authenticate, async (req, res) => {
+    try {
+        const tagId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(tagId) || tagId <= 0) {
+            return res.status(400).json({ success: false, error: 'ID de tag invalido' });
+        }
+
+        const currentTag = await Tag.findById(tagId);
+        if (!currentTag) {
+            return res.status(404).json({ success: false, error: 'Tag nao encontrada' });
+        }
+
+        const payload = {};
+        if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
+            const nextName = normalizeTagNameInput(req.body.name);
+            if (!nextName) {
+                return res.status(400).json({ success: false, error: 'Nome da tag e obrigatorio' });
+            }
+
+            const duplicate = await Tag.findByName(nextName);
+            if (duplicate && Number(duplicate.id) !== tagId) {
+                return res.status(409).json({ success: false, error: 'Ja existe uma tag com este nome' });
+            }
+            payload.name = nextName;
+        }
+        if (Object.prototype.hasOwnProperty.call(req.body, 'color')) {
+            payload.color = normalizeTagColorInput(req.body.color);
+        }
+        if (Object.prototype.hasOwnProperty.call(req.body, 'description')) {
+            payload.description = normalizeTagDescriptionInput(req.body.description);
+        }
+
+        const updatedTag = await Tag.update(tagId, payload);
+        if (!updatedTag) {
+            return res.status(404).json({ success: false, error: 'Tag nao encontrada' });
+        }
+
+        if (
+            payload.name &&
+            normalizeTagNameInput(currentTag.name).toLowerCase() !== normalizeTagNameInput(updatedTag.name).toLowerCase()
+        ) {
+            await Tag.renameInLeads(currentTag.name, updatedTag.name);
+            await run(
+                'UPDATE campaigns SET tag_filter = ? WHERE LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
+                [updatedTag.name, currentTag.name]
+            );
+        }
+
+        res.json({ success: true, tag: updatedTag });
+    } catch (error) {
+        console.error('Falha ao atualizar tag:', error);
+        res.status(500).json({ success: false, error: 'Erro ao atualizar tag' });
+    }
+});
+
+app.delete('/api/tags/:id', authenticate, async (req, res) => {
+    try {
+        const tagId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(tagId) || tagId <= 0) {
+            return res.status(400).json({ success: false, error: 'ID de tag invalido' });
+        }
+
+        const currentTag = await Tag.findById(tagId);
+        if (!currentTag) {
+            return res.status(404).json({ success: false, error: 'Tag nao encontrada' });
+        }
+
+        await Tag.delete(tagId);
+        await Tag.removeFromLeads(currentTag.name);
+        await run(
+            'UPDATE campaigns SET tag_filter = NULL WHERE LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
+            [currentTag.name]
+        );
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Falha ao remover tag:', error);
+        res.status(500).json({ success: false, error: 'Erro ao remover tag' });
     }
 });
 
@@ -6138,9 +6277,6 @@ process.on('uncaughtException', (error) => {
     });
 
 };
-
-
-
 
 
 

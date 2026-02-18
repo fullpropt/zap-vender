@@ -133,6 +133,57 @@ function deriveUserName(name, email) {
         .join(' ');
 }
 
+function normalizeTagValue(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeTagKey(value) {
+    return normalizeTagValue(value).toLowerCase();
+}
+
+function parseTagList(rawValue) {
+    if (!rawValue) return [];
+
+    if (Array.isArray(rawValue)) {
+        return rawValue
+            .map(normalizeTagValue)
+            .filter(Boolean);
+    }
+
+    const raw = String(rawValue).trim();
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+            return parsed
+                .map(normalizeTagValue)
+                .filter(Boolean);
+        }
+    } catch (_) {
+        // fallback para lista separada por delimitadores
+    }
+
+    return raw
+        .split(/[,;|]/)
+        .map(normalizeTagValue)
+        .filter(Boolean);
+}
+
+function uniqueTags(list) {
+    const seen = new Set();
+    const result = [];
+
+    for (const tag of list.map(normalizeTagValue).filter(Boolean)) {
+        const key = normalizeTagKey(tag);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(tag);
+    }
+
+    return result;
+}
+
 // ============================================
 // LEADS
 // ============================================
@@ -1099,6 +1150,170 @@ const MessageQueue = {
 };
 
 // ============================================
+// TAGS
+// ============================================
+
+const DEFAULT_TAG_COLOR = '#5a2a6b';
+
+const Tag = {
+    async list() {
+        return await query(`
+            SELECT id, name, color, description, created_at
+            FROM tags
+            ORDER BY LOWER(name) ASC, id ASC
+        `);
+    },
+
+    async findById(id) {
+        return await queryOne('SELECT id, name, color, description, created_at FROM tags WHERE id = ?', [id]);
+    },
+
+    async findByName(name) {
+        return await queryOne(
+            'SELECT id, name, color, description, created_at FROM tags WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))',
+            [name]
+        );
+    },
+
+    async create(data) {
+        const tagName = normalizeTagValue(data.name);
+        const tagColor = normalizeTagValue(data.color) || DEFAULT_TAG_COLOR;
+        const tagDescription = normalizeTagValue(data.description);
+
+        const result = await run(`
+            INSERT INTO tags (name, color, description)
+            VALUES (?, ?, ?)
+        `, [tagName, tagColor, tagDescription || null]);
+
+        return await this.findById(result.lastInsertRowid);
+    },
+
+    async update(id, data) {
+        const fields = [];
+        const values = [];
+
+        if (Object.prototype.hasOwnProperty.call(data, 'name')) {
+            fields.push('name = ?');
+            values.push(normalizeTagValue(data.name));
+        }
+        if (Object.prototype.hasOwnProperty.call(data, 'color')) {
+            fields.push('color = ?');
+            values.push(normalizeTagValue(data.color) || DEFAULT_TAG_COLOR);
+        }
+        if (Object.prototype.hasOwnProperty.call(data, 'description')) {
+            fields.push('description = ?');
+            const description = normalizeTagValue(data.description);
+            values.push(description || null);
+        }
+
+        if (fields.length === 0) return await this.findById(id);
+
+        values.push(id);
+        await run(`UPDATE tags SET ${fields.join(', ')} WHERE id = ?`, values);
+
+        return await this.findById(id);
+    },
+
+    async delete(id) {
+        return await run('DELETE FROM tags WHERE id = ?', [id]);
+    },
+
+    async syncFromLeads() {
+        const rows = await query("SELECT tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
+        if (!rows || rows.length === 0) return;
+
+        const existingTags = await this.list();
+        const existingKeys = new Set(existingTags.map((tag) => normalizeTagKey(tag.name)));
+        const discoveredTags = new Set();
+
+        for (const row of rows) {
+            for (const tag of parseTagList(row.tags)) {
+                discoveredTags.add(tag);
+            }
+        }
+
+        for (const tagName of uniqueTags(Array.from(discoveredTags))) {
+            const key = normalizeTagKey(tagName);
+            if (existingKeys.has(key)) continue;
+
+            await run(
+                `INSERT INTO tags (name, color, description)
+                 VALUES (?, ?, ?)
+                 ON CONFLICT(name) DO NOTHING`,
+                [tagName, DEFAULT_TAG_COLOR, null]
+            );
+            existingKeys.add(key);
+        }
+    },
+
+    async renameInLeads(previousName, nextName) {
+        const previousKey = normalizeTagKey(previousName);
+        const sanitizedNext = normalizeTagValue(nextName);
+        if (!previousKey || !sanitizedNext) return 0;
+
+        const leads = await query("SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
+        let updatedLeads = 0;
+
+        for (const lead of leads) {
+            const originalTags = parseTagList(lead.tags);
+            if (originalTags.length === 0) continue;
+
+            let changed = false;
+            const replacedTags = [];
+            const seen = new Set();
+
+            for (const tag of originalTags) {
+                const key = normalizeTagKey(tag);
+                const value = key === previousKey ? sanitizedNext : tag;
+                if (key === previousKey) changed = true;
+
+                const valueKey = normalizeTagKey(value);
+                if (!valueKey || seen.has(valueKey)) continue;
+                seen.add(valueKey);
+                replacedTags.push(value);
+            }
+
+            if (!changed) continue;
+
+            await run(
+                "UPDATE leads SET tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                [JSON.stringify(replacedTags), lead.id]
+            );
+            updatedLeads++;
+        }
+
+        return updatedLeads;
+    },
+
+    async removeFromLeads(tagName) {
+        const normalized = normalizeTagKey(tagName);
+        if (!normalized) return 0;
+
+        const leads = await query("SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
+        let updatedLeads = 0;
+
+        for (const lead of leads) {
+            const originalTags = parseTagList(lead.tags);
+            if (originalTags.length === 0) continue;
+
+            const remainingTags = uniqueTags(
+                originalTags.filter((tag) => normalizeTagKey(tag) !== normalized)
+            );
+
+            if (remainingTags.length === originalTags.length) continue;
+
+            await run(
+                "UPDATE leads SET tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                [JSON.stringify(remainingTags), lead.id]
+            );
+            updatedLeads++;
+        }
+
+        return updatedLeads;
+    }
+};
+
+// ============================================
 // WEBHOOKS
 // ============================================
 
@@ -1277,6 +1492,7 @@ module.exports = {
     Automation,
     Flow,
     MessageQueue,
+    Tag,
     Webhook,
     Settings,
     User

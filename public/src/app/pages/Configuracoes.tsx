@@ -18,6 +18,9 @@ type ConfiguracoesGlobals = {
   disconnectWhatsApp?: () => void;
   saveWhatsAppSettings?: () => void;
   saveNotificationSettings?: () => void;
+  createSettingsTag?: () => Promise<void>;
+  updateSettingsTag?: (id: number) => Promise<void>;
+  deleteSettingsTag?: (id: number) => Promise<void>;
   addUser?: () => void;
   changePassword?: () => void;
   copyApiKey?: () => void;
@@ -260,7 +263,56 @@ export default function Configuracoes() {
                           <button className="btn btn-primary" onClick={() => globals.saveGeneralSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Configurações</button>
                       </div>
       
-                      <div className="settings-panel" id="panel-labels"><h3 className="settings-section-title">Etiquetas</h3><p className="text-muted">Em breve.</p></div>
+                      <div className="settings-panel" id="panel-labels">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-tag icon-sm"></span> Etiquetas</h3>
+                              <p className="text-muted mb-3">Gerencie todas as tags usadas nos contatos e campanhas.</p>
+
+                              <div className="copy-card">
+                                  <div className="copy-card-header">
+                                      <span className="copy-card-title">Nova etiqueta</span>
+                                  </div>
+                                  <div className="form-row">
+                                      <div className="form-group">
+                                          <label className="form-label required">Nome</label>
+                                          <input type="text" className="form-input" id="newTagName" placeholder="Ex: Lead Quente" />
+                                      </div>
+                                      <div className="form-group" style={{ maxWidth: '140px' }}>
+                                          <label className="form-label">Cor</label>
+                                          <input type="color" className="form-input" id="newTagColor" defaultValue="#5a2a6b" style={{ height: '45px' }} />
+                                      </div>
+                                  </div>
+                                  <div className="form-group">
+                                      <label className="form-label">DescriÃ§Ã£o</label>
+                                      <input type="text" className="form-input" id="newTagDescription" placeholder="Opcional" />
+                                  </div>
+                                  <button className="btn btn-primary" onClick={() => globals.createSettingsTag?.()}>
+                                      <span className="icon icon-add icon-sm"></span> Adicionar Etiqueta
+                                  </button>
+                              </div>
+
+                              <div className="table-container" style={{ marginTop: '18px' }}>
+                                  <table className="data-table">
+                                      <thead>
+                                          <tr>
+                                              <th>Nome</th>
+                                              <th>Cor</th>
+                                              <th>DescriÃ§Ã£o</th>
+                                              <th>AÃ§Ãµes</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody id="settingsTagsTableBody">
+                                          <tr>
+                                              <td colSpan={4} className="table-empty">
+                                                  <div className="table-empty-icon icon icon-empty icon-lg"></div>
+                                                  <p>Carregando etiquetas...</p>
+                                              </td>
+                                          </tr>
+                                      </tbody>
+                                  </table>
+                              </div>
+                          </div>
+                      </div>
                       <div className="settings-panel" id="panel-quick"><h3 className="settings-section-title">Respostas rápidas</h3><p className="text-muted">Em breve.</p></div>
                       <div className="settings-panel" id="panel-hours"><h3 className="settings-section-title">Horários</h3><p className="text-muted">Em breve.</p></div>
                       <div className="settings-panel" id="panel-flows"><h3 className="settings-section-title">Fluxos Padrões</h3><p className="text-muted">Em breve.</p></div>

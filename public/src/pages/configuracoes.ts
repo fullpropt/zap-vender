@@ -16,7 +16,15 @@ type TemplateItem = {
     media_url?: string;
 };
 
+type SettingsTag = {
+    id: number;
+    name: string;
+    color?: string;
+    description?: string;
+};
+
 let templatesCache: TemplateItem[] = [];
+let settingsTagsCache: SettingsTag[] = [];
 
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -46,6 +54,7 @@ function getPanelFromLocation() {
 function initConfiguracoes() {
     loadSettings();
     loadTemplates();
+    loadSettingsTags();
     checkWhatsAppStatus();
     updateNewTemplateForm();
     const typeSelect = document.getElementById('newTemplateType') as HTMLSelectElement | null;
@@ -136,6 +145,123 @@ async function saveGeneralSettings() {
         showToast('success', 'Sucesso', 'Configuracoes salvas!');
     } catch (error) {
         showToast('warning', 'Aviso', 'Salvo localmente, mas nao foi possivel sincronizar no servidor');
+    }
+}
+
+async function loadSettingsTags() {
+    try {
+        const response = await api.get('/api/tags');
+        settingsTagsCache = response?.tags || [];
+        renderSettingsTags();
+    } catch (error) {
+        settingsTagsCache = [];
+        renderSettingsTags();
+    }
+}
+
+function renderSettingsTags() {
+    const tbody = document.getElementById('settingsTagsTableBody') as HTMLElement | null;
+    if (!tbody) return;
+
+    if (!settingsTagsCache.length) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="table-empty">
+                    <div class="table-empty-icon icon icon-empty icon-lg"></div>
+                    <p>Nenhuma etiqueta encontrada</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = settingsTagsCache.map((tag) => `
+        <tr data-tag-id="${tag.id}">
+            <td><input type="text" class="form-input settings-tag-name" value="${escapeHtml(tag.name || '')}" /></td>
+            <td style="width: 110px;"><input type="color" class="form-input settings-tag-color" value="${escapeHtml(tag.color || '#5a2a6b')}" style="height: 40px; min-width: 70px;" /></td>
+            <td><input type="text" class="form-input settings-tag-description" value="${escapeHtml(tag.description || '')}" placeholder="Opcional" /></td>
+            <td style="width: 180px;">
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-sm btn-outline" onclick="updateSettingsTag(${tag.id})">Salvar</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteSettingsTag(${tag.id})">Remover</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function createSettingsTag() {
+    const nameInput = document.getElementById('newTagName') as HTMLInputElement | null;
+    const colorInput = document.getElementById('newTagColor') as HTMLInputElement | null;
+    const descriptionInput = document.getElementById('newTagDescription') as HTMLInputElement | null;
+
+    const name = (nameInput?.value || '').trim();
+    const color = (colorInput?.value || '#5a2a6b').trim();
+    const description = (descriptionInput?.value || '').trim();
+
+    if (!name) {
+        showToast('warning', 'Aviso', 'Informe o nome da etiqueta');
+        nameInput?.focus();
+        return;
+    }
+
+    try {
+        await api.post('/api/tags', { name, color, description });
+        if (nameInput) nameInput.value = '';
+        if (descriptionInput) descriptionInput.value = '';
+        if (colorInput) colorInput.value = '#5a2a6b';
+        await loadSettingsTags();
+        showToast('success', 'Sucesso', 'Etiqueta criada!');
+    } catch (error: any) {
+        const message = String(error?.message || '').toLowerCase();
+        if (message.includes('409') || message.includes('ja existe')) {
+            showToast('warning', 'Aviso', 'Ja existe uma etiqueta com esse nome');
+            return;
+        }
+        showToast('error', 'Erro', 'Nao foi possivel criar a etiqueta');
+    }
+}
+
+function getSettingsTagRow(id: number) {
+    return document.querySelector(`#settingsTagsTableBody tr[data-tag-id="${id}"]`) as HTMLElement | null;
+}
+
+async function updateSettingsTag(id: number) {
+    const row = getSettingsTagRow(id);
+    if (!row) return;
+
+    const name = ((row.querySelector('.settings-tag-name') as HTMLInputElement | null)?.value || '').trim();
+    const color = ((row.querySelector('.settings-tag-color') as HTMLInputElement | null)?.value || '#5a2a6b').trim();
+    const description = ((row.querySelector('.settings-tag-description') as HTMLInputElement | null)?.value || '').trim();
+
+    if (!name) {
+        showToast('warning', 'Aviso', 'Nome da etiqueta e obrigatorio');
+        return;
+    }
+
+    try {
+        await api.put(`/api/tags/${id}`, { name, color, description });
+        await loadSettingsTags();
+        showToast('success', 'Sucesso', 'Etiqueta atualizada!');
+    } catch (error: any) {
+        const message = String(error?.message || '').toLowerCase();
+        if (message.includes('409') || message.includes('ja existe')) {
+            showToast('warning', 'Aviso', 'Ja existe uma etiqueta com esse nome');
+            return;
+        }
+        showToast('error', 'Erro', 'Nao foi possivel atualizar a etiqueta');
+    }
+}
+
+async function deleteSettingsTag(id: number) {
+    if (!confirm('Deseja remover esta etiqueta?')) return;
+
+    try {
+        await api.delete(`/api/tags/${id}`);
+        await loadSettingsTags();
+        showToast('success', 'Sucesso', 'Etiqueta removida!');
+    } catch (error) {
+        showToast('error', 'Erro', 'Nao foi possivel remover a etiqueta');
     }
 }
 
@@ -564,6 +690,9 @@ const windowAny = window as Window & {
     disconnectWhatsApp?: () => Promise<void>;
     saveWhatsAppSettings?: () => void;
     saveNotificationSettings?: () => void;
+    createSettingsTag?: () => Promise<void>;
+    updateSettingsTag?: (id: number) => Promise<void>;
+    deleteSettingsTag?: (id: number) => Promise<void>;
     addUser?: () => void;
     changePassword?: () => void;
     copyApiKey?: () => void;
@@ -586,6 +715,9 @@ windowAny.connectWhatsApp = connectWhatsApp;
 windowAny.disconnectWhatsApp = disconnectWhatsApp;
 windowAny.saveWhatsAppSettings = saveWhatsAppSettings;
 windowAny.saveNotificationSettings = saveNotificationSettings;
+windowAny.createSettingsTag = createSettingsTag;
+windowAny.updateSettingsTag = updateSettingsTag;
+windowAny.deleteSettingsTag = deleteSettingsTag;
 windowAny.addUser = addUser;
 windowAny.changePassword = changePassword;
 windowAny.copyApiKey = copyApiKey;

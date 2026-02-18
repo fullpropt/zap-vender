@@ -95,7 +95,7 @@ async function loadTags() {
         const select = document.getElementById('filterTag') as HTMLSelectElement | null;
         if (!select) return;
         tags.forEach(tag => {
-            select.innerHTML += `<option value="${tag.id}">${tag.name}</option>`;
+            select.innerHTML += `<option value="${tag.name}">${tag.name}</option>`;
         });
     } catch (e) {}
 }
