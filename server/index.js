@@ -4686,6 +4686,144 @@ app.put('/api/contact-fields', authenticate, async (req, res) => {
 
 // ============================================
 
+const DASHBOARD_PERIOD_METRICS = new Set(['novos_contatos', 'mensagens', 'interacoes']);
+
+function normalizePeriodDateInput(value) {
+    const normalized = String(value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+    const parsed = new Date(`${normalized}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return {
+        raw: normalized,
+        date: parsed
+    };
+}
+
+function formatUtcDateKey(date) {
+    return date.toISOString().slice(0, 10);
+}
+
+function formatDateLabelShort(dateKey) {
+    const [, month, day] = String(dateKey).split('-');
+    if (!month || !day) return dateKey;
+    return `${day}/${month}`;
+}
+
+app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
+    try {
+        const metric = String(req.query.metric || 'novos_contatos')
+            .trim()
+            .toLowerCase();
+
+        if (!DASHBOARD_PERIOD_METRICS.has(metric)) {
+            return res.status(400).json({ success: false, error: 'Métrica inválida' });
+        }
+
+        const startInput = normalizePeriodDateInput(req.query.startDate);
+        const endInput = normalizePeriodDateInput(req.query.endDate);
+
+        if (!startInput || !endInput) {
+            return res.status(400).json({ success: false, error: 'Período inválido' });
+        }
+
+        if (startInput.date > endInput.date) {
+            return res.status(400).json({ success: false, error: 'Data inicial maior que data final' });
+        }
+
+        const maxDaysRange = 370;
+        const periodDays = Math.floor((endInput.date.getTime() - startInput.date.getTime()) / 86400000) + 1;
+        if (periodDays > maxDaysRange) {
+            return res.status(400).json({ success: false, error: `Período máximo é de ${maxDaysRange} dias` });
+        }
+
+        const endExclusiveDate = new Date(endInput.date);
+        endExclusiveDate.setUTCDate(endExclusiveDate.getUTCDate() + 1);
+
+        const startAt = `${startInput.raw}T00:00:00.000Z`;
+        const endExclusiveAt = endExclusiveDate.toISOString();
+
+        let rows = [];
+        if (metric === 'novos_contatos') {
+            rows = await query(
+                `
+                SELECT
+                    TO_CHAR((created_at AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS day,
+                    COUNT(*)::int AS total
+                FROM leads
+                WHERE created_at >= ? AND created_at < ?
+                GROUP BY (created_at AT TIME ZONE 'UTC')::date
+                ORDER BY (created_at AT TIME ZONE 'UTC')::date ASC
+                `,
+                [startAt, endExclusiveAt]
+            );
+        } else if (metric === 'mensagens') {
+            rows = await query(
+                `
+                SELECT
+                    TO_CHAR((COALESCE(sent_at, created_at) AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS day,
+                    COUNT(*)::int AS total
+                FROM messages
+                WHERE COALESCE(sent_at, created_at) >= ? AND COALESCE(sent_at, created_at) < ?
+                GROUP BY (COALESCE(sent_at, created_at) AT TIME ZONE 'UTC')::date
+                ORDER BY (COALESCE(sent_at, created_at) AT TIME ZONE 'UTC')::date ASC
+                `,
+                [startAt, endExclusiveAt]
+            );
+        } else {
+            rows = await query(
+                `
+                SELECT
+                    TO_CHAR((COALESCE(sent_at, created_at) AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS day,
+                    COUNT(DISTINCT lead_id)::int AS total
+                FROM messages
+                WHERE COALESCE(sent_at, created_at) >= ? AND COALESCE(sent_at, created_at) < ?
+                  AND is_from_me = 0
+                GROUP BY (COALESCE(sent_at, created_at) AT TIME ZONE 'UTC')::date
+                ORDER BY (COALESCE(sent_at, created_at) AT TIME ZONE 'UTC')::date ASC
+                `,
+                [startAt, endExclusiveAt]
+            );
+        }
+
+        const totalsByDay = new Map(
+            rows.map((row) => [String(row.day), Number(row.total) || 0])
+        );
+
+        const labels = [];
+        const data = [];
+        const points = [];
+        const cursor = new Date(startInput.date);
+
+        while (cursor <= endInput.date) {
+            const dateKey = formatUtcDateKey(cursor);
+            const value = totalsByDay.get(dateKey) || 0;
+            const label = formatDateLabelShort(dateKey);
+            labels.push(label);
+            data.push(value);
+            points.push({
+                date: dateKey,
+                label,
+                value
+            });
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
+        }
+
+        res.json({
+            success: true,
+            metric,
+            startDate: startInput.raw,
+            endDate: endInput.raw,
+            labels,
+            data,
+            points,
+            total: data.reduce((sum, item) => sum + item, 0)
+        });
+    } catch (error) {
+        console.error('Falha ao carregar estatísticas por período:', error);
+        res.status(500).json({ success: false, error: 'Erro ao carregar estatísticas por período' });
+    }
+});
+
 
 
 app.get('/api/leads', optionalAuth, async (req, res) => {
@@ -6578,7 +6716,6 @@ process.on('uncaughtException', (error) => {
     });
 
 };
-
 
 
 

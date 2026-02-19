@@ -21,11 +21,229 @@ type Lead = {
 };
 
 type LeadsResponse = { leads?: Lead[] };
+type StatsMetric = 'novos_contatos' | 'mensagens' | 'interacoes';
+type StatsChartType = 'line' | 'bar';
+type StatsPeriodResponse = {
+    labels?: string[];
+    data?: number[];
+};
 
 let allLeads: Lead[] = [];
 let selectedLeads: number[] = [];
 
 let statsChartInstance: { destroy?: () => void } | null = null;
+let statsChartType: StatsChartType = 'line';
+let statsChartRequestSeq = 0;
+
+const STATS_METRIC_LABELS: Record<StatsMetric, string> = {
+    novos_contatos: 'Novos Contatos',
+    mensagens: 'Mensagens',
+    interacoes: 'Interações'
+};
+
+function normalizeDateInputValue(value: string | null | undefined) {
+    const normalized = String(value || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
+}
+
+function getDefaultStatsRange() {
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(start.getDate() - 7);
+    return {
+        startDate: start.toISOString().slice(0, 10),
+        endDate: end.toISOString().slice(0, 10)
+    };
+}
+
+function normalizeRangeDates(startValue: string, endValue: string) {
+    if (!startValue || !endValue) return { startDate: startValue, endDate: endValue };
+    if (startValue <= endValue) {
+        return { startDate: startValue, endDate: endValue };
+    }
+    return { startDate: endValue, endDate: startValue };
+}
+
+function buildStatsChartFallback(startDate: string, endDate: string) {
+    const normalized = normalizeRangeDates(startDate, endDate);
+    const start = new Date(`${normalized.startDate}T00:00:00.000Z`);
+    const end = new Date(`${normalized.endDate}T00:00:00.000Z`);
+    const labels: string[] = [];
+    const data: number[] = [];
+    const cursor = new Date(start);
+
+    while (cursor <= end) {
+        labels.push(cursor.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' }));
+        data.push(0);
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+
+    return { labels, data };
+}
+
+function getSelectedStatsMetric(): StatsMetric {
+    const metricRaw = (document.getElementById('statsMetric') as HTMLSelectElement | null)?.value || 'novos_contatos';
+    if (metricRaw === 'mensagens' || metricRaw === 'interacoes' || metricRaw === 'novos_contatos') {
+        return metricRaw;
+    }
+    return 'novos_contatos';
+}
+
+function getStatsRangeFromControls() {
+    const defaults = getDefaultStatsRange();
+    const statsStart = document.getElementById('statsStartDate') as HTMLInputElement | null;
+    const statsEnd = document.getElementById('statsEndDate') as HTMLInputElement | null;
+    const startDate = normalizeDateInputValue(statsStart?.value) || defaults.startDate;
+    const endDate = normalizeDateInputValue(statsEnd?.value) || defaults.endDate;
+    return normalizeRangeDates(startDate, endDate);
+}
+
+function getStatsMetricColors(metric: StatsMetric) {
+    if (metric === 'mensagens') {
+        return {
+            borderColor: '#22c55e',
+            backgroundColor: 'rgba(34, 197, 94, 0.16)'
+        };
+    }
+    if (metric === 'interacoes') {
+        return {
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.16)'
+        };
+    }
+    return {
+        borderColor: '#667eea',
+        backgroundColor: 'rgba(102, 126, 234, 0.16)'
+    };
+}
+
+function updateChartTypeButtonsState() {
+    const chartButtons = document.querySelectorAll('.chart-type-toggle .chart-btn');
+    chartButtons.forEach((button) => {
+        const type = (button as HTMLButtonElement).dataset.chartType === 'bar' ? 'bar' : 'line';
+        button.classList.toggle('active', type === statsChartType);
+    });
+}
+
+function renderStatsChart(labels: string[], values: number[], metric: StatsMetric) {
+    const ctx = document.getElementById('statsChart') as HTMLCanvasElement | null;
+    if (!ctx || typeof Chart === 'undefined') return;
+
+    const chartLib = Chart as unknown as {
+        getChart?: (canvas: HTMLCanvasElement) => { destroy: () => void } | undefined;
+    };
+    const existing = chartLib.getChart?.(ctx);
+    if (existing) {
+        existing.destroy();
+    } else if (statsChartInstance?.destroy) {
+        statsChartInstance.destroy();
+    }
+
+    const palette = getStatsMetricColors(metric);
+    const dataset = {
+        label: STATS_METRIC_LABELS[metric],
+        data: values,
+        borderColor: palette.borderColor,
+        backgroundColor: palette.backgroundColor,
+        borderWidth: 2,
+        fill: statsChartType === 'line',
+        tension: statsChartType === 'line' ? 0.3 : 0,
+        pointRadius: statsChartType === 'line' ? 3 : 0,
+        pointHoverRadius: statsChartType === 'line' ? 5 : 0
+    };
+
+    statsChartInstance = new Chart(ctx, {
+        type: statsChartType,
+        data: { labels, datasets: [dataset] },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
+}
+
+async function updateStatsPeriodChart(options: { silent?: boolean } = {}) {
+    const metric = getSelectedStatsMetric();
+    const range = getStatsRangeFromControls();
+    const fallback = buildStatsChartFallback(range.startDate, range.endDate);
+    const requestId = ++statsChartRequestSeq;
+
+    try {
+        const params = new URLSearchParams({
+            startDate: range.startDate,
+            endDate: range.endDate,
+            metric
+        });
+        const response: StatsPeriodResponse = await api.get(`/api/dashboard/stats-period?${params.toString()}`);
+        if (requestId !== statsChartRequestSeq) return;
+
+        const labels = Array.isArray(response.labels) && response.labels.length > 0
+            ? response.labels
+            : fallback.labels;
+        const values = labels.map((_, index) => {
+            const source = Array.isArray(response.data) ? response.data[index] : 0;
+            const parsed = Number(source);
+            return Number.isFinite(parsed) ? parsed : 0;
+        });
+
+        renderStatsChart(labels, values, metric);
+    } catch (error) {
+        if (requestId !== statsChartRequestSeq) return;
+        renderStatsChart(fallback.labels, fallback.data, metric);
+        if (!options.silent) {
+            showToast('warning', 'Aviso', 'Não foi possível atualizar o gráfico por período');
+        }
+        console.error(error);
+    }
+}
+
+function bindStatsPeriodControls() {
+    const statsStart = document.getElementById('statsStartDate') as HTMLInputElement | null;
+    const statsEnd = document.getElementById('statsEndDate') as HTMLInputElement | null;
+    const statsMetric = document.getElementById('statsMetric') as HTMLSelectElement | null;
+
+    if (statsStart) {
+        statsStart.onchange = () => {
+            updateStatsPeriodChart();
+        };
+    }
+
+    if (statsEnd) {
+        statsEnd.onchange = () => {
+            updateStatsPeriodChart();
+        };
+    }
+
+    if (statsMetric) {
+        statsMetric.onchange = () => {
+            updateStatsPeriodChart();
+        };
+    }
+
+    const chartButtons = document.querySelectorAll('.chart-type-toggle .chart-btn');
+    chartButtons.forEach((button) => {
+        (button as HTMLButtonElement).onclick = () => {
+            const nextType = (button as HTMLButtonElement).dataset.chartType === 'bar' ? 'bar' : 'line';
+            if (nextType === statsChartType) return;
+            statsChartType = nextType;
+            updateChartTypeButtonsState();
+            updateStatsPeriodChart();
+        };
+    });
+
+    updateChartTypeButtonsState();
+}
 
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -37,13 +255,12 @@ function onReady(callback: () => void) {
 
 // Carregar dados ao iniciar
 function initDashboard() {
-    const today = new Date();
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 7);
+    const defaults = getDefaultStatsRange();
     const statsStart = document.getElementById('statsStartDate') as HTMLInputElement | null;
     const statsEnd = document.getElementById('statsEndDate') as HTMLInputElement | null;
-    if (statsStart) statsStart.value = weekAgo.toISOString().slice(0, 10);
-    if (statsEnd) statsEnd.value = today.toISOString().slice(0, 10);
+    if (statsStart && !normalizeDateInputValue(statsStart.value)) statsStart.value = defaults.startDate;
+    if (statsEnd && !normalizeDateInputValue(statsEnd.value)) statsEnd.value = defaults.endDate;
+    bindStatsPeriodControls();
     initStatsChart();
     loadDashboardData();
 }
@@ -61,6 +278,7 @@ async function loadDashboardData() {
         updateStats();
         updateFunnel();
         renderLeadsTable();
+        await updateStatsPeriodChart({ silent: true });
         
         hideLoading();
     } catch (error) {
@@ -71,31 +289,9 @@ async function loadDashboardData() {
 }
 
 function initStatsChart() {
-    const ctx = document.getElementById('statsChart') as HTMLCanvasElement | null;
-    if (!ctx || typeof Chart === 'undefined') return;
-
-    const chartLib = Chart as unknown as {
-        getChart?: (canvas: HTMLCanvasElement) => { destroy: () => void } | undefined;
-    };
-    const existing = chartLib.getChart?.(ctx);
-    if (existing) {
-        existing.destroy();
-    } else if (statsChartInstance?.destroy) {
-        statsChartInstance.destroy();
-    }
-
-    const labels = [];
-    const today = new Date();
-    for (let i = 6; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-        labels.push(d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }));
-    }
-    statsChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: { labels, datasets: [{ label: 'Novos Contatos', data: [0, 0, 0, 0, 0, 0, 0], borderColor: '#667eea', backgroundColor: 'rgba(102, 126, 234, 0.1)', fill: true, tension: 0.3 }] },
-        options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-    });
+    const range = getStatsRangeFromControls();
+    const fallback = buildStatsChartFallback(range.startDate, range.endDate);
+    renderStatsChart(fallback.labels, fallback.data, getSelectedStatsMetric());
 }
 
 // Atualizar estatísticas

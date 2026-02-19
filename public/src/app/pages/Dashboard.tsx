@@ -91,10 +91,10 @@ function StatsPeriod() {
             <option value="interacoes">Interações</option>
           </select>
           <div className="chart-type-toggle">
-            <button type="button" className="chart-btn active" title="Gráfico de linhas">
+            <button type="button" className="chart-btn active" data-chart-type="line" title="Gráfico de linhas">
               <span className="icon icon-chart-line icon-sm"></span>
             </button>
-            <button type="button" className="chart-btn" title="Gráfico de barras">
+            <button type="button" className="chart-btn" data-chart-type="bar" title="Gráfico de barras">
               <span className="icon icon-chart-bar icon-sm"></span>
             </button>
           </div>
@@ -618,4 +618,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
