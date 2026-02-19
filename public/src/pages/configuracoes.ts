@@ -282,7 +282,10 @@ function saveFunnelSettings() {
 async function loadTemplates() {
     try {
         const response = await api.get('/api/templates');
-        templatesCache = response.templates || [];
+        templatesCache = (response.templates || []).filter((template: TemplateItem) => {
+            const category = normalizeName(template?.category || 'custom');
+            return category === 'quick_reply' || category === 'custom' || category === '';
+        });
         renderTemplatesList();
     } catch (error) {
         templatesCache = [];
@@ -355,9 +358,9 @@ function renderTemplateCard(template: TemplateItem) {
     const body = mediaType === 'audio'
         ? `
             <div class="template-audio">
-                ${audioUrl ? `<audio controls preload="metadata" src="${audioUrl}"></audio>` : `<p class="text-muted">Nenhum audio enviado.</p>`}
+                ${audioUrl ? `<audio controls preload="metadata" src="${audioUrl}"></audio>` : `<p class="text-muted">Nenhum áudio enviado.</p>`}
                 <input type="file" class="form-input template-audio-input" accept="audio/*" onchange="replaceTemplateAudio(${template.id}, event)" />
-                <small class="text-muted">Envie um novo audio para substituir o atual.</small>
+                <small class="text-muted">Envie um novo áudio para substituir o atual.</small>
             </div>
         `
         : `
@@ -387,18 +390,18 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
     const name = nameInput?.value.trim() || '';
 
     if (!id || !name) {
-        if (showToastMessage) showToast('warning', 'Aviso', 'Preencha o nome do template');
+        if (showToastMessage) showToast('warning', 'Aviso', 'Preencha o título da resposta rápida');
         return;
     }
 
     const payload: Record<string, any> = {
         name,
-        category: 'custom'
+        category: 'quick_reply'
     };
 
     if (mediaType === 'audio') {
         if (!mediaUrl) {
-            if (showToastMessage) showToast('warning', 'Aviso', 'Envie um audio para o template');
+            if (showToastMessage) showToast('warning', 'Aviso', 'Envie um áudio para a resposta rápida');
             return;
         }
         payload.media_type = 'audio';
@@ -406,7 +409,7 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
     } else {
         const content = contentInput?.value.trim() || '';
         if (!content) {
-            if (showToastMessage) showToast('warning', 'Aviso', 'Preencha a mensagem do template');
+            if (showToastMessage) showToast('warning', 'Aviso', 'Preencha a mensagem da resposta rápida');
             return;
         }
         payload.content = content;
@@ -414,7 +417,7 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
 
     await api.put(`/api/templates/${id}`, payload);
     if (showToastMessage) {
-        showToast('success', 'Sucesso', 'Template atualizado!');
+        showToast('success', 'Sucesso', 'Resposta rápida atualizada!');
     }
 }
 
@@ -424,14 +427,14 @@ async function saveTemplate(id: number) {
     try {
         await saveTemplateInternal(card, true);
     } catch (error) {
-        showToast('error', 'Erro', 'Nao foi possivel salvar');
+        showToast('error', 'Erro', 'Não foi possível salvar');
     }
 }
 
 async function saveCopysSettings() {
     const cards = Array.from(document.querySelectorAll('.template-card')) as HTMLElement[];
     if (!cards.length) {
-        showToast('info', 'Info', 'Nenhum template para salvar');
+        showToast('info', 'Info', 'Nenhuma resposta rápida para salvar');
         return;
     }
 
@@ -440,20 +443,20 @@ async function saveCopysSettings() {
             await saveTemplateInternal(card, false);
         }
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Templates salvos!');
+        showToast('success', 'Sucesso', 'Respostas rápidas salvas!');
     } catch (error) {
-        showToast('error', 'Erro', 'Nao foi possivel salvar os templates');
+        showToast('error', 'Erro', 'Não foi possível salvar as respostas rápidas');
     }
 }
 
 async function deleteTemplate(id: number) {
-    if (!confirm('Excluir este template?')) return;
+    if (!confirm('Excluir esta resposta rápida?')) return;
     try {
         await api.delete(`/api/templates/${id}`);
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Template removido!');
+        showToast('success', 'Sucesso', 'Resposta rápida removida!');
     } catch (error) {
-        showToast('error', 'Erro', 'Nao foi possivel remover');
+        showToast('error', 'Erro', 'Não foi possível remover');
     }
 }
 
@@ -463,7 +466,7 @@ async function replaceTemplateAudio(id: number, event: Event) {
     if (!file) return;
 
     try {
-        showLoading('Enviando audio...');
+        showLoading('Enviando áudio...');
         const uploaded = await uploadFile(file);
         hideLoading();
 
@@ -472,17 +475,17 @@ async function replaceTemplateAudio(id: number, event: Event) {
         const name = nameInput?.value.trim() || '';
 
         await api.put(`/api/templates/${id}`, {
-            name: name || `Template ${id}`,
-            category: 'custom',
+            name: name || `Resposta rápida ${id}`,
+            category: 'quick_reply',
             media_type: 'audio',
             media_url: uploaded.url,
             content: ''
         });
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Audio atualizado!');
+        showToast('success', 'Sucesso', 'Áudio atualizado!');
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', 'Nao foi possivel atualizar o audio');
+        showToast('error', 'Erro', 'Não foi possível atualizar o áudio');
     } finally {
         if (target) target.value = '';
     }
@@ -526,19 +529,19 @@ async function saveNewTemplate() {
     const message = (document.getElementById('newTemplateMessage') as HTMLTextAreaElement | null)?.value.trim() || '';
     const audioInput = document.getElementById('newTemplateAudio') as HTMLInputElement | null;
     const audioFile = audioInput?.files?.[0];
-    if (!name) { showToast('error', 'Erro', 'Preencha o nome do template'); return; }
+    if (!name) { showToast('error', 'Erro', 'Preencha o título da resposta rápida'); return; }
     try {
         if (type === 'audio') {
             if (!audioFile) {
-                showToast('error', 'Erro', 'Selecione um arquivo de audio');
+                showToast('error', 'Erro', 'Selecione um arquivo de áudio');
                 return;
             }
-            showLoading('Enviando audio...');
+            showLoading('Enviando áudio...');
             const uploaded = await uploadFile(audioFile);
             hideLoading();
             await api.post('/api/templates', {
                 name,
-                category: 'custom',
+                category: 'quick_reply',
                 content: '',
                 media_type: 'audio',
                 media_url: uploaded.url
@@ -547,7 +550,7 @@ async function saveNewTemplate() {
             if (!message) { showToast('error', 'Erro', 'Preencha a mensagem'); return; }
             await api.post('/api/templates', {
                 name,
-                category: 'custom',
+                category: 'quick_reply',
                 content: message,
                 variables: ['nome', 'telefone', 'veiculo', 'placa', 'empresa']
             });
@@ -562,10 +565,10 @@ async function saveNewTemplate() {
         if (newTemplateType) newTemplateType.value = 'text';
         updateNewTemplateForm();
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Template adicionado!');
+        showToast('success', 'Sucesso', 'Resposta rápida adicionada!');
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', 'Nao foi possivel adicionar o template');
+        showToast('error', 'Erro', 'Não foi possível adicionar a resposta rápida');
     }
 }
 

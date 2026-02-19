@@ -32,7 +32,7 @@ type ChatMessage = {
 
 type ConversationsResponse = { conversations?: Array<Record<string, any>> };
 type MessagesResponse = { messages?: Array<Record<string, any>> };
-type TemplatesResponse = { templates?: Array<Record<string, any>> };
+type QuickRepliesResponse = { templates?: Array<Record<string, any>> };
 
 type TemplateItem = {
     id: number;
@@ -46,11 +46,12 @@ type TemplateItem = {
 let conversations: Conversation[] = [];
 let currentConversation: Conversation | null = null;
 let messages: ChatMessage[] = [];
-let templates: TemplateItem[] = [];
+let quickReplies: TemplateItem[] = [];
 let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
 let socketBound = false;
 let refreshInterval: number | null = null;
 let currentFilter: 'all' | 'unread' = 'all';
+let quickReplyDismissBound = false;
 
 function normalizeDirection(message: Record<string, any>): 'outgoing' | 'incoming' {
     const rawDirection = String(message.direction || '').trim().toLowerCase();
@@ -77,6 +78,14 @@ function escapeHtml(value: string) {
         .replace(/'/g, '&#039;');
 }
 
+function normalizeName(value: string) {
+    return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+}
+
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', callback);
@@ -91,8 +100,9 @@ function getContatosUrl(id: string | number) {
 }
 
 function initInbox() {
+    bindQuickReplyDismiss();
     loadConversations();
-    loadTemplates();
+    loadQuickReplies();
     initSocket();
     if (refreshInterval === null) {
         refreshInterval = window.setInterval(loadConversations, 10000);
@@ -100,6 +110,19 @@ function initInbox() {
 }
 
 onReady(initInbox);
+
+function bindQuickReplyDismiss() {
+    if (quickReplyDismissBound) return;
+    quickReplyDismissBound = true;
+
+    document.addEventListener('click', (event) => {
+        const target = event.target as HTMLElement | null;
+        const picker = document.getElementById('quickReplyPicker') as HTMLElement | null;
+        if (!picker || !picker.classList.contains('open')) return;
+        if (target?.closest('.quick-reply-toolbar')) return;
+        closeQuickReplyPicker();
+    });
+}
 
 function initSocket() {
     try {
@@ -312,36 +335,42 @@ async function loadMessages(leadId: number) {
     }
 }
 
-async function loadTemplates() {
+async function loadQuickReplies() {
     try {
-        const response: TemplatesResponse = await api.get('/api/templates');
-        templates = (response.templates || []).map((t) => ({
-            id: t.id,
-            name: t.name,
-            content: t.content || '',
-            category: t.category,
-            media_type: t.media_type,
-            media_url: t.media_url
-        }));
+        const response: QuickRepliesResponse = await api.get('/api/templates');
+        quickReplies = (response.templates || [])
+            .filter((item) => {
+                const category = normalizeName(item.category || 'custom');
+                return category === 'quick_reply' || category === 'custom' || category === '';
+            })
+            .map((item) => ({
+                id: item.id,
+                name: item.name,
+                content: item.content || '',
+                category: item.category,
+                media_type: item.media_type,
+                media_url: item.media_url
+            }));
     } catch (error) {
-        templates = [];
+        quickReplies = [];
     }
 }
 
-function renderTemplateOptions() {
-    if (!templates.length) {
-        return `<option value="">Sem templates</option>`;
+function renderQuickReplyItems() {
+    if (!quickReplies.length) {
+        return `<div class="quick-reply-empty">Nenhuma resposta r&aacute;pida cadastrada</div>`;
     }
-    const options = templates
-        .map((t) => {
-            const label = t.media_type === 'audio' ? `Audio: ${t.name}` : t.name;
-            return `<option value="${t.id}">${escapeHtml(label)}</option>`;
+
+    return quickReplies
+        .map((item) => {
+            const isAudio = item.media_type === 'audio';
+            const label = isAudio ? `${item.name} (áudio)` : item.name;
+            return `<button class="quick-reply-option" onclick="selectQuickReply(${item.id})">${escapeHtml(label)}</button>`;
         })
         .join('');
-    return `<option value="">Selecionar mensagem...</option>${options}`;
 }
 
-function applyTemplateVariables(content: string) {
+function applyQuickReplyVariables(content: string) {
     if (!currentConversation) return content;
     return content
         .replace(/\{\{\s*nome\s*\}\}/gi, currentConversation.name || '')
@@ -351,35 +380,48 @@ function applyTemplateVariables(content: string) {
         .replace(/\{\{\s*empresa\s*\}\}/gi, 'ZapVender');
 }
 
-function insertSelectedTemplate() {
-    const select = document.getElementById('templateSelect') as HTMLSelectElement | null;
+function toggleQuickReplyPicker() {
+    const picker = document.getElementById('quickReplyPicker') as HTMLElement | null;
+    if (!picker) return;
+    picker.classList.toggle('open');
+}
+
+function closeQuickReplyPicker() {
+    const picker = document.getElementById('quickReplyPicker') as HTMLElement | null;
+    if (!picker) return;
+    picker.classList.remove('open');
+}
+
+function selectQuickReply(id: number) {
     const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
-    if (!select || !input) return;
-    const id = Number(select.value || 0);
-    if (!id) return;
-    const template = templates.find((t) => t.id === id);
-    if (!template) return;
-    if (template.media_type === 'audio') {
-        sendTemplateAudio(template);
-        select.value = '';
+    if (!input) return;
+
+    const selectedReply = quickReplies.find((item) => item.id === id);
+    if (!selectedReply) return;
+
+    closeQuickReplyPicker();
+
+    if (selectedReply.media_type === 'audio') {
+        sendQuickReplyAudio(selectedReply);
         return;
     }
-    const text = applyTemplateVariables(template.content || '');
+
+    const text = applyQuickReplyVariables(selectedReply.content || '');
     input.value = text;
     input.focus();
 }
 
-async function sendTemplateAudio(template: TemplateItem) {
+async function sendQuickReplyAudio(quickReply: TemplateItem) {
     if (!currentConversation) return;
-    if (!template.media_url) {
-        showToast('warning', 'Aviso', 'Template de audio sem arquivo');
+    if (!quickReply.media_url) {
+        showToast('warning', 'Aviso', 'Resposta rápida de áudio sem arquivo');
         return;
     }
-    const mediaUrl = template.media_url;
+    const mediaUrl = quickReply.media_url;
 
     const newMessage: ChatMessage = {
         id: Date.now(),
-        content: 'Audio',
+        content: 'Áudio',
         direction: 'outgoing',
         status: 'pending',
         created_at: new Date().toISOString(),
@@ -405,7 +447,7 @@ async function sendTemplateAudio(template: TemplateItem) {
     } catch (error) {
         newMessage.status = 'failed';
         renderMessagesInto(chatMessages);
-        showToast('error', 'Erro', 'Nao foi possivel enviar o audio');
+        showToast('error', 'Erro', 'Não foi possível enviar o áudio');
     }
 }
 
@@ -420,7 +462,7 @@ function renderChat() {
     const panel = document.getElementById('chatPanel') as HTMLElement | null;
     if (!panel || !currentConversation) return;
 
-    const templateOptions = renderTemplateOptions();
+    const quickReplyItems = renderQuickReplyItems();
     
     panel.innerHTML = `
         <div class="chat-header">
@@ -445,23 +487,16 @@ function renderChat() {
             </div>
         </div>
 
-                <div class="quick-replies">
-            <div class="quick-reply" onclick="insertQuickReply('Olá! Tudo bem?')">Olá! Tudo bem?</div>
-            <div class="quick-reply" onclick="insertQuickReply('Posso ajudar?')">Posso ajudar?</div>
-            <div class="quick-reply" onclick="insertQuickReply('Obrigado pelo contato!')">Obrigado!</div>
-            <div class="quick-reply" onclick="insertQuickReply('Vou verificar e retorno em breve.')">Vou verificar</div>
-        </div>
-
-        <div class="template-bar">
-            <select id="templateSelect" class="template-select">
-                ${templateOptions}
-            </select>
-            <button class="btn btn-sm btn-outline" onclick="insertSelectedTemplate()">Inserir</button>
+        <div class="quick-reply-toolbar">
+            <button class="btn btn-sm btn-outline quick-reply-trigger" onclick="toggleQuickReplyPicker()" title="Selecionar resposta r&aacute;pida">
+                <span class="icon icon-bolt icon-sm"></span> Respostas r&aacute;pidas
+            </button>
+            <div class="quick-reply-picker" id="quickReplyPicker">
+                ${quickReplyItems}
+            </div>
         </div>
 
         <div class="chat-input">
-            <input type="file" id="audioFileInput" accept="audio/*" style="display:none" onchange="handleAudioUpload(event)" />
-            <button class="btn btn-sm btn-outline btn-icon audio-btn" onclick="triggerAudioUpload()" title="Enviar áudio">Audio</button>
             <textarea id="messageInput" placeholder="Digite uma mensagem..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
             <button onclick="sendMessage()" title="Enviar"><span class="icon icon-send icon-sm"></span></button>
         </div>
@@ -519,13 +554,6 @@ function scrollToBottom() {
     }
 }
 
-function insertQuickReply(text: string) {
-    const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
-    if (!input) return;
-    input.value = text;
-    input.focus();
-}
-
 function handleKeyDown(event: KeyboardEvent) {
     if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
@@ -574,73 +602,6 @@ async function sendMessage() {
         renderMessagesInto(chatMessages);
         showToast('error', 'Erro', 'Não foi possível enviar a mensagem');
     }
-}
-
-function triggerAudioUpload() {
-    const input = document.getElementById('audioFileInput') as HTMLInputElement | null;
-    if (input) input.click();
-}
-
-async function handleAudioUpload(event: Event) {
-    const target = event.target as HTMLInputElement | null;
-    const file = target?.files?.[0];
-    if (!file || !currentConversation) return;
-
-    try {
-        showLoading('Enviando áudio...');
-        const uploaded = await uploadFile(file);
-        hideLoading();
-
-        const newMessage: ChatMessage = {
-            id: Date.now(),
-            content: 'Áudio',
-            direction: 'outgoing',
-            status: 'pending',
-            created_at: new Date().toISOString(),
-            media_type: 'audio',
-            media_url: uploaded.url
-        };
-        messages.push(newMessage);
-        const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
-        renderMessagesInto(chatMessages);
-        scrollToBottom();
-
-        await api.post('/api/send', {
-            sessionId: APP.sessionId,
-            to: currentConversation.phone,
-            message: uploaded.url,
-            type: 'audio',
-            options: { url: uploaded.url, mimetype: file.type }
-        });
-
-        newMessage.status = 'sent';
-        renderMessagesInto(chatMessages);
-    } catch (error) {
-        hideLoading();
-        showToast('error', 'Erro', 'Não foi possível enviar o áudio');
-    } finally {
-        if (target) target.value = '';
-    }
-}
-
-async function uploadFile(file: File) {
-    const baseUrl = (window as any).APP?.socketUrl || '';
-    const token = sessionStorage.getItem('selfDashboardToken');
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await fetch(`${baseUrl}/api/upload`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-        throw new Error(data.error || 'Falha no upload');
-    }
-
-    return data.file;
 }
 
 function openWhatsApp() {
@@ -706,19 +667,14 @@ function updateUnreadBadge() {
 
 const windowAny = window as Window & {
     initInbox?: () => void;
-    filterConversations?: (filter: string) => void;
-    searchConversations?: () => void;
-    registerCurrentUser?: () => void;
-    logout?: () => void;
     filterConversations?: (filter: 'all' | 'unread') => void;
     searchConversations?: () => void;
     selectConversation?: (id: number) => Promise<void>;
-    insertQuickReply?: (text: string) => void;
+    toggleQuickReplyPicker?: () => void;
+    closeQuickReplyPicker?: () => void;
+    selectQuickReply?: (id: number) => void;
     handleKeyDown?: (event: KeyboardEvent) => void;
     sendMessage?: () => Promise<void>;
-    insertSelectedTemplate?: () => void;
-    triggerAudioUpload?: () => void;
-    handleAudioUpload?: (event: Event) => void;
     openWhatsApp?: () => void;
     viewContact?: () => void;
     toggleContactInfo?: () => void;
@@ -731,20 +687,15 @@ windowAny.filterConversations = filterConversations;
 windowAny.searchConversations = searchConversations;
 windowAny.registerCurrentUser = registerCurrentUser;
 windowAny.logout = logout;
-windowAny.filterConversations = filterConversations;
-windowAny.searchConversations = searchConversations;
 windowAny.selectConversation = selectConversation;
-windowAny.insertQuickReply = insertQuickReply;
+windowAny.toggleQuickReplyPicker = toggleQuickReplyPicker;
+windowAny.closeQuickReplyPicker = closeQuickReplyPicker;
+windowAny.selectQuickReply = selectQuickReply;
 windowAny.handleKeyDown = handleKeyDown;
 windowAny.sendMessage = sendMessage;
-windowAny.insertSelectedTemplate = insertSelectedTemplate;
-windowAny.triggerAudioUpload = triggerAudioUpload;
-windowAny.handleAudioUpload = handleAudioUpload;
 windowAny.openWhatsApp = openWhatsApp;
 windowAny.viewContact = viewContact;
 windowAny.toggleContactInfo = toggleContactInfo;
-windowAny.registerCurrentUser = registerCurrentUser;
 windowAny.backToList = backToList;
-windowAny.logout = logout;
 
 export { initInbox };

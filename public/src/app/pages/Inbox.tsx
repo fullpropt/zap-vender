@@ -269,32 +269,62 @@ export default function Inbox() {
             transition: transform 0.2s;
         }
         .chat-input button:hover { transform: scale(1.05); }
-        .chat-input .audio-btn {
-            width: auto;
-            height: 40px;
+        .quick-reply-toolbar {
+            position: relative;
+            display: flex;
+            justify-content: flex-start;
+            padding: 10px 20px 0;
+            background: var(--surface);
+            border-top: 1px solid var(--border-color);
+        }
+        .quick-reply-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            height: 36px;
+            border-radius: 999px;
             padding: 0 14px;
-            border-radius: 20px;
-            background: var(--gray-50);
-            color: var(--gray-800);
-            border: 1px solid var(--border-color);
-            font-size: 12px;
             font-weight: 600;
         }
-        .chat-input .audio-btn:hover { transform: translateY(-1px); }
-        .template-bar {
-            display: flex;
-            gap: 10px;
-            padding: 10px 20px 0;
-            align-items: center;
-        }
-        .template-select {
-            flex: 1;
+        .quick-reply-picker {
+            display: none;
+            position: absolute;
+            left: 20px;
+            right: 20px;
+            bottom: calc(100% + 8px);
+            background: var(--surface);
             border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: var(--shadow-lg);
+            padding: 8px;
+            max-height: 220px;
+            overflow-y: auto;
+            z-index: 10;
+        }
+        .quick-reply-picker.open {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .quick-reply-option {
+            width: 100%;
+            border: 1px solid transparent;
             border-radius: 10px;
-            padding: 8px 10px;
-            font-size: 13px;
-            background: var(--surface-muted);
+            background: transparent;
             color: var(--dark);
+            text-align: left;
+            font-size: 13px;
+            padding: 10px 12px;
+            cursor: pointer;
+        }
+        .quick-reply-option:hover {
+            background: rgba(var(--primary-rgb), 0.1);
+            border-color: var(--border-color);
+        }
+        .quick-reply-empty {
+            padding: 10px 12px;
+            font-size: 13px;
+            color: var(--gray-700);
         }
         .chat-empty {
             flex: 1;
@@ -306,25 +336,6 @@ export default function Inbox() {
             background: var(--surface-muted);
         }
         .chat-empty-icon { font-size: 80px; margin-bottom: 20px; opacity: 0.5; }
-        .quick-replies {
-            display: flex;
-            gap: 10px;
-            padding: 10px 20px;
-            background: var(--surface);
-            border-top: 1px solid var(--border-color);
-            overflow-x: auto;
-        }
-        .quick-reply {
-            padding: 8px 16px;
-            background: var(--gray-100);
-            color: var(--gray-800);
-            border-radius: 20px;
-            font-size: 12px;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: background 0.2s;
-        }
-        .quick-reply:hover { background: var(--gray-200); }
         .typing-indicator {
             display: flex;
             gap: 4px;

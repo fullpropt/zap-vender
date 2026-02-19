@@ -213,7 +213,6 @@ export default function Configuracoes() {
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('hours')}><span className="icon icon-clock icon-sm"></span> Horários</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('flows')}><span className="icon icon-flows icon-sm"></span> Fluxos Padrões</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('funnel')}><span className="icon icon-funnel icon-sm"></span> Funil de Vendas</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('copys')}><span className="icon icon-templates icon-sm"></span> Copys e Mensagens</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('notifications')}><span className="icon icon-bell icon-sm"></span> Notificações</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('users')}><span className="icon icon-user icon-sm"></span> Usuários</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('api')}><span className="icon icon-plug icon-sm"></span> API e Webhooks</div>
@@ -313,7 +312,31 @@ export default function Configuracoes() {
                               </div>
                           </div>
                       </div>
-                      <div className="settings-panel" id="panel-quick"><h3 className="settings-section-title">Respostas rápidas</h3><p className="text-muted">Em breve.</p></div>
+                      <div className="settings-panel" id="panel-quick">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-bolt icon-sm"></span> Respostas rápidas</h3>
+                              <p className="text-muted mb-3">Crie respostas de texto e áudio para usar no Inbox.</p>
+
+                              <div className="mb-4">
+                                  <span className="variable-tag" onClick={() => globals.insertVariable?.('{{nome}}')}>{'{{nome}}'}</span>
+                                  <span className="variable-tag" onClick={() => globals.insertVariable?.('{{telefone}}')}>{'{{telefone}}'}</span>
+                                  <span className="variable-tag" onClick={() => globals.insertVariable?.('{{veiculo}}')}>{'{{veiculo}}'}</span>
+                                  <span className="variable-tag" onClick={() => globals.insertVariable?.('{{placa}}')}>{'{{placa}}'}</span>
+                                  <span className="variable-tag" onClick={() => globals.insertVariable?.('{{empresa}}')}>{'{{empresa}}'}</span>
+                              </div>
+
+                              <div className="copy-card">
+                                  <div className="copy-card-header">
+                                      <span className="copy-card-title">Respostas cadastradas</span>
+                                  </div>
+                                  <div id="templatesList"></div>
+                                  <p className="text-muted" id="templatesEmpty" style={{ marginTop: '12px' }}>Nenhuma resposta rápida cadastrada.</p>
+                              </div>
+
+                              <button className="btn btn-outline w-100 mt-3" onClick={() => globals.openModal?.('addTemplateModal')}><span className="icon icon-add icon-sm"></span> Nova resposta rápida</button>
+                          </div>
+                          <button className="btn btn-primary" onClick={() => globals.saveCopysSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar respostas rápidas</button>
+                      </div>
                       <div className="settings-panel" id="panel-hours"><h3 className="settings-section-title">Horários</h3><p className="text-muted">Em breve.</p></div>
                       <div className="settings-panel" id="panel-flows"><h3 className="settings-section-title">Fluxos Padrões</h3><p className="text-muted">Em breve.</p></div>
       
@@ -399,32 +422,6 @@ export default function Configuracoes() {
                           <button className="btn btn-primary" onClick={() => globals.saveFunnelSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Funil</button>
                       </div>
       
-                      <div className="settings-panel" id="panel-copys">
-                          <div className="settings-section">
-                              <h3 className="settings-section-title"><span className="icon icon-templates icon-sm"></span> Templates de Mensagens</h3>
-                              <p className="text-muted mb-3">Crie e gerencie templates de mensagens. Use as vari??veis:</p>
-                              
-                              <div className="mb-4">
-                                  <span className="variable-tag" onClick={() => globals.insertVariable?.('{{nome}}')}>{'{{nome}}'}</span>
-                                  <span className="variable-tag" onClick={() => globals.insertVariable?.('{{telefone}}')}>{'{{telefone}}'}</span>
-                                  <span className="variable-tag" onClick={() => globals.insertVariable?.('{{veiculo}}')}>{'{{veiculo}}'}</span>
-                                  <span className="variable-tag" onClick={() => globals.insertVariable?.('{{placa}}')}>{'{{placa}}'}</span>
-                                  <span className="variable-tag" onClick={() => globals.insertVariable?.('{{empresa}}')}>{'{{empresa}}'}</span>
-                              </div>
-
-                              <div className="copy-card">
-                                  <div className="copy-card-header">
-                                      <span className="copy-card-title">Templates personalizados</span>
-                                  </div>
-                                  <div id="templatesList"></div>
-                                  <p className="text-muted" id="templatesEmpty" style={{ marginTop: '12px' }}>Nenhum template criado ainda.</p>
-                              </div>
-
-                              <button className="btn btn-outline w-100 mt-3" onClick={() => globals.openModal?.('addTemplateModal')}><span className="icon icon-add icon-sm"></span> Adicionar Template</button>
-                          </div>
-                          <button className="btn btn-primary" onClick={() => globals.saveCopysSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Templates</button>
-                      </div>
-
                       <div className="settings-panel" id="panel-notifications">
                           <div className="settings-section">
                               <h3 className="settings-section-title"><span className="icon icon-bell icon-sm"></span> Preferências de Notificação</h3>
@@ -568,16 +565,16 @@ export default function Configuracoes() {
           <div className="modal-overlay" id="addTemplateModal">
               <div className="modal">
                   <div className="modal-header">
-                      <h3 className="modal-title"><span className="icon icon-add icon-sm"></span> Novo Template</h3>
+                      <h3 className="modal-title"><span className="icon icon-add icon-sm"></span> Nova resposta rápida</h3>
                       <button className="modal-close" onClick={() => globals.closeModal?.('addTemplateModal')}>×</button>
                   </div>
                   <div className="modal-body">
                       <div className="form-group">
-                          <label className="form-label required">Nome do Template</label>
-                          <input type="text" className="form-input" id="newTemplateName" required placeholder="Ex: Promoção" />
+                          <label className="form-label required">Título da resposta</label>
+                          <input type="text" className="form-input" id="newTemplateName" required placeholder="Ex.: Primeiro contato" />
                       </div>
                       <div className="form-group">
-                          <label className="form-label required">Tipo</label>
+                          <label className="form-label required">Tipo de conteúdo</label>
                           <select className="form-select" id="newTemplateType" onChange={() => globals.updateNewTemplateForm?.()}>
                               <option value="text">Texto</option>
                               <option value="audio">Áudio</option>
@@ -591,7 +588,7 @@ export default function Configuracoes() {
                           <div id="newTemplateAudioGroup" style={{ display: 'none' }}>
                               <label className="form-label required">Arquivo de áudio</label>
                               <input type="file" className="form-input" id="newTemplateAudio" accept="audio/*" />
-                              <small className="text-muted">Envie um áudio (ogg/mp3/wav). Ele ficará salvo para uso no Inbox.</small>
+                              <small className="text-muted">Envie um áudio (ogg/mp3/wav) para usar como resposta rápida no Inbox.</small>
                           </div>
                       </div>
                   </div>
