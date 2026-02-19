@@ -69,6 +69,20 @@ function getLeadStatusLabel(status?: number) {
     return '-';
 }
 
+function getFunnelStageName(stage: number, fallback: string) {
+    try {
+        const rawSettings = localStorage.getItem('selfSettings');
+        if (!rawSettings) return fallback;
+        const parsed = JSON.parse(rawSettings);
+        const funnel = Array.isArray(parsed?.funnel) ? parsed.funnel : [];
+        const stageConfig = funnel[stage - 1];
+        const name = String(stageConfig?.name || '').trim();
+        return name || fallback;
+    } catch {
+        return fallback;
+    }
+}
+
 function parseTagsForDisplay(rawTags: unknown) {
     if (Array.isArray(rawTags)) {
         return rawTags.map(tag => String(tag || '').trim()).filter(Boolean);
@@ -97,10 +111,40 @@ function formatCampaignPhone(phone?: string) {
 
 function getCampaignSegmentLabel(segment?: string) {
     const normalized = String(segment || 'all').toLowerCase();
-    if (normalized === 'new') return 'Novos (Etapa 1)';
-    if (normalized === 'progress') return 'Em andamento (Etapa 2)';
-    if (normalized === 'concluded') return 'Concluídos (Etapa 3)';
+    if (normalized === 'new' || normalized === 'status_1' || normalized === '1') {
+        return `${getFunnelStageName(1, 'Novo')} (Etapa 1)`;
+    }
+    if (normalized === 'progress' || normalized === 'status_2' || normalized === '2') {
+        return `${getFunnelStageName(2, 'Em andamento')} (Etapa 2)`;
+    }
+    if (normalized === 'concluded' || normalized === 'status_3' || normalized === '3') {
+        return `${getFunnelStageName(3, 'Concluído')} (Etapa 3)`;
+    }
+    if (normalized === 'lost' || normalized === 'status_4' || normalized === '4') {
+        return `${getFunnelStageName(4, 'Perdido')} (Etapa 4)`;
+    }
     return 'Todos os contatos';
+}
+
+function getCampaignSegmentOptions() {
+    return [
+        { value: 'all', label: 'Todos os Contatos' },
+        { value: 'new', label: `${getFunnelStageName(1, 'Novo')} (Etapa 1)` },
+        { value: 'progress', label: `${getFunnelStageName(2, 'Em Andamento')} (Etapa 2)` },
+        { value: 'concluded', label: `${getFunnelStageName(3, 'Concluído')} (Etapa 3)` },
+        { value: 'lost', label: `${getFunnelStageName(4, 'Perdido')} (Etapa 4)` }
+    ];
+}
+
+function syncCampaignSegmentOptions() {
+    const segmentSelect = document.getElementById('campaignSegment') as HTMLSelectElement | null;
+    if (!segmentSelect) return;
+
+    const currentValue = segmentSelect.value || 'all';
+    segmentSelect.innerHTML = getCampaignSegmentOptions()
+        .map((option) => `<option value="${escapeCampaignText(option.value)}">${escapeCampaignText(option.label)}</option>`)
+        .join('');
+    setSelectValue(segmentSelect, currentValue);
 }
 
 function splitCampaignMessageSteps(campaign: Campaign) {
@@ -224,6 +268,7 @@ function resetCampaignForm() {
     form?.reset();
     const idInput = document.getElementById('campaignId') as HTMLInputElement | null;
     if (idInput) idInput.value = '';
+    syncCampaignSegmentOptions();
     setDelayRangeInputs(DEFAULT_DELAY_MIN_SECONDS, DEFAULT_DELAY_MAX_SECONDS);
     setCampaignModalTitle('new');
 }
@@ -293,6 +338,7 @@ function openBroadcastModal() {
 }
 
 function initCampanhas() {
+    syncCampaignSegmentOptions();
     loadCampaigns();
 }
 
@@ -576,6 +622,7 @@ function viewCampaign(id: number) {
 function editCampaign(id: number) {
     const campaign = campaigns.find(c => c.id === id);
     if (!campaign) return;
+    syncCampaignSegmentOptions();
 
     const idInput = document.getElementById('campaignId') as HTMLInputElement | null;
     if (idInput) idInput.value = String(campaign.id);

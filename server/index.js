@@ -5528,6 +5528,39 @@ function normalizeCampaignTag(value) {
     return String(value || '').trim().toLowerCase();
 }
 
+function resolveCampaignSegmentStatus(segment) {
+    const normalizedSegment = String(segment || 'all').trim().toLowerCase();
+
+    if (!normalizedSegment || normalizedSegment === 'all') return null;
+
+    if (normalizedSegment === 'new' || normalizedSegment === 'novo' || normalizedSegment === 'etapa1' || normalizedSegment === 'stage1' || normalizedSegment === 'status_1') {
+        return 1;
+    }
+
+    if (normalizedSegment === 'progress' || normalizedSegment === 'em_andamento' || normalizedSegment === 'etapa2' || normalizedSegment === 'stage2' || normalizedSegment === 'status_2') {
+        return 2;
+    }
+
+    if (normalizedSegment === 'concluded' || normalizedSegment === 'concluido' || normalizedSegment === 'etapa3' || normalizedSegment === 'stage3' || normalizedSegment === 'status_3') {
+        return 3;
+    }
+
+    if (normalizedSegment === 'lost' || normalizedSegment === 'perdido' || normalizedSegment === 'etapa4' || normalizedSegment === 'stage4' || normalizedSegment === 'status_4') {
+        return 4;
+    }
+
+    const prefixed = normalizedSegment.match(/^status[_-](\d+)$/);
+    if (prefixed) {
+        const value = Number(prefixed[1]);
+        if ([1, 2, 3, 4].includes(value)) return value;
+    }
+
+    const directNumeric = Number(normalizedSegment);
+    if ([1, 2, 3, 4].includes(directNumeric)) return directNumeric;
+
+    return null;
+}
+
 function leadMatchesCampaignTag(lead, tagFilter = '') {
     const normalizedTagFilter = normalizeCampaignTag(tagFilter);
     if (!normalizedTagFilter) return true;
@@ -5540,32 +5573,16 @@ async function resolveCampaignLeadIds(options = {}) {
 
     const segment = typeof options === 'string' ? options : options.segment;
     const tagFilter = typeof options === 'string' ? '' : options.tagFilter;
-
-    const normalizedSegment = String(segment || 'all').toLowerCase();
+    const segmentStatus = resolveCampaignSegmentStatus(segment);
 
     let sql = 'SELECT id, tags FROM leads WHERE is_blocked = 0';
 
     const params = [];
 
 
-    if (normalizedSegment === 'new') {
-
+    if (segmentStatus !== null) {
         sql += ' AND status = ?';
-
-        params.push(1);
-
-    } else if (normalizedSegment === 'progress') {
-
-        sql += ' AND status = ?';
-
-        params.push(2);
-
-    } else if (normalizedSegment === 'concluded') {
-
-        sql += ' AND status = ?';
-
-        params.push(3);
-
+        params.push(segmentStatus);
     }
 
 
@@ -5581,13 +5598,12 @@ async function resolveCampaignLeadIds(options = {}) {
 }
 
 function leadMatchesCampaignSegment(lead, segment = 'all') {
-    const normalizedSegment = String(segment || 'all').toLowerCase();
+    const normalizedSegment = String(segment || 'all').trim().toLowerCase();
     const leadStatus = Number(lead?.status || 0);
 
     if (normalizedSegment === 'all') return true;
-    if (normalizedSegment === 'new') return leadStatus === 1;
-    if (normalizedSegment === 'progress') return leadStatus === 2;
-    if (normalizedSegment === 'concluded') return leadStatus === 3;
+    const segmentStatus = resolveCampaignSegmentStatus(segment);
+    if (segmentStatus !== null) return leadStatus === segmentStatus;
     return true;
 }
 
@@ -6562,7 +6578,6 @@ process.on('uncaughtException', (error) => {
     });
 
 };
-
 
 
 

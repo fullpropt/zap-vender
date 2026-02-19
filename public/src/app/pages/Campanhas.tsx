@@ -285,6 +285,7 @@ export default function Campanhas() {
                                   <option value="new">Novos (Etapa 1)</option>
                                   <option value="progress">Em Andamento (Etapa 2)</option>
                                   <option value="concluded">Concluídos (Etapa 3)</option>
+                                  <option value="lost">Perdidos (Etapa 4)</option>
                               </select>
                           </div>
 
