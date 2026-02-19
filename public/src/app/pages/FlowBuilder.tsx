@@ -731,7 +731,31 @@ export default function FlowBuilder() {
             font-size: 12px;
             color: var(--gray);
         }
-        
+
+        .flow-list-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 10px;
+        }
+
+        .flow-list-delete {
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            background: rgba(239, 68, 68, 0.08);
+            color: #b91c1c;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 6px 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .flow-list-delete:hover {
+            background: rgba(239, 68, 68, 0.16);
+            border-color: rgba(239, 68, 68, 0.5);
+        }
+
         .flow-list-item .status {
             padding: 4px 10px;
             border-radius: 15px;
@@ -772,6 +796,13 @@ export default function FlowBuilder() {
                 min-height: 100vh;
                 overflow: auto;
                 padding: 16px 12px;
+            }
+            .flow-list-item {
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            .flow-list-actions {
+                margin-left: 0;
             }
             .flow-container {
                 grid-template-columns: 1fr;

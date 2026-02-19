@@ -127,12 +127,15 @@ function setupCanvasEvents() {
         }
     });
 
-    canvas.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-    });
-
     canvas.addEventListener('mousedown', (e) => {
-        if (e.button !== 2) return;
+        if (e.button !== 0) return;
+        const target = e.target as HTMLElement | null;
+        const isCanvasBackground =
+            target === canvas ||
+            target?.id === 'canvasContainer' ||
+            target?.classList.contains('empty-canvas');
+
+        if (!isCanvasBackground) return;
         startPan(e.clientX, e.clientY, canvas);
     });
 
@@ -877,9 +880,40 @@ function renderFlowsList(flows: FlowSummary[]) {
                 <div class="name">${flow.name}</div>
                 <div class="meta">Gatilho: ${flow.trigger_type || 'manual'} | ${flow.nodes?.length || 0} blocos</div>
             </div>
+            <div class="flow-list-actions">
+                <button class="flow-list-delete" title="Descartar fluxo" onclick="discardFlow(${flow.id}, event)">Descartar</button>
+            </div>
             <span class="status ${flow.is_active ? 'active' : 'inactive'}">${flow.is_active ? 'Ativo' : 'Inativo'}</span>
         </div>
     `).join('');
+}
+
+async function discardFlow(id: number, event?: Event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    if (!confirm('Descartar este fluxo? Esta ação não pode ser desfeita.')) return;
+
+    try {
+        const response = await fetch(`/api/flows/${id}`, {
+            method: 'DELETE',
+            headers: buildAuthHeaders(false)
+        });
+        const result = await response.json();
+
+        if (!result.success) {
+            alert('Erro ao descartar fluxo: ' + (result.error || 'Falha inesperada'));
+            return;
+        }
+
+        if (currentFlowId === id) {
+            resetEditorState();
+        }
+
+        await loadFlows();
+    } catch (error) {
+        alert('Erro ao descartar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+    }
 }
 
 // Carregar fluxo
@@ -924,10 +958,12 @@ async function loadFlow(id: number) {
 
 // Criar novo fluxo
 function createNewFlow() {
-    if (nodes.length > 0 || currentFlowId) {
-        if (!confirm('Descartar o fluxo atual e criar um novo?')) return;
+    currentFlowId = null;
+    const flowName = document.getElementById('flowName') as HTMLInputElement | null;
+    if (flowName) {
+        flowName.value = '';
+        flowName.focus();
     }
-    resetEditorState();
     closeFlowsModal();
 }
 
@@ -957,6 +993,7 @@ const windowAny = window as Window & {
     updateCondition?: (index: number, key: 'value' | 'next', value: string) => void;
     deleteNode?: (id: string) => void;
     loadFlow?: (id: number) => Promise<void>;
+    discardFlow?: (id: number, event?: Event) => Promise<void>;
     closeFlowsModal?: () => void;
 };
 windowAny.initFlowBuilder = initFlowBuilder;
@@ -974,6 +1011,7 @@ windowAny.removeCondition = removeCondition;
 windowAny.updateCondition = updateCondition;
 windowAny.deleteNode = deleteNode;
 windowAny.loadFlow = loadFlow;
+windowAny.discardFlow = discardFlow;
 windowAny.closeFlowsModal = closeFlowsModal;
 
 export { initFlowBuilder };
