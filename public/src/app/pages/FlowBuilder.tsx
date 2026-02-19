@@ -154,7 +154,7 @@ export default function FlowBuilder() {
             box-shadow: 0 4px 25px rgba(0,0,0,0.08);
         }
         
-        /* Painel de NÃ³s */
+        /* Painel de Nos */
         .nodes-panel {
             background: var(--lighter);
             border-right: 1px solid var(--border);
@@ -340,11 +340,23 @@ export default function FlowBuilder() {
             background: var(--primary);
             transform: scale(1.3);
         }
+
+        .port.is-connecting {
+            background: var(--primary);
+            transform: scale(1.3);
+            box-shadow: 0 0 0 4px rgba(var(--primary-rgb), 0.2);
+        }
+
+        .port.connection-target {
+            background: var(--info);
+            transform: scale(1.3);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+        }
         
         .port.input { margin-left: -7px; }
         .port.output { margin-right: -7px; }
         
-        /* ConexÃµes SVG */
+        /* Conexoes SVG */
         .connections-svg {
             position: absolute;
             top: 0;
@@ -365,6 +377,14 @@ export default function FlowBuilder() {
         .connection-line:hover {
             stroke: var(--danger);
             stroke-width: 3;
+        }
+
+        .connection-line.connection-line-preview {
+            stroke: var(--primary);
+            stroke-width: 2.5;
+            stroke-dasharray: 6 6;
+            opacity: 0.9;
+            pointer-events: none;
         }
         
         /* Painel de Propriedades */
@@ -795,7 +815,7 @@ export default function FlowBuilder() {
               <div className="header">
                   <div className="header-title">
                       <h1><span className="icon icon-flows icon-sm"></span> Construtor de Fluxos</h1>
-                      <p>Crie automaÃ§Ãµes visuais para suas conversas</p>
+                      <p>Crie automações visuais para suas conversas</p>
                   </div>
                   <div className="header-actions">
                       <button className="toolbar-btn secondary" onClick={() => globals.openFlowsModal?.()}>
@@ -822,7 +842,7 @@ export default function FlowBuilder() {
                               <div className="icon trigger icon-lock"></div>
                               <div className="info">
                                   <div className="name">Palavra-chave</div>
-                                  <div className="desc">Inicia com palavra especÃ­fica</div>
+                                  <div className="desc">Inicia com palavra específica</div>
                               </div>
                           </div>
                       </div>
@@ -833,24 +853,24 @@ export default function FlowBuilder() {
                               <div className="icon message icon-message"></div>
                               <div className="info">
                                   <div className="name">Enviar Mensagem</div>
-                                  <div className="desc">Envia texto ou mÃ­dia</div>
+                                  <div className="desc">Envia texto ou mídia</div>
                               </div>
                           </div>
                           <div className="node-item" draggable="true" data-type="wait">
                               <div className="icon delay icon-clock"></div>
                               <div className="info">
                                   <div className="name">Aguardar Resposta</div>
-                                  <div className="desc">Espera input do usuÃ¡rio</div>
+                                  <div className="desc">Espera input do usuário</div>
                               </div>
                           </div>
                       </div>
                       
                       <div className="node-category">
-                          <h3>LÃ³gica</h3>
+                          <h3>Lógica</h3>
                           <div className="node-item" draggable="true" data-type="condition">
                               <div className="icon condition icon-bolt"></div>
                               <div className="info">
-                                  <div className="name">CondiÃ§Ã£o</div>
+                                  <div className="name">Condição</div>
                                   <div className="desc">Ramifica baseado em resposta</div>
                               </div>
                           </div>
@@ -858,13 +878,13 @@ export default function FlowBuilder() {
                               <div className="icon delay icon-clock"></div>
                               <div className="info">
                                   <div className="name">Delay</div>
-                                  <div className="desc">Aguarda tempo especÃ­fico</div>
+                                  <div className="desc">Aguarda tempo específico</div>
                               </div>
                           </div>
                       </div>
                       
                       <div className="node-category">
-                          <h3>AÃ§Ãµes</h3>
+                          <h3>Ações</h3>
                           <div className="node-item" draggable="true" data-type="transfer">
                               <div className="icon action icon-user"></div>
                               <div className="info">
@@ -915,8 +935,8 @@ export default function FlowBuilder() {
                       <div className="canvas-container" id="canvasContainer">
                           <div className="empty-canvas" id="emptyCanvas">
                               <div className="icon icon-flows"></div>
-                              <h3>Arraste os blocos para comeÃ§ar</h3>
-                              <p>Crie seu fluxo de automaÃ§Ã£o visual</p>
+                              <h3>Arraste os blocos para começar</h3>
+                              <p>Crie seu fluxo de automação visual</p>
                           </div>
                       </div>
                       
@@ -924,7 +944,7 @@ export default function FlowBuilder() {
                           <button className="zoom-btn" onClick={() => globals.zoomIn?.()}>+</button>
                           <div className="zoom-level" id="zoomLevel">100%</div>
                           <button className="zoom-btn" onClick={() => globals.zoomOut?.()}>-</button>
-                          <button className="zoom-btn" onClick={() => globals.resetZoom?.()}>âŸ²</button>
+                          <button className="zoom-btn" onClick={() => globals.resetZoom?.()}>↺</button>
                       </div>
                   </div>
                   
@@ -935,7 +955,7 @@ export default function FlowBuilder() {
                       </div>
                       
                       <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
-                          <h4 style={{ fontSize: '13px', color: 'var(--gray)', marginBottom: '10px' }}>VariÃ¡veis DisponÃ­veis</h4>
+                          <h4 style={{ fontSize: '13px', color: 'var(--gray)', marginBottom: '10px' }}>Variáveis Disponíveis</h4>
                           <div className="variables-list">
                               <span className="variable-tag" onClick={() => globals.insertVariable?.('nome')}>{'{{nome}}'}</span>
                               <span className="variable-tag" onClick={() => globals.insertVariable?.('telefone')}>{'{{telefone}}'}</span>

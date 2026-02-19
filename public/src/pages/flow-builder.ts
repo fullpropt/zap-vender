@@ -44,6 +44,9 @@ let dragNode: FlowNode | null = null;
 let dragOffset = { x: 0, y: 0 };
 let isConnecting = false;
 let connectionStart: { nodeId: string; portType: string } | null = null;
+let connectionStartPort: HTMLElement | null = null;
+let connectionPreviewPath: SVGPathElement | null = null;
+let hasInitialized = false;
 
 // Inicialização
 function onReady(callback: () => void) {
@@ -55,6 +58,8 @@ function onReady(callback: () => void) {
 }
 
 function initFlowBuilder() {
+    if (hasInitialized) return;
+    hasInitialized = true;
 
     setupDragAndDrop();
     setupCanvasEvents();
@@ -104,6 +109,9 @@ function setupCanvasEvents() {
             deselectNode();
         }
     });
+
+    document.addEventListener('mousemove', handleDocumentMouseMove);
+    document.addEventListener('mouseup', handleDocumentMouseUp);
 }
 
 // Adicionar nó
@@ -185,6 +193,8 @@ function renderNode(node: FlowNode) {
     nodeEl.addEventListener('mousedown', (e) => {
         const target = e.target as HTMLElement | null;
         if (target?.classList.contains('port')) {
+            e.preventDefault();
+            e.stopPropagation();
             startConnection(node.id, target.dataset.port || '');
             return;
         }
@@ -200,40 +210,49 @@ function renderNode(node: FlowNode) {
         selectNode(node.id);
     });
     
-    document.addEventListener('mousemove', (e) => {
-        if (isDragging && dragNode) {
-            const canvas = document.getElementById('canvasContainer') as HTMLElement | null;
-            if (!canvas) return;
-            const rect = canvas.getBoundingClientRect();
-            
-            dragNode.position.x = (e.clientX - rect.left - dragOffset.x) / zoom;
-            dragNode.position.y = (e.clientY - rect.top - dragOffset.y) / zoom;
-            
-            const nodeEl = document.getElementById(dragNode.id) as HTMLElement | null;
-            if (nodeEl) {
-                nodeEl.style.left = dragNode.position.x + 'px';
-                nodeEl.style.top = dragNode.position.y + 'px';
-            }
-            
-            renderConnections();
-        }
-    });
-    
-    document.addEventListener('mouseup', () => {
-        isDragging = false;
-        dragNode = null;
-    });
-    
-    // Eventos das portas
-    nodeEl.querySelectorAll('.port').forEach(port => {
-        port.addEventListener('mouseup', () => {
-            if (isConnecting && connectionStart) {
-                endConnection(node.id, port.dataset.port || '');
-            }
-        });
-    });
-    
     container.appendChild(nodeEl);
+}
+
+function handleDocumentMouseMove(e: MouseEvent) {
+    if (isDragging && dragNode) {
+        const canvas = document.getElementById('canvasContainer') as HTMLElement | null;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+
+        dragNode.position.x = (e.clientX - rect.left - dragOffset.x) / zoom;
+        dragNode.position.y = (e.clientY - rect.top - dragOffset.y) / zoom;
+
+        const nodeEl = document.getElementById(dragNode.id) as HTMLElement | null;
+        if (nodeEl) {
+            nodeEl.style.left = dragNode.position.x + 'px';
+            nodeEl.style.top = dragNode.position.y + 'px';
+        }
+
+        renderConnections();
+    }
+
+    if (isConnecting) {
+        updateConnectionPreview(e.clientX, e.clientY);
+        highlightConnectionTarget(e.clientX, e.clientY);
+    }
+}
+
+function handleDocumentMouseUp(e: MouseEvent) {
+    isDragging = false;
+    dragNode = null;
+
+    if (!isConnecting || !connectionStart) return;
+
+    const target = e.target instanceof Element ? e.target : null;
+    const targetPort = target?.closest('.port.input') as HTMLElement | null;
+    const targetNode = targetPort?.closest('.flow-node') as HTMLElement | null;
+
+    if (targetPort && targetNode?.id) {
+        endConnection(targetNode.id, targetPort.dataset.port || '');
+        return;
+    }
+
+    cancelConnection();
 }
 
 // Preview do nó
@@ -278,6 +297,10 @@ function deselectNode() {
 
 // Deletar nó
 function deleteNode(id: string) {
+    if (connectionStart?.nodeId === id) {
+        cancelConnection();
+    }
+
     nodes = nodes.filter(n => n.id !== id);
     edges = edges.filter(e => e.source !== id && e.target !== id);
     
@@ -471,16 +494,35 @@ function insertVariable(variable: string) {
 // Conexões
 function startConnection(nodeId: string, portType: string) {
     if (portType !== 'output') return;
+
+    const sourceNode = document.getElementById(nodeId);
+    const sourcePort = sourceNode?.querySelector('.port.output') as HTMLElement | null;
+    const svg = document.getElementById('connectionsSvg') as SVGSVGElement | null;
+    if (!sourcePort || !svg) return;
+
+    cancelConnection();
+
     isConnecting = true;
     connectionStart = { nodeId, portType };
+    connectionStartPort = sourcePort;
+    connectionStartPort.classList.add('is-connecting');
+
+    connectionPreviewPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    connectionPreviewPath.setAttribute('class', 'connection-line connection-line-preview');
+
+    const sourcePoint = getPortCenter(sourcePort, svg);
+    connectionPreviewPath.setAttribute('d', buildConnectionPath(sourcePoint.x, sourcePoint.y, sourcePoint.x, sourcePoint.y));
+    svg.appendChild(connectionPreviewPath);
 }
 
 function endConnection(nodeId: string, portType: string) {
     if (!isConnecting || !connectionStart) return;
-    if (portType !== 'input') return;
-    if (connectionStart.nodeId === nodeId) return;
-    
-    // Verificar se conexão já existe
+
+    if (portType !== 'input' || connectionStart.nodeId === nodeId) {
+        cancelConnection();
+        return;
+    }
+
     const exists = edges.some(e => e.source === connectionStart.nodeId && e.target === nodeId);
     if (!exists) {
         edges.push({
@@ -489,56 +531,104 @@ function endConnection(nodeId: string, portType: string) {
         });
         renderConnections();
     }
-    
-    isConnecting = false;
-    connectionStart = null;
+
+    cancelConnection();
 }
 
-// Renderizar conexões
+function cancelConnection() {
+    isConnecting = false;
+    connectionStart = null;
+    connectionStartPort?.classList.remove('is-connecting');
+    connectionStartPort = null;
+    connectionPreviewPath?.remove();
+    connectionPreviewPath = null;
+    clearConnectionTargetHighlights();
+}
+
+function updateConnectionPreview(clientX: number, clientY: number) {
+    if (!isConnecting || !connectionStartPort || !connectionPreviewPath) return;
+
+    const svg = document.getElementById('connectionsSvg') as SVGSVGElement | null;
+    if (!svg) return;
+
+    const sourcePoint = getPortCenter(connectionStartPort, svg);
+    const targetPoint = getCanvasPointFromClient(clientX, clientY, svg);
+    connectionPreviewPath.setAttribute('d', buildConnectionPath(sourcePoint.x, sourcePoint.y, targetPoint.x, targetPoint.y));
+}
+
+function highlightConnectionTarget(clientX: number, clientY: number) {
+    clearConnectionTargetHighlights();
+
+    const hovered = document.elementFromPoint(clientX, clientY);
+    if (!(hovered instanceof Element)) return;
+
+    const hoveredPort = hovered.closest('.port.input') as HTMLElement | null;
+    const hoveredNode = hoveredPort?.closest('.flow-node') as HTMLElement | null;
+    if (!hoveredPort || !hoveredNode?.id) return;
+    if (hoveredNode.id === connectionStart?.nodeId) return;
+
+    hoveredPort.classList.add('connection-target');
+}
+
+function clearConnectionTargetHighlights() {
+    document.querySelectorAll('.port.connection-target').forEach((port) => {
+        port.classList.remove('connection-target');
+    });
+}
+
+function getCanvasPointFromClient(clientX: number, clientY: number, svg: SVGSVGElement) {
+    const canvasRect = svg.getBoundingClientRect();
+    return {
+        x: (clientX - canvasRect.left) / zoom,
+        y: (clientY - canvasRect.top) / zoom
+    };
+}
+
+function getPortCenter(port: HTMLElement, svg: SVGSVGElement) {
+    const rect = port.getBoundingClientRect();
+    return getCanvasPointFromClient(rect.left + rect.width / 2, rect.top + rect.height / 2, svg);
+}
+
+function buildConnectionPath(x1: number, y1: number, x2: number, y2: number) {
+    const curve = Math.max(Math.abs(x2 - x1) * 0.5, 40);
+    return `M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}`;
+}
+
 function renderConnections() {
     const svg = document.getElementById('connectionsSvg') as SVGSVGElement | null;
     if (!svg) return;
     svg.innerHTML = '';
-    
+
     edges.forEach(edge => {
         const sourceNode = document.getElementById(edge.source);
         const targetNode = document.getElementById(edge.target);
-        
+
         if (!sourceNode || !targetNode) return;
-        
+
         const sourcePort = sourceNode.querySelector('.port.output') as HTMLElement | null;
         const targetPort = targetNode.querySelector('.port.input') as HTMLElement | null;
-        
+
         if (!sourcePort || !targetPort) return;
-        
-        const sourceRect = sourcePort.getBoundingClientRect();
-        const targetRect = targetPort.getBoundingClientRect();
-        const canvasRect = svg.getBoundingClientRect();
-        
-        const x1 = (sourceRect.left + sourceRect.width / 2 - canvasRect.left) / zoom;
-        const y1 = (sourceRect.top + sourceRect.height / 2 - canvasRect.top) / zoom;
-        const x2 = (targetRect.left + targetRect.width / 2 - canvasRect.left) / zoom;
-        const y2 = (targetRect.top + targetRect.height / 2 - canvasRect.top) / zoom;
-        
+
+        const sourcePoint = getPortCenter(sourcePort, svg);
+        const targetPoint = getPortCenter(targetPort, svg);
+
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        const midY = (y1 + y2) / 2;
-        path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`);
+        path.setAttribute('d', buildConnectionPath(sourcePoint.x, sourcePoint.y, targetPoint.x, targetPoint.y));
         path.setAttribute('class', 'connection-line');
         path.setAttribute('data-source', edge.source);
         path.setAttribute('data-target', edge.target);
-        
+
         path.addEventListener('click', () => {
             if (confirm('Remover esta conexão?')) {
                 edges = edges.filter(e => !(e.source === edge.source && e.target === edge.target));
                 renderConnections();
             }
         });
-        
+
         svg.appendChild(path);
     });
 }
-
-// Zoom
 function zoomIn() {
     zoom = Math.min(zoom + 0.1, 2);
     applyZoom();
@@ -566,6 +656,8 @@ function applyZoom() {
 function clearCanvas() {
     if (!confirm('Limpar todo o fluxo?')) return;
     
+    cancelConnection();
+
     nodes = [];
     edges = [];
     currentFlowId = null;
@@ -759,3 +851,4 @@ windowAny.loadFlow = loadFlow;
 windowAny.closeFlowsModal = closeFlowsModal;
 
 export { initFlowBuilder };
+
