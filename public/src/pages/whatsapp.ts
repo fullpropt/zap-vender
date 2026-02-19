@@ -21,6 +21,7 @@ let isConnected = false;
 let isConnecting = false;
 let qrTimer: number | null = null;
 let timerCountdown = 30;
+let pairingCodeHideTimer: number | null = null;
 type WhatsAppContact = { number: string; name?: string };
 let contacts: WhatsAppContact[] = [];
 
@@ -40,6 +41,17 @@ function getLoginUrl() {
 
 function getConversasUrl(params: URLSearchParams) {
     return `#/conversas?${params.toString()}`;
+}
+
+function normalizePairingPhoneInput(value: string) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+
+    if ((digits.length === 10 || digits.length === 11) && !digits.startsWith('55')) {
+        return `55${digits}`;
+    }
+
+    return digits;
 }
 
 // Inicializa??o
@@ -141,6 +153,16 @@ function initSocket() {
         const qrTimerEl = document.getElementById('qr-timer') as HTMLElement | null;
         if (connectBtn) connectBtn.style.display = 'none';
         if (qrTimerEl) qrTimerEl.style.display = 'block';
+        updatePairingButton(false);
+    });
+
+    socket.on('pairing-code', function(data) {
+        console.log('Pairing code recebido');
+        displayPairingCode(data?.code || '', data?.phoneNumber || data?.phone || '');
+        isConnecting = false;
+        updateConnectButton(false);
+        updatePairingButton(false);
+        showToast('success', 'Codigo de pareamento gerado com sucesso');
     });
     
     socket.on('connecting', function(data) {
@@ -174,6 +196,7 @@ function initSocket() {
         if (isConnecting) {
             isConnecting = false;
             updateConnectButton(false);
+            updatePairingButton(false);
             showQRLoading('Erro ao conectar. Tente novamente.');
         }
     });
@@ -192,10 +215,38 @@ function startConnection() {
     
     isConnecting = true;
     updateConnectButton(true);
+    updatePairingButton(true);
+    hidePairingCode();
     showQRLoading('Gerando QR Code...');
     
     console.log('🚀 Iniciando conexão...');
     socket?.emit('start-session', { sessionId: CONFIG.SESSION_ID });
+}
+
+function requestPairingCode() {
+    if (isConnecting) return;
+
+    const phoneInput = document.getElementById('pairing-phone') as HTMLInputElement | null;
+    const normalizedPhone = normalizePairingPhoneInput(phoneInput?.value || '');
+
+    if (!normalizedPhone || normalizedPhone.length < 12 || normalizedPhone.length > 15) {
+        showToast('warning', 'Informe o numero com DDI + DDD + numero');
+        return;
+    }
+
+    if (phoneInput) {
+        phoneInput.value = normalizedPhone;
+    }
+
+    isConnecting = true;
+    updateConnectButton(true);
+    updatePairingButton(true);
+    showPairingCodeLoading('Gerando codigo de pareamento...');
+
+    socket?.emit('request-pairing-code', {
+        sessionId: CONFIG.SESSION_ID,
+        phoneNumber: normalizedPhone
+    });
 }
 
 // Desconectar
@@ -245,6 +296,55 @@ function showQRLoading(message: string) {
     `;
 }
 
+function showPairingCodeLoading(message: string) {
+    const pairingBox = document.getElementById('pairing-code-box') as HTMLElement | null;
+    const pairingValue = document.getElementById('pairing-code-value') as HTMLElement | null;
+    if (!pairingBox || !pairingValue) return;
+
+    pairingBox.style.display = 'block';
+    pairingBox.classList.add('loading');
+    pairingValue.textContent = message;
+}
+
+function displayPairingCode(code: string, phoneNumber: string) {
+    const pairingBox = document.getElementById('pairing-code-box') as HTMLElement | null;
+    const pairingValue = document.getElementById('pairing-code-value') as HTMLElement | null;
+    const pairingMeta = document.getElementById('pairing-code-meta') as HTMLElement | null;
+    if (!pairingBox || !pairingValue) return;
+
+    pairingBox.style.display = 'block';
+    pairingBox.classList.remove('loading');
+    pairingValue.textContent = code || '-';
+    if (pairingMeta) {
+        pairingMeta.textContent = phoneNumber ? `Numero: +${phoneNumber}` : '';
+    }
+
+    if (pairingCodeHideTimer) clearTimeout(pairingCodeHideTimer);
+    pairingCodeHideTimer = window.setTimeout(() => {
+        if (!isConnected) {
+            hidePairingCode();
+        }
+    }, 180000);
+}
+
+function hidePairingCode() {
+    const pairingBox = document.getElementById('pairing-code-box') as HTMLElement | null;
+    const pairingValue = document.getElementById('pairing-code-value') as HTMLElement | null;
+    const pairingMeta = document.getElementById('pairing-code-meta') as HTMLElement | null;
+
+    if (pairingBox) {
+        pairingBox.style.display = 'none';
+        pairingBox.classList.remove('loading');
+    }
+    if (pairingValue) pairingValue.textContent = '';
+    if (pairingMeta) pairingMeta.textContent = '';
+
+    if (pairingCodeHideTimer) {
+        clearTimeout(pairingCodeHideTimer);
+        pairingCodeHideTimer = null;
+    }
+}
+
 // Timer do QR Code
 function startQRTimer() {
     if (qrTimer) clearInterval(qrTimer);
@@ -276,6 +376,9 @@ function handleConnected(user: { name?: string; phone?: string } | undefined) {
     isConnected = true;
     isConnecting = false;
     if (qrTimer) clearInterval(qrTimer);
+    hidePairingCode();
+    updatePairingButton(false);
+    updateConnectButton(false);
     
     // Atualizar UI
     updateStatus('connected', 'Conectado');
@@ -303,6 +406,9 @@ function handleDisconnected() {
     isConnected = false;
     isConnecting = false;
     if (qrTimer) clearInterval(qrTimer);
+    hidePairingCode();
+    updateConnectButton(false);
+    updatePairingButton(false);
     
     // Atualizar UI
     updateStatus('disconnected', 'Desconectado');
@@ -343,6 +449,19 @@ function updateConnectButton(loading: boolean) {
     } else {
         btn.disabled = false;
         btn.textContent = 'Conectar WhatsApp';
+    }
+}
+
+function updatePairingButton(loading: boolean) {
+    const btn = document.getElementById('pairing-btn') as HTMLButtonElement | null;
+    if (!btn) return;
+
+    if (loading) {
+        btn.disabled = true;
+        btn.textContent = 'Gerando...';
+    } else {
+        btn.disabled = false;
+        btn.textContent = 'Gerar codigo';
     }
 }
 
@@ -439,6 +558,7 @@ function logout() {
 const windowAny = window as Window & {
     initWhatsapp?: () => void;
     startConnection?: () => void;
+    requestPairingCode?: () => void;
     disconnect?: () => void;
     openChat?: (phone: string, name: string) => void;
     toggleSidebar?: () => void;
@@ -446,6 +566,7 @@ const windowAny = window as Window & {
 };
 windowAny.initWhatsapp = initWhatsapp;
 windowAny.startConnection = startConnection;
+windowAny.requestPairingCode = requestPairingCode;
 windowAny.disconnect = disconnect;
 windowAny.openChat = openChat;
 windowAny.toggleSidebar = toggleSidebar;

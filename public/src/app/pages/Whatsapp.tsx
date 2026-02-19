@@ -5,6 +5,7 @@ import { brandLogoUrl, brandName } from '../lib/brand';
 type WhatsappGlobals = {
   initWhatsapp?: () => void;
   startConnection?: () => void;
+  requestPairingCode?: () => void;
   disconnect?: () => void;
   toggleSidebar?: () => void;
   logout?: () => void;
@@ -401,6 +402,89 @@ export default function Whatsapp() {
             box-shadow: 0 8px 18px rgba(109, 40, 217, 0.25);
         }
 
+        .whatsapp-react .pairing-actions {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--border);
+        }
+
+        .whatsapp-react .pairing-label {
+            display: block;
+            text-align: left;
+            color: var(--gray);
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .whatsapp-react .pairing-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .whatsapp-react .pairing-input {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: white;
+            color: var(--dark);
+            font-size: 14px;
+            padding: 11px 12px;
+            min-width: 0;
+        }
+
+        .whatsapp-react .pairing-btn {
+            width: auto;
+            min-width: 130px;
+            padding: 11px 14px;
+        }
+
+        .whatsapp-react .pairing-help {
+            margin-top: 6px;
+            text-align: left;
+            color: var(--gray);
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .whatsapp-react .pairing-code-box {
+            display: none;
+            margin-top: 12px;
+            border: 1px solid var(--border);
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .whatsapp-react .pairing-code-box.loading {
+            opacity: 0.8;
+        }
+
+        .whatsapp-react .pairing-code-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--gray);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .whatsapp-react .pairing-code-value {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--dark);
+            letter-spacing: 2px;
+            margin-bottom: 6px;
+        }
+
+        .whatsapp-react .pairing-code-meta {
+            color: var(--gray);
+            font-size: 12px;
+        }
+
         .whatsapp-react .instructions {
             background: var(--lighter);
             border-radius: 16px;
@@ -625,6 +709,19 @@ export default function Whatsapp() {
                 min-width: 0;
                 width: 100%;
             }
+
+            .whatsapp-react .pairing-row {
+                grid-template-columns: 1fr;
+            }
+
+            .whatsapp-react .pairing-btn {
+                width: 100%;
+            }
+
+            .whatsapp-react .pairing-code-value {
+                font-size: 18px;
+                letter-spacing: 1.5px;
+            }
         }
             `}</style>
       <button className="mobile-menu-toggle" type="button" onClick={toggleSidebar}>
@@ -756,6 +853,20 @@ export default function Whatsapp() {
                                   </p>
                                   
                                   <button className="btn btn-whatsapp" id="connect-btn" onClick={() => globals.startConnection?.()}>Conectar WhatsApp</button>
+
+                                  <div className="pairing-actions">
+                                      <label className="pairing-label" htmlFor="pairing-phone">Ou conecte sem QR (codigo de pareamento)</label>
+                                      <div className="pairing-row">
+                                          <input id="pairing-phone" className="pairing-input" type="tel" placeholder="Ex: 5531999999999" />
+                                          <button type="button" className="btn btn-outline pairing-btn" id="pairing-btn" onClick={() => globals.requestPairingCode?.()}>Gerar codigo</button>
+                                      </div>
+                                      <p className="pairing-help">No WhatsApp: Dispositivos conectados &gt; Conectar com numero.</p>
+                                      <div className="pairing-code-box" id="pairing-code-box">
+                                          <div className="pairing-code-title">Codigo de pareamento</div>
+                                          <div className="pairing-code-value" id="pairing-code-value"></div>
+                                          <div className="pairing-code-meta" id="pairing-code-meta"></div>
+                                      </div>
+                                  </div>
                               </div>
                               
                               <div className="instructions">

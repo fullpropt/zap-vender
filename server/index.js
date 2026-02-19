@@ -1727,9 +1727,113 @@ async function sendMessageToWhatsApp(options) {
 
  */
 
-async function createSession(sessionId, socket, attempt = 0) {
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizePairingPhoneNumber(value) {
+    const digitsOnly = String(value || '').replace(/\D/g, '');
+    if (!digitsOnly) return null;
+
+    let normalized = digitsOnly;
+
+    // Compatibilidade para uso local (DDD + numero) sem DDI.
+    if ((normalized.length === 10 || normalized.length === 11) && !normalized.startsWith('55')) {
+        normalized = `55${normalized}`;
+    }
+
+    if (normalized.length < 12 || normalized.length > 15) {
+        return null;
+    }
+
+    return normalized;
+}
+
+async function requestSessionPairingCode(sessionId, clientSocket, phoneNumber, options = {}) {
+    const socketRef = clientSocket || { emit: () => {} };
+    const normalizedPhone = normalizePairingPhoneNumber(phoneNumber);
+    if (!normalizedPhone) {
+        socketRef.emit('error', {
+            message: 'Numero invalido para pareamento. Use DDI + DDD + numero.',
+            code: 'PAIRING_PHONE_INVALID'
+        });
+        return null;
+    }
+
+    const maxAttempts = Number.isFinite(options.maxAttempts) ? options.maxAttempts : 30;
+    const waitMs = Number.isFinite(options.waitMs) ? options.waitMs : 350;
+    let lastError = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const session = sessions.get(sessionId);
+        if (!session) {
+            await sleep(waitMs);
+            continue;
+        }
+
+        session.clientSocket = clientSocket || session.clientSocket;
+
+        if (session.isConnected) {
+            socketRef.emit('error', {
+                message: 'WhatsApp ja esta conectado. Desconecte antes de gerar um codigo.',
+                code: 'PAIRING_ALREADY_CONNECTED'
+            });
+            return null;
+        }
+
+        const sock = session.socket;
+        if (sock && typeof sock.requestPairingCode !== 'function') {
+            socketRef.emit('error', {
+                message: 'Biblioteca atual nao suporta codigo de pareamento.',
+                code: 'PAIRING_UNSUPPORTED'
+            });
+            return null;
+        }
+        if (sock && typeof sock.requestPairingCode === 'function') {
+            try {
+                const pairingCode = String(await sock.requestPairingCode(normalizedPhone) || '').trim();
+                if (!pairingCode) {
+                    throw new Error('codigo vazio retornado pelo WhatsApp');
+                }
+
+                session.pairingMode = true;
+                session.pairingCode = pairingCode;
+                session.pairingPhone = normalizedPhone;
+                session.pairingRequestedAt = Date.now();
+
+                socketRef.emit('pairing-code', {
+                    sessionId,
+                    phoneNumber: normalizedPhone,
+                    code: pairingCode
+                });
+                io.emit('whatsapp-pairing-code', {
+                    sessionId,
+                    phoneNumber: normalizedPhone
+                });
+
+                console.log(`[${sessionId}] Codigo de pareamento gerado para ${normalizedPhone}`);
+                return pairingCode;
+            } catch (error) {
+                lastError = error;
+                break;
+            }
+        }
+
+        await sleep(waitMs);
+    }
+
+    const message = lastError
+        ? `Nao foi possivel gerar codigo de pareamento: ${lastError.message}`
+        : 'Sessao ainda inicializando. Tente novamente em alguns segundos.';
+    socketRef.emit('error', { message, code: 'PAIRING_CODE_ERROR' });
+    return null;
+}
+
+async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
     const clientSocket = socket || { emit: () => {} };
+    const pairingPhone = normalizePairingPhoneNumber(options.pairingPhone || options.phoneNumber);
+    const shouldRequestPairingCode = Boolean(options.requestPairingCode && pairingPhone);
 
     if (sessionInitLocks.has(sessionId)) {
         const existingSession = sessions.get(sessionId);
@@ -1742,6 +1846,9 @@ async function createSession(sessionId, socket, attempt = 0) {
             sessionId,
             user: existingSession?.user || null
         });
+        if (shouldRequestPairingCode) {
+            await requestSessionPairingCode(sessionId, clientSocket, pairingPhone);
+        }
         return existingSession?.socket || null;
     }
 
@@ -1897,7 +2004,15 @@ async function createSession(sessionId, socket, attempt = 0) {
 
             reconnecting: false,
 
-            qrGenerated: false
+            qrGenerated: false,
+
+            pairingMode: false,
+
+            pairingCode: null,
+
+            pairingPhone: null,
+
+            pairingRequestedAt: null
 
         });
 
@@ -2051,6 +2166,8 @@ async function createSession(sessionId, socket, attempt = 0) {
 
                             session.isConnected = false;
 
+                            session.pairingCode = null;
+
                         }
 
                         
@@ -2063,7 +2180,7 @@ async function createSession(sessionId, socket, attempt = 0) {
 
                         await delay(RECONNECT_DELAY);
 
-                        await createSession(sessionId, clientSocket, currentAttempt + 1);
+                        await createSession(sessionId, clientSocket, currentAttempt + 1, options);
 
                     } else {
 
@@ -2126,6 +2243,14 @@ async function createSession(sessionId, socket, attempt = 0) {
                     session.isConnected = true;
 
                     session.reconnecting = false;
+
+                    session.pairingMode = false;
+
+                    session.pairingCode = null;
+
+                    session.pairingPhone = null;
+
+                    session.pairingRequestedAt = null;
 
                     session.user = {
 
@@ -2388,6 +2513,10 @@ async function createSession(sessionId, socket, attempt = 0) {
 
         });
 
+        if (shouldRequestPairingCode) {
+            await requestSessionPairingCode(sessionId, clientSocket, pairingPhone);
+        }
+
         
 
         return sock;
@@ -2408,7 +2537,7 @@ async function createSession(sessionId, socket, attempt = 0) {
 
             await baileys.delay(RECONNECT_DELAY);
             releaseSessionLock();
-            return await createSession(sessionId, clientSocket, currentAttempt + 1);
+            return await createSession(sessionId, clientSocket, currentAttempt + 1, options);
 
         } else {
 
@@ -3893,7 +4022,14 @@ io.on('connection', (socket) => {
 
     
 
-    socket.on('start-session', async ({ sessionId }) => {
+    socket.on('start-session', async (payload = {}) => {
+        const sessionId = payload.sessionId;
+        const pairingPhone = normalizePairingPhoneNumber(payload.phoneNumber);
+        const shouldRequestPairingCode = Boolean(payload.requestPairingCode && pairingPhone);
+        if (!sessionId) {
+            socket.emit('error', { message: 'sessionId e obrigatorio', code: 'SESSION_ID_REQUIRED' });
+            return;
+        }
 
         const existingSession = sessions.get(sessionId);
 
@@ -3904,14 +4040,63 @@ io.on('connection', (socket) => {
                 sessionId,
                 user: existingSession.user
             });
+            let pairingHandledByCreate = false;
             if (!existingSession.isConnected && !existingSession.reconnecting && !sessionInitLocks.has(sessionId)) {
-                await createSession(sessionId, socket);
+                await createSession(sessionId, socket, 0, {
+                    requestPairingCode: shouldRequestPairingCode,
+                    pairingPhone
+                });
+                pairingHandledByCreate = shouldRequestPairingCode;
+            }
+            if (shouldRequestPairingCode && !pairingHandledByCreate) {
+                await requestSessionPairingCode(sessionId, socket, pairingPhone);
             }
             return;
         }
 
-        await createSession(sessionId, socket);
+        await createSession(sessionId, socket, 0, {
+            requestPairingCode: shouldRequestPairingCode,
+            pairingPhone
+        });
 
+    });
+
+    socket.on('request-pairing-code', async (payload = {}) => {
+        const sessionId = payload.sessionId;
+        const pairingPhone = normalizePairingPhoneNumber(payload.phoneNumber);
+        if (!sessionId) {
+            socket.emit('error', { message: 'sessionId e obrigatorio', code: 'SESSION_ID_REQUIRED' });
+            return;
+        }
+        if (!pairingPhone) {
+            socket.emit('error', {
+                message: 'Numero invalido para pareamento. Use DDI + DDD + numero.',
+                code: 'PAIRING_PHONE_INVALID'
+            });
+            return;
+        }
+
+        const existingSession = sessions.get(sessionId);
+        if (existingSession) {
+            existingSession.clientSocket = socket;
+            let pairingHandledByCreate = false;
+            if (!existingSession.isConnected && !existingSession.reconnecting && !sessionInitLocks.has(sessionId)) {
+                await createSession(sessionId, socket, 0, {
+                    requestPairingCode: true,
+                    pairingPhone
+                });
+                pairingHandledByCreate = true;
+            }
+            if (!pairingHandledByCreate) {
+                await requestSessionPairingCode(sessionId, socket, pairingPhone);
+            }
+            return;
+        }
+
+        await createSession(sessionId, socket, 0, {
+            requestPairingCode: true,
+            pairingPhone
+        });
     });
 
     
@@ -6716,15 +6901,6 @@ process.on('uncaughtException', (error) => {
     });
 
 };
-
-
-
-
-
-
-
-
-
 
 
 
