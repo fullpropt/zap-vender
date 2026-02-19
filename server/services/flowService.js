@@ -8,6 +8,11 @@ const { run, queryOne, generateUUID } = require('../database/connection');
 const EventEmitter = require('events');
 const { classifyKeywordFlowIntent } = require('./intentClassifierService');
 
+function isStrictFlowIntentRoutingEnabled() {
+    const value = String(process.env.FLOW_INTENT_CLASSIFIER_STRICT || '').trim().toLowerCase();
+    return value === '1' || value === 'true' || value === 'on';
+}
+
 class FlowService extends EventEmitter {
     constructor() {
         super();
@@ -44,6 +49,7 @@ class FlowService extends EventEmitter {
         let suppressKeywordFallback = false;
 
         if (text) {
+            const strictIntentRouting = isStrictFlowIntentRoutingEnabled();
             const keywordMatches = await Flow.findKeywordMatches(text);
             if (keywordMatches.length > 0) {
                 const intentDecision = await classifyKeywordFlowIntent(text, keywordMatches);
@@ -51,6 +57,8 @@ class FlowService extends EventEmitter {
                 if (intentDecision?.status === 'selected' && intentDecision.flowId) {
                     flow = keywordMatches.find((item) => Number(item.id) === Number(intentDecision.flowId)) || null;
                 } else if (intentDecision?.status === 'no_match') {
+                    suppressKeywordFallback = true;
+                } else if (strictIntentRouting) {
                     suppressKeywordFallback = true;
                 }
 

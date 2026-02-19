@@ -117,6 +117,7 @@ Abra no navegador: `http://localhost:3001`
 | `GEMINI_MODEL` | Modelo Gemini usado no classificador | Não |
 | `FLOW_INTENT_CLASSIFIER_ENABLED` | Habilita classificador de intenção para fluxos keyword | Não |
 | `FLOW_INTENT_CLASSIFIER_MIN_CONFIDENCE` | Confiança mínima para aceitar decisão da IA | Não |
+| `FLOW_INTENT_CLASSIFIER_STRICT` | Se `true`, sem decisão confiável da IA não dispara fluxo keyword | Não |
 | `FLOW_INTENT_CLASSIFIER_MIN_CANDIDATES` | Número mínimo de candidatos para chamar IA | Não |
 | `FLOW_INTENT_CLASSIFIER_MAX_CANDIDATES` | Número máximo de candidatos enviados à IA | Não |
 | `GEMINI_REQUEST_TIMEOUT_MS` | Timeout da chamada Gemini (ms) | Não |
@@ -463,6 +464,7 @@ sudo certbot --nginx -d seu-dominio.com
 | `GEMINI_MODEL` | Modelo Gemini usado no classificador | gemini-2.0-flash-lite |
 | `FLOW_INTENT_CLASSIFIER_ENABLED` | Habilita classificador de intenção para fluxos keyword | true |
 | `FLOW_INTENT_CLASSIFIER_MIN_CONFIDENCE` | Confiança mínima para aceitar decisão da IA | 0.70 |
+| `FLOW_INTENT_CLASSIFIER_STRICT` | Se `true`, sem decisão confiável da IA não dispara fluxo keyword | false |
 | `FLOW_INTENT_CLASSIFIER_MIN_CANDIDATES` | Número mínimo de candidatos para chamar IA | 1 |
 | `FLOW_INTENT_CLASSIFIER_MAX_CANDIDATES` | Número máximo de candidatos enviados à IA | 5 |
 | `GEMINI_REQUEST_TIMEOUT_MS` | Timeout da chamada Gemini (ms) | 4500 |
