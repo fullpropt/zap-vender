@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { brandLogoUrl, brandName } from '../lib/brand';
 
 type DashboardGlobals = {
@@ -39,23 +39,26 @@ function DashboardStyles() {
         .events-empty { text-align: center; padding: 40px 20px; color: var(--gray-500); }
         .events-empty-emoji { width: 48px; height: 48px; display: block; margin-bottom: 16px; opacity: 0.6; background-color: var(--gray-400); }
         @media (max-width: 640px) {
-          .stats-period-card, .stats-general-card, .events-personalized-card { padding: 16px; }
+          .dashboard-botconversa { gap: 14px; margin-bottom: 16px; }
+          .stats-period-card, .stats-general-card, .events-personalized-card { padding: 12px; border-radius: 12px; }
+          .stats-period-card h3, .stats-general-card h3, .events-personalized-card h3 { margin-bottom: 12px; font-size: 15px; }
           .stats-period-controls { gap: 8px; }
           .stats-period-controls .form-input, .stats-period-controls .form-select { width: 100%; min-width: 0; }
           .chart-type-toggle { width: 100%; justify-content: flex-start; }
           .chart-type-toggle .chart-btn { flex: 1 1 0; }
+          .stats-period-chart canvas { max-height: 150px !important; }
           .stats-general-item { gap: 12px; }
           .stats-general-label { font-size: 12px; }
           .stats-general-value { font-size: 16px; }
+          .events-header { gap: 8px; margin-bottom: 12px; }
+          .events-empty { padding: 20px 10px; }
+          .events-empty-emoji { width: 34px; height: 34px; margin-bottom: 10px; }
         }
       `}</style>
   );
 }
 
 function DashboardHeader() {
-  const navigate = useNavigate();
-  const globals = window as Window & DashboardGlobals;
-
   return (
     <div className="page-header">
       <div className="page-title">
@@ -64,24 +67,6 @@ function DashboardHeader() {
           Bem-vindo, <span className="user-name">Usuário</span> |{' '}
           <span className="current-date"></span>
         </p>
-      </div>
-      <div className="page-actions">
-        <button type="button" className="btn btn-outline" onClick={() => globals.loadDashboardData?.()}>
-          <span className="icon icon-refresh icon-sm"></span>
-          Atualizar
-        </button>
-        <button type="button" className="btn btn-outline" onClick={() => globals.openModal?.('importModal')}>
-          <span className="icon icon-import icon-sm"></span>
-          Importar
-        </button>
-        <button type="button" className="btn btn-success" onClick={() => globals.exportLeads?.()}>
-          <span className="icon icon-export icon-sm"></span>
-          Exportar
-        </button>
-        <button type="button" className="btn btn-outline-danger" onClick={() => globals.confirmReset?.()}>
-          <span className="icon icon-reset icon-sm"></span>
-          Reset
-        </button>
       </div>
     </div>
   );

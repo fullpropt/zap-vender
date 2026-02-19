@@ -1440,6 +1440,13 @@ body.sidebar-open {
     overflow: hidden;
 }
 
+body.sidebar-open .mobile-menu-toggle {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-8px);
+}
+
 @media (max-width: 1024px) {
     .sidebar {
         transform: translateX(-100%);
@@ -1466,6 +1473,7 @@ body.sidebar-open {
         opacity: 1;
         visibility: visible;
         pointer-events: auto;
+        backdrop-filter: blur(1px);
     }
     
     .stats-grid {
@@ -1488,6 +1496,37 @@ body.sidebar-open {
 @media (max-width: 640px) {
     .stats-grid {
         grid-template-columns: 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .stat-card {
+        padding: 14px;
+        border-radius: 12px;
+    }
+
+    .stat-icon {
+        width: 40px;
+        height: 40px;
+    }
+
+    .stat-icon .icon {
+        width: 18px;
+        height: 18px;
+    }
+
+    .stat-value {
+        font-size: 22px;
+    }
+
+    .stat-label {
+        font-size: 12px;
+    }
+
+    .stat-change {
+        margin-top: 6px;
+        font-size: 11px;
+        padding: 2px 6px;
     }
     
     .funnel-stage {
@@ -1525,8 +1564,14 @@ body.sidebar-open {
     .card-header,
     .card-body,
     .card-footer {
+        padding-top: 14px;
+        padding-bottom: 14px;
         padding-left: 14px;
         padding-right: 14px;
+    }
+
+    .funnel-container {
+        margin-bottom: 16px;
     }
 
     .form-row {
