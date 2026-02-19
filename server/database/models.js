@@ -184,6 +184,28 @@ function uniqueTags(list) {
     return result;
 }
 
+function normalizeFlowKeywordText(value = '') {
+    return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function extractFlowKeywords(value = '') {
+    return String(value || '')
+        .split(',')
+        .map((keyword) => normalizeFlowKeywordText(keyword))
+        .filter(Boolean);
+}
+
+function includesFlowKeyword(normalizedMessage, normalizedKeyword) {
+    if (!normalizedMessage || !normalizedKeyword) return false;
+    return ` ${normalizedMessage} `.includes(` ${normalizedKeyword} `);
+}
+
 // ============================================
 // LEADS
 // ============================================
@@ -998,23 +1020,68 @@ const Flow = {
         return flow;
     },
     
-    async findByKeyword(keyword) {
+    async findByKeyword(messageText) {
+        const normalizedMessage = normalizeFlowKeywordText(messageText);
+        if (!normalizedMessage) return null;
+
         const flows = await query(`
             SELECT * FROM flows 
             WHERE trigger_type = 'keyword' AND is_active = 1
-            ORDER BY priority DESC
+            ORDER BY priority DESC, id ASC
         `);
-        
+
+        let bestMatch = null;
+
         for (const flow of flows) {
-            const keywords = flow.trigger_value?.split(',').map(k => k.trim().toLowerCase()) || [];
-            if (keywords.includes(keyword.toLowerCase())) {
-                flow.nodes = JSON.parse(flow.nodes || '[]');
-                flow.edges = JSON.parse(flow.edges || '[]');
-                return flow;
+            const keywords = extractFlowKeywords(flow.trigger_value || '');
+            if (keywords.length === 0) continue;
+
+            const matchedKeywords = keywords.filter((keyword) => includesFlowKeyword(normalizedMessage, keyword));
+            if (matchedKeywords.length === 0) continue;
+
+            const longestMatchWords = matchedKeywords.reduce((max, keyword) => {
+                return Math.max(max, keyword.split(' ').length);
+            }, 0);
+            const longestMatchLength = matchedKeywords.reduce((max, keyword) => {
+                return Math.max(max, keyword.length);
+            }, 0);
+
+            const score = {
+                longestMatchWords,
+                longestMatchLength,
+                matchedCount: matchedKeywords.length,
+                priority: Number(flow.priority) || 0
+            };
+
+            const isBetterMatch = !bestMatch
+                || score.longestMatchWords > bestMatch.score.longestMatchWords
+                || (
+                    score.longestMatchWords === bestMatch.score.longestMatchWords
+                    && score.longestMatchLength > bestMatch.score.longestMatchLength
+                )
+                || (
+                    score.longestMatchWords === bestMatch.score.longestMatchWords
+                    && score.longestMatchLength === bestMatch.score.longestMatchLength
+                    && score.matchedCount > bestMatch.score.matchedCount
+                )
+                || (
+                    score.longestMatchWords === bestMatch.score.longestMatchWords
+                    && score.longestMatchLength === bestMatch.score.longestMatchLength
+                    && score.matchedCount === bestMatch.score.matchedCount
+                    && score.priority > bestMatch.score.priority
+                );
+
+            if (isBetterMatch) {
+                bestMatch = { flow, score };
             }
         }
-        
-        return null;
+
+        if (!bestMatch) return null;
+
+        const flow = bestMatch.flow;
+        flow.nodes = JSON.parse(flow.nodes || '[]');
+        flow.edges = JSON.parse(flow.edges || '[]');
+        return flow;
     },
     
     async list(options = {}) {
