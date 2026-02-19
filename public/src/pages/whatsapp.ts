@@ -22,6 +22,8 @@ let isConnecting = false;
 let qrTimer: number | null = null;
 let timerCountdown = 30;
 let pairingCodeHideTimer: number | null = null;
+let pairingCodeVisible = false;
+let lastPairingCode = '';
 
 // Inicialização
 function onReady(callback: () => void) {
@@ -52,6 +54,7 @@ function normalizePairingPhoneInput(value: string) {
 function initWhatsapp() {
     if (checkAuth()) {
         initSocket();
+        bindPairingCodeCopy();
     }
 }
 
@@ -287,6 +290,7 @@ function showPairingCodeLoading(message: string) {
     const pairingValue = document.getElementById('pairing-code-value') as HTMLElement | null;
     if (!pairingBox || !pairingValue) return;
 
+    pairingCodeVisible = true;
     pairingBox.style.display = 'block';
     pairingBox.classList.add('loading');
     pairingValue.textContent = message;
@@ -298,9 +302,12 @@ function displayPairingCode(code: string, phoneNumber: string) {
     const pairingMeta = document.getElementById('pairing-code-meta') as HTMLElement | null;
     if (!pairingBox || !pairingValue) return;
 
+    pairingCodeVisible = true;
+    lastPairingCode = String(code || '').trim();
     pairingBox.style.display = 'block';
     pairingBox.classList.remove('loading');
     pairingValue.textContent = code || '-';
+    pairingValue.title = 'Toque para copiar';
     if (pairingMeta) {
         pairingMeta.textContent = phoneNumber ? `Numero: +${phoneNumber}` : '';
     }
@@ -318,6 +325,8 @@ function hidePairingCode() {
     const pairingValue = document.getElementById('pairing-code-value') as HTMLElement | null;
     const pairingMeta = document.getElementById('pairing-code-meta') as HTMLElement | null;
 
+    pairingCodeVisible = false;
+    lastPairingCode = '';
     if (pairingBox) {
         pairingBox.style.display = 'none';
         pairingBox.classList.remove('loading');
@@ -389,7 +398,9 @@ function handleDisconnected() {
     isConnected = false;
     isConnecting = false;
     if (qrTimer) clearInterval(qrTimer);
-    hidePairingCode();
+    if (!pairingCodeVisible) {
+        hidePairingCode();
+    }
     updateConnectButton(false);
     updatePairingButton(false);
     
@@ -475,6 +486,64 @@ function showToast(type: 'success' | 'error' | 'warning' | 'info', message: stri
             toast.remove();
         }, 300);
     }, 4000);
+}
+
+async function copyTextToClipboard(text: string) {
+    const value = String(text || '').trim();
+    if (!value) return false;
+
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(value);
+            return true;
+        }
+    } catch (error) {
+        // fallback below
+    }
+
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        return copied;
+    } catch (error) {
+        return false;
+    }
+}
+
+async function copyPairingCode() {
+    const pairingValue = document.getElementById('pairing-code-value') as HTMLElement | null;
+    const currentText = String(pairingValue?.textContent || '').trim();
+    const code = lastPairingCode || currentText;
+
+    if (!code || code.includes('Gerando')) {
+        showToast('warning', 'Aguarde o codigo de pareamento');
+        return;
+    }
+
+    const copied = await copyTextToClipboard(code);
+    if (copied) {
+        showToast('success', 'Codigo copiado');
+        return;
+    }
+    showToast('warning', 'Nao foi possivel copiar automaticamente');
+}
+
+function bindPairingCodeCopy() {
+    const pairingValue = document.getElementById('pairing-code-value') as HTMLElement | null;
+    if (!pairingValue || pairingValue.dataset.copyBound === '1') return;
+
+    pairingValue.dataset.copyBound = '1';
+    pairingValue.style.cursor = 'pointer';
+    pairingValue.addEventListener('click', () => {
+        copyPairingCode();
+    });
 }
 
 // Toggle sidebar
