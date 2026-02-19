@@ -1762,6 +1762,7 @@ async function requestSessionPairingCode(sessionId, clientSocket, phoneNumber, o
 
     const maxAttempts = Number.isFinite(options.maxAttempts) ? options.maxAttempts : 45;
     const waitMs = Number.isFinite(options.waitMs) ? options.waitMs : 350;
+    const reuseWindowMs = Number.isFinite(options.reuseWindowMs) ? options.reuseWindowMs : 120000;
     let lastError = null;
 
     const isTransientPairingError = (error) => {
@@ -1793,6 +1794,25 @@ async function requestSessionPairingCode(sessionId, clientSocket, phoneNumber, o
                 code: 'PAIRING_ALREADY_CONNECTED'
             });
             return null;
+        }
+
+        const pairingAgeMs = Number(session.pairingRequestedAt || 0) ? Date.now() - Number(session.pairingRequestedAt) : Infinity;
+        if (
+            session.pairingMode &&
+            session.pairingCode &&
+            session.pairingPhone === normalizedPhone &&
+            pairingAgeMs <= reuseWindowMs
+        ) {
+            const cachedCode = String(session.pairingCode).trim();
+            if (cachedCode) {
+                socketRef.emit('pairing-code', {
+                    sessionId,
+                    phoneNumber: normalizedPhone,
+                    code: cachedCode,
+                    reused: true
+                });
+                return cachedCode;
+            }
         }
 
         if (session.reconnecting || !session.socket) {
@@ -2189,7 +2209,11 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                             session.isConnected = false;
 
-                            session.pairingCode = null;
+                            if (!session.pairingMode) {
+                                session.pairingCode = null;
+                                session.pairingPhone = null;
+                                session.pairingRequestedAt = null;
+                            }
 
                         }
 
@@ -2203,7 +2227,10 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                         await delay(RECONNECT_DELAY);
 
-                        await createSession(sessionId, clientSocket, currentAttempt + 1, options);
+                        const reconnectOptions = session?.pairingMode
+                            ? { ...options, requestPairingCode: false }
+                            : options;
+                        await createSession(sessionId, clientSocket, currentAttempt + 1, reconnectOptions);
 
                     } else {
 
@@ -6924,7 +6951,6 @@ process.on('uncaughtException', (error) => {
     });
 
 };
-
 
 
 
