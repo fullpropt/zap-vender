@@ -64,10 +64,15 @@ export default function FlowBuilder() {
             --white: #ffffff;
             --border: #e2e8f0;
             min-height: 100vh;
+            height: 100vh;
+            overflow: hidden;
         }
 
         .flow-builder-react .main-content {
             color: #e7edf7;
+            height: 100vh;
+            overflow: hidden;
+            padding: 18px 24px 14px;
         }
 
         .flow-builder-react .header {
@@ -75,7 +80,7 @@ export default function FlowBuilder() {
             justify-content: space-between;
             align-items: flex-start;
             gap: 16px;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
             flex-wrap: wrap;
         }
 
@@ -146,7 +151,7 @@ export default function FlowBuilder() {
         .flow-container {
             display: grid;
             grid-template-columns: 280px 1fr 320px;
-            height: calc(100vh - 100px);
+            height: calc(100vh - 156px);
             gap: 0;
             background: white;
             border-radius: 16px;
@@ -675,6 +680,14 @@ export default function FlowBuilder() {
             max-height: 60vh;
             overflow-y: auto;
         }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            background: white;
+        }
         
         .flow-list-item {
             display: flex;
@@ -735,6 +748,14 @@ export default function FlowBuilder() {
             background: rgba(100, 116, 139, 0.15);
             color: var(--gray);
         }
+
+        .flow-list-empty {
+            text-align: center;
+            color: var(--gray);
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            padding: 18px 14px;
+        }
         
         @media (max-width: 1200px) {
             .flow-container {
@@ -746,6 +767,12 @@ export default function FlowBuilder() {
         }
         
         @media (max-width: 768px) {
+            .flow-builder-react .main-content {
+                height: auto;
+                min-height: 100vh;
+                overflow: auto;
+                padding: 16px 12px;
+            }
             .flow-container {
                 grid-template-columns: 1fr;
                 grid-template-rows: auto 1fr;
@@ -978,10 +1005,16 @@ export default function FlowBuilder() {
           <div className="modal-overlay" id="flowsModal">
               <div className="modal">
                   <div className="modal-header">
-                      <h2>Meus Fluxos</h2>
+                      <h2>Selecione um Fluxo</h2>
                       <button className="modal-close" onClick={() => globals.closeFlowsModal?.()}>&times;</button>
                   </div>
-                  <div className="modal-body" id="flowsList">
+                  <div className="modal-body">
+                      <div id="flowsList"></div>
+                  </div>
+                  <div className="modal-footer">
+                      <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
+                          <span className="icon icon-add icon-sm"></span> Criar Novo Fluxo
+                      </button>
                   </div>
               </div>
           </div>

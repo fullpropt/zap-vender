@@ -1,4 +1,4 @@
-// Flow builder page logic migrated to module
+﻿// Flow builder page logic migrated to module
 
 // Estado do construtor
 type NodeType = 'trigger' | 'message' | 'wait' | 'condition' | 'delay' | 'transfer' | 'tag' | 'status' | 'webhook' | 'end';
@@ -52,7 +52,19 @@ let connectionPreviewPath: SVGPathElement | null = null;
 let lastPointer = { x: 0, y: 0 };
 let hasInitialized = false;
 
-// Inicialização
+function getSessionToken() {
+    return sessionStorage.getItem('selfDashboardToken');
+}
+
+function buildAuthHeaders(includeJson = false): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const token = getSessionToken();
+    if (includeJson) headers['Content-Type'] = 'application/json';
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+}
+
+// Inicializacao
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', callback);
@@ -67,12 +79,13 @@ function initFlowBuilder() {
 
     setupDragAndDrop();
     setupCanvasEvents();
-    loadFlows();
+    applyZoom();
+    openFlowsModal();
 }
 
 onReady(initFlowBuilder);
 
-// Configurar drag and drop dos nós
+// Configurar drag and drop dos nos
 function setupDragAndDrop() {
     const nodeItems = document.querySelectorAll('.node-item');
     const canvas = document.getElementById('canvasContainer') as HTMLElement | null;
@@ -133,7 +146,7 @@ function setupCanvasEvents() {
     document.addEventListener('mouseup', handleDocumentMouseUp);
 }
 
-// Adicionar nó
+// Adicionar no
 function addNode(type: NodeType, subtype: string, x: number, y: number) {
     const emptyCanvas = document.getElementById('emptyCanvas') as HTMLElement | null;
     if (emptyCanvas) emptyCanvas.style.display = 'none';
@@ -152,7 +165,7 @@ function addNode(type: NodeType, subtype: string, x: number, y: number) {
     selectNode(id);
 }
 
-// Dados padrão do nó
+// Dados padrao do no
 function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
     const defaults = {
         trigger: { label: subtype === 'keyword' ? 'Palavra-chave' : 'Novo Contato', keyword: '' },
@@ -169,7 +182,7 @@ function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
     return defaults[type] || { label: type };
 }
 
-// Renderizar nó
+// Renderizar no
 function renderNode(node: FlowNode) {
     const container = document.getElementById('canvasContainer') as HTMLElement | null;
     if (!container) return;
@@ -307,7 +320,7 @@ function handleDocumentMouseUp(e: MouseEvent) {
     cancelConnection();
 }
 
-// Preview do nó
+// Preview do no
 function getNodePreview(node: FlowNode) {
     switch (node.type) {
         case 'message':
@@ -323,7 +336,7 @@ function getNodePreview(node: FlowNode) {
     }
 }
 
-// Selecionar nó
+// Selecionar no
 function selectNode(id: string) {
     deselectNode();
     selectedNode = nodes.find(n => n.id === id);
@@ -334,7 +347,7 @@ function selectNode(id: string) {
     renderProperties();
 }
 
-// Deselecionar nó
+// Deselecionar no
 function deselectNode() {
     if (selectedNode) {
         const nodeEl = document.getElementById(selectedNode.id);
@@ -347,7 +360,7 @@ function deselectNode() {
     }
 }
 
-// Deletar nó
+// Deletar no
 function deleteNode(id: string) {
     if (connectionStart?.nodeId === id) {
         cancelConnection();
@@ -490,7 +503,7 @@ function renderProperties() {
     container.innerHTML = html;
 }
 
-// Atualizar propriedade do nó
+// Atualizar propriedade do no
 function updateNodeProperty(key: keyof NodeData, value: any) {
     if (!selectedNode) return;
     
@@ -506,7 +519,7 @@ function updateNodeProperty(key: keyof NodeData, value: any) {
     }
 }
 
-// Condições
+// Condicoes
 function addCondition() {
     if (!selectedNode || selectedNode.type !== 'condition') return;
     
@@ -529,7 +542,7 @@ function removeCondition(index: number) {
     renderProperties();
 }
 
-// Inserir variável
+// Inserir variavel
 function insertVariable(variable: string) {
     const textarea = document.getElementById('messageContent') as HTMLTextAreaElement | null;
     if (textarea) {
@@ -543,7 +556,7 @@ function insertVariable(variable: string) {
     }
 }
 
-// Conexões
+// Conexoes
 function startConnection(nodeId: string, portType: string) {
     if (portType !== 'output') return;
 
@@ -730,13 +743,20 @@ function applyZoom() {
 // Limpar canvas
 function clearCanvas() {
     if (!confirm('Limpar todo o fluxo?')) return;
-    
+    resetEditorState();
+}
+
+function resetEditorState() {
     cancelConnection();
+    stopPan();
+    deselectNode();
 
     nodes = [];
     edges = [];
     currentFlowId = null;
-    
+    zoom = 1;
+    pan = { x: 0, y: 0 };
+
     const canvasContainer = document.getElementById('canvasContainer') as HTMLElement | null;
     if (canvasContainer) {
         canvasContainer.innerHTML = `
@@ -747,12 +767,14 @@ function clearCanvas() {
         </div>
     `;
     }
-    
+
     const connectionsSvg = document.getElementById('connectionsSvg') as HTMLElement | null;
     if (connectionsSvg) connectionsSvg.innerHTML = '';
+
     const flowName = document.getElementById('flowName') as HTMLInputElement | null;
     if (flowName) flowName.value = '';
-    deselectNode();
+
+    applyZoom();
 }
 
 // Salvar fluxo
@@ -762,15 +784,20 @@ async function saveFlow() {
         alert('Digite um nome para o fluxo');
         return;
     }
-    
+
     if (nodes.length === 0) {
         alert('Adicione pelo menos um bloco ao fluxo');
         return;
     }
-    
-    // Encontrar trigger
+
+    const token = getSessionToken();
+    if (!token) {
+        alert('Sessão expirada. Faça login novamente.');
+        return;
+    }
+
     const trigger = nodes.find(n => n.type === 'trigger');
-    
+
     const flowData = {
         name,
         description: '',
@@ -780,19 +807,19 @@ async function saveFlow() {
         edges,
         is_active: 1
     };
-    
+
     try {
         const url = currentFlowId ? `/api/flows/${currentFlowId}` : '/api/flows';
         const method = currentFlowId ? 'PUT' : 'POST';
-        
+
         const response = await fetch(url, {
             method,
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildAuthHeaders(true),
             body: JSON.stringify(flowData)
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             currentFlowId = result.flow.id;
             alert('Fluxo salvo com sucesso!');
@@ -806,34 +833,49 @@ async function saveFlow() {
 
 // Carregar fluxos
 async function loadFlows() {
+    const container = document.getElementById('flowsList') as HTMLElement | null;
+    if (container) {
+        container.innerHTML = '<p style="text-align: center; color: var(--gray);">Carregando fluxos...</p>';
+    }
+
     try {
-        const response = await fetch('/api/flows');
+        const response = await fetch('/api/flows', {
+            headers: buildAuthHeaders(false)
+        });
         const result = await response.json();
-        
+
         if (result.success) {
             renderFlowsList(result.flows as FlowSummary[]);
+        } else {
+            renderFlowsError(result.error || 'Não foi possível carregar os fluxos.');
         }
     } catch (error) {
-        console.error('Erro ao carregar fluxos:', error);
+        renderFlowsError(error instanceof Error ? error.message : 'Falha ao carregar fluxos.');
     }
+}
+
+function renderFlowsError(message: string) {
+    const container = document.getElementById('flowsList') as HTMLElement | null;
+    if (!container) return;
+    container.innerHTML = `<p style="text-align: center; color: var(--danger);">${message}</p>`;
 }
 
 // Renderizar lista de fluxos
 function renderFlowsList(flows: FlowSummary[]) {
     const container = document.getElementById('flowsList') as HTMLElement | null;
     if (!container) return;
-    
+
     if (flows.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: var(--gray);">Nenhum fluxo criado ainda</p>';
+        container.innerHTML = '<p class="flow-list-empty">Nenhum fluxo criado ainda. Crie um novo para começar.</p>';
         return;
     }
-    
+
     container.innerHTML = flows.map(flow => `
         <div class="flow-list-item" onclick="loadFlow(${flow.id})">
             <div class="icon icon-flows"></div>
             <div class="info">
                 <div class="name">${flow.name}</div>
-                <div class="meta">Trigger: ${flow.trigger_type} | ${flow.nodes?.length || 0} blocos</div>
+                <div class="meta">Gatilho: ${flow.trigger_type || 'manual'} | ${flow.nodes?.length || 0} blocos</div>
             </div>
             <span class="status ${flow.is_active ? 'active' : 'inactive'}">${flow.is_active ? 'Ativo' : 'Inativo'}</span>
         </div>
@@ -843,12 +885,15 @@ function renderFlowsList(flows: FlowSummary[]) {
 // Carregar fluxo
 async function loadFlow(id: number) {
     try {
-        const response = await fetch(`/api/flows/${id}`);
+        const response = await fetch(`/api/flows/${id}`, {
+            headers: buildAuthHeaders(false)
+        });
         const result = await response.json();
         
         if (result.success) {
+            resetEditorState();
             closeFlowsModal();
-            
+
             // Limpar canvas
             const canvasContainer = document.getElementById('canvasContainer') as HTMLElement | null;
             const connectionsSvg = document.getElementById('connectionsSvg') as HTMLElement | null;
@@ -869,15 +914,21 @@ async function loadFlow(id: number) {
             
             // Renderizar conexões
             setTimeout(() => renderConnections(), 100);
+        } else {
+            alert('Erro ao carregar fluxo: ' + result.error);
         }
     } catch (error) {
-        alert('Erro ao carregar fluxo: ' + error.message);
+        alert('Erro ao carregar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
     }
 }
 
 // Criar novo fluxo
 function createNewFlow() {
-    clearCanvas();
+    if (nodes.length > 0 || currentFlowId) {
+        if (!confirm('Descartar o fluxo atual e criar um novo?')) return;
+    }
+    resetEditorState();
+    closeFlowsModal();
 }
 
 // Modal
@@ -926,4 +977,7 @@ windowAny.loadFlow = loadFlow;
 windowAny.closeFlowsModal = closeFlowsModal;
 
 export { initFlowBuilder };
+
+
+
 
