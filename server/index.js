@@ -1760,9 +1760,23 @@ async function requestSessionPairingCode(sessionId, clientSocket, phoneNumber, o
         return null;
     }
 
-    const maxAttempts = Number.isFinite(options.maxAttempts) ? options.maxAttempts : 30;
+    const maxAttempts = Number.isFinite(options.maxAttempts) ? options.maxAttempts : 45;
     const waitMs = Number.isFinite(options.waitMs) ? options.waitMs : 350;
     let lastError = null;
+
+    const isTransientPairingError = (error) => {
+        const message = String(error?.message || '').toLowerCase();
+        if (!message) return false;
+
+        return (
+            message.includes('connection closed') ||
+            message.includes('not connected') ||
+            message.includes('timed out') ||
+            message.includes('connection lost') ||
+            message.includes('stream errored') ||
+            message.includes('socket closed')
+        );
+    };
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const session = sessions.get(sessionId);
@@ -1779,6 +1793,11 @@ async function requestSessionPairingCode(sessionId, clientSocket, phoneNumber, o
                 code: 'PAIRING_ALREADY_CONNECTED'
             });
             return null;
+        }
+
+        if (session.reconnecting || !session.socket) {
+            await sleep(waitMs);
+            continue;
         }
 
         const sock = session.socket;
@@ -1815,6 +1834,10 @@ async function requestSessionPairingCode(sessionId, clientSocket, phoneNumber, o
                 return pairingCode;
             } catch (error) {
                 lastError = error;
+                if (isTransientPairingError(error)) {
+                    await sleep(waitMs);
+                    continue;
+                }
                 break;
             }
         }
@@ -6901,7 +6924,6 @@ process.on('uncaughtException', (error) => {
     });
 
 };
-
 
 
 
