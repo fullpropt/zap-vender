@@ -54,10 +54,15 @@ export default function App() {
       const target = event.target as HTMLElement | null;
       if (!target) return;
 
-      if (target.closest('.mobile-menu-toggle') || target.closest('.sidebar-overlay')) {
+      if (target.closest('.mobile-menu-toggle')) {
         window.setTimeout(() => {
           syncSidebarAccessibility();
         }, 0);
+        return;
+      }
+
+      if (target.closest('.sidebar-overlay')) {
+        closeSidebar();
         return;
       }
 

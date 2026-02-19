@@ -1441,7 +1441,6 @@ body.sidebar-open {
 }
 
 body.sidebar-open .mobile-menu-toggle {
-    left: calc(min(86vw, 320px) + env(safe-area-inset-left, 0px) + 12px);
     background: rgba(15, 23, 42, 0.95);
 }
 

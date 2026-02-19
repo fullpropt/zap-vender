@@ -258,6 +258,12 @@ function refreshWhatsAppStatus() {
 // ============================================
 
 function initSidebar() {
+    // No App React, o controle de sidebar é feito pelos componentes/roteador.
+    // Evita duplo toggle no mesmo clique em mobile.
+    if (document.getElementById('root')) {
+        return;
+    }
+
     const toggle = document.querySelector('.mobile-menu-toggle') as HTMLElement | null;
     const sidebar = document.querySelector('.sidebar') as HTMLElement | null;
     const overlay = document.querySelector('.sidebar-overlay') as HTMLElement | null;
@@ -811,5 +817,4 @@ windowAny.LEAD_STATUS = LEAD_STATUS;
 windowAny.FUNNEL_STAGES = FUNNEL_STAGES;
 
 export {};
-
 
