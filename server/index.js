@@ -3482,9 +3482,9 @@ async function syncChatsToDatabase(sessionId, payload) {
 
         if (!jid || !isUserJid(jid)) continue;
 
-
-
-        if (!chat?.lastMessage) continue;
+        const unreadCount = Number(chat?.unreadCount || 0);
+        const hasUnread = Number.isFinite(unreadCount) && unreadCount > 0;
+        if (!chat?.lastMessage && !hasUnread) continue;
 
 
 
@@ -3576,9 +3576,8 @@ async function syncChatsToDatabase(sessionId, payload) {
 
         const updates = {};
 
-        if (typeof chat.unreadCount === 'number') {
-
-            updates.unread_count = chat.unreadCount;
+        if (Number.isFinite(unreadCount)) {
+            updates.unread_count = Math.max(0, unreadCount);
 
         }
 
@@ -4530,9 +4529,13 @@ function sessionExists(sessionId) {
     });
 
     flowService.init(async (options) => {
+        const resolvedSessionId = sanitizeSessionId(
+            options?.sessionId || options?.session_id,
+            'self_whatsapp_session'
+        );
         return await sendMessageToWhatsApp({
             ...options,
-            sessionId: 'self_whatsapp_session'
+            sessionId: resolvedSessionId
         });
     });
 
@@ -5984,13 +5987,26 @@ app.get('/api/conversations', optionalAuth, async (req, res) => {
             ? decryptMessage(lastMessage.content_encrypted)
             : lastMessage?.content;
 
+        let metadata = {};
+        try {
+            metadata = c?.metadata ? JSON.parse(c.metadata) : {};
+        } catch (_) {
+            metadata = {};
+        }
+        const metadataLastMessage = normalizeText(metadata?.last_message || '');
+        const metadataLastMessageAt = normalizeText(metadata?.last_message_at || '');
+
         const lastMessageText =
             (decrypted || '').trim() ||
-            (lastMessage ? previewForMedia(lastMessage.media_type) : '');
+            (lastMessage ? previewForMedia(lastMessage.media_type) : '') ||
+            metadataLastMessage;
 
         const lastMessageAt =
             lastMessage?.sent_at ||
             lastMessage?.created_at ||
+            metadataLastMessageAt ||
+            c?.updated_at ||
+            c?.created_at ||
             null;
 
         let name = normalizeText(c.lead_name);
@@ -6011,7 +6027,7 @@ app.get('/api/conversations', optionalAuth, async (req, res) => {
             phone: c.phone
         };
     }))).filter((conv) => {
-        if (!conv.lastMessageAt && !conv.lastMessage) {
+        if (!conv.lastMessageAt && !conv.lastMessage && Number(conv?.unread || 0) <= 0) {
             return false;
         }
         return true;

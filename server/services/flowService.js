@@ -780,6 +780,7 @@ class FlowService extends EventEmitter {
                         await this.sendFunction({
                             to: execution.lead.phone,
                             jid: execution.lead.jid,
+                            sessionId: execution.conversation?.session_id || null,
                             content,
                             mediaType: node.data.mediaType || 'text',
                             mediaUrl: node.data.mediaUrl
@@ -817,6 +818,7 @@ class FlowService extends EventEmitter {
                         await this.sendFunction({
                             to: execution.lead.phone,
                             jid: execution.lead.jid,
+                            sessionId: execution.conversation?.session_id || null,
                             content: transferMsg
                         });
                     }
