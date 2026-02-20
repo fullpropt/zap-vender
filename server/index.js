@@ -6048,6 +6048,7 @@ app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
 app.get('/api/leads', optionalAuth, async (req, res) => {
 
     const { status, search, limit, offset } = req.query;
+    const sessionId = sanitizeSessionId(req.query.session_id || req.query.sessionId);
 
     const leads = await Lead.list({ 
 
@@ -6055,13 +6056,18 @@ app.get('/api/leads', optionalAuth, async (req, res) => {
 
         search,
 
+        session_id: sessionId || undefined,
+
         limit: limit ? parseInt(limit) : 50,
 
         offset: offset ? parseInt(offset) : 0
 
     });
 
-    const total = await Lead.count({ status: status ? parseInt(status) : undefined });
+    const total = await Lead.count({
+        status: status ? parseInt(status) : undefined,
+        session_id: sessionId || undefined
+    });
 
     
 

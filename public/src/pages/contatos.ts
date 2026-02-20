@@ -26,6 +26,13 @@ type ContactField = {
     is_default?: boolean;
     source?: string;
 };
+type WhatsappSessionItem = {
+    session_id: string;
+    status?: string;
+    connected?: boolean;
+    name?: string;
+    phone?: string;
+};
 
 type LeadsResponse = { leads?: Contact[] };
 type TagsResponse = { tags?: Tag[] };
@@ -40,6 +47,10 @@ const perPage = 20;
 let tags: Tag[] = [];
 let contactFieldsCache: ContactField[] = [];
 let customContactFieldsCache: ContactField[] = [];
+let contactsSessionFilter = '';
+let contactsAvailableSessions: WhatsappSessionItem[] = [];
+
+const CONTACTS_SESSION_FILTER_STORAGE_KEY = 'zapvender_contacts_session_filter';
 
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', source: 'name', is_default: true },
@@ -108,6 +119,86 @@ function escapeHtml(value: string) {
         .replace(/'/g, '&#039;');
 }
 
+function sanitizeSessionId(value: unknown, fallback = '') {
+    const normalized = String(value || '').trim();
+    return normalized || fallback;
+}
+
+function getStoredContactsSessionFilter() {
+    return sanitizeSessionId(localStorage.getItem(CONTACTS_SESSION_FILTER_STORAGE_KEY));
+}
+
+function persistContactsSessionFilter(sessionId: string) {
+    const normalized = sanitizeSessionId(sessionId);
+    if (!normalized) {
+        localStorage.removeItem(CONTACTS_SESSION_FILTER_STORAGE_KEY);
+        return;
+    }
+    localStorage.setItem(CONTACTS_SESSION_FILTER_STORAGE_KEY, normalized);
+}
+
+function getSessionStatusLabel(session: WhatsappSessionItem) {
+    const connected = Boolean(session.connected) || String(session.status || '').toLowerCase() === 'connected';
+    return connected ? 'Conectada' : 'Desconectada';
+}
+
+function getSessionDisplayName(session: WhatsappSessionItem) {
+    const sessionId = sanitizeSessionId(session.session_id);
+    const name = String(session.name || '').trim();
+    if (name) return name;
+    const phone = String(session.phone || '').trim();
+    if (phone) return phone;
+    return sessionId;
+}
+
+function renderContactsSessionFilterOptions() {
+    const select = document.getElementById('filterSession') as HTMLSelectElement | null;
+    if (!select) return;
+
+    const options = [
+        `<option value="">Todas as contas</option>`,
+        ...contactsAvailableSessions.map((session) => {
+            const sessionId = sanitizeSessionId(session.session_id);
+            const displayName = getSessionDisplayName(session);
+            const status = getSessionStatusLabel(session);
+            const label = displayName === sessionId
+                ? `${displayName} - ${status}`
+                : `${displayName} - ${sessionId} - ${status}`;
+            return `<option value="${escapeHtml(sessionId)}">${escapeHtml(label)}</option>`;
+        })
+    ];
+
+    select.innerHTML = options.join('');
+    select.value = contactsSessionFilter;
+}
+
+async function loadContactsSessionFilters() {
+    contactsSessionFilter = sanitizeSessionId(getStoredContactsSessionFilter());
+
+    try {
+        const response = await api.get('/api/whatsapp/sessions?includeDisabled=true');
+        contactsAvailableSessions = Array.isArray(response?.sessions) ? response.sessions : [];
+    } catch {
+        contactsAvailableSessions = [];
+    }
+
+    const knownIds = new Set(
+        contactsAvailableSessions.map((item) => sanitizeSessionId(item.session_id)).filter(Boolean)
+    );
+    if (contactsSessionFilter && !knownIds.has(contactsSessionFilter)) {
+        contactsSessionFilter = '';
+        persistContactsSessionFilter('');
+    }
+
+    renderContactsSessionFilterOptions();
+}
+
+function changeContactsSessionFilter(sessionId: string) {
+    contactsSessionFilter = sanitizeSessionId(sessionId);
+    persistContactsSessionFilter(contactsSessionFilter);
+    void loadContacts();
+}
+
 
 function getQueryParams() {
     if (window.location.search) {
@@ -146,7 +237,9 @@ function initContacts() {
         return;
     }
     loadContactFields();
-    loadContacts();
+    void loadContactsSessionFilters().finally(() => {
+        loadContacts();
+    });
     loadTags();
     loadTemplates();
 }
@@ -154,7 +247,10 @@ function initContacts() {
 async function loadContacts() {
     try {
         showLoading('Carregando contatos...');
-        const response: LeadsResponse = await api.get('/api/leads');
+        const query = contactsSessionFilter
+            ? `?session_id=${encodeURIComponent(contactsSessionFilter)}`
+            : '';
+        const response: LeadsResponse = await api.get(`/api/leads${query}`);
         allContacts = response.leads || [];
         filteredContacts = [...allContacts];
         updateStats();
@@ -707,6 +803,7 @@ const windowAny = window as Window & {
     initContacts?: () => void;
     loadContacts?: () => void;
     changePage?: (delta: number) => void;
+    changeContactsSessionFilter?: (sessionId: string) => void;
     filterContacts?: () => void;
     toggleSelectAll?: () => void;
     updateSelection?: () => void;
@@ -730,6 +827,7 @@ const windowAny = window as Window & {
 windowAny.initContacts = initContacts;
 windowAny.loadContacts = loadContacts;
 windowAny.changePage = changePage;
+windowAny.changeContactsSessionFilter = changeContactsSessionFilter;
 windowAny.filterContacts = filterContacts;
 windowAny.toggleSelectAll = toggleSelectAll;
 windowAny.updateSelection = updateSelection;

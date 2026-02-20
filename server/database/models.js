@@ -432,6 +432,11 @@ const Lead = {
             sql += ' AND (name LIKE ? OR phone LIKE ?)';
             params.push(`%${options.search}%`, `%${options.search}%`);
         }
+
+        if (options.session_id) {
+            sql += ' AND EXISTS (SELECT 1 FROM conversations c WHERE c.lead_id = leads.id AND c.session_id = ?)';
+            params.push(String(options.session_id).trim());
+        }
         
         sql += ' ORDER BY updated_at DESC';
         
@@ -455,6 +460,11 @@ const Lead = {
         if (options.status) {
             sql += ' AND status = ?';
             params.push(options.status);
+        }
+
+        if (options.session_id) {
+            sql += ' AND EXISTS (SELECT 1 FROM conversations c WHERE c.lead_id = leads.id AND c.session_id = ?)';
+            params.push(String(options.session_id).trim());
         }
         
         return await queryOne(sql, params)?.total || 0;

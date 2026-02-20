@@ -5,6 +5,7 @@ import { brandLogoUrl, brandName } from '../lib/brand';
 type ContatosGlobals = {
   initContacts?: () => void;
   loadContacts?: () => void;
+  changeContactsSessionFilter?: (sessionId: string) => void;
   exportContacts?: () => void;
   openModal?: (id: string) => void;
   closeModal?: (id: string) => void;
@@ -245,6 +246,14 @@ export default function Contatos() {
               </select>
               <select className="form-select" id="filterTag" onChange={() => globals.filterContacts?.()} style={{ width: 'auto' }}>
                 <option value="">Todas as Tags</option>
+              </select>
+              <select
+                className="form-select"
+                id="filterSession"
+                onChange={(event) => globals.changeContactsSessionFilter?.(event.currentTarget.value)}
+                style={{ width: 'auto' }}
+              >
+                <option value="">Todas as contas</option>
               </select>
             </div>
           </div>
