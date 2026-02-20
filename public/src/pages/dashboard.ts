@@ -16,6 +16,9 @@ type Lead = {
     vehicle?: string;
     plate?: string;
     email?: string;
+    tags?: unknown;
+    last_message_at?: string | null;
+    last_interaction_at?: string | null;
     status: LeadStatus;
     created_at: string;
 };
@@ -369,7 +372,7 @@ function renderCustomEventsList(response: CustomEventsStatsResponse) {
 function renderCustomEventsError() {
     const container = document.getElementById('customEventsList') as HTMLElement | null;
     if (!container) return;
-    container.innerHTML = '<div class="events-error">Nao foi possivel carregar eventos personalizados.</div>';
+    container.innerHTML = '<div class="events-error">Não foi possível carregar eventos personalizados.</div>';
 }
 
 function setCustomEventsLoading() {
@@ -390,7 +393,7 @@ async function loadCustomEvents(options: { silent?: boolean } = {}) {
         customEvents = [];
         renderCustomEventsError();
         if (!options.silent) {
-            showToast('warning', 'Aviso', 'Nao foi possivel atualizar eventos personalizados');
+            showToast('warning', 'Aviso', 'Não foi possível atualizar eventos personalizados');
         }
         console.error(error);
     }
@@ -465,7 +468,7 @@ async function saveCustomEvent() {
         await loadCustomEvents({ silent: true });
         showToast('success', 'Sucesso', `Evento ${Number.isFinite(eventId) && eventId > 0 ? 'atualizado' : 'criado'} com sucesso`);
     } catch (error) {
-        showToast('error', 'Erro', error instanceof Error ? error.message : 'Nao foi possivel salvar o evento');
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Não foi possível salvar o evento');
     }
 }
 
@@ -482,7 +485,7 @@ async function deleteCustomEvent(id: number) {
         await loadCustomEvents({ silent: true });
         showToast('success', 'Sucesso', 'Evento removido com sucesso');
     } catch (error) {
-        showToast('error', 'Erro', error instanceof Error ? error.message : 'Nao foi possivel remover o evento');
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Não foi possível remover o evento');
     }
 }
 
@@ -594,6 +597,54 @@ function updateFunnel() {
     }
 }
 
+function parseLeadTags(raw: unknown): string[] {
+    if (Array.isArray(raw)) {
+        return raw
+            .map((item) => {
+                if (typeof item === 'string') return item.trim();
+                if (item && typeof item === 'object' && 'name' in item) {
+                    return String((item as { name?: unknown }).name || '').trim();
+                }
+                return '';
+            })
+            .filter(Boolean);
+    }
+
+    if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (!trimmed) return [];
+        try {
+            const parsed = JSON.parse(trimmed) as unknown;
+            if (Array.isArray(parsed)) {
+                return parsed
+                    .map((item) => String(item || '').trim())
+                    .filter(Boolean);
+            }
+        } catch {
+            // Valor simples separado por vírgula ou ponto e vírgula.
+        }
+        return trimmed
+            .split(/[,;|]/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+
+    return [];
+}
+
+function renderLeadTagChips(lead: Lead): string {
+    const tags = parseLeadTags(lead.tags);
+    if (!tags.length) return '-';
+    return `<div class="contacts-tags-cell">${tags
+        .map((tag) => `<span class="badge badge-gray contacts-tag-chip">${escapeHtml(tag)}</span>`)
+        .join('')}</div>`;
+}
+
+function getLeadLastInteraction(lead: Lead): string {
+    const lastInteraction = lead.last_message_at || lead.last_interaction_at || lead.created_at;
+    return lastInteraction ? timeAgo(lastInteraction) : '-';
+}
+
 // Renderizar tabela de leads
 function renderLeadsTable(leads: Lead[] | null = null) {
     const tbody = document.getElementById('leadsTableBody') as HTMLElement | null;
@@ -603,7 +654,7 @@ function renderLeadsTable(leads: Lead[] | null = null) {
     if (data.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="8" class="table-empty">
+                <td colspan="7" class="table-empty">
                     <div class="table-empty-icon icon icon-empty icon-lg"></div>
                     <p>Nenhum lead encontrado</p>
                     <button class="btn btn-primary mt-3" onclick="openModal('addLeadModal')">Adicionar Lead</button>
@@ -613,48 +664,54 @@ function renderLeadsTable(leads: Lead[] | null = null) {
         return;
     }
 
-    tbody.innerHTML = data.map(lead => `
-        <tr data-id="${lead.id}">
-            <td>
-                <label class="checkbox-wrapper">
-                    <input type="checkbox" class="lead-checkbox" value="${lead.id}" onchange="updateSelection()">
-                    <span class="checkbox-custom"></span>
-                </label>
-            </td>
-            <td>${formatDate(lead.created_at, 'datetime')}</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <div class="avatar" style="background: ${getAvatarColor(lead.name)}">
-                        ${getInitials(lead.name)}
+    tbody.innerHTML = data.map((lead) => {
+        const contactMeta = [lead.vehicle, lead.plate].map((value) => String(value || '').trim()).filter(Boolean).join(' • ');
+        const phone = String(lead.phone || '').replace(/\D/g, '');
+        const phoneDisplay = phone ? formatPhone(phone) : '-';
+        const phoneCell = phone
+            ? `<a href="https://wa.me/55${phone}" target="_blank" style="color: var(--whatsapp); text-decoration: none;">${phoneDisplay}</a>`
+            : phoneDisplay;
+        const whatsappAction = phone
+            ? `onclick="sendWhatsApp('${phone}')" title="Mensagem"`
+            : 'disabled title="WhatsApp indisponível"';
+
+        return `
+            <tr data-id="${lead.id}">
+                <td>
+                    <label class="checkbox-wrapper">
+                        <input type="checkbox" class="lead-checkbox" value="${lead.id}" onchange="updateSelection()">
+                        <span class="checkbox-custom"></span>
+                    </label>
+                </td>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="avatar" style="background: ${getAvatarColor(lead.name)}">${getInitials(lead.name)}</div>
+                        <div>
+                            <div style="font-weight: 600;">${escapeHtml(lead.name || 'Sem nome')}</div>
+                            <div style="font-size: 12px; color: var(--gray-500);">${escapeHtml(contactMeta || lead.email || '')}</div>
+                        </div>
                     </div>
-                    <span>${lead.name || 'Sem nome'}</span>
-                </div>
-            </td>
-            <td>
-                <a href="https://wa.me/55${lead.phone}" target="_blank" style="color: var(--whatsapp); text-decoration: none;">
-                    ${formatPhone(lead.phone)}
-                </a>
-            </td>
-            <td>${lead.plate || '-'}</td>
-            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${lead.vehicle || ''}">
-                ${lead.vehicle || '-'}
-            </td>
-            <td>${getStatusBadge(lead.status)}</td>
-            <td>
-                <div style="display: flex; gap: 5px;">
-                    <button class="btn btn-sm btn-whatsapp btn-icon" onclick="sendWhatsApp('${lead.phone}')" title="Enviar WhatsApp">
-                        <span class="icon icon-message icon-sm"></span>
-                    </button>
-                    <button class="btn btn-sm btn-outline btn-icon" onclick="editLead(${lead.id})" title="Editar">
-                        <span class="icon icon-edit icon-sm"></span>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteLead(${lead.id})" title="Excluir">
-                        <span class="icon icon-delete icon-sm"></span>
-                    </button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
+                </td>
+                <td>${phoneCell}</td>
+                <td>${getStatusBadge(lead.status)}</td>
+                <td>${renderLeadTagChips(lead)}</td>
+                <td>${getLeadLastInteraction(lead)}</td>
+                <td>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn btn-sm btn-whatsapp btn-icon" ${whatsappAction}>
+                            <span class="icon icon-message icon-sm"></span>
+                        </button>
+                        <button class="btn btn-sm btn-outline btn-icon" onclick="editLead(${lead.id})" title="Editar">
+                            <span class="icon icon-edit icon-sm"></span>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteLead(${lead.id})" title="Excluir">
+                            <span class="icon icon-delete icon-sm"></span>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 // Filtrar leads

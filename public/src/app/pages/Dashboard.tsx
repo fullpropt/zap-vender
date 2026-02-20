@@ -88,7 +88,7 @@ function DashboardHeader() {
       <div className="page-title">
         <h1>Painel de Controle</h1>
         <p>
-          Bem-vindo, <span className="user-name">UsuÃ¡rio</span> |{' '}
+          Bem-vindo, <span className="user-name">Usuário</span> |{' '}
           <span className="current-date"></span>
         </p>
       </div>
@@ -100,20 +100,20 @@ function StatsPeriod() {
   return (
     <div className="dashboard-botconversa">
       <div className="stats-period-card">
-        <h3>EstatÃ­sticas por perÃ­odo</h3>
+        <h3>Estatísticas por período</h3>
         <div className="stats-period-controls">
           <input type="date" className="form-input" id="statsStartDate" />
           <input type="date" className="form-input" id="statsEndDate" />
           <select className="form-select" id="statsMetric" style={{ width: 'auto' }}>
             <option value="novos_contatos">Novos Contatos</option>
             <option value="mensagens">Mensagens</option>
-            <option value="interacoes">InteraÃ§Ãµes</option>
+            <option value="interacoes">Interações</option>
           </select>
           <div className="chart-type-toggle">
-            <button type="button" className="chart-btn active" data-chart-type="line" title="GrÃ¡fico de linhas">
+            <button type="button" className="chart-btn active" data-chart-type="line" title="Gráfico de linhas">
               <span className="icon icon-chart-line icon-sm"></span>
             </button>
-            <button type="button" className="chart-btn" data-chart-type="bar" title="GrÃ¡fico de barras">
+            <button type="button" className="chart-btn" data-chart-type="bar" title="Gráfico de barras">
               <span className="icon icon-chart-bar icon-sm"></span>
             </button>
           </div>
@@ -123,7 +123,7 @@ function StatsPeriod() {
         </div>
       </div>
       <div className="stats-general-card">
-        <h3>EstatÃ­sticas gerais</h3>
+        <h3>Estatísticas gerais</h3>
         <div className="stats-general-item">
           <span className="stats-general-label">Contatos que interagiram</span>
           <span className="stats-general-value" id="statsContacts">0</span>
@@ -133,7 +133,7 @@ function StatsPeriod() {
           <span className="stats-general-value" id="statsMessages">0</span>
         </div>
         <div className="stats-general-item">
-          <span className="stats-general-label">InteraÃ§Ãµes/Inscrito</span>
+          <span className="stats-general-label">Interações/Inscrito</span>
           <span className="stats-general-value" id="statsInteractionsPer">0</span>
         </div>
       </div>
@@ -190,7 +190,7 @@ function StatsCards() {
         <div className="stat-icon success"><span className="icon icon-check"></span></div>
         <div className="stat-content">
           <div className="stat-value" id="completedLeads">0</div>
-          <div className="stat-label">ConcluÃ­dos</div>
+          <div className="stat-label">Concluídos</div>
           <div className="stat-change positive" id="completedChange">+0%</div>
         </div>
       </div>
@@ -206,7 +206,7 @@ function StatsCards() {
         <div className="stat-icon info"><span className="icon icon-chart-bar"></span></div>
         <div className="stat-content">
           <div className="stat-value" id="conversionRate">0.0%</div>
-          <div className="stat-label">ConversÃ£o</div>
+          <div className="stat-label">Conversão</div>
           <div className="stat-change positive" id="conversionChange">+0%</div>
         </div>
       </div>
@@ -217,7 +217,7 @@ function StatsCards() {
 function Funnel() {
   return (
     <div className="funnel-container">
-      <div className="funnel-title"><span className="icon icon-funnel icon-sm"></span> Funil de ConversÃ£o</div>
+      <div className="funnel-title"><span className="icon icon-funnel icon-sm"></span> Funil de Conversão</div>
       <div className="funnel-stages" id="funnelStages">
         <div className="funnel-stage" data-stage="1">
           <div className="funnel-value" id="funnel1">0</div>
@@ -239,7 +239,7 @@ function Funnel() {
         <div className="funnel-arrow">&rarr;</div>
         <div className="funnel-stage" data-stage="4">
           <div className="funnel-value" id="funnel4">0</div>
-          <div className="funnel-label">ConcluÃ­do</div>
+          <div className="funnel-label">Concluído</div>
           <div className="funnel-percent" id="funnel4Percent">0%</div>
         </div>
       </div>
@@ -254,26 +254,25 @@ function LeadsTable() {
     <div className="table-container">
       <div className="table-header">
         <div className="table-title"><span className="icon icon-contacts icon-sm"></span> Leads Recentes</div>
-        <div className="table-filters">
-          <div className="search-box">
+        <div className="table-filters contacts-table-filters">
+          <div className="search-box contacts-search-box">
             <span className="search-icon icon icon-search icon-sm"></span>
             <input
               type="text"
               id="searchLeads"
-              placeholder="Buscar por nome, telefone..."
+              placeholder="Buscar..."
               onKeyUp={() => globals.filterLeads?.()}
             />
           </div>
           <select
-            className="form-select"
+            className="form-select contacts-filter-select"
             id="filterStatus"
             onChange={() => globals.filterLeads?.()}
-            style={{ width: 'auto' }}
           >
             <option value="">Todos os Status</option>
             <option value="1">Novo</option>
             <option value="2">Em Andamento</option>
-            <option value="3">ConcluÃ­do</option>
+            <option value="3">Concluído</option>
             <option value="4">Perdido</option>
           </select>
         </div>
@@ -288,18 +287,17 @@ function LeadsTable() {
                   <span className="checkbox-custom"></span>
                 </label>
               </th>
-              <th>Data/Hora</th>
-              <th>Nome</th>
+              <th>Contato</th>
               <th>WhatsApp</th>
-              <th>Placa</th>
-              <th>VeÃ­culo</th>
               <th>Status</th>
-              <th>AÃ§Ãµes</th>
+              <th>Tags</th>
+              <th>Última Interação</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody id="leadsTableBody">
             <tr>
-              <td colSpan={8} className="table-empty">
+              <td colSpan={7} className="table-empty">
                 <div className="table-empty-icon icon icon-empty icon-lg"></div>
                 <p>Carregando leads...</p>
               </td>
@@ -325,7 +323,7 @@ function LeadModals() {
               className="modal-close"
               onClick={() => globals.closeModal?.('importModal')}
             >
-              Ã—
+              {'\u00D7'}
             </button>
           </div>
           <div className="modal-body">
@@ -333,7 +331,7 @@ function LeadModals() {
               <label className="form-label">Arquivo CSV</label>
               <input type="file" className="form-input" id="importFile" accept=".csv,.txt" />
               <p className="form-help">
-                Formato esperado: nome, telefone, veiculo, placa (separados por vÃ­rgula)
+                Formato esperado: nome, telefone, veículo, placa (separados por vírgula)
               </p>
             </div>
             <div className="form-group">
@@ -342,16 +340,16 @@ function LeadModals() {
                 className="form-textarea"
                 id="importText"
                 rows={10}
-                placeholder={`nome,telefone,veiculo,placa\nJoÃ£o Silva,27999999999,Honda Civic 2020,ABC1234\nMaria Santos,27988888888,Toyota Corolla 2021,XYZ5678`}
+                placeholder={`nome,telefone,veiculo,placa\nJoão Silva,27999999999,Honda Civic 2020,ABC1234\nMaria Santos,27988888888,Toyota Corolla 2021,XYZ5678`}
               ></textarea>
             </div>
             <div className="form-group">
-              <label className="form-label">Tag para importaÃ§Ã£o (opcional)</label>
+              <label className="form-label">Tag para importação (opcional)</label>
               <input
                 type="text"
                 className="form-input"
                 id="importTag"
-                placeholder="Ex: Prioridade, Premium, IndicaÃ§Ã£o"
+                placeholder="Ex: Prioridade, Premium, Indicação"
               />
               <p className="form-help">Aplicada em todos os leads importados.</p>
             </div>
@@ -376,7 +374,7 @@ function LeadModals() {
               className="modal-close"
               onClick={() => globals.closeModal?.('addLeadModal')}
             >
-              Ã—
+              {'\u00D7'}
             </button>
           </div>
           <div className="modal-body">
@@ -391,7 +389,7 @@ function LeadModals() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">VeÃ­culo</label>
+                  <label className="form-label">Veículo</label>
                   <input type="text" className="form-input" id="leadVehicle" placeholder="Ex: Honda Civic 2020" />
                 </div>
                 <div className="form-group">
@@ -432,7 +430,7 @@ function LeadModals() {
               className="modal-close"
               onClick={() => globals.closeModal?.('editLeadModal')}
             >
-              Ã—
+              {'\u00D7'}
             </button>
           </div>
           <div className="modal-body">
@@ -448,7 +446,7 @@ function LeadModals() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">VeÃ­culo</label>
+                  <label className="form-label">Veículo</label>
                   <input type="text" className="form-input" id="editLeadVehicle" />
                 </div>
                 <div className="form-group">
@@ -465,7 +463,7 @@ function LeadModals() {
                 <select className="form-select" id="editLeadStatus">
                   <option value="1">Novo</option>
                   <option value="2">Em Andamento</option>
-                  <option value="3">ConcluÃ­do</option>
+                  <option value="3">Concluído</option>
                   <option value="4">Perdido</option>
                 </select>
               </div>
@@ -476,7 +474,7 @@ function LeadModals() {
               Cancelar
             </button>
             <button type="button" className="btn btn-primary" onClick={() => globals.updateLead?.()}>
-              Salvar AlteraÃ§Ãµes
+              Salvar Alterações
             </button>
           </div>
         </div>
@@ -625,12 +623,12 @@ export default function Dashboard() {
           </div>
 
           <div className="nav-section">
-            <div className="nav-section-title">AutomaÃ§Ã£o</div>
+            <div className="nav-section-title">Automação</div>
             <ul className="nav-menu">
               <li className="nav-item">
                 <Link to="/automacao" className="nav-link">
                   <span className="icon icon-automation"></span>
-                  AutomaÃ§Ã£o
+                  Automação
                 </Link>
               </li>
               <li className="nav-item">
@@ -660,7 +658,7 @@ export default function Dashboard() {
               <li className="nav-item">
                 <Link to="/configuracoes" className="nav-link">
                   <span className="icon icon-settings"></span>
-                  ConfiguraÃ§Ãµes
+                  Configurações
                 </Link>
               </li>
             </ul>
