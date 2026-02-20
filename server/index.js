@@ -634,6 +634,84 @@ function isUserJid(jid) {
 
 }
 
+function normalizeLidJid(jid) {
+    const raw = String(jid || '').trim();
+    if (!raw || !isLidJid(raw)) return '';
+
+    const [userPart] = raw.split('@');
+    const baseUser = String(userPart || '').split(':')[0].trim();
+    if (!baseUser) return '';
+
+    return `${baseUser}@lid`;
+}
+
+function normalizeUserJidCandidate(candidate) {
+    const raw = String(candidate || '').trim();
+    if (!raw) return '';
+
+    if (isLidJid(raw)) {
+        const normalizedLid = normalizeLidJid(raw);
+        const mapped = jidAliasMap.get(raw) || (normalizedLid ? jidAliasMap.get(normalizedLid) : '');
+        return mapped ? normalizeUserJidCandidate(mapped) : '';
+    }
+
+    if (isUserJid(raw)) {
+        const digits = normalizePhoneDigits(raw);
+        return digits ? `${digits}@s.whatsapp.net` : raw;
+    }
+
+    if (raw.includes('@c.us')) {
+        const digits = normalizePhoneDigits(raw);
+        return digits ? `${digits}@s.whatsapp.net` : '';
+    }
+
+    const digits = normalizePhoneDigits(raw);
+    if (digits.length >= 10 && digits.length <= 15) {
+        return `${digits}@s.whatsapp.net`;
+    }
+
+    return '';
+}
+
+function registerJidAlias(lidCandidate, userCandidate, sessionDigits = '') {
+    const normalizedLid = normalizeLidJid(lidCandidate);
+    const normalizedUser = normalizeUserJidCandidate(userCandidate);
+
+    if (!normalizedLid || !normalizedUser) return null;
+
+    const userDigits = normalizePhoneDigits(extractNumber(normalizedUser));
+    if (sessionDigits && isSelfPhone(userDigits, sessionDigits)) {
+        return null;
+    }
+
+    jidAliasMap.set(normalizedLid, normalizedUser);
+
+    const rawLid = String(lidCandidate || '').trim();
+    if (rawLid && rawLid !== normalizedLid) {
+        jidAliasMap.set(rawLid, normalizedUser);
+    }
+
+    return normalizedUser;
+}
+
+function registerMessageJidAliases(msg, sessionPhone = '') {
+    const sessionDigits = normalizePhoneDigits(sessionPhone);
+    const key = msg?.key || {};
+    const aliasPairs = [
+        [key.senderLid, key.senderPn],
+        [key.participantLid, key.participantPn],
+        [key.remoteJid, key.senderPn],
+        [key.remoteJid, key.participantPn],
+        [key.participant, key.participantPn],
+        [msg?.participant, key.participantPn]
+    ];
+
+    for (const [lidCandidate, userCandidate] of aliasPairs) {
+        if (!lidCandidate || !userCandidate) continue;
+        registerJidAlias(lidCandidate, userCandidate, sessionDigits);
+    }
+}
+
 
 
 function normalizePhoneFromJid(jid) {
@@ -1019,10 +1097,17 @@ function normalizeJid(jid) {
 
     if (!jid) return null;
 
-    if (isLidJid(jid) && jidAliasMap.has(jid)) {
+    if (isLidJid(jid)) {
+        const normalizedLid = normalizeLidJid(jid);
+        const mapped = jidAliasMap.get(jid) || (normalizedLid ? jidAliasMap.get(normalizedLid) : null);
+        if (mapped) {
+            return normalizeUserJidCandidate(mapped) || mapped;
+        }
 
-        return jidAliasMap.get(jid);
+    }
 
+    if (isUserJid(jid) || String(jid).includes('@c.us')) {
+        return normalizeUserJidCandidate(jid) || jid;
     }
 
     return jid;
@@ -1075,14 +1160,17 @@ async function registerContactAlias(contact, sessionId = '', sessionPhone = '') 
 
     for (const cand of candidates) {
 
-        if (!lidJid && isLidJid(cand)) lidJid = cand;
+        if (!lidJid && isLidJid(cand)) {
+            lidJid = normalizeLidJid(cand) || cand;
+        }
 
-        if (isUserJid(cand)) {
-            userJids.push(cand);
+        const normalizedUserJid = normalizeUserJidCandidate(cand);
+        if (normalizedUserJid) {
+            userJids.push(normalizedUserJid);
             if (!userJid) {
-                const candidateDigits = normalizePhoneDigits(extractNumber(cand));
+                const candidateDigits = normalizePhoneDigits(extractNumber(normalizedUserJid));
                 if (!isSelfPhone(candidateDigits, sessionDigits)) {
-                    userJid = cand;
+                    userJid = normalizedUserJid;
                 }
             }
         }
@@ -1108,11 +1196,11 @@ async function registerContactAlias(contact, sessionId = '', sessionPhone = '') 
 
     if (lidJid && userJid) {
 
-        jidAliasMap.set(lidJid, userJid);
+        const mappedUserJid = registerJidAlias(lidJid, userJid, sessionDigits) || userJid;
 
 
 
-        const primary = await Lead.findByJid(userJid) || await Lead.findByPhone(extractNumber(userJid));
+        const primary = await Lead.findByJid(mappedUserJid) || await Lead.findByPhone(extractNumber(mappedUserJid));
 
         const duplicate = await Lead.findByJid(lidJid) || await Lead.findByPhone(extractNumber(lidJid));
 
@@ -1124,11 +1212,11 @@ async function registerContactAlias(contact, sessionId = '', sessionPhone = '') 
 
         } else if (!primary && duplicate) {
 
-            await updateLeadIdentity(duplicate, userJid, extractNumber(userJid));
+            await updateLeadIdentity(duplicate, mappedUserJid, extractNumber(mappedUserJid));
 
-        } else if (primary && primary.jid !== userJid) {
+        } else if (primary && primary.jid !== mappedUserJid) {
 
-            await updateLeadIdentity(primary, userJid, extractNumber(userJid));
+            await updateLeadIdentity(primary, mappedUserJid, extractNumber(mappedUserJid));
 
         }
 
@@ -1144,13 +1232,22 @@ function isGroupMessage(msg) {
         remoteJid.endsWith('@g.us') ||
         remoteJid.endsWith('@broadcast') ||
         hasGroupSenderKey ||
-        (hasParticipant && remoteJid && !isUserJid(remoteJid))
+        (hasParticipant && remoteJid && !isUserJid(remoteJid) && !isLidJid(remoteJid))
     );
 }
 
 function resolveMessageJid(msg, sessionPhone = '') {
+    registerMessageJidAliases(msg, sessionPhone);
     const content = unwrapMessageContent(msg?.message);
     const candidates = [
+
+        msg?.key?.senderPn,
+
+        msg?.key?.participantPn,
+
+        msg?.key?.senderLid,
+
+        msg?.key?.participantLid,
 
         msg?.key?.remoteJid,
 
@@ -1175,28 +1272,33 @@ function resolveMessageJid(msg, sessionPhone = '') {
 
     for (const jid of candidates) {
 
-        if (!lidJid && isLidJid(jid)) lidJid = jid;
+        const normalizedLid = normalizeLidJid(jid);
+        if (!lidJid && normalizedLid) {
+            lidJid = normalizedLid;
+        }
 
-        if (isUserJid(jid)) userJids.push(jid);
+        const normalizedUserJid = normalizeUserJidCandidate(jid);
+        if (normalizedUserJid) userJids.push(normalizedUserJid);
 
     }
 
-    const nonSelfUserJid = userJids.find((jid) => {
+    const uniqueUserJids = [...new Set(userJids)];
+    const nonSelfUserJid = uniqueUserJids.find((jid) => {
         const phoneDigits = normalizePhoneDigits(extractNumber(jid));
         return !isSelfPhone(phoneDigits, sessionDigits);
     });
 
-    const preferredUserJid = nonSelfUserJid || userJids[0] || null;
+    const preferredUserJid = nonSelfUserJid || uniqueUserJids[0] || null;
 
     // NÃ£o mapear LID para o prÃ³prio nÃºmero da sessÃ£o, pois isso causa
     // roteamento incorreto para o chat "VocÃª".
     if (lidJid && nonSelfUserJid) {
 
-        jidAliasMap.set(lidJid, nonSelfUserJid);
+        registerJidAlias(lidJid, nonSelfUserJid, sessionDigits);
 
     }
 
-    for (const jid of userJids) {
+    for (const jid of uniqueUserJids) {
         const normalized = normalizeJid(jid);
         if (!normalized || !isUserJid(normalized)) continue;
 
@@ -1211,7 +1313,7 @@ function resolveMessageJid(msg, sessionPhone = '') {
         return normalizeJid(preferredUserJid);
     }
 
-    return normalizeJid(msg?.key?.remoteJid);
+    return normalizeUserJidCandidate(msg?.key?.remoteJid) || normalizeJid(msg?.key?.remoteJid);
 
 }
 
@@ -2608,6 +2710,34 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         });
 
+        sock.ev.on('chats.phoneNumberShare', async (payload) => {
+            try {
+                const mappedUserJid = registerJidAlias(
+                    payload?.lid,
+                    payload?.jid,
+                    normalizePhoneDigits(getSessionPhone(sessionId))
+                );
+                if (!mappedUserJid) return;
+
+                const normalizedLid = normalizeLidJid(payload?.lid);
+                if (!normalizedLid) return;
+
+                const resolvedPhone = extractNumber(mappedUserJid);
+                const primary = await Lead.findByJid(mappedUserJid) || await Lead.findByPhone(resolvedPhone);
+                const duplicate = await Lead.findByJid(normalizedLid);
+
+                if (primary && duplicate && primary.id !== duplicate.id) {
+                    await mergeLeads(primary, duplicate);
+                } else if (!primary && duplicate) {
+                    await updateLeadIdentity(duplicate, mappedUserJid, resolvedPhone);
+                } else if (primary && primary.jid !== mappedUserJid) {
+                    await updateLeadIdentity(primary, mappedUserJid, resolvedPhone);
+                }
+            } catch (error) {
+                console.warn(`[${sessionId}] Falha ao processar chats.phoneNumberShare:`, error.message);
+            }
+        });
+
 
 
         // Sincronizar lista de chats/contatos
@@ -3564,9 +3694,12 @@ async function syncChatsToDatabase(sessionId, payload) {
 
     for (const chat of chats) {
 
-        const rawJid = chat?.id || chat?.jid;
+        const rawJid = chat?.id || chat?.jid || chat?.lid || chat?.lidJid;
+        registerJidAlias(chat?.lidJid || chat?.lid, chat?.jid || chat?.id, normalizePhoneDigits(sessionPhone));
 
-        const jid = normalizeJid(rawJid);
+        const jid = normalizeUserJidCandidate(chat?.jid)
+            || normalizeUserJidCandidate(rawJid)
+            || normalizeJid(rawJid);
 
         if (!jid || !isUserJid(jid)) continue;
 
@@ -4081,28 +4214,32 @@ async function processIncomingMessage(sessionId, msg) {
     if (!msg?.message) return;
     const sessionDisplayName = getSessionDisplayName(sessionId);
     const sessionPhone = getSessionPhone(sessionId);
+    registerMessageJidAliases(msg, sessionPhone);
 
     const fromRaw = msg.key.remoteJid;
+    const fromRawNormalized = normalizeUserJidCandidate(fromRaw) || fromRaw;
     const isFromMe = msg.key.fromMe;
     const sessionDigits = normalizePhoneDigits(sessionPhone);
 
     let from = resolveMessageJid(msg, sessionPhone);
     const contentForRouting = unwrapMessageContent(msg.message);
 
-    const fromRawDigits = normalizePhoneDigits(extractNumber(fromRaw));
-    const isFromRawUser = isUserJid(fromRaw);
+    const fromRawDigits = normalizePhoneDigits(extractNumber(fromRawNormalized));
+    const isFromRawUser = isUserJid(fromRawNormalized);
     const isFromRawSelf = isSelfPhone(fromRawDigits, sessionDigits);
 
     // Em mensagens recebidas, quando o remoteJid jÃ¡ vem como usuÃ¡rio vÃ¡lido
     // (e nÃ£o Ã© self), ele Ã© a melhor fonte para evitar roteamento incorreto.
     if (!isFromMe && isFromRawUser && !isFromRawSelf) {
-        from = fromRaw;
+        from = fromRawNormalized;
     }
 
     // Em mensagens enviadas pelo proprio celular, prioriza o destino explicito.
     if (isFromMe) {
         const outgoingCandidates = [
             msg?.message?.deviceSentMessage?.destinationJid,
+            msg?.key?.senderPn,
+            msg?.key?.participantPn,
             msg?.key?.remoteJid,
             msg?.key?.participant,
             msg?.participant,
@@ -4110,18 +4247,35 @@ async function processIncomingMessage(sessionId, msg) {
             contentForRouting?.extendedTextMessage?.contextInfo?.participant
         ].filter(Boolean);
 
-        const outgoingTarget = outgoingCandidates.find((candidate) => {
-            if (!isUserJid(candidate)) return false;
+        const outgoingTarget = outgoingCandidates
+            .map((candidate) => normalizeUserJidCandidate(candidate) || normalizeJid(candidate))
+            .find((candidate) => {
+            if (!candidate || !isUserJid(candidate)) return false;
             const candidateDigits = normalizePhoneDigits(extractNumber(candidate));
             return !isSelfPhone(candidateDigits, sessionDigits);
         });
 
         if (outgoingTarget) {
-            from = normalizeJid(outgoingTarget) || outgoingTarget;
+            from = outgoingTarget;
         }
     }
 
-    if (!from || !isUserJid(from)) return;
+    from = normalizeUserJidCandidate(from) || normalizeJid(from) || from;
+    if ((!from || !isUserJid(from)) && !isFromMe) {
+        const hintedJid = normalizeUserJidCandidate(msg?.key?.senderPn)
+            || normalizeUserJidCandidate(msg?.key?.participantPn);
+        if (hintedJid) {
+            from = hintedJid;
+        }
+    }
+
+    if (!from || !isUserJid(from)) {
+        console.warn(
+            `[${sessionId}] Ignorando mensagem sem JID de usuario resolvido: `
+            + `remoteJid=${fromRaw || 'n/a'} senderPn=${msg?.key?.senderPn || 'n/a'} participantPn=${msg?.key?.participantPn || 'n/a'}`
+        );
+        return;
+    }
 
     let resolvedDigits = normalizePhoneDigits(extractNumber(from));
     let isFromResolvedSelf = isSelfPhone(resolvedDigits, sessionDigits);
@@ -4129,6 +4283,8 @@ async function processIncomingMessage(sessionId, msg) {
     if (isFromResolvedSelf) {
         const fallbackCandidates = [
             msg?.message?.deviceSentMessage?.destinationJid,
+            msg?.key?.senderPn,
+            msg?.key?.participantPn,
             msg?.key?.remoteJid,
             msg?.key?.participant,
             msg?.participant,
@@ -4136,8 +4292,10 @@ async function processIncomingMessage(sessionId, msg) {
             contentForRouting?.extendedTextMessage?.contextInfo?.participant
         ].filter(Boolean);
 
-        const fallbackJid = fallbackCandidates.find((candidate) => {
-            if (!isUserJid(candidate)) return false;
+        const fallbackJid = fallbackCandidates
+            .map((candidate) => normalizeUserJidCandidate(candidate) || normalizeJid(candidate))
+            .find((candidate) => {
+            if (!candidate || !isUserJid(candidate)) return false;
             const candidateDigits = normalizePhoneDigits(extractNumber(candidate));
             return !isSelfPhone(candidateDigits, sessionDigits);
         });
