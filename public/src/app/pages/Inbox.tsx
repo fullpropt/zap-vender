@@ -103,8 +103,8 @@ export default function Inbox() {
             margin-bottom: 12px;
             padding: 10px 12px;
             border-radius: 12px;
-            border: 1px solid rgba(var(--primary-rgb), 0.46);
-            background: rgba(15, 23, 42, 0.34);
+            border: 1px solid var(--border-color);
+            background: rgba(15, 23, 42, 0.2);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -114,46 +114,46 @@ export default function Inbox() {
             font-size: 10px;
             text-transform: uppercase;
             letter-spacing: 0.06em;
-            color: #9fb3cd;
+            color: var(--gray-600);
             font-weight: 700;
             margin-bottom: 2px;
         }
         .inbox-session-highlight-name {
             font-size: 14px;
-            color: #f8fbff;
+            color: var(--dark);
             font-weight: 700;
             line-height: 1.2;
         }
         .inbox-session-highlight-meta {
             font-size: 11px;
-            color: #d3e0f1;
+            color: var(--gray-700);
             margin-top: 3px;
             line-height: 1.3;
         }
         .inbox-session-highlight-status {
             border-radius: 999px;
-            border: 1px solid #475569;
-            background: #334155;
-            color: #e2e8f0;
+            border: 1px solid var(--border-color);
+            background: var(--gray-100);
+            color: var(--gray-800);
             padding: 4px 10px;
             font-size: 11px;
             font-weight: 700;
             white-space: nowrap;
         }
         .inbox-session-highlight-status.connected {
-            color: #ecfdf5;
-            border-color: #22c55e;
-            background: #15803d;
+            border-color: var(--border-color);
+            background: var(--gray-100);
+            color: var(--gray-800);
         }
         .inbox-session-highlight-status.disconnected {
-            color: #fee2e2;
-            border-color: #ef4444;
-            background: #b91c1c;
+            border-color: var(--border-color);
+            background: var(--gray-100);
+            color: var(--gray-800);
         }
         .inbox-session-highlight-status.all {
-            color: #dbeafe;
-            border-color: #3b82f6;
-            background: #1d4ed8;
+            border-color: var(--border-color);
+            background: var(--gray-100);
+            color: var(--gray-800);
         }
         .conversations-tabs {
             display: flex;
