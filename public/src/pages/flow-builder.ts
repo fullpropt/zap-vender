@@ -729,8 +729,13 @@ function renderProperties() {
     const container = document.getElementById('propertiesContent') as HTMLElement | null;
     if (!container) return;
     let html = '';
+    const selectedTypeLabel = getNodeTypeLabel(selectedNode);
     
     html += `
+        <div class="property-group">
+            <label>Tipo do Bloco</label>
+            <input type="text" value="${escapeHtml(selectedTypeLabel)}" readonly>
+        </div>
         <div class="property-group">
             <label>Nome do Bloco</label>
             <input type="text" value="${selectedNode.data.label}" onchange="updateNodeProperty('label', this.value)">
