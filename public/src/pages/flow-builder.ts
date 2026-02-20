@@ -1,7 +1,7 @@
 ﻿// Flow builder page logic migrated to module
 
 // Estado do construtor
-type NodeType = 'trigger' | 'intent' | 'message' | 'wait' | 'condition' | 'delay' | 'transfer' | 'tag' | 'status' | 'webhook' | 'end';
+type NodeType = 'trigger' | 'intent' | 'message' | 'wait' | 'condition' | 'delay' | 'transfer' | 'tag' | 'status' | 'webhook' | 'event' | 'end';
 type NodeData = {
     label: string;
     collapsed?: boolean;
@@ -16,6 +16,9 @@ type NodeData = {
     tag?: string;
     status?: number;
     url?: string;
+    eventId?: number | null;
+    eventKey?: string;
+    eventName?: string;
 };
 
 type FlowNode = {
@@ -51,6 +54,13 @@ type ContactField = {
     source?: string;
 };
 
+type CustomEventOption = {
+    id: number;
+    name: string;
+    event_key?: string;
+    is_active?: number;
+};
+
 let nodes: FlowNode[] = [];
 let edges: Edge[] = [];
 let selectedNode: FlowNode | null = null;
@@ -72,6 +82,7 @@ let connectionPreviewPath: SVGPathElement | null = null;
 let lastPointer = { x: 0, y: 0 };
 let hasGlobalCanvasListeners = false;
 let contactFieldsCache: ContactField[] = [];
+let customEventsCache: CustomEventOption[] = [];
 
 const DEFAULT_HANDLE = 'default';
 const LAST_OPEN_FLOW_ID_STORAGE_KEY = 'flow_builder:last_open_flow_id';
@@ -269,6 +280,89 @@ async function loadFlowVariableFields() {
     renderFlowVariableTags();
 }
 
+function normalizeCustomEventOption(raw: any): CustomEventOption | null {
+    const id = Number(raw?.id);
+    const name = String(raw?.name || '').trim();
+    const eventKey = String(raw?.event_key || raw?.eventKey || '').trim();
+    const isActive = Number(raw?.is_active ?? raw?.isActive ?? 1);
+
+    if (!Number.isFinite(id) || id <= 0) return null;
+    if (!name) return null;
+
+    return {
+        id: Math.trunc(id),
+        name,
+        event_key: eventKey,
+        is_active: Number.isFinite(isActive) ? isActive : 1
+    };
+}
+
+function getAvailableCustomEvents() {
+    return customEventsCache.filter((eventItem) => Number(eventItem.is_active) !== 0);
+}
+
+function syncEventNodeData(node?: FlowNode | null) {
+    if (!node || node.type !== 'event') return;
+
+    const eventId = Number(node.data?.eventId);
+    const eventKey = String(node.data?.eventKey || '').trim();
+    const eventName = String(node.data?.eventName || '').trim();
+    let matched: CustomEventOption | undefined;
+
+    if (Number.isFinite(eventId) && eventId > 0) {
+        matched = customEventsCache.find((item) => Number(item.id) === Math.trunc(eventId));
+    }
+
+    if (!matched && eventKey) {
+        const normalizedKey = eventKey.toLowerCase();
+        matched = customEventsCache.find((item) => String(item.event_key || '').toLowerCase() === normalizedKey);
+    }
+
+    if (!matched && eventName) {
+        const normalizedName = eventName.toLowerCase();
+        matched = customEventsCache.find((item) => item.name.toLowerCase() === normalizedName);
+    }
+
+    if (!matched) {
+        node.data.eventId = Number.isFinite(eventId) && eventId > 0 ? Math.trunc(eventId) : null;
+        node.data.eventKey = eventKey;
+        node.data.eventName = eventName;
+        return;
+    }
+
+    node.data.eventId = matched.id;
+    node.data.eventKey = String(matched.event_key || '').trim();
+    node.data.eventName = matched.name;
+}
+
+async function loadCustomEventsCatalog(options: { silent?: boolean } = {}) {
+    try {
+        const response = await fetch('/api/custom-events?active=1', {
+            headers: buildAuthHeaders(false)
+        });
+        const result = await response.json();
+        const list = Array.isArray(result?.events) ? result.events : [];
+        customEventsCache = list
+            .map((item: any) => normalizeCustomEventOption(item))
+            .filter(Boolean) as CustomEventOption[];
+
+        nodes.forEach((node) => syncEventNodeData(node));
+    } catch (error) {
+        customEventsCache = [];
+        if (!options.silent) {
+            alert('Nao foi possivel atualizar a lista de eventos personalizados.');
+        }
+    }
+
+    if (selectedNode?.type === 'event') {
+        renderProperties();
+    }
+}
+
+function reloadCustomEventsCatalog() {
+    loadCustomEventsCatalog();
+}
+
 function getNodeTypeLabel(node: FlowNode) {
     if (node.type === 'trigger') {
         if (isIntentTrigger(node)) return 'Intenção';
@@ -286,6 +380,7 @@ function getNodeTypeLabel(node: FlowNode) {
         tag: 'Adicionar Tag',
         status: 'Alterar Status',
         webhook: 'Webhook',
+        event: 'Registrar Evento',
         end: 'Finalizar'
     };
 
@@ -449,6 +544,7 @@ function initFlowBuilder() {
     renderCurrentFlowName();
     renderFlowVariableTags();
     loadFlowVariableFields();
+    loadCustomEventsCatalog({ silent: true });
     setupDragAndDrop();
     setupCanvasEvents();
     applyZoom();
@@ -572,6 +668,7 @@ function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
         tag: { label: 'Adicionar Tag', collapsed: false, tag: '' },
         status: { label: 'Alterar Status', collapsed: false, status: 2 },
         webhook: { label: 'Webhook', collapsed: false, url: '' },
+        event: { label: 'Registrar Evento', collapsed: false, eventId: null, eventKey: '', eventName: '' },
         end: { label: 'Fim', collapsed: false }
     };
     return defaults[type] || { label: type };
@@ -616,6 +713,7 @@ function renderNode(node: FlowNode) {
         tag: 'icon-tag',
         status: 'icon-chart-bar',
         webhook: 'icon-link',
+        event: 'icon-target',
         end: 'icon-check'
     };
     
@@ -756,6 +854,8 @@ function getNodePreview(node: FlowNode) {
             return `${node.data.conditions?.length || 0} condições`;
         case 'delay':
             return `Aguardar ${node.data.seconds}s`;
+        case 'event':
+            return node.data.eventName || node.data.eventKey || 'Selecione um evento personalizado';
         case 'trigger':
         case 'intent':
             if (isIntentTrigger(node)) {
@@ -985,6 +1085,37 @@ function renderProperties() {
                 </div>
             `;
             break;
+
+        case 'event':
+            const availableEvents = getAvailableCustomEvents();
+            const selectedEventId = Number(selectedNode.data.eventId);
+            const selectedEvent = availableEvents.find((item) => Number(item.id) === selectedEventId) || null;
+
+            html += `
+                <div class="property-group">
+                    <label>Evento Personalizado</label>
+                    <select onchange="updateEventNodeSelection(this.value)">
+                        <option value="">Selecione um evento</option>
+                        ${availableEvents.map((eventItem) => `
+                            <option value="${eventItem.id}" ${Number(eventItem.id) === selectedEventId ? 'selected' : ''}>
+                                ${escapeHtml(eventItem.name)}
+                            </option>
+                        `).join('')}
+                    </select>
+                    <div class="hint">Crie eventos em Painel de Controle &gt; Eventos personalizados.</div>
+                    ${selectedEvent?.event_key ? `<div class="hint">Chave: <code>${escapeHtml(selectedEvent.event_key)}</code></div>` : ''}
+                    <button class="add-condition-btn" style="margin-top: 8px;" onclick="reloadCustomEventsCatalog()">Atualizar lista</button>
+                </div>
+            `;
+
+            if (availableEvents.length === 0) {
+                html += `
+                    <div class="property-group">
+                        <div class="hint">Nenhum evento ativo cadastrado no momento.</div>
+                    </div>
+                `;
+            }
+            break;
             
         case 'webhook':
             html += `
@@ -1014,6 +1145,27 @@ function updateNodeProperty(key: keyof NodeData, value: any) {
     }
 
     rerenderNode(selectedNode.id);
+}
+
+function updateEventNodeSelection(value: string) {
+    if (!selectedNode || selectedNode.type !== 'event') return;
+
+    const eventId = Number.parseInt(String(value || '').trim(), 10);
+    if (!Number.isFinite(eventId) || eventId <= 0) {
+        selectedNode.data.eventId = null;
+        selectedNode.data.eventKey = '';
+        selectedNode.data.eventName = '';
+        rerenderNode(selectedNode.id);
+        renderProperties();
+        return;
+    }
+
+    const selected = customEventsCache.find((item) => Number(item.id) === eventId);
+    selectedNode.data.eventId = eventId;
+    selectedNode.data.eventKey = String(selected?.event_key || '').trim();
+    selectedNode.data.eventName = String(selected?.name || '').trim();
+    rerenderNode(selectedNode.id);
+    renderProperties();
 }
 
 function rerenderNode(nodeId: string) {
@@ -1519,6 +1671,24 @@ function normalizeLoadedFlowData() {
             node.data.delaySeconds = Number.isFinite(rawDelay) ? Math.max(0, rawDelay) : 0;
         }
 
+        if (node.type === 'event') {
+            const legacyEventId = Number((node.data as any)?.event_id);
+            const rawEventId = Number(node.data?.eventId);
+            const normalizedEventId = Number.isFinite(rawEventId) && rawEventId > 0
+                ? Math.trunc(rawEventId)
+                : (Number.isFinite(legacyEventId) && legacyEventId > 0 ? Math.trunc(legacyEventId) : null);
+            const legacyEventKey = String((node.data as any)?.event_key || '').trim();
+            const legacyEventName = String((node.data as any)?.event_name || '').trim();
+
+            node.data.eventId = normalizedEventId;
+            node.data.eventKey = String(node.data?.eventKey || legacyEventKey || '').trim();
+            node.data.eventName = String(node.data?.eventName || legacyEventName || '').trim();
+            if (!String(node.data?.label || '').trim()) {
+                node.data.label = 'Registrar Evento';
+            }
+            syncEventNodeData(node);
+        }
+
         if (isIntentTrigger(node)) {
             if (node.type === 'trigger') {
                 node.subtype = 'keyword';
@@ -1862,6 +2032,7 @@ async function loadFlow(id: number, options: LoadFlowOptions = {}): Promise<bool
             nodes = result.flow.nodes || [];
             edges = result.flow.edges || [];
             normalizeLoadedFlowData();
+            await loadCustomEventsCatalog({ silent: true });
             setCurrentFlowActive(result.flow?.is_active);
             renderCurrentFlowName();
             
@@ -1918,6 +2089,8 @@ const windowAny = window as Window & {
     resetZoom?: () => void;
     insertVariable?: (variable: string) => void;
     updateNodeProperty?: (key: keyof NodeData, value: any) => void;
+    updateEventNodeSelection?: (value: string) => void;
+    reloadCustomEventsCatalog?: () => void;
     addIntentRoute?: () => void;
     updateIntentRoute?: (index: number, key: 'label' | 'phrases', value: string) => void;
     removeIntentRoute?: (index: number) => void;
@@ -1946,6 +2119,8 @@ windowAny.zoomOut = zoomOut;
 windowAny.resetZoom = resetZoom;
 windowAny.insertVariable = insertVariable;
 windowAny.updateNodeProperty = updateNodeProperty;
+windowAny.updateEventNodeSelection = updateEventNodeSelection;
+windowAny.reloadCustomEventsCatalog = reloadCustomEventsCatalog;
 windowAny.addIntentRoute = addIntentRoute;
 windowAny.updateIntentRoute = updateIntentRoute;
 windowAny.removeIntentRoute = removeIntentRoute;

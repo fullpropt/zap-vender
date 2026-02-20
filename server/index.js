@@ -52,6 +52,7 @@ const {
     CampaignSenderAccount,
     Automation,
     Flow,
+    CustomEvent,
     Tag,
     Settings,
     User,
@@ -5907,6 +5908,24 @@ app.put('/api/contact-fields', authenticate, async (req, res) => {
 // ============================================
 
 const DASHBOARD_PERIOD_METRICS = new Set(['novos_contatos', 'mensagens', 'interacoes']);
+const CUSTOM_EVENT_PERIODS = new Map([
+    ['this_month', { label: 'Este mes' }],
+    ['week', { label: 'Semana' }],
+    ['year', { label: 'Ano' }],
+    ['last_30_days', { label: 'Ultimos 30 dias' }]
+]);
+const CUSTOM_EVENT_PERIOD_ALIASES = new Map([
+    ['mes', 'this_month'],
+    ['month', 'this_month'],
+    ['this_month', 'this_month'],
+    ['semana', 'week'],
+    ['week', 'week'],
+    ['ano', 'year'],
+    ['year', 'year'],
+    ['ultimos_30_dias', 'last_30_days'],
+    ['last_30_days', 'last_30_days'],
+    ['30d', 'last_30_days']
+]);
 
 function normalizePeriodDateInput(value) {
     const normalized = String(value || '').trim();
@@ -5927,6 +5946,47 @@ function formatDateLabelShort(dateKey) {
     const [, month, day] = String(dateKey).split('-');
     if (!month || !day) return dateKey;
     return `${day}/${month}`;
+}
+
+function normalizeCustomEventPeriod(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return 'this_month';
+    return CUSTOM_EVENT_PERIOD_ALIASES.get(normalized) || 'this_month';
+}
+
+function getUtcDayStart(date = new Date()) {
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function resolveCustomEventPeriodRange(periodInput) {
+    const period = normalizeCustomEventPeriod(periodInput);
+    const periodMeta = CUSTOM_EVENT_PERIODS.get(period) || CUSTOM_EVENT_PERIODS.get('this_month');
+    const todayStart = getUtcDayStart(new Date());
+    const endExclusive = new Date(todayStart);
+    endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+    const start = new Date(todayStart);
+    if (period === 'week') {
+        start.setUTCDate(start.getUTCDate() - 6);
+    } else if (period === 'year') {
+        start.setUTCMonth(0, 1);
+    } else if (period === 'last_30_days') {
+        start.setUTCDate(start.getUTCDate() - 29);
+    } else {
+        start.setUTCDate(1);
+    }
+
+    const endInclusive = new Date(endExclusive);
+    endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);
+
+    return {
+        period,
+        label: periodMeta?.label || 'Este mes',
+        startDate: start.toISOString().slice(0, 10),
+        endDate: endInclusive.toISOString().slice(0, 10),
+        startAt: start.toISOString(),
+        endAt: endExclusive.toISOString()
+    };
 }
 
 app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
@@ -6045,6 +6105,162 @@ app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
 });
 
 
+
+function parseBooleanInput(value, fallback = false) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value > 0;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'nao', 'não', 'off'].includes(normalized)) return false;
+    }
+    return fallback;
+}
+
+app.get('/api/custom-events/stats', optionalAuth, async (req, res) => {
+    try {
+        const periodRange = resolveCustomEventPeriodRange(req.query.period);
+        const onlyActive = parseBooleanInput(
+            req.query.active_only ?? req.query.activeOnly ?? req.query.active,
+            false
+        );
+
+        const events = await CustomEvent.listWithPeriodTotals(periodRange.startAt, periodRange.endAt, {
+            is_active: onlyActive ? 1 : undefined
+        });
+
+        const totals = events.reduce((acc, event) => {
+            const triggers = Number(event.total_period) || 0;
+            acc.triggers += triggers;
+            if (Number(event.is_active) > 0) acc.activeEvents += 1;
+            return acc;
+        }, { triggers: 0, activeEvents: 0 });
+
+        res.json({
+            success: true,
+            period: periodRange.period,
+            label: periodRange.label,
+            startDate: periodRange.startDate,
+            endDate: periodRange.endDate,
+            startAt: periodRange.startAt,
+            endAt: periodRange.endAt,
+            totals: {
+                events: events.length,
+                activeEvents: totals.activeEvents,
+                triggers: totals.triggers
+            },
+            events
+        });
+    } catch (error) {
+        console.error('Falha ao carregar estatisticas de eventos personalizados:', error);
+        res.status(500).json({ success: false, error: 'Erro ao carregar eventos personalizados' });
+    }
+});
+
+app.get('/api/custom-events', optionalAuth, async (req, res) => {
+    try {
+        const hasActiveFilter = Object.prototype.hasOwnProperty.call(req.query, 'active')
+            || Object.prototype.hasOwnProperty.call(req.query, 'is_active');
+        const activeRaw = req.query.active ?? req.query.is_active;
+        const activeFilter = hasActiveFilter ? (parseBooleanInput(activeRaw, true) ? 1 : 0) : undefined;
+        const search = String(req.query.search || '').trim();
+
+        const events = await CustomEvent.list({
+            is_active: activeFilter,
+            search
+        });
+
+        res.json({ success: true, events });
+    } catch (error) {
+        console.error('Falha ao listar eventos personalizados:', error);
+        res.status(500).json({ success: false, error: 'Erro ao carregar eventos personalizados' });
+    }
+});
+
+app.post('/api/custom-events', authenticate, async (req, res) => {
+    try {
+        const name = String(req.body?.name || '').trim();
+        if (!name) {
+            return res.status(400).json({ success: false, error: 'Nome do evento e obrigatorio' });
+        }
+
+        const created = await CustomEvent.create({
+            name,
+            description: req.body?.description,
+            event_key: req.body?.event_key ?? req.body?.eventKey ?? req.body?.key,
+            is_active: req.body?.is_active ?? req.body?.isActive ?? 1,
+            created_by: req.user?.id || null
+        });
+
+        const event = await CustomEvent.findById(created.id);
+        res.status(201).json({ success: true, event });
+    } catch (error) {
+        const message = String(error?.message || '').trim();
+        if (message.includes('Ja existe um evento com esta chave')) {
+            return res.status(409).json({ success: false, error: message });
+        }
+        console.error('Falha ao criar evento personalizado:', error);
+        res.status(400).json({ success: false, error: message || 'Erro ao criar evento personalizado' });
+    }
+});
+
+app.put('/api/custom-events/:id', authenticate, async (req, res) => {
+    try {
+        const eventId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(eventId) || eventId <= 0) {
+            return res.status(400).json({ success: false, error: 'ID do evento invalido' });
+        }
+
+        const existing = await CustomEvent.findById(eventId);
+        if (!existing) {
+            return res.status(404).json({ success: false, error: 'Evento nao encontrado' });
+        }
+
+        const payload = {};
+        if (Object.prototype.hasOwnProperty.call(req.body, 'name')) payload.name = req.body.name;
+        if (Object.prototype.hasOwnProperty.call(req.body, 'description')) payload.description = req.body.description;
+        if (
+            Object.prototype.hasOwnProperty.call(req.body, 'event_key')
+            || Object.prototype.hasOwnProperty.call(req.body, 'eventKey')
+            || Object.prototype.hasOwnProperty.call(req.body, 'key')
+        ) {
+            payload.event_key = req.body.event_key ?? req.body.eventKey ?? req.body.key;
+        }
+        if (Object.prototype.hasOwnProperty.call(req.body, 'is_active') || Object.prototype.hasOwnProperty.call(req.body, 'isActive')) {
+            payload.is_active = req.body.is_active ?? req.body.isActive;
+        }
+
+        const event = await CustomEvent.update(eventId, payload);
+        res.json({ success: true, event });
+    } catch (error) {
+        const message = String(error?.message || '').trim();
+        if (message.includes('Ja existe um evento com esta chave')) {
+            return res.status(409).json({ success: false, error: message });
+        }
+        console.error('Falha ao atualizar evento personalizado:', error);
+        res.status(400).json({ success: false, error: message || 'Erro ao atualizar evento personalizado' });
+    }
+});
+
+app.delete('/api/custom-events/:id', authenticate, async (req, res) => {
+    try {
+        const eventId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(eventId) || eventId <= 0) {
+            return res.status(400).json({ success: false, error: 'ID do evento invalido' });
+        }
+
+        const existing = await CustomEvent.findById(eventId);
+        if (!existing) {
+            return res.status(404).json({ success: false, error: 'Evento nao encontrado' });
+        }
+
+        await CustomEvent.delete(eventId);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Falha ao remover evento personalizado:', error);
+        res.status(500).json({ success: false, error: 'Erro ao remover evento personalizado' });
+    }
+});
 
 app.get('/api/leads', optionalAuth, async (req, res) => {
 

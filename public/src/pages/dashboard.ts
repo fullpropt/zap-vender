@@ -27,9 +27,30 @@ type StatsPeriodResponse = {
     labels?: string[];
     data?: number[];
 };
+type CustomEventsPeriod = 'this_month' | 'week' | 'year' | 'last_30_days';
+type CustomEventItem = {
+    id: number;
+    name: string;
+    event_key?: string;
+    description?: string;
+    is_active?: number;
+    total_period?: number;
+    total_triggers?: number;
+    last_triggered_at?: string | null;
+};
+type CustomEventsStatsResponse = {
+    events?: CustomEventItem[];
+    totals?: {
+        events?: number;
+        activeEvents?: number;
+        triggers?: number;
+    };
+    period?: string;
+};
 
 let allLeads: Lead[] = [];
 let selectedLeads: number[] = [];
+let customEvents: CustomEventItem[] = [];
 
 let statsChartInstance: { destroy?: () => void } | null = null;
 let statsChartType: StatsChartType = 'line';
@@ -40,6 +61,21 @@ const STATS_METRIC_LABELS: Record<StatsMetric, string> = {
     mensagens: 'Mensagens',
     interacoes: 'Interações'
 };
+const CUSTOM_EVENT_PERIODS: Record<string, CustomEventsPeriod> = {
+    this_month: 'this_month',
+    week: 'week',
+    year: 'year',
+    last_30_days: 'last_30_days'
+};
+
+function escapeHtml(value: string) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 function normalizeDateInputValue(value: string | null | undefined) {
     const normalized = String(value || '').trim();
@@ -245,6 +281,211 @@ function bindStatsPeriodControls() {
     updateChartTypeButtonsState();
 }
 
+function normalizeCustomEventsPeriod(value: string | null | undefined): CustomEventsPeriod {
+    const normalized = String(value || '').trim().toLowerCase();
+    return CUSTOM_EVENT_PERIODS[normalized] || 'this_month';
+}
+
+function getSelectedCustomEventsPeriod() {
+    const select = document.getElementById('customEventsPeriod') as HTMLSelectElement | null;
+    return normalizeCustomEventsPeriod(select?.value);
+}
+
+function formatCustomEventLastTriggered(value: string | null | undefined) {
+    if (!value) return 'Nunca';
+    return `${timeAgo(value)} (${formatDate(value, 'datetime')})`;
+}
+
+function renderCustomEventsEmptyState() {
+    const container = document.getElementById('customEventsList') as HTMLElement | null;
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="events-empty">
+            <span class="events-empty-emoji icon icon-target"></span>
+            <p><strong>Nenhum evento personalizado ainda</strong></p>
+            <p class="text-muted">Crie eventos e use o bloco "Registrar Evento" nos seus fluxos para medir resultados.</p>
+            <button class="btn btn-primary btn-sm mt-3" onclick="openCustomEventModal()">Criar primeiro evento</button>
+        </div>
+    `;
+}
+
+function renderCustomEventsList(response: CustomEventsStatsResponse) {
+    const container = document.getElementById('customEventsList') as HTMLElement | null;
+    if (!container) return;
+
+    const events = Array.isArray(response?.events) ? response.events : [];
+    customEvents = events;
+
+    if (events.length === 0) {
+        renderCustomEventsEmptyState();
+        return;
+    }
+
+    const totalEvents = Number(response?.totals?.events) || events.length;
+    const totalTriggers = Number(response?.totals?.triggers) || events.reduce((sum, item) => sum + (Number(item.total_period) || 0), 0);
+
+    container.innerHTML = `
+        <div class="events-summary">
+            <span><strong>${formatNumber(totalEvents)}</strong> evento(s)</span>
+            <span>•</span>
+            <span><strong>${formatNumber(totalTriggers)}</strong> disparo(s) no período</span>
+        </div>
+        <div class="events-list">
+            ${events.map((eventItem) => {
+                const eventId = Number(eventItem.id) || 0;
+                const eventName = escapeHtml(eventItem.name || 'Evento sem nome');
+                const eventKey = escapeHtml(eventItem.event_key || '');
+                const eventTotal = Number(eventItem.total_period ?? eventItem.total_triggers) || 0;
+                const isActive = Number(eventItem.is_active) > 0;
+                const statusClass = isActive ? 'active' : 'inactive';
+                const statusLabel = isActive ? 'Ativo' : 'Inativo';
+                const lastTriggered = escapeHtml(formatCustomEventLastTriggered(eventItem.last_triggered_at));
+
+                return `
+                    <div class="events-row">
+                        <div class="events-row-main">
+                            <div class="events-row-name">${eventName}</div>
+                            ${eventKey ? `<div class="events-row-key">${eventKey}</div>` : ''}
+                            <div class="events-row-last">Último disparo: ${lastTriggered}</div>
+                        </div>
+                        <span class="custom-event-status ${statusClass}">${statusLabel}</span>
+                        <div class="events-row-count">${formatNumber(eventTotal)} no período</div>
+                        <div class="events-row-actions">
+                            <button class="btn btn-sm btn-outline btn-icon" title="Editar evento" onclick="openCustomEventModal(${eventId})">
+                                <span class="icon icon-edit icon-sm"></span>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger btn-icon" title="Excluir evento" onclick="deleteCustomEvent(${eventId})">
+                                <span class="icon icon-delete icon-sm"></span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function renderCustomEventsError() {
+    const container = document.getElementById('customEventsList') as HTMLElement | null;
+    if (!container) return;
+    container.innerHTML = '<div class="events-error">Nao foi possivel carregar eventos personalizados.</div>';
+}
+
+function setCustomEventsLoading() {
+    const container = document.getElementById('customEventsList') as HTMLElement | null;
+    if (!container) return;
+    container.innerHTML = '<div class="events-loading">Carregando eventos personalizados...</div>';
+}
+
+async function loadCustomEvents(options: { silent?: boolean } = {}) {
+    setCustomEventsLoading();
+    const period = getSelectedCustomEventsPeriod();
+
+    try {
+        const params = new URLSearchParams({ period });
+        const response: CustomEventsStatsResponse = await api.get(`/api/custom-events/stats?${params.toString()}`);
+        renderCustomEventsList(response);
+    } catch (error) {
+        customEvents = [];
+        renderCustomEventsError();
+        if (!options.silent) {
+            showToast('warning', 'Aviso', 'Nao foi possivel atualizar eventos personalizados');
+        }
+        console.error(error);
+    }
+}
+
+function bindCustomEventsControls() {
+    const periodSelect = document.getElementById('customEventsPeriod') as HTMLSelectElement | null;
+    if (periodSelect) {
+        periodSelect.onchange = () => {
+            loadCustomEvents();
+        };
+    }
+}
+
+function openCustomEventModal(id?: number) {
+    const modalTitle = document.getElementById('customEventModalTitle') as HTMLElement | null;
+    const eventIdInput = document.getElementById('customEventId') as HTMLInputElement | null;
+    const nameInput = document.getElementById('customEventName') as HTMLInputElement | null;
+    const descriptionInput = document.getElementById('customEventDescription') as HTMLTextAreaElement | null;
+    const activeInput = document.getElementById('customEventActive') as HTMLInputElement | null;
+
+    const eventId = Number(id);
+    const eventItem = Number.isFinite(eventId) && eventId > 0
+        ? customEvents.find((item) => Number(item.id) === Math.trunc(eventId)) || null
+        : null;
+
+    if (eventIdInput) eventIdInput.value = eventItem ? String(eventItem.id) : '';
+    if (nameInput) nameInput.value = eventItem?.name || '';
+    if (descriptionInput) descriptionInput.value = eventItem?.description || '';
+    if (activeInput) activeInput.checked = eventItem ? Number(eventItem.is_active) > 0 : true;
+
+    if (modalTitle) {
+        modalTitle.innerHTML = eventItem
+            ? '<span class="icon icon-edit icon-sm"></span> Editar Evento'
+            : '<span class="icon icon-add icon-sm"></span> Novo Evento';
+    }
+
+    openModal('customEventModal');
+}
+
+async function saveCustomEvent() {
+    const eventIdInput = document.getElementById('customEventId') as HTMLInputElement | null;
+    const nameInput = document.getElementById('customEventName') as HTMLInputElement | null;
+    const descriptionInput = document.getElementById('customEventDescription') as HTMLTextAreaElement | null;
+    const activeInput = document.getElementById('customEventActive') as HTMLInputElement | null;
+
+    const eventId = Number.parseInt(eventIdInput?.value || '', 10);
+    const name = String(nameInput?.value || '').trim();
+    const description = String(descriptionInput?.value || '').trim();
+    const isActive = activeInput?.checked !== false;
+
+    if (!name) {
+        showToast('warning', 'Aviso', 'Informe o nome do evento');
+        nameInput?.focus();
+        return;
+    }
+
+    const payload = {
+        name,
+        description,
+        is_active: isActive ? 1 : 0
+    };
+
+    try {
+        if (Number.isFinite(eventId) && eventId > 0) {
+            await api.put(`/api/custom-events/${eventId}`, payload);
+        } else {
+            await api.post('/api/custom-events', payload);
+        }
+
+        closeModal('customEventModal');
+        await loadCustomEvents({ silent: true });
+        showToast('success', 'Sucesso', `Evento ${Number.isFinite(eventId) && eventId > 0 ? 'atualizado' : 'criado'} com sucesso`);
+    } catch (error) {
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Nao foi possivel salvar o evento');
+    }
+}
+
+async function deleteCustomEvent(id: number) {
+    const eventId = Number(id);
+    if (!Number.isFinite(eventId) || eventId <= 0) return;
+
+    const eventItem = customEvents.find((item) => Number(item.id) === Math.trunc(eventId));
+    const name = eventItem?.name || 'este evento';
+    if (!confirm(`Deseja excluir ${name}?`)) return;
+
+    try {
+        await api.delete(`/api/custom-events/${eventId}`);
+        await loadCustomEvents({ silent: true });
+        showToast('success', 'Sucesso', 'Evento removido com sucesso');
+    } catch (error) {
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Nao foi possivel remover o evento');
+    }
+}
+
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', callback);
@@ -258,9 +499,14 @@ function initDashboard() {
     const defaults = getDefaultStatsRange();
     const statsStart = document.getElementById('statsStartDate') as HTMLInputElement | null;
     const statsEnd = document.getElementById('statsEndDate') as HTMLInputElement | null;
+    const customEventsPeriod = document.getElementById('customEventsPeriod') as HTMLSelectElement | null;
     if (statsStart && !normalizeDateInputValue(statsStart.value)) statsStart.value = defaults.startDate;
     if (statsEnd && !normalizeDateInputValue(statsEnd.value)) statsEnd.value = defaults.endDate;
+    if (customEventsPeriod && !CUSTOM_EVENT_PERIODS[String(customEventsPeriod.value || '').trim().toLowerCase()]) {
+        customEventsPeriod.value = 'this_month';
+    }
     bindStatsPeriodControls();
+    bindCustomEventsControls();
     initStatsChart();
     loadDashboardData();
 }
@@ -279,6 +525,7 @@ async function loadDashboardData() {
         updateFunnel();
         renderLeadsTable();
         await updateStatsPeriodChart({ silent: true });
+        await loadCustomEvents({ silent: true });
         
         hideLoading();
     } catch (error) {
@@ -661,6 +908,10 @@ function confirmReset() {
 const windowAny = window as Window & {
     initDashboard?: () => void;
     loadDashboardData?: () => Promise<void>;
+    loadCustomEvents?: (options?: { silent?: boolean }) => Promise<void>;
+    openCustomEventModal?: (id?: number) => void;
+    saveCustomEvent?: () => Promise<void>;
+    deleteCustomEvent?: (id: number) => Promise<void>;
     updateStats?: () => void;
     updateFunnel?: () => void;
     renderLeadsTable?: (leads?: Lead[] | null) => void;
@@ -678,6 +929,10 @@ const windowAny = window as Window & {
 };
 windowAny.initDashboard = initDashboard;
 windowAny.loadDashboardData = loadDashboardData;
+windowAny.loadCustomEvents = loadCustomEvents;
+windowAny.openCustomEventModal = openCustomEventModal;
+windowAny.saveCustomEvent = saveCustomEvent;
+windowAny.deleteCustomEvent = deleteCustomEvent;
 windowAny.updateStats = updateStats;
 windowAny.updateFunnel = updateFunnel;
 windowAny.renderLeadsTable = renderLeadsTable;

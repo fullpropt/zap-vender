@@ -210,6 +210,31 @@ CREATE TABLE IF NOT EXISTS flow_executions (
     error_message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS custom_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    event_key TEXT UNIQUE NOT NULL,
+    description TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+);
+
+CREATE TABLE IF NOT EXISTS custom_event_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES custom_events(id) ON DELETE CASCADE,
+    flow_id INTEGER REFERENCES flows(id) ON DELETE SET NULL,
+    node_id TEXT,
+    lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL,
+    conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+    execution_id INTEGER REFERENCES flow_executions(id) ON DELETE SET NULL,
+    metadata TEXT,
+    occurred_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+);
+
 -- Tabela de Fila de Mensagens
 CREATE TABLE IF NOT EXISTS message_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -365,6 +390,12 @@ CREATE INDEX IF NOT EXISTS idx_flows_trigger ON flows(trigger_type, trigger_valu
 CREATE INDEX IF NOT EXISTS idx_flows_active ON flows(is_active);
 CREATE INDEX IF NOT EXISTS idx_automation_lead_runs_lead ON automation_lead_runs(lead_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_automation_migrations_automation ON campaign_automation_migrations(automation_id);
+CREATE INDEX IF NOT EXISTS idx_custom_events_active ON custom_events(is_active);
+CREATE INDEX IF NOT EXISTS idx_custom_events_key ON custom_events(event_key);
+CREATE INDEX IF NOT EXISTS idx_custom_event_logs_event_date ON custom_event_logs(event_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_custom_event_logs_flow ON custom_event_logs(flow_id);
+CREATE INDEX IF NOT EXISTS idx_custom_event_logs_lead ON custom_event_logs(lead_id);
+CREATE INDEX IF NOT EXISTS idx_custom_event_logs_conversation ON custom_event_logs(conversation_id);
 
 CREATE INDEX IF NOT EXISTS idx_queue_status ON message_queue(status);
 CREATE INDEX IF NOT EXISTS idx_queue_scheduled ON message_queue(scheduled_at);

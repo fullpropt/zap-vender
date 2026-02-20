@@ -373,6 +373,7 @@ export default function FlowBuilder() {
         .flow-node-header.action { background: rgba(139, 92, 246, 0.1); }
         .flow-node-header.delay { background: rgba(100, 116, 139, 0.1); }
         .flow-node-header.transfer { background: rgba(239, 68, 68, 0.1); }
+        .flow-node-header.event { background: rgba(139, 92, 246, 0.1); }
         
         .flow-node-header .icon {
             font-size: 18px;
@@ -1374,6 +1375,13 @@ export default function FlowBuilder() {
                               <div className="info">
                                   <div className="name">Webhook</div>
                                   <div className="desc">Envia dados para URL</div>
+                              </div>
+                          </div>
+                          <div className="node-item" draggable="true" data-type="event">
+                              <div className="icon action icon-target"></div>
+                              <div className="info">
+                                  <div className="name">Registrar Evento</div>
+                                  <div className="desc">Conta métricas de conversão no dashboard</div>
                               </div>
                           </div>
                           <div className="node-item" draggable="true" data-type="end">

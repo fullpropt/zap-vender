@@ -1,12 +1,16 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { brandLogoUrl, brandName } from '../lib/brand';
 
 type DashboardGlobals = {
   initDashboard?: () => void;
   loadDashboardData?: () => void;
+  loadCustomEvents?: (options?: { silent?: boolean }) => void;
   openModal?: (id: string) => void;
   closeModal?: (id: string) => void;
+  openCustomEventModal?: (id?: number) => void;
+  saveCustomEvent?: () => void;
+  deleteCustomEvent?: (id: number) => void;
   exportLeads?: () => void;
   confirmReset?: () => void;
   filterLeads?: () => void;
@@ -33,11 +37,26 @@ function DashboardStyles() {
         .stats-general-item:last-child { border-bottom: none; }
         .stats-general-label { font-size: 13px; color: var(--gray-600); }
         .stats-general-value { font-weight: 700; font-size: 18px; }
-        .events-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .events-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
         .events-header h3 { margin: 0; }
+        .events-controls { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+        .events-summary { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 12px; color: var(--gray-500); }
+        .events-summary strong { color: var(--gray-700); }
+        .events-list { display: flex; flex-direction: column; gap: 10px; }
+        .events-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; background: rgba(15, 23, 42, 0.24); }
+        .events-row-main { min-width: 0; }
+        .events-row-name { font-weight: 700; color: #e7edf7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .events-row-key { font-size: 11px; color: var(--gray-500); }
+        .events-row-count { font-size: 13px; color: var(--gray-600); white-space: nowrap; }
+        .events-row-last { font-size: 12px; color: var(--gray-500); white-space: nowrap; }
+        .events-row-actions { display: inline-flex; gap: 6px; }
+        .events-loading, .events-error { padding: 14px; text-align: center; border: 1px dashed var(--border-color); border-radius: 10px; color: var(--gray-500); }
         .info-icon { cursor: help; opacity: 0.7; }
         .events-empty { text-align: center; padding: 40px 20px; color: var(--gray-500); }
-        .events-empty-emoji { width: 48px; height: 48px; display: block; margin-bottom: 16px; opacity: 0.6; background-color: var(--gray-400); }
+        .events-empty-emoji { width: 48px; height: 48px; display: block; margin: 0 auto 16px; opacity: 0.6; background-color: var(--gray-400); }
+        .custom-event-status { font-size: 11px; border-radius: 999px; padding: 3px 8px; border: 1px solid rgba(var(--primary-rgb), 0.25); color: var(--gray-500); background: rgba(15, 23, 42, 0.24); white-space: nowrap; }
+        .custom-event-status.active { border-color: rgba(var(--primary-rgb), 0.45); color: #d8f4e6; background: rgba(var(--primary-rgb), 0.13); }
+        .custom-event-status.inactive { border-color: rgba(148, 163, 184, 0.4); color: #cbd5e1; }
         @media (max-width: 640px) {
           .dashboard-botconversa { gap: 14px; margin-bottom: 16px; }
           .stats-period-card, .stats-general-card, .events-personalized-card { padding: 12px; border-radius: 12px; }
@@ -51,6 +70,11 @@ function DashboardStyles() {
           .stats-general-label { font-size: 12px; }
           .stats-general-value { font-size: 16px; }
           .events-header { gap: 8px; margin-bottom: 12px; }
+          .events-controls { width: 100%; margin-left: 0; }
+          .events-controls .form-select, .events-controls .btn { width: 100%; }
+          .events-row { grid-template-columns: 1fr; gap: 8px; }
+          .events-row-count, .events-row-last { white-space: normal; }
+          .events-row-actions { justify-content: flex-end; }
           .events-empty { padding: 20px 10px; }
           .events-empty-emoji { width: 34px; height: 34px; margin-bottom: 10px; }
         }
@@ -64,7 +88,7 @@ function DashboardHeader() {
       <div className="page-title">
         <h1>Painel de Controle</h1>
         <p>
-          Bem-vindo, <span className="user-name">Usuário</span> |{' '}
+          Bem-vindo, <span className="user-name">UsuÃ¡rio</span> |{' '}
           <span className="current-date"></span>
         </p>
       </div>
@@ -76,20 +100,20 @@ function StatsPeriod() {
   return (
     <div className="dashboard-botconversa">
       <div className="stats-period-card">
-        <h3>Estatísticas por período</h3>
+        <h3>EstatÃ­sticas por perÃ­odo</h3>
         <div className="stats-period-controls">
           <input type="date" className="form-input" id="statsStartDate" />
           <input type="date" className="form-input" id="statsEndDate" />
           <select className="form-select" id="statsMetric" style={{ width: 'auto' }}>
             <option value="novos_contatos">Novos Contatos</option>
             <option value="mensagens">Mensagens</option>
-            <option value="interacoes">Interações</option>
+            <option value="interacoes">InteraÃ§Ãµes</option>
           </select>
           <div className="chart-type-toggle">
-            <button type="button" className="chart-btn active" data-chart-type="line" title="Gráfico de linhas">
+            <button type="button" className="chart-btn active" data-chart-type="line" title="GrÃ¡fico de linhas">
               <span className="icon icon-chart-line icon-sm"></span>
             </button>
-            <button type="button" className="chart-btn" data-chart-type="bar" title="Gráfico de barras">
+            <button type="button" className="chart-btn" data-chart-type="bar" title="GrÃ¡fico de barras">
               <span className="icon icon-chart-bar icon-sm"></span>
             </button>
           </div>
@@ -99,7 +123,7 @@ function StatsPeriod() {
         </div>
       </div>
       <div className="stats-general-card">
-        <h3>Estatísticas gerais</h3>
+        <h3>EstatÃ­sticas gerais</h3>
         <div className="stats-general-item">
           <span className="stats-general-label">Contatos que interagiram</span>
           <span className="stats-general-value" id="statsContacts">0</span>
@@ -109,7 +133,7 @@ function StatsPeriod() {
           <span className="stats-general-value" id="statsMessages">0</span>
         </div>
         <div className="stats-general-item">
-          <span className="stats-general-label">Interações/Inscrito</span>
+          <span className="stats-general-label">InteraÃ§Ãµes/Inscrito</span>
           <span className="stats-general-value" id="statsInteractionsPer">0</span>
         </div>
       </div>
@@ -118,6 +142,8 @@ function StatsPeriod() {
 }
 
 function EventsCard() {
+  const globals = window as Window & DashboardGlobals;
+
   return (
     <div className="events-personalized-card" style={{ marginBottom: '24px' }}>
       <div className="events-header">
@@ -130,19 +156,20 @@ function EventsCard() {
             <span className="icon icon-info icon-sm"></span>
           </span>
         </h3>
-        <select className="form-select" style={{ width: 'auto' }}>
-          <option>Este mês</option>
-          <option>Semana</option>
-          <option>Ano</option>
-        </select>
-        <button className="btn btn-primary btn-sm">Criar</button>
+        <div className="events-controls">
+          <select className="form-select" id="customEventsPeriod" style={{ width: 'auto' }}>
+            <option value="this_month">Este mês</option>
+            <option value="week">Semana</option>
+            <option value="year">Ano</option>
+            <option value="last_30_days">Últimos 30 dias</option>
+          </select>
+          <button className="btn btn-primary btn-sm" type="button" onClick={() => globals.openCustomEventModal?.()}>
+            Criar
+          </button>
+        </div>
       </div>
-      <div className="events-empty">
-        <span className="events-empty-emoji icon icon-empty"></span>
-        <p><strong>Nenhum evento personalizado ainda</strong></p>
-        <p className="text-muted">
-          Crie eventos personalizados, integre-os em fluxos com o Bloco de Ação e rastreie suas estatísticas.
-        </p>
+      <div id="customEventsList">
+        <div className="events-loading">Carregando eventos personalizados...</div>
       </div>
     </div>
   );
@@ -163,7 +190,7 @@ function StatsCards() {
         <div className="stat-icon success"><span className="icon icon-check"></span></div>
         <div className="stat-content">
           <div className="stat-value" id="completedLeads">0</div>
-          <div className="stat-label">Concluídos</div>
+          <div className="stat-label">ConcluÃ­dos</div>
           <div className="stat-change positive" id="completedChange">+0%</div>
         </div>
       </div>
@@ -179,7 +206,7 @@ function StatsCards() {
         <div className="stat-icon info"><span className="icon icon-chart-bar"></span></div>
         <div className="stat-content">
           <div className="stat-value" id="conversionRate">0.0%</div>
-          <div className="stat-label">Conversão</div>
+          <div className="stat-label">ConversÃ£o</div>
           <div className="stat-change positive" id="conversionChange">+0%</div>
         </div>
       </div>
@@ -190,7 +217,7 @@ function StatsCards() {
 function Funnel() {
   return (
     <div className="funnel-container">
-      <div className="funnel-title"><span className="icon icon-funnel icon-sm"></span> Funil de Conversão</div>
+      <div className="funnel-title"><span className="icon icon-funnel icon-sm"></span> Funil de ConversÃ£o</div>
       <div className="funnel-stages" id="funnelStages">
         <div className="funnel-stage" data-stage="1">
           <div className="funnel-value" id="funnel1">0</div>
@@ -212,7 +239,7 @@ function Funnel() {
         <div className="funnel-arrow">&rarr;</div>
         <div className="funnel-stage" data-stage="4">
           <div className="funnel-value" id="funnel4">0</div>
-          <div className="funnel-label">Concluído</div>
+          <div className="funnel-label">ConcluÃ­do</div>
           <div className="funnel-percent" id="funnel4Percent">0%</div>
         </div>
       </div>
@@ -246,7 +273,7 @@ function LeadsTable() {
             <option value="">Todos os Status</option>
             <option value="1">Novo</option>
             <option value="2">Em Andamento</option>
-            <option value="3">Concluído</option>
+            <option value="3">ConcluÃ­do</option>
             <option value="4">Perdido</option>
           </select>
         </div>
@@ -265,9 +292,9 @@ function LeadsTable() {
               <th>Nome</th>
               <th>WhatsApp</th>
               <th>Placa</th>
-              <th>Veículo</th>
+              <th>VeÃ­culo</th>
               <th>Status</th>
-              <th>Ações</th>
+              <th>AÃ§Ãµes</th>
             </tr>
           </thead>
           <tbody id="leadsTableBody">
@@ -298,7 +325,7 @@ function LeadModals() {
               className="modal-close"
               onClick={() => globals.closeModal?.('importModal')}
             >
-              ×
+              Ã—
             </button>
           </div>
           <div className="modal-body">
@@ -306,7 +333,7 @@ function LeadModals() {
               <label className="form-label">Arquivo CSV</label>
               <input type="file" className="form-input" id="importFile" accept=".csv,.txt" />
               <p className="form-help">
-                Formato esperado: nome, telefone, veiculo, placa (separados por vírgula)
+                Formato esperado: nome, telefone, veiculo, placa (separados por vÃ­rgula)
               </p>
             </div>
             <div className="form-group">
@@ -315,16 +342,16 @@ function LeadModals() {
                 className="form-textarea"
                 id="importText"
                 rows={10}
-                placeholder={`nome,telefone,veiculo,placa\nJoão Silva,27999999999,Honda Civic 2020,ABC1234\nMaria Santos,27988888888,Toyota Corolla 2021,XYZ5678`}
+                placeholder={`nome,telefone,veiculo,placa\nJoÃ£o Silva,27999999999,Honda Civic 2020,ABC1234\nMaria Santos,27988888888,Toyota Corolla 2021,XYZ5678`}
               ></textarea>
             </div>
             <div className="form-group">
-              <label className="form-label">Tag para importação (opcional)</label>
+              <label className="form-label">Tag para importaÃ§Ã£o (opcional)</label>
               <input
                 type="text"
                 className="form-input"
                 id="importTag"
-                placeholder="Ex: Prioridade, Premium, Indicação"
+                placeholder="Ex: Prioridade, Premium, IndicaÃ§Ã£o"
               />
               <p className="form-help">Aplicada em todos os leads importados.</p>
             </div>
@@ -349,7 +376,7 @@ function LeadModals() {
               className="modal-close"
               onClick={() => globals.closeModal?.('addLeadModal')}
             >
-              ×
+              Ã—
             </button>
           </div>
           <div className="modal-body">
@@ -364,7 +391,7 @@ function LeadModals() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">Veículo</label>
+                  <label className="form-label">VeÃ­culo</label>
                   <input type="text" className="form-input" id="leadVehicle" placeholder="Ex: Honda Civic 2020" />
                 </div>
                 <div className="form-group">
@@ -405,7 +432,7 @@ function LeadModals() {
               className="modal-close"
               onClick={() => globals.closeModal?.('editLeadModal')}
             >
-              ×
+              Ã—
             </button>
           </div>
           <div className="modal-body">
@@ -421,7 +448,7 @@ function LeadModals() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">Veículo</label>
+                  <label className="form-label">VeÃ­culo</label>
                   <input type="text" className="form-input" id="editLeadVehicle" />
                 </div>
                 <div className="form-group">
@@ -438,7 +465,7 @@ function LeadModals() {
                 <select className="form-select" id="editLeadStatus">
                   <option value="1">Novo</option>
                   <option value="2">Em Andamento</option>
-                  <option value="3">Concluído</option>
+                  <option value="3">ConcluÃ­do</option>
                   <option value="4">Perdido</option>
                 </select>
               </div>
@@ -449,7 +476,57 @@ function LeadModals() {
               Cancelar
             </button>
             <button type="button" className="btn btn-primary" onClick={() => globals.updateLead?.()}>
-              Salvar Alterações
+              Salvar AlteraÃ§Ãµes
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-overlay" id="customEventModal">
+        <div className="modal">
+          <div className="modal-header">
+            <h3 className="modal-title" id="customEventModalTitle">
+              <span className="icon icon-add icon-sm"></span> Novo Evento
+            </h3>
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => globals.closeModal?.('customEventModal')}
+            >
+              Ã—
+            </button>
+          </div>
+          <div className="modal-body">
+            <form id="customEventForm">
+              <input type="hidden" id="customEventId" />
+              <div className="form-group">
+                <label className="form-label required">Nome do evento</label>
+                <input type="text" className="form-input" id="customEventName" placeholder="Ex.: Conversa Qualificada" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">DescriÃ§Ã£o (opcional)</label>
+                <textarea
+                  className="form-textarea"
+                  id="customEventDescription"
+                  rows={3}
+                  placeholder="Explique quando este evento deve ser disparado"
+                ></textarea>
+              </div>
+              <div className="form-group">
+                <label className="checkbox-wrapper" style={{ gap: '8px' }}>
+                  <input type="checkbox" id="customEventActive" defaultChecked />
+                  <span className="checkbox-custom"></span>
+                  Evento ativo
+                </label>
+              </div>
+            </form>
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline" onClick={() => globals.closeModal?.('customEventModal')}>
+              Cancelar
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => globals.saveCustomEvent?.()}>
+              Salvar Evento
             </button>
           </div>
         </div>
@@ -548,12 +625,12 @@ export default function Dashboard() {
           </div>
 
           <div className="nav-section">
-            <div className="nav-section-title">Automação</div>
+            <div className="nav-section-title">AutomaÃ§Ã£o</div>
             <ul className="nav-menu">
               <li className="nav-item">
                 <Link to="/automacao" className="nav-link">
                   <span className="icon icon-automation"></span>
-                  Automação
+                  AutomaÃ§Ã£o
                 </Link>
               </li>
               <li className="nav-item">
@@ -583,7 +660,7 @@ export default function Dashboard() {
               <li className="nav-item">
                 <Link to="/configuracoes" className="nav-link">
                   <span className="icon icon-settings"></span>
-                  Configurações
+                  ConfiguraÃ§Ãµes
                 </Link>
               </li>
             </ul>

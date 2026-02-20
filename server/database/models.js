@@ -141,6 +141,27 @@ function normalizeTagKey(value) {
     return normalizeTagValue(value).toLowerCase();
 }
 
+function normalizeCustomEventName(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+}
+
+function normalizeCustomEventKey(value) {
+    return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .replace(/_+/g, '_')
+        .slice(0, 80);
+}
+
+function buildCustomEventKey(name) {
+    const fromName = normalizeCustomEventKey(name);
+    if (fromName) return fromName;
+    return `evento_${Date.now()}`;
+}
+
 function parseTagList(rawValue) {
     if (!rawValue) return [];
 
@@ -1429,6 +1450,247 @@ const Flow = {
 };
 
 // ============================================
+// CUSTOM EVENTS
+// ============================================
+
+const CustomEvent = {
+    async create(data) {
+        const uuid = generateUUID();
+        const name = normalizeCustomEventName(data?.name);
+        if (!name) {
+            throw new Error('Nome do evento e obrigatorio');
+        }
+
+        const eventKey = normalizeCustomEventKey(
+            data?.event_key ?? data?.eventKey ?? data?.key ?? name
+        ) || buildCustomEventKey(name);
+
+        const description = String(data?.description || '').trim().slice(0, 400) || null;
+        const isActive = normalizeBooleanFlag(data?.is_active ?? data?.isActive, 1);
+
+        try {
+            const result = await run(`
+                INSERT INTO custom_events (uuid, name, event_key, description, is_active, created_by)
+                VALUES (?, ?, ?, ?, ?, ?)
+            `, [
+                uuid,
+                name,
+                eventKey,
+                description,
+                isActive,
+                data?.created_by || null
+            ]);
+
+            return { id: result.lastInsertRowid, uuid };
+        } catch (error) {
+            const code = String(error?.code || '');
+            const detail = String(error?.detail || error?.message || '').toLowerCase();
+            if (code === '23505' && (detail.includes('event_key') || detail.includes('custom_events_event_key_key'))) {
+                throw new Error('Ja existe um evento com esta chave');
+            }
+            throw error;
+        }
+    },
+
+    async findById(id) {
+        return await queryOne('SELECT * FROM custom_events WHERE id = ?', [id]);
+    },
+
+    async findByKey(eventKey) {
+        const normalizedKey = normalizeCustomEventKey(eventKey);
+        if (!normalizedKey) return null;
+        return await queryOne('SELECT * FROM custom_events WHERE event_key = ?', [normalizedKey]);
+    },
+
+    async findByName(name) {
+        const normalizedName = normalizeCustomEventName(name);
+        if (!normalizedName) return null;
+        return await queryOne('SELECT * FROM custom_events WHERE LOWER(name) = LOWER(?)', [normalizedName]);
+    },
+
+    async list(options = {}) {
+        let sql = `
+            SELECT
+                ce.id,
+                ce.uuid,
+                ce.name,
+                ce.event_key,
+                ce.description,
+                ce.is_active,
+                ce.created_by,
+                ce.created_at,
+                ce.updated_at,
+                COUNT(cel.id)::int AS total_triggers,
+                MAX(cel.occurred_at) AS last_triggered_at
+            FROM custom_events ce
+            LEFT JOIN custom_event_logs cel ON cel.event_id = ce.id
+        `;
+        const filters = [];
+        const params = [];
+
+        if (options.is_active !== undefined && options.is_active !== null && options.is_active !== '') {
+            filters.push('ce.is_active = ?');
+            params.push(normalizeBooleanFlag(options.is_active, 1));
+        }
+
+        const search = normalizeCustomEventName(options.search || '');
+        if (search) {
+            filters.push('(LOWER(ce.name) LIKE LOWER(?) OR LOWER(ce.event_key) LIKE LOWER(?))');
+            params.push(`%${search}%`, `%${normalizeCustomEventKey(search)}%`);
+        }
+
+        if (filters.length > 0) {
+            sql += ` WHERE ${filters.join(' AND ')}`;
+        }
+
+        sql += `
+            GROUP BY
+                ce.id, ce.uuid, ce.name, ce.event_key, ce.description, ce.is_active, ce.created_by, ce.created_at, ce.updated_at
+            ORDER BY ce.name ASC
+        `;
+
+        return await query(sql, params);
+    },
+
+    async listWithPeriodTotals(startAt, endAt, options = {}) {
+        let sql = `
+            SELECT
+                ce.id,
+                ce.uuid,
+                ce.name,
+                ce.event_key,
+                ce.description,
+                ce.is_active,
+                ce.created_by,
+                ce.created_at,
+                ce.updated_at,
+                COUNT(cel.id)::int AS total_period,
+                MAX(cel.occurred_at) AS last_triggered_at
+            FROM custom_events ce
+            LEFT JOIN custom_event_logs cel
+                ON cel.event_id = ce.id
+               AND cel.occurred_at >= ?
+               AND cel.occurred_at < ?
+        `;
+        const params = [startAt, endAt];
+        const filters = [];
+
+        if (options.is_active !== undefined && options.is_active !== null && options.is_active !== '') {
+            filters.push('ce.is_active = ?');
+            params.push(normalizeBooleanFlag(options.is_active, 1));
+        }
+
+        if (filters.length > 0) {
+            sql += ` WHERE ${filters.join(' AND ')}`;
+        }
+
+        sql += `
+            GROUP BY
+                ce.id, ce.uuid, ce.name, ce.event_key, ce.description, ce.is_active, ce.created_by, ce.created_at, ce.updated_at
+            ORDER BY total_period DESC, ce.name ASC
+        `;
+
+        return await query(sql, params);
+    },
+
+    async update(id, data) {
+        const current = await this.findById(id);
+        if (!current) return null;
+
+        const fields = [];
+        const values = [];
+
+        if (Object.prototype.hasOwnProperty.call(data, 'name')) {
+            const name = normalizeCustomEventName(data.name);
+            if (!name) {
+                throw new Error('Nome do evento e obrigatorio');
+            }
+            fields.push('name = ?');
+            values.push(name);
+        }
+
+        if (
+            Object.prototype.hasOwnProperty.call(data, 'event_key')
+            || Object.prototype.hasOwnProperty.call(data, 'eventKey')
+            || Object.prototype.hasOwnProperty.call(data, 'key')
+        ) {
+            const keySource = data.event_key ?? data.eventKey ?? data.key;
+            const eventKey = normalizeCustomEventKey(keySource);
+            if (!eventKey) {
+                throw new Error('Chave do evento invalida');
+            }
+            fields.push('event_key = ?');
+            values.push(eventKey);
+        }
+
+        if (Object.prototype.hasOwnProperty.call(data, 'description')) {
+            const description = String(data.description || '').trim().slice(0, 400) || null;
+            fields.push('description = ?');
+            values.push(description);
+        }
+
+        if (Object.prototype.hasOwnProperty.call(data, 'is_active') || Object.prototype.hasOwnProperty.call(data, 'isActive')) {
+            const isActive = normalizeBooleanFlag(data.is_active ?? data.isActive, current.is_active ? 1 : 0);
+            fields.push('is_active = ?');
+            values.push(isActive);
+        }
+
+        if (fields.length === 0) return current;
+
+        fields.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(id);
+
+        try {
+            await run(`UPDATE custom_events SET ${fields.join(', ')} WHERE id = ?`, values);
+            return await this.findById(id);
+        } catch (error) {
+            const code = String(error?.code || '');
+            const detail = String(error?.detail || error?.message || '').toLowerCase();
+            if (code === '23505' && (detail.includes('event_key') || detail.includes('custom_events_event_key_key'))) {
+                throw new Error('Ja existe um evento com esta chave');
+            }
+            throw error;
+        }
+    },
+
+    async delete(id) {
+        return await run('DELETE FROM custom_events WHERE id = ?', [id]);
+    },
+
+    async logOccurrence(data) {
+        const eventId = Number(data?.event_id ?? data?.eventId);
+        if (!Number.isFinite(eventId) || eventId <= 0) {
+            throw new Error('event_id invalido');
+        }
+
+        const metadata = toJsonStringOrNull(data?.metadata);
+        const flowId = Number(data?.flow_id ?? data?.flowId) || null;
+        const leadId = Number(data?.lead_id ?? data?.leadId) || null;
+        const conversationId = Number(data?.conversation_id ?? data?.conversationId) || null;
+        const executionId = Number(data?.execution_id ?? data?.executionId) || null;
+        const nodeIdRaw = data?.node_id ?? data?.nodeId ?? '';
+        const nodeId = String(nodeIdRaw).trim() || null;
+
+        if (data?.occurred_at || data?.occurredAt) {
+            const occurredAt = data.occurred_at || data.occurredAt;
+            return await run(`
+                INSERT INTO custom_event_logs (
+                    event_id, flow_id, node_id, lead_id, conversation_id, execution_id, metadata, occurred_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [eventId, flowId, nodeId, leadId, conversationId, executionId, metadata, occurredAt]);
+        }
+
+        return await run(`
+            INSERT INTO custom_event_logs (
+                event_id, flow_id, node_id, lead_id, conversation_id, execution_id, metadata
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [eventId, flowId, nodeId, leadId, conversationId, executionId, metadata]);
+    }
+};
+
+// ============================================
 // MESSAGE QUEUE
 // ============================================
 
@@ -1872,6 +2134,7 @@ module.exports = {
     CampaignSenderAccount,
     Automation,
     Flow,
+    CustomEvent,
     MessageQueue,
     Tag,
     Webhook,

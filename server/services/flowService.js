@@ -3,7 +3,7 @@
  * Executa fluxos de automação baseados em triggers
  */
 
-const { Flow, Lead, Conversation, Message } = require('../database/models');
+const { Flow, Lead, Conversation, Message, CustomEvent } = require('../database/models');
 const { run, queryOne, generateUUID } = require('../database/connection');
 const EventEmitter = require('events');
 const Fuse = require('fuse.js');
@@ -956,6 +956,47 @@ class FlowService extends EventEmitter {
                     });
                     await this.goToNextNode(execution, node);
                     break;
+
+                case 'event': {
+                    const rawEventId = Number(node?.data?.eventId);
+                    const eventKey = String(node?.data?.eventKey || '').trim();
+                    const eventName = String(node?.data?.eventName || '').trim();
+
+                    let customEvent = null;
+                    if (Number.isFinite(rawEventId) && rawEventId > 0) {
+                        customEvent = await CustomEvent.findById(rawEventId);
+                    }
+                    if (!customEvent && eventKey) {
+                        customEvent = await CustomEvent.findByKey(eventKey);
+                    }
+                    if (!customEvent && eventName) {
+                        customEvent = await CustomEvent.findByName(eventName);
+                    }
+
+                    if (customEvent) {
+                        await CustomEvent.logOccurrence({
+                            event_id: customEvent.id,
+                            flow_id: execution.flow?.id || null,
+                            node_id: node.id || null,
+                            lead_id: execution.lead?.id || null,
+                            conversation_id: execution.conversation?.id || null,
+                            execution_id: execution.id || null,
+                            metadata: {
+                                source: 'flow',
+                                flowName: execution.flow?.name || '',
+                                nodeLabel: node?.data?.label || '',
+                                triggerMessage: execution.triggerMessageText || ''
+                            }
+                        });
+                        execution.variables.last_custom_event = customEvent.name;
+                        execution.variables.last_custom_event_key = customEvent.event_key;
+                    } else {
+                        console.warn(`Evento personalizado nao encontrado para o no ${node.id}`);
+                    }
+
+                    await this.goToNextNode(execution, node);
+                    break;
+                }
                     
                 case 'end':
                     await this.endFlow(execution, 'completed');
@@ -1249,7 +1290,6 @@ class FlowService extends EventEmitter {
 
 module.exports = new FlowService();
 module.exports.FlowService = FlowService;
-
 
 
 
