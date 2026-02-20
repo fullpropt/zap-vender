@@ -121,6 +121,7 @@ Abra no navegador: `http://localhost:3001`
 | `FLOW_INTENT_CLASSIFIER_MIN_CANDIDATES` | N˙mero mÌnimo de candidatos para chamar IA | N„o |
 | `FLOW_INTENT_CLASSIFIER_MAX_CANDIDATES` | N˙mero m·ximo de candidatos enviados ‡ IA | N„o |
 | `GEMINI_REQUEST_TIMEOUT_MS` | Timeout da chamada Gemini (ms) | N„o |
+| `GEMINI_QUOTA_BACKOFF_MS` | Tempo para pausar Gemini apÛs HTTP 429 e usar fallback local (ms) | N„o |
 | `CORS_ORIGINS` | URLs permitidas (ex.: https://web-production-a38e.up.railway.app) | Sim |
 | `SESSIONS_DIR` | DiretÛrio persistente das sessıes Baileys (`/mnt/data/sessions` no Railway) | Sim |
 
@@ -468,6 +469,7 @@ sudo certbot --nginx -d seu-dominio.com
 | `FLOW_INTENT_CLASSIFIER_MIN_CANDIDATES` | N˙mero mÌnimo de candidatos para chamar IA | 1 |
 | `FLOW_INTENT_CLASSIFIER_MAX_CANDIDATES` | N˙mero m·ximo de candidatos enviados ‡ IA | 5 |
 | `GEMINI_REQUEST_TIMEOUT_MS` | Timeout da chamada Gemini (ms) | 4500 |
+| `GEMINI_QUOTA_BACKOFF_MS` | Tempo para pausar Gemini apÛs HTTP 429 e usar fallback local (ms) | 600000 |
 ## ‚ùì Problemas Comuns
 
 ### QR Code n√£o aparece

@@ -9,6 +9,10 @@ const DEFAULT_TIMEOUT_MS = 4500;
 const DEFAULT_MIN_CONFIDENCE = 0.7;
 const DEFAULT_MAX_CANDIDATES = 5;
 const DEFAULT_MIN_CANDIDATES = 1;
+const DEFAULT_GEMINI_QUOTA_BACKOFF_MS = 10 * 60 * 1000;
+
+let geminiBlockedUntil = 0;
+let geminiBlockReason = '';
 
 function readEnvString(name, fallback = '') {
     const value = process.env[name];
@@ -33,6 +37,33 @@ function isFlowIntentClassifierEnabled() {
     }
 
     return Boolean(readEnvString('GEMINI_API_KEY', ''));
+}
+
+function isGeminiTemporarilyBlocked() {
+    return geminiBlockedUntil > Date.now();
+}
+
+function shouldDisableGeminiTemporarily(statusCode, errorText = '') {
+    if (Number(statusCode) !== 429) return false;
+    const normalized = String(errorText || '').toLowerCase();
+    return (
+        normalized.includes('quota')
+        || normalized.includes('resource_exhausted')
+        || normalized.includes('rate limit')
+        || normalized.includes('billing')
+    );
+}
+
+function disableGeminiTemporarily(reason = 'quota_exceeded') {
+    const backoffMs = readEnvNumber('GEMINI_QUOTA_BACKOFF_MS', DEFAULT_GEMINI_QUOTA_BACKOFF_MS, 10000, 3600000);
+    const nextBlockedUntil = Date.now() + backoffMs;
+    geminiBlockedUntil = Math.max(geminiBlockedUntil, nextBlockedUntil);
+
+    if (geminiBlockReason !== reason) {
+        geminiBlockReason = reason;
+        const untilIso = new Date(geminiBlockedUntil).toISOString();
+        console.warn(`[flow-intent] Gemini temporariamente desativado (${reason}) ate ${untilIso}; fallback local sera usado.`);
+    }
 }
 
 function extractKeywords(value = '') {
@@ -118,6 +149,7 @@ function extractGeminiText(payload) {
 async function callGemini(prompt) {
     const apiKey = readEnvString('GEMINI_API_KEY', '');
     if (!apiKey) return null;
+    if (isGeminiTemporarilyBlocked()) return null;
 
     const model = readEnvString('GEMINI_MODEL', DEFAULT_GEMINI_MODEL);
     const timeoutMs = readEnvNumber('GEMINI_REQUEST_TIMEOUT_MS', DEFAULT_TIMEOUT_MS, 1000, 15000);
@@ -153,6 +185,9 @@ async function callGemini(prompt) {
 
         if (!response.ok) {
             const errorText = await response.text().catch(() => '');
+            if (shouldDisableGeminiTemporarily(response.status, errorText)) {
+                disableGeminiTemporarily('quota_or_rate_limit');
+            }
             throw new Error(`Gemini HTTP ${response.status}: ${errorText.slice(0, 300)}`);
         }
 
@@ -184,7 +219,7 @@ function normalizeSelectedRouteId(value) {
 
 function parseRoutePhrases(value = '') {
     return String(value || '')
-        .split(',')
+        .split(/[,;\n|]+/)
         .map((item) => item.trim())
         .filter(Boolean);
 }

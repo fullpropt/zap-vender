@@ -7,6 +7,11 @@ const { Flow, Lead, Conversation, Message } = require('../database/models');
 const { run, queryOne, generateUUID } = require('../database/connection');
 const EventEmitter = require('events');
 const { classifyKeywordFlowIntent, classifyIntentRoute } = require('./intentClassifierService');
+const INTENT_STOPWORDS = new Set([
+    'a', 'o', 'as', 'os', 'de', 'da', 'do', 'das', 'dos',
+    'e', 'em', 'no', 'na', 'nos', 'nas', 'um', 'uma', 'uns', 'umas',
+    'ao', 'aos', 'para', 'pra', 'pro', 'por', 'com', 'sem'
+]);
 
 function isStrictFlowIntentRoutingEnabled() {
     const value = String(process.env.FLOW_INTENT_CLASSIFIER_STRICT || '').trim().toLowerCase();
@@ -33,7 +38,7 @@ function normalizeIntentText(value = '') {
 
 function parseIntentPhrases(value = '') {
     return String(value || '')
-        .split(',')
+        .split(/[,;\n|]+/)
         .map((item) => normalizeIntentText(item))
         .filter(Boolean);
 }
@@ -41,6 +46,71 @@ function parseIntentPhrases(value = '') {
 function includesIntentPhrase(normalizedMessage = '', normalizedPhrase = '') {
     if (!normalizedMessage || !normalizedPhrase) return false;
     return ` ${normalizedMessage} `.includes(` ${normalizedPhrase} `);
+}
+
+function tokenizeIntentText(value = '') {
+    return normalizeIntentText(value)
+        .split(' ')
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 2 && !INTENT_STOPWORDS.has(token));
+}
+
+function hasIntentPrefixTokenMatch(messageTokens = [], phraseToken = '') {
+    if (!phraseToken || phraseToken.length < 4) return false;
+    return messageTokens.some((messageToken) => {
+        if (!messageToken || messageToken.length < 4) return false;
+        return messageToken.startsWith(phraseToken) || phraseToken.startsWith(messageToken);
+    });
+}
+
+function scoreIntentPhraseMatch(normalizedMessage = '', messageTokens = [], normalizedPhrase = '') {
+    if (!normalizedPhrase) return { matched: false, exact: false, score: 0, strongMatches: 0 };
+
+    if (includesIntentPhrase(normalizedMessage, normalizedPhrase)) {
+        const exactWordCount = normalizedPhrase.split(' ').filter(Boolean).length;
+        return { matched: true, exact: true, score: 100 + exactWordCount, strongMatches: exactWordCount };
+    }
+
+    const phraseTokens = tokenizeIntentText(normalizedPhrase);
+    if (phraseTokens.length === 0) return { matched: false, exact: false, score: 0, strongMatches: 0 };
+
+    const messageTokenSet = new Set(messageTokens);
+    let strongMatches = 0;
+    let weakMatches = 0;
+
+    for (const phraseToken of phraseTokens) {
+        if (messageTokenSet.has(phraseToken)) {
+            strongMatches += 1;
+            continue;
+        }
+
+        if (hasIntentPrefixTokenMatch(messageTokens, phraseToken)) {
+            weakMatches += 1;
+        }
+    }
+
+    if (strongMatches === 0 && weakMatches === 0) {
+        return { matched: false, exact: false, score: 0, strongMatches: 0 };
+    }
+
+    const coverage = (strongMatches + (weakMatches * 0.6)) / phraseTokens.length;
+    const hasEnoughSignal = (
+        strongMatches >= 2
+        || (phraseTokens.length === 1 && strongMatches >= 1)
+        || (strongMatches >= 1 && weakMatches >= 1 && phraseTokens.length <= 3)
+    );
+
+    if (!hasEnoughSignal || coverage < 0.65) {
+        return { matched: false, exact: false, score: coverage, strongMatches };
+    }
+
+    const specificityBoost = Math.min(phraseTokens.length, 5) * 0.12;
+    return {
+        matched: true,
+        exact: false,
+        score: coverage + specificityBoost,
+        strongMatches
+    };
 }
 
 class FlowService extends EventEmitter {
@@ -401,34 +471,51 @@ class FlowService extends EventEmitter {
 
         const normalizedMessage = normalizeIntentText(messageText);
         if (!normalizedMessage) return null;
+        const messageTokens = tokenizeIntentText(normalizedMessage);
 
         let best = null;
         for (const route of routes) {
-            const matchedPhrases = route.normalizedPhrases.filter((phrase) => includesIntentPhrase(normalizedMessage, phrase));
-            if (matchedPhrases.length === 0) continue;
+            let bestRouteMatch = null;
 
-            const longestWords = matchedPhrases.reduce((max, phrase) => Math.max(max, phrase.split(' ').length), 0);
-            const longestLength = matchedPhrases.reduce((max, phrase) => Math.max(max, phrase.length), 0);
-            const score = {
-                longestWords,
-                longestLength,
-                matchedCount: matchedPhrases.length
-            };
+            for (const phrase of route.normalizedPhrases) {
+                const currentMatch = scoreIntentPhraseMatch(normalizedMessage, messageTokens, phrase);
+                if (!currentMatch.matched) continue;
 
-            const isBetter = !best
-                || score.longestWords > best.score.longestWords
+                if (
+                    !bestRouteMatch
+                    || (currentMatch.exact && !bestRouteMatch.exact)
+                    || (
+                        currentMatch.exact === bestRouteMatch.exact
+                        && currentMatch.score > bestRouteMatch.score
+                    )
+                    || (
+                        currentMatch.exact === bestRouteMatch.exact
+                        && currentMatch.score === bestRouteMatch.score
+                        && currentMatch.strongMatches > bestRouteMatch.strongMatches
+                    )
+                ) {
+                    bestRouteMatch = currentMatch;
+                }
+            }
+
+            if (!bestRouteMatch) continue;
+
+            const isBetter = (
+                !best
+                || (bestRouteMatch.exact && !best.match.exact)
                 || (
-                    score.longestWords === best.score.longestWords
-                    && score.longestLength > best.score.longestLength
+                    bestRouteMatch.exact === best.match.exact
+                    && bestRouteMatch.score > best.match.score
                 )
                 || (
-                    score.longestWords === best.score.longestWords
-                    && score.longestLength === best.score.longestLength
-                    && score.matchedCount > best.score.matchedCount
-                );
+                    bestRouteMatch.exact === best.match.exact
+                    && bestRouteMatch.score === best.match.score
+                    && bestRouteMatch.strongMatches > best.match.strongMatches
+                )
+            );
 
             if (isBetter) {
-                best = { id: route.id, score };
+                best = { id: route.id, match: bestRouteMatch };
             }
         }
 
