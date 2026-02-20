@@ -28,8 +28,11 @@ type ConfiguracoesGlobals = {
   createSettingsTag?: () => Promise<void>;
   updateSettingsTag?: (id: number) => Promise<void>;
   deleteSettingsTag?: (id: number) => Promise<void>;
-  addUser?: () => void;
-  changePassword?: () => void;
+  loadUsers?: () => Promise<void>;
+  addUser?: () => Promise<void>;
+  openEditUserModal?: (id: number) => void;
+  updateUser?: () => Promise<void>;
+  changePassword?: () => Promise<void>;
   copyApiKey?: () => void;
   regenerateApiKey?: () => void;
   testWebhook?: () => void;
@@ -640,11 +643,10 @@ export default function Configuracoes() {
                                       </thead>
                                       <tbody id="usersTableBody">
                                           <tr>
-                                              <td>Admin</td>
-                                              <td>admin@self.com</td>
-                                              <td><span className="badge badge-primary">Administrador</span></td>
-                                              <td><span className="badge badge-success">Ativo</span></td>
-                                              <td><button className="btn btn-sm btn-outline"><span className="icon icon-edit icon-sm"></span></button></td>
+                                              <td colSpan={5} className="table-empty">
+                                                  <div className="table-empty-icon icon icon-empty icon-lg"></div>
+                                                  <p>Carregando usuários...</p>
+                                              </td>
                                           </tr>
                                       </tbody>
                                   </table>
@@ -724,7 +726,8 @@ export default function Configuracoes() {
                       <div className="form-group">
                           <label className="form-label">Função</label>
                           <select className="form-select" id="newUserRole">
-                              <option value="user">Usuário</option>
+                              <option value="agent">Usuário</option>
+                              <option value="supervisor">Supervisor</option>
                               <option value="admin">Administrador</option>
                           </select>
                       </div>
@@ -732,6 +735,47 @@ export default function Configuracoes() {
                   <div className="modal-footer">
                       <button className="btn btn-outline" onClick={() => globals.closeModal?.('addUserModal')}>Cancelar</button>
                       <button className="btn btn-primary" onClick={() => globals.addUser?.()}><span className="icon icon-add icon-sm"></span> Adicionar</button>
+                  </div>
+              </div>
+          </div>
+
+          <div className="modal-overlay" id="editUserModal">
+              <div className="modal">
+                  <div className="modal-header">
+                      <h3 className="modal-title"><span className="icon icon-edit icon-sm"></span> Editar Usuário</h3>
+                      <button className="modal-close" onClick={() => globals.closeModal?.('editUserModal')}>{'\u00D7'}</button>
+                  </div>
+                  <div className="modal-body">
+                      <input type="hidden" id="editUserId" />
+                      <div className="form-group">
+                          <label className="form-label required">Nome</label>
+                          <input type="text" className="form-input" id="editUserName" required />
+                      </div>
+                      <div className="form-group">
+                          <label className="form-label required">E-mail</label>
+                          <input type="email" className="form-input" id="editUserEmail" required />
+                      </div>
+                      <div className="form-row">
+                          <div className="form-group">
+                              <label className="form-label">Função</label>
+                              <select className="form-select" id="editUserRole">
+                                  <option value="agent">Usuário</option>
+                                  <option value="supervisor">Supervisor</option>
+                                  <option value="admin">Administrador</option>
+                              </select>
+                          </div>
+                          <div className="form-group">
+                              <label className="form-label">Status</label>
+                              <select className="form-select" id="editUserActive">
+                                  <option value="1">Ativo</option>
+                                  <option value="0">Inativo</option>
+                              </select>
+                          </div>
+                      </div>
+                  </div>
+                  <div className="modal-footer">
+                      <button className="btn btn-outline" onClick={() => globals.closeModal?.('editUserModal')}>Cancelar</button>
+                      <button className="btn btn-primary" onClick={() => globals.updateUser?.()}><span className="icon icon-save icon-sm"></span> Salvar</button>
                   </div>
               </div>
           </div>
@@ -776,4 +820,3 @@ export default function Configuracoes() {
     </div>
   );
 }
-

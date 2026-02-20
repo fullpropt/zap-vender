@@ -1063,6 +1063,145 @@ function detectMediaTypeFromMessageContent(content) {
     return 'text';
 }
 
+const MEDIA_MIME_EXTENSION_MAP = {
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'audio/ogg': 'ogg',
+    'audio/ogg; codecs=opus': 'ogg',
+    'audio/mp4': 'm4a',
+    'audio/mpeg': 'mp3',
+    'audio/aac': 'aac',
+    'audio/wav': 'wav',
+    'video/mp4': 'mp4',
+    'video/quicktime': 'mov',
+    'video/webm': 'webm',
+    'application/pdf': 'pdf',
+    'application/msword': 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'application/vnd.ms-excel': 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx'
+};
+
+function normalizeMediaMimeType(value) {
+    if (!value) return '';
+    return String(value).split(';')[0].trim().toLowerCase();
+}
+
+function resolveMediaExtension({ mimetype = '', fileName = '', fallback = 'bin' } = {}) {
+    const normalizedMime = normalizeMediaMimeType(mimetype);
+    if (normalizedMime && MEDIA_MIME_EXTENSION_MAP[normalizedMime]) {
+        return MEDIA_MIME_EXTENSION_MAP[normalizedMime];
+    }
+
+    const fileExt = path.extname(String(fileName || '')).replace('.', '').trim().toLowerCase();
+    if (fileExt) return fileExt;
+
+    return fallback;
+}
+
+function sanitizeMediaFilePart(value, fallback = 'file') {
+    const normalized = String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return normalized || fallback;
+}
+
+function resolveIncomingMediaPayload(content, mediaType) {
+    if (!content || !mediaType) return null;
+
+    if (mediaType === 'image' && content.imageMessage) {
+        return {
+            payload: content.imageMessage,
+            downloadType: 'image',
+            mimetype: content.imageMessage.mimetype || 'image/jpeg',
+            fileName: content.imageMessage.fileName || '',
+            fallbackExtension: 'jpg'
+        };
+    }
+
+    if (mediaType === 'audio' && content.audioMessage) {
+        return {
+            payload: content.audioMessage,
+            downloadType: 'audio',
+            mimetype: content.audioMessage.mimetype || 'audio/ogg; codecs=opus',
+            fileName: content.audioMessage.fileName || '',
+            fallbackExtension: 'ogg'
+        };
+    }
+
+    if (mediaType === 'video' && content.videoMessage) {
+        return {
+            payload: content.videoMessage,
+            downloadType: 'video',
+            mimetype: content.videoMessage.mimetype || 'video/mp4',
+            fileName: content.videoMessage.fileName || '',
+            fallbackExtension: 'mp4'
+        };
+    }
+
+    if (mediaType === 'document' && content.documentMessage) {
+        return {
+            payload: content.documentMessage,
+            downloadType: 'document',
+            mimetype: content.documentMessage.mimetype || 'application/octet-stream',
+            fileName: content.documentMessage.fileName || '',
+            fallbackExtension: 'bin'
+        };
+    }
+
+    return null;
+}
+
+async function streamToBuffer(stream) {
+    const chunks = [];
+    for await (const chunk of stream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+}
+
+async function persistIncomingMedia({ sessionId, messageId, content, mediaType }) {
+    try {
+        const descriptor = resolveIncomingMediaPayload(content, mediaType);
+        if (!descriptor) return null;
+
+        const baileys = await baileysLoader.getBaileys();
+        const downloadContentFromMessage = baileys?.downloadContentFromMessage;
+        if (typeof downloadContentFromMessage !== 'function') return null;
+
+        const stream = await downloadContentFromMessage(descriptor.payload, descriptor.downloadType);
+        const buffer = await streamToBuffer(stream);
+        if (!buffer || buffer.length === 0) return null;
+
+        const ext = resolveMediaExtension({
+            mimetype: descriptor.mimetype,
+            fileName: descriptor.fileName,
+            fallback: descriptor.fallbackExtension
+        });
+        const safeSession = sanitizeMediaFilePart(sessionId || 'session');
+        const safeMessage = sanitizeMediaFilePart(messageId || `msg-${Date.now()}`);
+        const filename = `${Date.now()}-${safeSession}-${safeMessage}.${ext}`;
+        const filePath = path.join(UPLOADS_DIR, filename);
+
+        await fs.promises.writeFile(filePath, buffer);
+
+        return {
+            url: `/uploads/${filename}`,
+            mimetype: descriptor.mimetype || null,
+            filename: descriptor.fileName || filename,
+            size: buffer.length
+        };
+    } catch (error) {
+        console.warn(`[${sessionId}] Falha ao persistir media recebida (${mediaType}):`, error.message);
+        return null;
+    }
+}
+
 function parseMessageTimestampMs(value) {
     if (value === undefined || value === null) return 0;
 
@@ -4020,6 +4159,12 @@ async function backfillConversationMessagesFromStore(options = {}) {
         const content = unwrapMessageContent(waMsg.message);
         let text = extractTextFromMessageContent(content);
         const mediaType = detectMediaTypeFromMessageContent(content);
+        const persistedMedia = await persistIncomingMedia({
+            sessionId,
+            messageId,
+            content,
+            mediaType
+        });
 
         if (!text && mediaType !== 'text') {
             text = previewForMedia(mediaType);
@@ -4041,6 +4186,9 @@ async function backfillConversationMessagesFromStore(options = {}) {
             content: text,
             content_encrypted: encryptMessage(text),
             media_type: mediaType,
+            media_url: persistedMedia?.url || null,
+            media_mime_type: persistedMedia?.mimetype || null,
+            media_filename: persistedMedia?.filename || null,
             status: normalizedStatus,
             is_from_me: isFromMe,
             sent_at: sentAtIso,
@@ -4314,6 +4462,7 @@ async function processIncomingMessage(sessionId, msg) {
     const content = contentForRouting;
     let text = extractTextFromMessageContent(content);
     let mediaType = detectMediaTypeFromMessageContent(content);
+    let persistedMedia = null;
 
     // Ignora upserts de controle/protocolo sem conteudo renderizavel.
     if (!text && mediaType === 'text') return;
@@ -4437,6 +4586,13 @@ async function processIncomingMessage(sessionId, msg) {
 
     }
 
+    persistedMedia = await persistIncomingMedia({
+        sessionId,
+        messageId: msg?.key?.id,
+        content,
+        mediaType
+    });
+
     
 
     // Salvar mensagem
@@ -4458,6 +4614,9 @@ async function processIncomingMessage(sessionId, msg) {
         content_encrypted: encryptMessage(text),
 
         media_type: mediaType,
+        media_url: persistedMedia?.url || null,
+        media_mime_type: persistedMedia?.mimetype || null,
+        media_filename: persistedMedia?.filename || null,
 
         status: normalizedStatus,
 
@@ -4512,6 +4671,9 @@ async function processIncomingMessage(sessionId, msg) {
         isFromMe,
 
         mediaType,
+        mediaUrl: persistedMedia?.url || null,
+        mediaMimeType: persistedMedia?.mimetype || null,
+        mediaFilename: persistedMedia?.filename || null,
 
         timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now(),
 
@@ -5765,6 +5927,201 @@ app.post('/api/auth/refresh', async (req, res) => {
 });
 
 
+
+const ALLOWED_USER_ROLES = new Set(['admin', 'supervisor', 'agent']);
+
+function normalizeUserRoleInput(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'user') return 'agent';
+    return ALLOWED_USER_ROLES.has(normalized) ? normalized : 'agent';
+}
+
+function normalizeUserActiveInput(value, fallback = 1) {
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    if (typeof value === 'number') return value > 0 ? 1 : 0;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return 1;
+        if (['0', 'false', 'no', 'nao', 'não', 'off'].includes(normalized)) return 0;
+    }
+    return fallback;
+}
+
+function sanitizeUserPayload(user) {
+    if (!user) return null;
+    return {
+        id: user.id,
+        uuid: user.uuid,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        is_active: Number(user.is_active) > 0 ? 1 : 0,
+        last_login_at: user.last_login_at,
+        created_at: user.created_at
+    };
+}
+
+app.get('/api/users', authenticate, async (req, res) => {
+    try {
+        const requesterRole = String(req.user?.role || '').toLowerCase();
+        const requesterId = Number(req.user?.id || 0);
+        const isAdmin = requesterRole === 'admin';
+
+        let users = [];
+        if (isAdmin) {
+            users = await User.listAll();
+        } else {
+            const me = await User.findById(requesterId);
+            users = me ? [me] : [];
+        }
+
+        res.json({
+            success: true,
+            users: (users || []).map(sanitizeUserPayload).filter(Boolean)
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Erro ao carregar usuários' });
+    }
+});
+
+app.post('/api/users', authenticate, async (req, res) => {
+    try {
+        const requesterRole = String(req.user?.role || '').toLowerCase();
+        if (requesterRole !== 'admin') {
+            return res.status(403).json({ success: false, error: 'Sem permissão para criar usuários' });
+        }
+
+        const { hashPassword } = require('./middleware/auth');
+        const name = String(req.body?.name || '').trim();
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        const password = String(req.body?.password || '');
+        const role = normalizeUserRoleInput(req.body?.role);
+
+        if (!name || !email || !password) {
+            return res.status(400).json({ success: false, error: 'Nome, e-mail e senha são obrigatórios' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ success: false, error: 'A senha deve ter pelo menos 6 caracteres' });
+        }
+
+        const existing = await User.findByEmail(email);
+        if (existing) {
+            return res.status(409).json({ success: false, error: 'E-mail já cadastrado' });
+        }
+
+        const created = await User.create({
+            name,
+            email,
+            password_hash: hashPassword(password),
+            role
+        });
+
+        const user = await User.findById(created.id);
+        res.json({ success: true, user: sanitizeUserPayload(user) });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Erro ao criar usuário' });
+    }
+});
+
+app.put('/api/users/:id', authenticate, async (req, res) => {
+    try {
+        const targetId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(targetId) || targetId <= 0) {
+            return res.status(400).json({ success: false, error: 'Usuário inválido' });
+        }
+
+        const requesterRole = String(req.user?.role || '').toLowerCase();
+        const requesterId = Number(req.user?.id || 0);
+        const isAdmin = requesterRole === 'admin';
+        const isSelf = requesterId === targetId;
+
+        if (!isAdmin && !isSelf) {
+            return res.status(403).json({ success: false, error: 'Sem permissão para editar este usuário' });
+        }
+
+        const current = await User.findById(targetId);
+        if (!current) {
+            return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
+        }
+
+        const payload = {};
+
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'name')) {
+            const name = String(req.body?.name || '').trim();
+            if (!name) {
+                return res.status(400).json({ success: false, error: 'Nome é obrigatório' });
+            }
+            payload.name = name;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'email')) {
+            const email = String(req.body?.email || '').trim().toLowerCase();
+            if (!email) {
+                return res.status(400).json({ success: false, error: 'E-mail é obrigatório' });
+            }
+            if (email !== String(current.email || '').toLowerCase()) {
+                const existing = await User.findByEmail(email);
+                if (existing && Number(existing.id) !== targetId) {
+                    return res.status(409).json({ success: false, error: 'E-mail já cadastrado' });
+                }
+            }
+            payload.email = email;
+        }
+
+        if (isAdmin && Object.prototype.hasOwnProperty.call(req.body || {}, 'role')) {
+            payload.role = normalizeUserRoleInput(req.body?.role);
+        }
+
+        if (isAdmin && Object.prototype.hasOwnProperty.call(req.body || {}, 'is_active')) {
+            payload.is_active = normalizeUserActiveInput(req.body?.is_active, Number(current.is_active) > 0 ? 1 : 0);
+            if (Number(current.id) === requesterId && Number(payload.is_active) === 0) {
+                return res.status(400).json({ success: false, error: 'Não é possível desativar o próprio usuário' });
+            }
+        }
+
+        await User.update(targetId, payload);
+        const updated = await User.findById(targetId);
+        res.json({ success: true, user: sanitizeUserPayload(updated) });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Erro ao atualizar usuário' });
+    }
+});
+
+app.post('/api/auth/change-password', authenticate, async (req, res) => {
+    try {
+        const userId = Number(req.user?.id || 0);
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Usuário não autenticado' });
+        }
+
+        const currentPassword = String(req.body?.currentPassword || '');
+        const newPassword = String(req.body?.newPassword || '');
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ success: false, error: 'Senha atual e nova senha são obrigatórias' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ success: false, error: 'A nova senha deve ter pelo menos 6 caracteres' });
+        }
+
+        const { verifyPassword, hashPassword } = require('./middleware/auth');
+        const user = await User.findByIdWithPassword(userId);
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
+        }
+
+        if (!verifyPassword(currentPassword, user.password_hash)) {
+            return res.status(400).json({ success: false, error: 'Senha atual inválida' });
+        }
+
+        await User.updatePassword(userId, hashPassword(newPassword));
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Erro ao alterar senha' });
+    }
+});
 
 // ============================================
 

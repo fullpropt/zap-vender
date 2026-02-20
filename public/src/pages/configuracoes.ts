@@ -44,11 +44,23 @@ type WhatsAppSessionRecord = {
     dispatch_weight?: number;
 };
 
+type ManagedUser = {
+    id: number;
+    uuid?: string;
+    name?: string;
+    email?: string;
+    role?: string;
+    is_active?: number | boolean;
+    last_login_at?: string | null;
+    created_at?: string | null;
+};
+
 let templatesCache: TemplateItem[] = [];
 let settingsTagsCache: SettingsTag[] = [];
 let contactFieldsCache: ContactField[] = [];
 let customContactFieldsCache: ContactField[] = [];
 let whatsappSessionsCache: WhatsAppSessionRecord[] = [];
+let usersCache: ManagedUser[] = [];
 
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', source: 'name', is_default: true, required: true, placeholder: 'Nome completo' },
@@ -93,6 +105,7 @@ function initConfiguracoes() {
     loadContactFields();
     loadTemplates();
     loadSettingsTags();
+    loadUsers();
     refreshWhatsAppAccounts();
     updateNewTemplateForm();
     const typeSelect = document.getElementById('newTemplateType') as HTMLSelectElement | null;
@@ -121,6 +134,8 @@ function showPanel(panelId: string) {
     document.getElementById(`panel-${panelId}`).classList.add('active');
     if (panelId === 'conexao') {
         refreshWhatsAppAccounts();
+    } else if (panelId === 'users') {
+        loadUsers();
     }
 }
 
@@ -1164,35 +1179,238 @@ function saveWhatsAppSettings() {
 
 function saveNotificationSettings() { showToast('success', 'Sucesso', 'Notificações salvas!'); }
 
-function addUser() {
+function normalizeUserRole(value: unknown) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'user') return 'agent';
+    if (normalized === 'admin' || normalized === 'supervisor') return normalized;
+    return 'agent';
+}
+
+function getUserRoleLabel(role: unknown) {
+    const normalized = normalizeUserRole(role);
+    if (normalized === 'admin') return 'Administrador';
+    if (normalized === 'supervisor') return 'Supervisor';
+    return 'Usuário';
+}
+
+function getUserRoleBadgeClass(role: unknown) {
+    const normalized = normalizeUserRole(role);
+    if (normalized === 'admin') return 'badge-primary';
+    if (normalized === 'supervisor') return 'badge-warning';
+    return 'badge-secondary';
+}
+
+function isManagedUserActive(user: ManagedUser) {
+    if (typeof user.is_active === 'boolean') return user.is_active;
+    return Number(user.is_active) > 0;
+}
+
+function getCurrentUserRoleFromToken() {
+    const token = sessionStorage.getItem('selfDashboardToken');
+    if (!token) return '';
+
+    try {
+        const parts = token.split('.');
+        if (parts.length < 2) return '';
+        const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = payloadBase64 + '='.repeat((4 - (payloadBase64.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        return String(payload?.role || '').trim().toLowerCase();
+    } catch {
+        return '';
+    }
+}
+
+function renderUsersTable() {
+    const tbody = document.getElementById('usersTableBody') as HTMLElement | null;
+    if (!tbody) return;
+
+    if (!usersCache.length) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="table-empty">
+                    <div class="table-empty-icon icon icon-empty icon-lg"></div>
+                    <p>Nenhum usuário encontrado</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = usersCache.map((user) => {
+        const active = isManagedUserActive(user);
+        const userId = Number(user.id) || 0;
+        return `
+            <tr data-user-id="${userId}">
+                <td>${escapeHtml(String(user.name || 'Sem nome'))}</td>
+                <td>${escapeHtml(String(user.email || '-'))}</td>
+                <td><span class="badge ${getUserRoleBadgeClass(user.role)}">${getUserRoleLabel(user.role)}</span></td>
+                <td><span class="badge ${active ? 'badge-success' : 'badge-secondary'}">${active ? 'Ativo' : 'Inativo'}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline" onclick="openEditUserModal(${userId})" title="Editar usuário">
+                        <span class="icon icon-edit icon-sm"></span>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function loadUsers() {
+    const tbody = document.getElementById('usersTableBody') as HTMLElement | null;
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="table-empty">
+                    <div class="table-empty-icon icon icon-empty icon-lg"></div>
+                    <p>Carregando usuários...</p>
+                </td>
+            </tr>
+        `;
+    }
+
+    try {
+        const response = await api.get('/api/users');
+        usersCache = Array.isArray(response?.users) ? response.users : [];
+        renderUsersTable();
+    } catch (error: any) {
+        usersCache = [];
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="table-empty">
+                        <div class="table-empty-icon icon icon-empty icon-lg"></div>
+                        <p>Não foi possível carregar os usuários</p>
+                    </td>
+                </tr>
+            `;
+        }
+        const message = String(error?.message || '').toLowerCase();
+        if (message.includes('permiss')) {
+            showToast('warning', 'Aviso', 'Sua conta não tem permissão para listar todos os usuários.');
+        }
+    }
+}
+
+function openEditUserModal(id: number) {
+    const userId = Number(id);
+    if (!Number.isFinite(userId) || userId <= 0) return;
+
+    const user = usersCache.find((item) => Number(item.id) === userId);
+    if (!user) {
+        showToast('warning', 'Aviso', 'Usuário não encontrado');
+        return;
+    }
+
+    const editUserId = document.getElementById('editUserId') as HTMLInputElement | null;
+    const editUserName = document.getElementById('editUserName') as HTMLInputElement | null;
+    const editUserEmail = document.getElementById('editUserEmail') as HTMLInputElement | null;
+    const editUserRole = document.getElementById('editUserRole') as HTMLSelectElement | null;
+    const editUserActive = document.getElementById('editUserActive') as HTMLSelectElement | null;
+
+    if (editUserId) editUserId.value = String(userId);
+    if (editUserName) editUserName.value = String(user.name || '');
+    if (editUserEmail) editUserEmail.value = String(user.email || '');
+    if (editUserRole) editUserRole.value = normalizeUserRole(user.role);
+    if (editUserActive) editUserActive.value = isManagedUserActive(user) ? '1' : '0';
+
+    const isAdmin = getCurrentUserRoleFromToken() === 'admin';
+    if (editUserRole) editUserRole.disabled = !isAdmin;
+    if (editUserActive) editUserActive.disabled = !isAdmin;
+
+    openModal('editUserModal');
+}
+
+async function updateUser() {
+    const editUserId = document.getElementById('editUserId') as HTMLInputElement | null;
+    const editUserName = document.getElementById('editUserName') as HTMLInputElement | null;
+    const editUserEmail = document.getElementById('editUserEmail') as HTMLInputElement | null;
+    const editUserRole = document.getElementById('editUserRole') as HTMLSelectElement | null;
+    const editUserActive = document.getElementById('editUserActive') as HTMLSelectElement | null;
+
+    const id = parseInt(editUserId?.value || '0', 10);
+    const name = String(editUserName?.value || '').trim();
+    const email = String(editUserEmail?.value || '').trim();
+
+    if (!id || !name || !email) {
+        showToast('error', 'Erro', 'Nome e e-mail são obrigatórios');
+        return;
+    }
+
+    const payload: Record<string, unknown> = { name, email };
+    const isAdmin = getCurrentUserRoleFromToken() === 'admin';
+    if (isAdmin) {
+        payload.role = normalizeUserRole(editUserRole?.value || 'agent');
+        payload.is_active = editUserActive?.value === '0' ? 0 : 1;
+    }
+
+    try {
+        await api.put(`/api/users/${id}`, payload);
+        closeModal('editUserModal');
+        await loadUsers();
+        showToast('success', 'Sucesso', 'Usuário atualizado!');
+    } catch (error: any) {
+        showToast('error', 'Erro', error?.message || 'Não foi possível atualizar o usuário');
+    }
+}
+
+async function addUser() {
     const name = (document.getElementById('newUserName') as HTMLInputElement | null)?.value.trim() || '';
     const email = (document.getElementById('newUserEmail') as HTMLInputElement | null)?.value.trim() || '';
     const password = (document.getElementById('newUserPassword') as HTMLInputElement | null)?.value || '';
-    const role = (document.getElementById('newUserRole') as HTMLSelectElement | null)?.value || '';
-    if (!name || !email || !password) { showToast('error', 'Erro', 'Preencha todos os campos'); return; }
-    const tbody = document.getElementById('usersTableBody') as HTMLElement | null;
-    if (!tbody) return;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${name}</td><td>${email}</td><td><span class="badge badge-${role === 'admin' ? 'primary' : 'secondary'}">${role === 'admin' ? 'Administrador' : 'Usuário'}</span></td><td><span class="badge badge-success">Ativo</span></td><td><button class="btn btn-sm btn-outline"><span class="icon icon-edit icon-sm"></span></button><button class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()"><span class="icon icon-delete icon-sm"></span></button></td>`;
-    tbody.appendChild(tr);
-    closeModal('addUserModal');
-    showToast('success', 'Sucesso', 'Usuário adicionado!');
+    const role = normalizeUserRole((document.getElementById('newUserRole') as HTMLSelectElement | null)?.value || 'agent');
+
+    if (!name || !email || !password) {
+        showToast('error', 'Erro', 'Preencha todos os campos');
+        return;
+    }
+
+    if (password.length < 6) {
+        showToast('error', 'Erro', 'A senha deve ter pelo menos 6 caracteres');
+        return;
+    }
+
+    try {
+        await api.post('/api/users', { name, email, password, role });
+        closeModal('addUserModal');
+        const newUserName = document.getElementById('newUserName') as HTMLInputElement | null;
+        const newUserEmail = document.getElementById('newUserEmail') as HTMLInputElement | null;
+        const newUserPassword = document.getElementById('newUserPassword') as HTMLInputElement | null;
+        const newUserRole = document.getElementById('newUserRole') as HTMLSelectElement | null;
+        if (newUserName) newUserName.value = '';
+        if (newUserEmail) newUserEmail.value = '';
+        if (newUserPassword) newUserPassword.value = '';
+        if (newUserRole) newUserRole.value = 'agent';
+        await loadUsers();
+        showToast('success', 'Sucesso', 'Usuário adicionado!');
+    } catch (error: any) {
+        showToast('error', 'Erro', error?.message || 'Não foi possível adicionar o usuário');
+    }
 }
 
-function changePassword() {
+async function changePassword() {
     const current = (document.getElementById('currentPassword') as HTMLInputElement | null)?.value || '';
     const newPass = (document.getElementById('newPassword') as HTMLInputElement | null)?.value || '';
     const confirm = (document.getElementById('confirmPassword') as HTMLInputElement | null)?.value || '';
     if (!current || !newPass || !confirm) { showToast('error', 'Erro', 'Preencha todos os campos'); return; }
     if (newPass !== confirm) { showToast('error', 'Erro', 'As senhas não conferem'); return; }
     if (newPass.length < 6) { showToast('error', 'Erro', 'A senha deve ter pelo menos 6 caracteres'); return; }
-    showToast('success', 'Sucesso', 'Senha alterada!');
-    const currentPassword = document.getElementById('currentPassword') as HTMLInputElement | null;
-    const newPassword = document.getElementById('newPassword') as HTMLInputElement | null;
-    const confirmPassword = document.getElementById('confirmPassword') as HTMLInputElement | null;
-    if (currentPassword) currentPassword.value = '';
-    if (newPassword) newPassword.value = '';
-    if (confirmPassword) confirmPassword.value = '';
+
+    try {
+        await api.post('/api/auth/change-password', {
+            currentPassword: current,
+            newPassword: newPass
+        });
+        showToast('success', 'Sucesso', 'Senha alterada!');
+        const currentPassword = document.getElementById('currentPassword') as HTMLInputElement | null;
+        const newPassword = document.getElementById('newPassword') as HTMLInputElement | null;
+        const confirmPassword = document.getElementById('confirmPassword') as HTMLInputElement | null;
+        if (currentPassword) currentPassword.value = '';
+        if (newPassword) newPassword.value = '';
+        if (confirmPassword) confirmPassword.value = '';
+    } catch (error: any) {
+        showToast('error', 'Erro', error?.message || 'Não foi possível alterar a senha');
+    }
 }
 
 function copyApiKey() {
@@ -1235,8 +1453,11 @@ const windowAny = window as Window & {
     createSettingsTag?: () => Promise<void>;
     updateSettingsTag?: (id: number) => Promise<void>;
     deleteSettingsTag?: (id: number) => Promise<void>;
-    addUser?: () => void;
-    changePassword?: () => void;
+    loadUsers?: () => Promise<void>;
+    addUser?: () => Promise<void>;
+    openEditUserModal?: (id: number) => void;
+    updateUser?: () => Promise<void>;
+    changePassword?: () => Promise<void>;
     copyApiKey?: () => void;
     regenerateApiKey?: () => void;
     testWebhook?: () => void;
@@ -1267,7 +1488,10 @@ windowAny.deleteContactField = deleteContactField;
 windowAny.createSettingsTag = createSettingsTag;
 windowAny.updateSettingsTag = updateSettingsTag;
 windowAny.deleteSettingsTag = deleteSettingsTag;
+windowAny.loadUsers = loadUsers;
 windowAny.addUser = addUser;
+windowAny.openEditUserModal = openEditUserModal;
+windowAny.updateUser = updateUser;
 windowAny.changePassword = changePassword;
 windowAny.copyApiKey = copyApiKey;
 windowAny.regenerateApiKey = regenerateApiKey;

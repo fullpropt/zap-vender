@@ -2111,6 +2111,10 @@ const User = {
     async findById(id) {
         return await queryOne('SELECT id, uuid, name, email, role, avatar_url, is_active, last_login_at, created_at FROM users WHERE id = ?', [id]);
     },
+
+    async findByIdWithPassword(id) {
+        return await queryOne('SELECT * FROM users WHERE id = ?', [id]);
+    },
     
     async findByEmail(email) {
         return await queryOne('SELECT * FROM users WHERE email = ?', [email]);
@@ -2122,6 +2126,55 @@ const User = {
     
     async list() {
         return await query('SELECT id, uuid, name, email, role, avatar_url, is_active, last_login_at, created_at FROM users WHERE is_active = 1 ORDER BY name ASC');
+    },
+
+    async listAll() {
+        return await query('SELECT id, uuid, name, email, role, avatar_url, is_active, last_login_at, created_at FROM users ORDER BY name ASC');
+    },
+
+    async update(id, data) {
+        const updates = [];
+        const params = [];
+
+        if (Object.prototype.hasOwnProperty.call(data, 'name')) {
+            const nextName = deriveUserName(data.name, data.email);
+            updates.push('name = ?');
+            params.push(nextName);
+        }
+
+        if (Object.prototype.hasOwnProperty.call(data, 'email')) {
+            updates.push('email = ?');
+            params.push(String(data.email || '').trim().toLowerCase());
+        }
+
+        if (Object.prototype.hasOwnProperty.call(data, 'role')) {
+            updates.push('role = ?');
+            params.push(String(data.role || '').trim().toLowerCase() || 'agent');
+        }
+
+        if (Object.prototype.hasOwnProperty.call(data, 'is_active')) {
+            updates.push('is_active = ?');
+            params.push(Number(data.is_active) > 0 ? 1 : 0);
+        }
+
+        if (!updates.length) {
+            return { changes: 0 };
+        }
+
+        updates.push('updated_at = CURRENT_TIMESTAMP');
+        params.push(id);
+
+        return await run(
+            `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
+            params
+        );
+    },
+
+    async updatePassword(id, passwordHash) {
+        return await run(
+            'UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [passwordHash, id]
+        );
     }
 };
 

@@ -333,6 +333,68 @@ export default function Inbox() {
             display: inline-block;
             margin-left: 5px;
         }
+        .message-content {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .message-text,
+        .message-caption {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .message-media {
+            max-width: 100%;
+        }
+        .message-media-image {
+            display: block;
+            width: 100%;
+            max-width: 260px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+        }
+        .chat-messages .message.sent .message-media-image {
+            border-color: rgba(var(--primary-rgb), 0.35);
+        }
+        .message-media-audio {
+            display: block;
+            width: min(260px, 100%);
+            max-width: 100%;
+        }
+        .message-media-video {
+            display: block;
+            width: 100%;
+            max-width: 280px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: #000;
+        }
+        .chat-messages .message.sent .message-media-video {
+            border-color: rgba(var(--primary-rgb), 0.35);
+        }
+        .message-document-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            max-width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: rgba(15, 23, 42, 0.12);
+            color: inherit;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .message-document-link span:last-child {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .chat-messages .message.sent .message-document-link {
+            border-color: rgba(var(--primary-rgb), 0.35);
+            background: rgba(var(--primary-rgb), 0.16);
+        }
         .chat-input {
             background: var(--surface);
             border-top: 1px solid var(--border-color);

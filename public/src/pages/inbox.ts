@@ -30,6 +30,8 @@ type ChatMessage = {
     created_at: string;
     media_type?: string;
     media_url?: string;
+    media_mime_type?: string;
+    media_filename?: string;
 };
 
 type ConversationsResponse = { conversations?: Array<Record<string, any>> };
@@ -614,12 +616,20 @@ function initSocket() {
                 currentConversation &&
                 (data.conversationId === currentConversation.id || data.leadId === currentConversation.leadId);
             if (isCurrent) {
+                const mediaType = String(data.mediaType || data.media_type || 'text');
+                const mediaUrl = data.mediaUrl || data.media_url || null;
+                const mediaMimeType = data.mediaMimeType || data.media_mime_type || null;
+                const mediaFilename = data.mediaFilename || data.media_filename || null;
                 messages.push({
                     id: data.id || Date.now(),
                     content: data.text || '',
                     direction: data.isFromMe ? 'outgoing' : 'incoming',
                     status: data.status || (data.isFromMe ? 'sent' : 'received'),
-                    created_at: new Date(data.timestamp || Date.now()).toISOString()
+                    created_at: new Date(data.timestamp || Date.now()).toISOString(),
+                    media_type: mediaType,
+                    media_url: mediaUrl,
+                    media_mime_type: mediaMimeType,
+                    media_filename: mediaFilename
                 });
                 const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
                 renderMessagesInto(chatMessages);
@@ -846,7 +856,9 @@ async function loadMessages(leadId: number, conversationId?: number, sessionId?:
             direction: normalizeDirection(m),
             created_at: m.created_at || m.sent_at || new Date().toISOString(),
             media_type: m.media_type || 'text',
-            media_url: m.media_url || null
+            media_url: m.media_url || null,
+            media_mime_type: m.media_mime_type || null,
+            media_filename: m.media_filename || null
         }));
     } catch (error) {
         messages = [];
@@ -984,14 +996,14 @@ function selectQuickReply(id: number) {
 async function sendQuickReplyAudio(quickReply: TemplateItem) {
     if (!currentConversation) return;
     if (!quickReply.media_url) {
-        showToast('warning', 'Aviso', 'Resposta rápida de áudio sem arquivo');
+        showToast('warning', 'Aviso', 'Resposta rapida de audio sem arquivo');
         return;
     }
     const mediaUrl = quickReply.media_url;
 
     const newMessage: ChatMessage = {
         id: Date.now(),
-        content: 'Áudio',
+        content: '[audio]',
         direction: 'outgoing',
         status: 'pending',
         created_at: new Date().toISOString(),
@@ -1018,7 +1030,7 @@ async function sendQuickReplyAudio(quickReply: TemplateItem) {
     } catch (error) {
         newMessage.status = 'failed';
         renderMessagesInto(chatMessages);
-        showToast('error', 'Erro', 'Não foi possível enviar o áudio');
+        showToast('error', 'Erro', 'Nao foi possivel enviar o audio');
     }
 }
 
@@ -1027,6 +1039,98 @@ function getMediaUrl(url?: string | null) {
     if (url.startsWith('http')) return url;
     const base = (window as any).APP?.socketUrl || '';
     return `${base}${url}`;
+}
+
+function isMediaPreviewText(value?: string | null) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return true;
+    return [
+        '[imagem]',
+        '[video]',
+        '[audio]',
+        '[documento]',
+        '[sticker]',
+        '[contato]',
+        '[localizacao]',
+        '[mensagem]'
+    ].includes(normalized);
+}
+
+function resolveDocumentLabel(message: ChatMessage) {
+    const explicit = String(message.media_filename || '').trim();
+    if (explicit) return explicit;
+
+    const rawUrl = String(message.media_url || '').trim();
+    if (rawUrl) {
+        try {
+            const pathname = rawUrl.startsWith('http')
+                ? new URL(rawUrl).pathname
+                : rawUrl;
+            const candidate = decodeURIComponent(pathname.split('/').pop() || '').trim();
+            if (candidate) return candidate;
+        } catch (error) {
+            const fallback = rawUrl.split('/').pop() || '';
+            if (fallback) return fallback;
+        }
+    }
+
+    return 'documento';
+}
+
+function renderMessageContent(message: ChatMessage) {
+    const mediaType = String(message.media_type || 'text').toLowerCase();
+    const mediaUrl = getMediaUrl(message.media_url);
+    const text = String(message.content || '');
+    const hasReadableText = Boolean(text.trim()) && !isMediaPreviewText(text);
+    const safeText = escapeHtml(text);
+
+    if (mediaType === 'image' && mediaUrl) {
+        const safeUrl = escapeHtml(mediaUrl);
+        return `
+            <div class="message-media">
+                <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">
+                    <img class="message-media-image" src="${safeUrl}" alt="Imagem recebida" loading="lazy" />
+                </a>
+            </div>
+            ${hasReadableText ? `<div class="message-caption">${safeText}</div>` : ''}
+        `;
+    }
+
+    if (mediaType === 'audio' && mediaUrl) {
+        const safeUrl = escapeHtml(mediaUrl);
+        return `
+            <div class="message-media">
+                <audio controls preload="metadata" class="message-media-audio" src="${safeUrl}"></audio>
+            </div>
+            ${hasReadableText ? `<div class="message-caption">${safeText}</div>` : ''}
+        `;
+    }
+
+    if (mediaType === 'video' && mediaUrl) {
+        const safeUrl = escapeHtml(mediaUrl);
+        return `
+            <div class="message-media">
+                <video controls preload="metadata" class="message-media-video" src="${safeUrl}"></video>
+            </div>
+            ${hasReadableText ? `<div class="message-caption">${safeText}</div>` : ''}
+        `;
+    }
+
+    if (mediaType === 'document' && mediaUrl) {
+        const safeUrl = escapeHtml(mediaUrl);
+        const docLabel = escapeHtml(resolveDocumentLabel(message));
+        return `
+            <div class="message-media">
+                <a class="message-document-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer" download>
+                    <span class="icon icon-attachment icon-sm"></span>
+                    <span>${docLabel}</span>
+                </a>
+            </div>
+            ${hasReadableText ? `<div class="message-caption">${safeText}</div>` : ''}
+        `;
+    }
+
+    return `<div class="message-text">${safeText}</div>`;
 }
 
 function renderChat() {
@@ -1089,11 +1193,7 @@ function renderMessages() {
     }
 
     return messages.map(m => {
-        let contentHtml = escapeHtml(m.content || '');
-        if (m.media_type === 'audio' && m.media_url) {
-            const audioUrl = getMediaUrl(m.media_url);
-            contentHtml = `<audio controls preload="metadata" src="${audioUrl}"></audio>`;
-        }
+        const contentHtml = renderMessageContent(m);
 
         return `
         <div class="message ${m.direction === 'outgoing' ? 'sent' : 'received'}">
