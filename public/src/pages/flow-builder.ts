@@ -55,6 +55,7 @@ let nodes: FlowNode[] = [];
 let edges: Edge[] = [];
 let selectedNode: FlowNode | null = null;
 let currentFlowId: number | null = null;
+let currentFlowIsActive = true;
 let zoom = 1;
 let pan = { x: 0, y: 0 };
 let isDragging = false;
@@ -312,6 +313,47 @@ function buildAuthHeaders(includeJson = false): Record<string, string> {
     return headers;
 }
 
+function toBoolean(value: unknown, fallback = true) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value > 0;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    }
+    return fallback;
+}
+
+function setCurrentFlowActive(value: unknown) {
+    currentFlowIsActive = toBoolean(value, true);
+    renderFlowStatusControls();
+}
+
+function renderFlowStatusControls() {
+    const statusSelect = document.getElementById('flowStatus') as HTMLSelectElement | null;
+    if (statusSelect) {
+        statusSelect.value = currentFlowIsActive ? '1' : '0';
+    }
+
+    const toggleBtn = document.getElementById('flowStatusToggleBtn') as HTMLButtonElement | null;
+    if (toggleBtn) {
+        toggleBtn.textContent = currentFlowIsActive ? 'Desativar' : 'Ativar';
+        toggleBtn.classList.toggle('status-active', currentFlowIsActive);
+        toggleBtn.classList.toggle('status-inactive', !currentFlowIsActive);
+        toggleBtn.title = currentFlowIsActive ? 'Clique para desativar o fluxo' : 'Clique para ativar o fluxo';
+    }
+}
+
+function updateFlowStatusFromSelect() {
+    const statusSelect = document.getElementById('flowStatus') as HTMLSelectElement | null;
+    if (!statusSelect) return;
+    setCurrentFlowActive(statusSelect.value === '1');
+}
+
+function toggleFlowActive() {
+    setCurrentFlowActive(!currentFlowIsActive);
+}
+
 // Inicializacao
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -325,6 +367,7 @@ function initFlowBuilder() {
     if (hasInitialized) return;
     hasInitialized = true;
 
+    setCurrentFlowActive(true);
     renderFlowVariableTags();
     loadFlowVariableFields();
     setupDragAndDrop();
@@ -753,8 +796,8 @@ function renderProperties() {
                         <div class="intent-routes-editor">
                             ${routes.map((route, index) => `
                                 <div class="intent-route-row">
-                                    <input type="text" value="${escapeHtml(route.label)}" placeholder="Nome da saída" onchange="updateIntentRoute(${index}, 'label', this.value)">
-                                    <input type="text" value="${escapeHtml(route.phrases)}" placeholder="Frases separadas por vírgula" onchange="updateIntentRoute(${index}, 'phrases', this.value)">
+                                    <input class="intent-route-name-input" type="text" value="${escapeHtml(route.label)}" title="${escapeHtml(route.label)}" placeholder="Nome da saída" onchange="updateIntentRoute(${index}, 'label', this.value)">
+                                    <input class="intent-route-phrases-input" type="text" value="${escapeHtml(route.phrases)}" title="${escapeHtml(route.phrases)}" placeholder="Frases gatilho (separe por vírgula)" onchange="updateIntentRoute(${index}, 'phrases', this.value)">
                                     <button class="remove-btn" onclick="removeIntentRoute(${index})">×</button>
                                 </div>
                             `).join('')}
@@ -1325,6 +1368,7 @@ function resetEditorState() {
     nodes = [];
     edges = [];
     currentFlowId = null;
+    currentFlowIsActive = true;
     zoom = 1;
     pan = { x: 0, y: 0 };
 
@@ -1345,6 +1389,7 @@ function resetEditorState() {
     const flowName = document.getElementById('flowName') as HTMLInputElement | null;
     if (flowName) flowName.value = '';
 
+    renderFlowStatusControls();
     applyZoom();
 }
 
@@ -1432,7 +1477,7 @@ async function saveFlow() {
         trigger_value: triggerPayload.triggerValue,
         nodes,
         edges,
-        is_active: 1
+        is_active: currentFlowIsActive ? 1 : 0
     };
 
     try {
@@ -1449,6 +1494,7 @@ async function saveFlow() {
 
         if (result.success) {
             currentFlowId = result.flow.id;
+            setCurrentFlowActive(result.flow?.is_active);
             alert('Fluxo salvo com sucesso!');
         } else {
             alert('Erro ao salvar: ' + result.error);
@@ -1504,7 +1550,9 @@ function renderFlowsList(flows: FlowSummary[]) {
         return triggerType || 'manual';
     };
 
-    container.innerHTML = flows.map(flow => `
+    container.innerHTML = flows.map(flow => {
+        const isActive = toBoolean(flow.is_active, true);
+        return `
         <div class="flow-list-item" onclick="loadFlow(${flow.id})">
             <div class="icon icon-flows"></div>
             <div class="info">
@@ -1512,12 +1560,63 @@ function renderFlowsList(flows: FlowSummary[]) {
                 <div class="meta">Gatilho: ${getTriggerLabel(flow.trigger_type)} | ${flow.nodes?.length || 0} blocos</div>
             </div>
             <div class="flow-list-actions">
+                <button class="flow-list-toggle ${isActive ? 'is-active' : 'is-inactive'}" title="${isActive ? 'Desativar fluxo' : 'Ativar fluxo'}" onclick="toggleFlowActivation(${flow.id}, event)">
+                    ${isActive ? 'Desativar' : 'Ativar'}
+                </button>
                 <button class="flow-list-duplicate" title="Duplicar fluxo" onclick="duplicateFlow(${flow.id}, event)">Duplicar</button>
                 <button class="flow-list-delete" title="Descartar fluxo" onclick="discardFlow(${flow.id}, event)">Descartar</button>
             </div>
-            <span class="status ${flow.is_active ? 'active' : 'inactive'}">${flow.is_active ? 'Ativo' : 'Inativo'}</span>
+            <span class="status ${isActive ? 'active' : 'inactive'}">${isActive ? 'Ativo' : 'Inativo'}</span>
         </div>
-    `).join('');
+    `;
+    }).join('');
+}
+
+async function toggleFlowActivation(id: number, event?: Event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    const targetFlow = (await (async () => {
+        try {
+            const response = await fetch(`/api/flows/${id}`, {
+                headers: buildAuthHeaders(false)
+            });
+            const result = await response.json();
+            if (!result.success) return null;
+            return result.flow as FlowSummary | null;
+        } catch {
+            return null;
+        }
+    })());
+
+    if (!targetFlow) {
+        alert('Não foi possível localizar o fluxo para alterar status.');
+        return;
+    }
+
+    const nextActive = !toBoolean(targetFlow.is_active, true);
+
+    try {
+        const response = await fetch(`/api/flows/${id}`, {
+            method: 'PUT',
+            headers: buildAuthHeaders(true),
+            body: JSON.stringify({ is_active: nextActive ? 1 : 0 })
+        });
+        const result = await response.json();
+
+        if (!result.success) {
+            alert('Erro ao atualizar status: ' + (result.error || 'Falha inesperada'));
+            return;
+        }
+
+        if (currentFlowId === id) {
+            setCurrentFlowActive(nextActive);
+        }
+
+        await loadFlows();
+    } catch (error) {
+        alert('Erro ao atualizar status: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+    }
 }
 
 async function duplicateFlow(id: number, event?: Event) {
@@ -1543,6 +1642,7 @@ async function duplicateFlow(id: number, event?: Event) {
         edges = flow.edges || [];
         normalizeLoadedFlowData();
         currentFlowId = null;
+        setCurrentFlowActive(flow?.is_active);
 
         const flowName = document.getElementById('flowName') as HTMLInputElement | null;
         if (flowName) flowName.value = `${flow.name || 'Fluxo'} (copia)`;
@@ -1606,6 +1706,7 @@ async function loadFlow(id: number) {
             nodes = result.flow.nodes || [];
             edges = result.flow.edges || [];
             normalizeLoadedFlowData();
+            setCurrentFlowActive(result.flow?.is_active);
             
             const flowName = document.getElementById('flowName') as HTMLInputElement | null;
             if (flowName) flowName.value = result.flow.name;
@@ -1649,6 +1750,8 @@ const windowAny = window as Window & {
     createNewFlow?: () => void;
     clearCanvas?: () => void;
     saveFlow?: () => Promise<void>;
+    toggleFlowActive?: () => void;
+    updateFlowStatusFromSelect?: () => void;
     zoomIn?: () => void;
     zoomOut?: () => void;
     resetZoom?: () => void;
@@ -1664,6 +1767,7 @@ const windowAny = window as Window & {
     updateCondition?: (index: number, key: 'value' | 'next', value: string) => void;
     deleteNode?: (id: string) => void;
     loadFlow?: (id: number) => Promise<void>;
+    toggleFlowActivation?: (id: number, event?: Event) => Promise<void>;
     duplicateFlow?: (id: number, event?: Event) => Promise<void>;
     discardFlow?: (id: number, event?: Event) => Promise<void>;
     closeFlowsModal?: () => void;
@@ -1673,6 +1777,8 @@ windowAny.openFlowsModal = openFlowsModal;
 windowAny.createNewFlow = createNewFlow;
 windowAny.clearCanvas = clearCanvas;
 windowAny.saveFlow = saveFlow;
+windowAny.toggleFlowActive = toggleFlowActive;
+windowAny.updateFlowStatusFromSelect = updateFlowStatusFromSelect;
 windowAny.zoomIn = zoomIn;
 windowAny.zoomOut = zoomOut;
 windowAny.resetZoom = resetZoom;
@@ -1688,6 +1794,7 @@ windowAny.removeCondition = removeCondition;
 windowAny.updateCondition = updateCondition;
 windowAny.deleteNode = deleteNode;
 windowAny.loadFlow = loadFlow;
+windowAny.toggleFlowActivation = toggleFlowActivation;
 windowAny.duplicateFlow = duplicateFlow;
 windowAny.discardFlow = discardFlow;
 windowAny.closeFlowsModal = closeFlowsModal;

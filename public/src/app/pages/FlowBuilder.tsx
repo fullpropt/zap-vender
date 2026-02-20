@@ -8,6 +8,8 @@ type FlowBuilderGlobals = {
   createNewFlow?: () => void;
   clearCanvas?: () => void;
   saveFlow?: () => void;
+  toggleFlowActive?: () => void;
+  updateFlowStatusFromSelect?: () => void;
   zoomIn?: () => void;
   zoomOut?: () => void;
   resetZoom?: () => void;
@@ -650,6 +652,39 @@ export default function FlowBuilder() {
         .toolbar-btn.secondary:hover {
             background: var(--border);
         }
+
+        .toolbar-status-select {
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--dark);
+            background: white;
+            min-width: 110px;
+        }
+
+        .toolbar-btn.status-active {
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            background: rgba(239, 68, 68, 0.08);
+            color: #b91c1c;
+        }
+
+        .toolbar-btn.status-active:hover {
+            background: rgba(239, 68, 68, 0.16);
+            border-color: rgba(239, 68, 68, 0.5);
+        }
+
+        .toolbar-btn.status-inactive {
+            border: 1px solid rgba(16, 185, 129, 0.35);
+            background: rgba(16, 185, 129, 0.1);
+            color: #047857;
+        }
+
+        .toolbar-btn.status-inactive:hover {
+            background: rgba(16, 185, 129, 0.18);
+            border-color: rgba(16, 185, 129, 0.45);
+        }
         
         /* Zoom Controls */
         .zoom-controls {
@@ -722,15 +757,28 @@ export default function FlowBuilder() {
         .intent-routes-editor {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
             margin-top: 12px;
         }
 
         .intent-route-row {
             display: grid;
-            grid-template-columns: 1fr 1.2fr 32px;
-            gap: 8px;
+            grid-template-columns: 1fr 32px;
+            grid-template-areas:
+                "name remove"
+                "phrases phrases";
+            gap: 6px 8px;
             align-items: center;
+        }
+
+        .intent-route-name-input {
+            grid-area: name;
+            min-width: 0;
+        }
+
+        .intent-route-phrases-input {
+            grid-area: phrases;
+            min-width: 0;
         }
         
         .condition-row {
@@ -747,12 +795,16 @@ export default function FlowBuilder() {
         .condition-row .remove-btn,
         .intent-route-row .remove-btn {
             width: 32px;
-            height: 32px;
+            height: 36px;
             border: none;
             background: rgba(239, 68, 68, 0.1);
             color: var(--danger);
             border-radius: 6px;
             cursor: pointer;
+        }
+
+        .intent-route-row .remove-btn {
+            grid-area: remove;
         }
         
         .add-condition-btn {
@@ -915,6 +967,40 @@ export default function FlowBuilder() {
         .flow-list-duplicate:hover {
             background: rgba(59, 130, 246, 0.16);
             border-color: rgba(59, 130, 246, 0.5);
+        }
+
+        .flow-list-toggle {
+            border: 1px solid rgba(100, 116, 139, 0.35);
+            background: rgba(148, 163, 184, 0.12);
+            color: #334155;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 6px 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .flow-list-toggle.is-active {
+            border-color: rgba(239, 68, 68, 0.35);
+            background: rgba(239, 68, 68, 0.08);
+            color: #b91c1c;
+        }
+
+        .flow-list-toggle.is-active:hover {
+            background: rgba(239, 68, 68, 0.16);
+            border-color: rgba(239, 68, 68, 0.5);
+        }
+
+        .flow-list-toggle.is-inactive {
+            border-color: rgba(16, 185, 129, 0.35);
+            background: rgba(16, 185, 129, 0.12);
+            color: #047857;
+        }
+
+        .flow-list-toggle.is-inactive:hover {
+            background: rgba(16, 185, 129, 0.2);
+            border-color: rgba(16, 185, 129, 0.48);
         }
 
         .flow-list-item .status {
@@ -1157,9 +1243,16 @@ export default function FlowBuilder() {
                       </div>
                   </div>
                   
-                  <div className="flow-canvas" id="flowCanvas">
-                      <div className="flow-toolbar">
+                      <div className="flow-canvas" id="flowCanvas">
+                          <div className="flow-toolbar">
                           <input type="text" id="flowName" placeholder="Nome do fluxo" style={{ border: '2px solid var(--border)', borderRadius: '8px', padding: '8px 12px', width: '200px' }} />
+                          <select id="flowStatus" className="toolbar-status-select" defaultValue="1" onChange={() => globals.updateFlowStatusFromSelect?.()}>
+                              <option value="1">Ativo</option>
+                              <option value="0">Inativo</option>
+                          </select>
+                          <button id="flowStatusToggleBtn" className="toolbar-btn secondary status-active" onClick={() => globals.toggleFlowActive?.()}>
+                              Desativar
+                          </button>
                           <button className="toolbar-btn secondary" onClick={() => globals.clearCanvas?.()}><span className="icon icon-delete icon-sm"></span> Limpar</button>
                           <button className="toolbar-btn primary" onClick={() => globals.saveFlow?.()}><span className="icon icon-save icon-sm"></span> Salvar</button>
                       </div>
