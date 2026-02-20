@@ -359,6 +359,27 @@ function renderFlowStatusControls() {
     if (statusSelect) {
         statusSelect.value = currentFlowIsActive ? '1' : '0';
     }
+    renderCurrentFlowStatusIndicator();
+}
+
+function renderCurrentFlowStatusIndicator() {
+    const statusDisplay = document.getElementById('currentFlowStatusDisplay') as HTMLElement | null;
+    if (!statusDisplay) return;
+
+    if (!currentFlowId) {
+        statusDisplay.textContent = 'Não salvo';
+        statusDisplay.className = 'flow-name-highlight-status draft';
+        return;
+    }
+
+    if (currentFlowIsActive) {
+        statusDisplay.textContent = 'Ativo';
+        statusDisplay.className = 'flow-name-highlight-status active';
+        return;
+    }
+
+    statusDisplay.textContent = 'Inativo';
+    statusDisplay.className = 'flow-name-highlight-status inactive';
 }
 
 function renderCurrentFlowName() {
@@ -367,15 +388,17 @@ function renderCurrentFlowName() {
 
     const name = String(currentFlowName || '').trim();
     if (name) {
-        flowNameDisplay.textContent = `Fluxo atual: ${name}`;
+        flowNameDisplay.textContent = name;
         flowNameDisplay.title = name;
+        renderCurrentFlowStatusIndicator();
         return;
     }
 
     flowNameDisplay.textContent = currentFlowId
-        ? 'Fluxo atual: Sem nome'
-        : 'Fluxo atual: Novo fluxo (não salvo)';
+        ? 'Sem nome'
+        : 'Novo fluxo (não salvo)';
     flowNameDisplay.title = '';
+    renderCurrentFlowStatusIndicator();
 }
 
 function updateFlowStatusFromSelect() {

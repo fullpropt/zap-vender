@@ -97,19 +97,77 @@ export default function FlowBuilder() {
             margin-top: 6px;
         }
 
-        .flow-builder-react .header-title .flow-name-indicator {
-            display: inline-block;
-            margin-top: 8px;
-            padding: 4px 10px;
-            border-radius: 999px;
-            border: 1px solid rgba(159, 176, 200, 0.32);
-            color: #c5d3e8;
-            background: rgba(15, 23, 42, 0.35);
-            font-size: 12px;
-            max-width: min(520px, 100%);
+        .flow-builder-react .header-title .flow-name-highlight {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(var(--primary-rgb), 0.28);
+            border-left: 3px solid rgba(var(--primary-rgb), 0.85);
+            background: linear-gradient(
+                90deg,
+                rgba(var(--primary-rgb), 0.08) 0%,
+                rgba(15, 23, 42, 0.22) 38%,
+                rgba(15, 23, 42, 0.2) 100%
+            );
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            max-width: min(620px, 100%);
+        }
+
+        .flow-builder-react .header-title .flow-name-highlight-content {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .flow-builder-react .header-title .flow-name-highlight-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: rgba(var(--primary-rgb), 0.9);
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .flow-builder-react .header-title .flow-name-highlight-name {
+            font-size: 14px;
+            color: #e7edf7;
+            font-weight: 700;
+            line-height: 1.2;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .flow-builder-react .header-title .flow-name-highlight-status {
+            border-radius: 999px;
+            border: 1px solid rgba(var(--primary-rgb), 0.42);
+            background: rgba(var(--primary-rgb), 0.1);
+            color: #d8f4e6;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .flow-builder-react .header-title .flow-name-highlight-status.active {
+            border-color: rgba(var(--primary-rgb), 0.5);
+            background: rgba(var(--primary-rgb), 0.18);
+            color: #eafff3;
+        }
+
+        .flow-builder-react .header-title .flow-name-highlight-status.inactive {
+            border-color: rgba(148, 163, 184, 0.42);
+            background: rgba(15, 23, 42, 0.24);
+            color: #cbd5e1;
+        }
+
+        .flow-builder-react .header-title .flow-name-highlight-status.draft {
+            border-color: rgba(var(--primary-rgb), 0.32);
+            background: rgba(15, 23, 42, 0.24);
+            color: #cbd5e1;
         }
 
         .flow-builder-react .header-actions {
@@ -1113,6 +1171,17 @@ export default function FlowBuilder() {
                 overflow: auto;
                 padding: 16px 12px;
             }
+            .flow-builder-react .header-title .flow-name-highlight {
+                padding: 8px 10px;
+                gap: 8px;
+            }
+            .flow-builder-react .header-title .flow-name-highlight-name {
+                font-size: 13px;
+            }
+            .flow-builder-react .header-title .flow-name-highlight-status {
+                font-size: 10px;
+                padding: 3px 8px;
+            }
             .flow-list-item {
                 flex-wrap: wrap;
                 gap: 10px;
@@ -1193,7 +1262,13 @@ export default function FlowBuilder() {
                   <div className="header-title">
                       <h1><span className="icon icon-flows icon-sm"></span> Construtor de Fluxos</h1>
                       <p>Crie automações visuais para suas conversas</p>
-                      <span className="flow-name-indicator" id="currentFlowNameDisplay">Fluxo atual: Novo fluxo (não salvo)</span>
+                      <div className="flow-name-highlight">
+                          <div className="flow-name-highlight-content">
+                              <div className="flow-name-highlight-label">Fluxo atual</div>
+                              <div className="flow-name-highlight-name" id="currentFlowNameDisplay">Novo fluxo (não salvo)</div>
+                          </div>
+                          <span className="flow-name-highlight-status draft" id="currentFlowStatusDisplay">Não salvo</span>
+                      </div>
                   </div>
                   <div className="header-actions">
                       <button className="toolbar-btn secondary" onClick={() => globals.openFlowsModal?.()}>
