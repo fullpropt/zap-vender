@@ -67,6 +67,9 @@ let selectedNode: FlowNode | null = null;
 let currentFlowId: number | null = null;
 let currentFlowName = '';
 let currentFlowIsActive = true;
+let flowsCache: FlowSummary[] = [];
+let renamingFlowId: number | null = null;
+let renamingFlowDraft = '';
 let zoom = 1;
 let pan = { x: 0, y: 0 };
 let isDragging = false;
@@ -1805,6 +1808,12 @@ function renderFlowsError(message: string) {
 function renderFlowsList(flows: FlowSummary[]) {
     const container = document.getElementById('flowsList') as HTMLElement | null;
     if (!container) return;
+    flowsCache = Array.isArray(flows) ? [...flows] : [];
+
+    if (renamingFlowId !== null && !flowsCache.some((flow) => Number(flow.id) === Number(renamingFlowId))) {
+        renamingFlowId = null;
+        renamingFlowDraft = '';
+    }
 
     if (flows.length === 0) {
         container.innerHTML = '<p class="flow-list-empty">Nenhum fluxo criado ainda. Crie um novo para começar.</p>';
@@ -1821,19 +1830,42 @@ function renderFlowsList(flows: FlowSummary[]) {
     container.innerHTML = flows.map(flow => {
         const isActive = toBoolean(flow.is_active, true);
         const isCurrent = Number(flow.id) === Number(currentFlowId);
+        const isRenaming = Number(flow.id) === Number(renamingFlowId);
         const flowName = String(flow.name || '').trim() || 'Sem nome';
         const escapedFlowName = escapeHtml(flowName);
         const encodedName = encodeURIComponent(flowName);
+        const inputValue = escapeHtml(renamingFlowDraft);
         return `
         <div class="flow-list-item ${isCurrent ? 'is-current' : ''}" onclick="loadFlow(${flow.id})">
             <div class="icon icon-flows"></div>
             <div class="info">
-                <div class="name-row">
-                    <div class="name">${escapedFlowName}</div>
-                    <button class="flow-inline-icon" title="Editar nome" onclick="renameFlow(${flow.id}, decodeURIComponent('${encodedName}'), event)">
-                        <span class="icon icon-edit icon-sm"></span>
-                    </button>
-                </div>
+                ${isRenaming
+                    ? `
+                        <div class="name-row name-row-editing" onclick="event.stopPropagation()">
+                            <input
+                                type="text"
+                                id="flowRenameInput-${flow.id}"
+                                class="flow-inline-name-input"
+                                value="${inputValue}"
+                                oninput="updateRenameFlowDraft(this.value)"
+                                onkeydown="handleRenameFlowKeydown(${flow.id}, event)"
+                                onclick="event.stopPropagation()"
+                            />
+                            <div class="flow-inline-actions">
+                                <button class="flow-inline-icon flow-inline-icon-save" title="Salvar nome" onclick="saveFlowRenameInline(${flow.id}, event)">✓</button>
+                                <button class="flow-inline-icon flow-inline-icon-cancel" title="Cancelar edição" onclick="cancelRenameFlow(event)">×</button>
+                            </div>
+                        </div>
+                    `
+                    : `
+                        <div class="name-row">
+                            <div class="name">${escapedFlowName}</div>
+                            <button class="flow-inline-icon" title="Editar nome" onclick="renameFlow(${flow.id}, decodeURIComponent('${encodedName}'), event)">
+                                <span class="icon icon-edit icon-sm"></span>
+                            </button>
+                        </div>
+                    `
+                }
                 <div class="meta">Gatilho: ${getTriggerLabel(flow.trigger_type)} | ${flow.nodes?.length || 0} blocos | ${isActive ? 'Ativo' : 'Inativo'}</div>
             </div>
             <div class="flow-list-actions">
@@ -1852,21 +1884,77 @@ function renderFlowsList(flows: FlowSummary[]) {
     }).join('');
 }
 
-async function renameFlow(id: number, currentName = '', event?: Event) {
+function focusRenameFlowInput(id: number) {
+    setTimeout(() => {
+        const input = document.getElementById(`flowRenameInput-${id}`) as HTMLInputElement | null;
+        if (!input) return;
+        input.focus();
+        input.select();
+    }, 0);
+}
+
+function renameFlow(id: number, currentName = '', event?: Event) {
     event?.preventDefault();
     event?.stopPropagation();
 
-    const typedName = prompt('Novo nome do fluxo:', String(currentName || '').trim());
-    if (typedName === null) return;
+    renamingFlowId = Number(id);
+    renamingFlowDraft = String(currentName || '').trim();
+    renderFlowsList(flowsCache);
+    focusRenameFlowInput(id);
+}
 
-    const nextName = typedName.trim();
+function updateRenameFlowDraft(value: string) {
+    renamingFlowDraft = String(value || '');
+}
+
+function cancelRenameFlow(event?: Event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    renamingFlowId = null;
+    renamingFlowDraft = '';
+    renderFlowsList(flowsCache);
+}
+
+function handleRenameFlowKeydown(id: number, event?: KeyboardEvent) {
+    event?.stopPropagation();
+    if (!event) return;
+
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        void saveFlowRenameInline(id, event);
+        return;
+    }
+
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        cancelRenameFlow(event);
+    }
+}
+
+async function saveFlowRenameInline(id: number, event?: Event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    const flowId = Number(id);
+    if (!Number.isFinite(flowId)) return;
+
+    const input = document.getElementById(`flowRenameInput-${flowId}`) as HTMLInputElement | null;
+    const nextName = String(input?.value ?? renamingFlowDraft).trim();
     if (!nextName) {
         alert('O nome do fluxo não pode ficar vazio.');
+        focusRenameFlowInput(flowId);
+        return;
+    }
+
+    const currentFlow = flowsCache.find((flow) => Number(flow.id) === flowId);
+    const currentName = String(currentFlow?.name || '').trim();
+    if (currentName && currentName === nextName) {
+        cancelRenameFlow();
         return;
     }
 
     try {
-        const response = await fetch(`/api/flows/${id}`, {
+        const response = await fetch(`/api/flows/${flowId}`, {
             method: 'PUT',
             headers: buildAuthHeaders(true),
             body: JSON.stringify({ name: nextName })
@@ -1878,11 +1966,13 @@ async function renameFlow(id: number, currentName = '', event?: Event) {
             return;
         }
 
-        if (Number(currentFlowId) === Number(id)) {
+        if (Number(currentFlowId) === Number(flowId)) {
             currentFlowName = nextName;
             renderCurrentFlowName();
         }
 
+        renamingFlowId = null;
+        renamingFlowDraft = '';
         await loadFlows();
     } catch (error) {
         alert('Erro ao renomear fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
@@ -2068,11 +2158,15 @@ function createNewFlow() {
 // Modal
 function openFlowsModal() {
     renderFlowStatusControls();
+    renamingFlowId = null;
+    renamingFlowDraft = '';
     loadFlows();
     document.getElementById('flowsModal')?.classList.add('active');
 }
 
 function closeFlowsModal() {
+    renamingFlowId = null;
+    renamingFlowDraft = '';
     document.getElementById('flowsModal')?.classList.remove('active');
 }
 
@@ -2101,7 +2195,11 @@ const windowAny = window as Window & {
     updateCondition?: (index: number, key: 'value' | 'next', value: string) => void;
     deleteNode?: (id: string) => void;
     loadFlow?: (id: number, options?: LoadFlowOptions) => Promise<boolean>;
-    renameFlow?: (id: number, currentName?: string, event?: Event) => Promise<void>;
+    renameFlow?: (id: number, currentName?: string, event?: Event) => void;
+    updateRenameFlowDraft?: (value: string) => void;
+    cancelRenameFlow?: (event?: Event) => void;
+    handleRenameFlowKeydown?: (id: number, event?: KeyboardEvent) => void;
+    saveFlowRenameInline?: (id: number, event?: Event) => Promise<void>;
     toggleFlowActivation?: (id: number, event?: Event) => Promise<void>;
     duplicateFlow?: (id: number, event?: Event) => Promise<void>;
     discardFlow?: (id: number, event?: Event) => Promise<void>;
@@ -2132,6 +2230,10 @@ windowAny.updateCondition = updateCondition;
 windowAny.deleteNode = deleteNode;
 windowAny.loadFlow = loadFlow;
 windowAny.renameFlow = renameFlow;
+windowAny.updateRenameFlowDraft = updateRenameFlowDraft;
+windowAny.cancelRenameFlow = cancelRenameFlow;
+windowAny.handleRenameFlowKeydown = handleRenameFlowKeydown;
+windowAny.saveFlowRenameInline = saveFlowRenameInline;
 windowAny.toggleFlowActivation = toggleFlowActivation;
 windowAny.duplicateFlow = duplicateFlow;
 windowAny.discardFlow = discardFlow;

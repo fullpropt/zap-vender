@@ -1042,12 +1042,47 @@ export default function FlowBuilder() {
             display: flex;
             align-items: center;
             gap: 6px;
+            min-width: 0;
+        }
+
+        .flow-list-item .name-row.name-row-editing {
+            width: 100%;
+            gap: 8px;
         }
         
         .flow-list-item .name {
             font-weight: 600;
             color: #e7edf7;
             margin-bottom: 4px;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .flow-inline-name-input {
+            flex: 1;
+            min-width: 160px;
+            height: 30px;
+            border: 1px solid rgba(100, 116, 139, 0.38);
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.72);
+            color: #e7edf7;
+            padding: 0 10px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .flow-inline-name-input:focus {
+            outline: none;
+            border-color: rgba(var(--primary-rgb), 0.62);
+            box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.18);
+        }
+
+        .flow-inline-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .flow-inline-icon {
@@ -1062,6 +1097,21 @@ export default function FlowBuilder() {
             justify-content: center;
             cursor: pointer;
             transition: all 0.2s;
+        }
+
+        .flow-inline-icon.flow-inline-icon-save {
+            border-color: rgba(var(--primary-rgb), 0.52);
+            background: rgba(var(--primary-rgb), 0.18);
+            color: #eafff3;
+            font-size: 14px;
+            line-height: 1;
+            font-weight: 700;
+        }
+
+        .flow-inline-icon.flow-inline-icon-cancel {
+            font-size: 14px;
+            line-height: 1;
+            font-weight: 700;
         }
 
         .flow-inline-icon .icon {
@@ -1232,6 +1282,9 @@ export default function FlowBuilder() {
             }
             .flow-list-item .name-row {
                 width: 100%;
+            }
+            .flow-inline-name-input {
+                min-width: 0;
             }
         }
       `}</style>
