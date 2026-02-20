@@ -126,6 +126,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
     name TEXT NOT NULL,
     description TEXT,
     type TEXT DEFAULT 'broadcast' CHECK(type IN ('broadcast', 'drip')),
+    distribution_strategy TEXT DEFAULT 'single',
+    distribution_config TEXT,
     status TEXT DEFAULT 'draft' CHECK(status IN ('active', 'paused', 'completed', 'draft')),
     segment TEXT,
     tag_filter TEXT,
@@ -141,6 +143,18 @@ CREATE TABLE IF NOT EXISTS campaigns (
     created_by INTEGER REFERENCES users(id),
     created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+);
+
+CREATE TABLE IF NOT EXISTS campaign_sender_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL,
+    weight INTEGER DEFAULT 1,
+    daily_limit INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE (campaign_id, session_id)
 );
 
 -- Tabela de Automações
@@ -202,6 +216,9 @@ CREATE TABLE IF NOT EXISTS message_queue (
     lead_id INTEGER NOT NULL REFERENCES leads(id),
     conversation_id INTEGER REFERENCES conversations(id),
     campaign_id INTEGER,
+    session_id TEXT,
+    is_first_contact INTEGER DEFAULT 1,
+    assignment_meta TEXT,
     content TEXT NOT NULL,
     media_type TEXT DEFAULT 'text',
     media_url TEXT,
@@ -252,6 +269,10 @@ CREATE TABLE IF NOT EXISTS whatsapp_sessions (
     phone TEXT,
     name TEXT,
     status TEXT DEFAULT 'disconnected' CHECK(status IN ('disconnected', 'connecting', 'connected', 'qr_pending')),
+    campaign_enabled INTEGER DEFAULT 1,
+    daily_limit INTEGER DEFAULT 0,
+    hourly_limit INTEGER DEFAULT 0,
+    cooldown_until TEXT,
     qr_code TEXT,
     last_connected_at TEXT,
     created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
@@ -305,9 +326,18 @@ CREATE TABLE IF NOT EXISTS lead_tags (
 
 ALTER TABLE messages ADD COLUMN campaign_id INTEGER;
 ALTER TABLE message_queue ADD COLUMN campaign_id INTEGER;
+ALTER TABLE message_queue ADD COLUMN session_id TEXT;
+ALTER TABLE message_queue ADD COLUMN is_first_contact INTEGER DEFAULT 1;
+ALTER TABLE message_queue ADD COLUMN assignment_meta TEXT;
 ALTER TABLE campaigns ADD COLUMN delay_min INTEGER;
 ALTER TABLE campaigns ADD COLUMN delay_max INTEGER;
 ALTER TABLE campaigns ADD COLUMN tag_filter TEXT;
+ALTER TABLE campaigns ADD COLUMN distribution_strategy TEXT DEFAULT 'single';
+ALTER TABLE campaigns ADD COLUMN distribution_config TEXT;
+ALTER TABLE whatsapp_sessions ADD COLUMN campaign_enabled INTEGER DEFAULT 1;
+ALTER TABLE whatsapp_sessions ADD COLUMN daily_limit INTEGER DEFAULT 0;
+ALTER TABLE whatsapp_sessions ADD COLUMN hourly_limit INTEGER DEFAULT 0;
+ALTER TABLE whatsapp_sessions ADD COLUMN cooldown_until TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone);
 CREATE INDEX IF NOT EXISTS idx_leads_jid ON leads(jid);
@@ -336,6 +366,9 @@ CREATE INDEX IF NOT EXISTS idx_queue_status ON message_queue(status);
 CREATE INDEX IF NOT EXISTS idx_queue_scheduled ON message_queue(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_queue_priority ON message_queue(priority DESC);
 CREATE INDEX IF NOT EXISTS idx_queue_campaign ON message_queue(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_queue_session ON message_queue(session_id);
+CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_campaign ON campaign_sender_accounts(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_session ON campaign_sender_accounts(session_id);
 
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_type, entity_id);

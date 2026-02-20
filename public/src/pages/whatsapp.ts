@@ -6,17 +6,33 @@ declare const io:
           on: (event: string, handler: (data?: any) => void) => void;
           emit: (event: string, payload?: any) => void;
       });
+declare const api:
+    | undefined
+    | {
+          get: (endpoint: string) => Promise<any>;
+      };
+
+type WhatsappSessionItem = {
+    session_id: string;
+    connected?: boolean;
+    status?: string;
+    name?: string;
+    phone?: string;
+    campaign_enabled?: boolean | number;
+};
 
 // Configurações
 const CONFIG = {
     SOCKET_URL: window.location.origin,
-    SESSION_ID: 'self_whatsapp_session',
+    DEFAULT_SESSION_ID: 'self_whatsapp_session',
     QR_REFRESH_INTERVAL: 30000
 };
 
 // Estado
 let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
 let socketBound = false;
+let currentSessionId = CONFIG.DEFAULT_SESSION_ID;
+let availableSessions: WhatsappSessionItem[] = [];
 let isConnected = false;
 let isConnecting = false;
 let qrTimer: number | null = null;
@@ -50,11 +66,151 @@ function normalizePairingPhoneInput(value: string) {
     return digits;
 }
 
+function sanitizeSessionId(value: string | null | undefined, fallback = '') {
+    const normalized = String(value || '').trim();
+    return normalized || fallback;
+}
+
+function getStoredSessionId() {
+    return sanitizeSessionId(localStorage.getItem('zapvender_active_whatsapp_session'), CONFIG.DEFAULT_SESSION_ID);
+}
+
+function persistCurrentSessionId(sessionId: string) {
+    localStorage.setItem('zapvender_active_whatsapp_session', sessionId);
+}
+
+function getCurrentSessionId() {
+    return sanitizeSessionId(currentSessionId, CONFIG.DEFAULT_SESSION_ID);
+}
+
+function getSessionSelectElement() {
+    return document.getElementById('whatsapp-session-select') as HTMLSelectElement | null;
+}
+
+function isPayloadForCurrentSession(payload: any) {
+    const payloadSessionId = sanitizeSessionId(payload?.sessionId);
+    if (!payloadSessionId) return true;
+    return payloadSessionId === getCurrentSessionId();
+}
+
+function renderSessionOptions() {
+    const select = getSessionSelectElement();
+    if (!select) return;
+
+    const sessions = Array.isArray(availableSessions) ? [...availableSessions] : [];
+    const ensured = new Set<string>();
+    const pushIfNeeded = (sessionId: string, status = 'disconnected') => {
+        const normalizedSessionId = sanitizeSessionId(sessionId);
+        if (!normalizedSessionId || ensured.has(normalizedSessionId)) return;
+        ensured.add(normalizedSessionId);
+        sessions.push({
+            session_id: normalizedSessionId,
+            status,
+            connected: status === 'connected'
+        });
+    };
+
+    pushIfNeeded(CONFIG.DEFAULT_SESSION_ID);
+    pushIfNeeded(getCurrentSessionId());
+
+    const uniqueSessions = sessions.filter((session) => {
+        const normalizedSessionId = sanitizeSessionId(session.session_id);
+        if (!normalizedSessionId || ensured.has(`seen:${normalizedSessionId}`)) return false;
+        ensured.add(`seen:${normalizedSessionId}`);
+        return true;
+    });
+
+    uniqueSessions.sort((a, b) => String(a.session_id).localeCompare(String(b.session_id)));
+    availableSessions = uniqueSessions;
+
+    select.innerHTML = uniqueSessions.map((session) => {
+        const status = session.connected ? 'Conectada' : (String(session.status || 'disconnected') === 'connected' ? 'Conectada' : 'Desconectada');
+        const labelBase = session.name || session.phone || session.session_id;
+        return `<option value="${String(session.session_id)}">${labelBase} (${status})</option>`;
+    }).join('');
+    select.value = getCurrentSessionId();
+}
+
+async function loadSessionOptions(preferredSessionId?: string) {
+    const fallbackSessionId = sanitizeSessionId(preferredSessionId, getCurrentSessionId());
+    try {
+        if (!api?.get) throw new Error('API indisponivel');
+        const response = await api.get('/api/whatsapp/sessions?includeDisabled=true');
+        availableSessions = Array.isArray(response?.sessions) ? response.sessions : [];
+    } catch (error) {
+        availableSessions = [];
+    }
+
+    currentSessionId = fallbackSessionId;
+    persistCurrentSessionId(currentSessionId);
+    renderSessionOptions();
+}
+
+function resetConnectionUi() {
+    isConnected = false;
+    isConnecting = false;
+    if (qrTimer) clearInterval(qrTimer);
+    hidePairingCode();
+    updateConnectButton(false);
+    updatePairingButton(false);
+    updateStatus('disconnected', 'Desconectado');
+
+    const disconnected = document.getElementById('disconnected-state') as HTMLElement | null;
+    const connected = document.getElementById('connected-state') as HTMLElement | null;
+    const connectBtn = document.getElementById('connect-btn') as HTMLElement | null;
+    const qrTimerEl = document.getElementById('qr-timer') as HTMLElement | null;
+    if (disconnected) disconnected.style.display = 'block';
+    if (connected) connected.style.display = 'none';
+    if (connectBtn) connectBtn.style.display = 'flex';
+    if (qrTimerEl) qrTimerEl.style.display = 'none';
+    showQRLoading('Aguardando conexao...');
+}
+
+function changeSession(sessionId: string) {
+    const normalizedSessionId = sanitizeSessionId(sessionId, CONFIG.DEFAULT_SESSION_ID);
+    currentSessionId = normalizedSessionId;
+    persistCurrentSessionId(normalizedSessionId);
+    renderSessionOptions();
+    resetConnectionUi();
+    socket?.emit('check-session', { sessionId: normalizedSessionId });
+}
+
+async function createSessionPrompt() {
+    const rawInput = window.prompt('Informe o identificador da nova conta WhatsApp (ex: whatsapp_vendas_2):');
+    if (rawInput === null) return;
+
+    const normalized = sanitizeSessionId(rawInput)
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+
+    if (!normalized) {
+        showToast('warning', 'Identificador da conta invalido');
+        return;
+    }
+
+    const alreadyExists = availableSessions.some((session) => sanitizeSessionId(session.session_id) === normalized);
+    if (!alreadyExists) {
+        availableSessions.push({
+            session_id: normalized,
+            status: 'disconnected',
+            connected: false
+        });
+    }
+
+    changeSession(normalized);
+    showToast('info', `Conta selecionada: ${normalized}`);
+}
+
 // Inicializa??o
 function initWhatsapp() {
     if (checkAuth()) {
+        currentSessionId = getStoredSessionId();
+        renderSessionOptions();
         initSocket();
         bindPairingCodeCopy();
+        void loadSessionOptions(currentSessionId);
     }
 }
 
@@ -118,7 +274,8 @@ function initSocket() {
         showToast('success', 'Conectado ao servidor');
         
         // Verificar sessão existente
-        socket.emit('check-session', { sessionId: CONFIG.SESSION_ID });
+        socket.emit('check-session', { sessionId: getCurrentSessionId() });
+        void loadSessionOptions(getCurrentSessionId());
     });
     
     socket.on('disconnect', function() {
@@ -133,6 +290,7 @@ function initSocket() {
     
     // Eventos do WhatsApp
     socket.on('session-status', function(data) {
+        if (!isPayloadForCurrentSession(data)) return;
         console.log('📱 Status da sessão:', data);
         if (data.status === 'connected') {
             handleConnected(data.user);
@@ -142,6 +300,7 @@ function initSocket() {
     });
     
     socket.on('qr', function(data) {
+        if (!isPayloadForCurrentSession(data)) return;
         console.log('📷 QR Code recebido');
         displayQRCode(data.qr);
         startQRTimer();
@@ -154,6 +313,7 @@ function initSocket() {
     });
 
     socket.on('pairing-code', function(data) {
+        if (!isPayloadForCurrentSession(data)) return;
         console.log('Pairing code recebido');
         displayPairingCode(data?.code || '', data?.phoneNumber || data?.phone || '');
         isConnecting = false;
@@ -163,18 +323,23 @@ function initSocket() {
     });
     
     socket.on('connecting', function(data) {
+        if (!isPayloadForCurrentSession(data)) return;
         console.log('🔄 Conectando...');
         updateStatus('connecting', 'Conectando...');
         showQRLoading('Conectando ao WhatsApp...');
     });
     
     socket.on('connected', function(data) {
+        if (!isPayloadForCurrentSession(data)) return;
         console.log('✅ WhatsApp conectado:', data);
+        void loadSessionOptions(getCurrentSessionId());
         handleConnected(data.user);
     });
     
     socket.on('disconnected', function(data) {
+        if (!isPayloadForCurrentSession(data)) return;
         console.log('❌ WhatsApp desconectado');
+        void loadSessionOptions(getCurrentSessionId());
         handleDisconnected();
     });
     
@@ -191,16 +356,18 @@ function initSocket() {
     });
     
     socket.on('auth-failure', function(data) {
+        if (!isPayloadForCurrentSession(data)) return;
         console.error('❌ Falha na autenticação');
         showToast('error', 'Falha na autenticação. Tente novamente.');
         handleDisconnected();
     });
-    socket.emit('check-session', { sessionId: CONFIG.SESSION_ID });
+    socket.emit('check-session', { sessionId: getCurrentSessionId() });
 }
 
 // Iniciar conexão
 function startConnection() {
     if (isConnecting) return;
+    const sessionId = getCurrentSessionId();
     
     isConnecting = true;
     updateConnectButton(true);
@@ -209,11 +376,12 @@ function startConnection() {
     showQRLoading('Gerando QR Code...');
     
     console.log('🚀 Iniciando conexão...');
-    socket?.emit('start-session', { sessionId: CONFIG.SESSION_ID });
+    socket?.emit('start-session', { sessionId });
 }
 
 function requestPairingCode() {
     if (isConnecting) return;
+    const sessionId = getCurrentSessionId();
 
     const phoneInput = document.getElementById('pairing-phone') as HTMLInputElement | null;
     const normalizedPhone = normalizePairingPhoneInput(phoneInput?.value || '');
@@ -233,17 +401,19 @@ function requestPairingCode() {
     showPairingCodeLoading('Gerando codigo de pareamento...');
 
     socket?.emit('request-pairing-code', {
-        sessionId: CONFIG.SESSION_ID,
+        sessionId,
         phoneNumber: normalizedPhone
     });
 }
 
 // Desconectar
 function disconnect() {
-    if (confirm('Tem certeza que deseja desconectar o WhatsApp?')) {
-        socket?.emit('logout', { sessionId: CONFIG.SESSION_ID });
+    const sessionId = getCurrentSessionId();
+    if (confirm(`Tem certeza que deseja desconectar a conta ${sessionId}?`)) {
+        socket?.emit('logout', { sessionId });
         handleDisconnected();
-        showToast('info', 'WhatsApp desconectado');
+        void loadSessionOptions(sessionId);
+        showToast('info', `Conta desconectada: ${sessionId}`);
     }
 }
 
@@ -360,7 +530,7 @@ function startQRTimer() {
             // Solicitar novo QR
             if (!isConnected) {
                 showQRLoading('Atualizando QR Code...');
-                socket?.emit('refresh-qr', { sessionId: CONFIG.SESSION_ID });
+                socket?.emit('refresh-qr', { sessionId: getCurrentSessionId() });
             }
         }
     }, 1000);
@@ -566,6 +736,8 @@ const windowAny = window as Window & {
     startConnection?: () => void;
     requestPairingCode?: () => void;
     disconnect?: () => void;
+    changeSession?: (sessionId: string) => void;
+    createSessionPrompt?: () => void;
     toggleSidebar?: () => void;
     logout?: () => void;
 };
@@ -573,6 +745,8 @@ windowAny.initWhatsapp = initWhatsapp;
 windowAny.startConnection = startConnection;
 windowAny.requestPairingCode = requestPairingCode;
 windowAny.disconnect = disconnect;
+windowAny.changeSession = changeSession;
+windowAny.createSessionPrompt = createSessionPrompt;
 windowAny.toggleSidebar = toggleSidebar;
 windowAny.logout = logout;
 

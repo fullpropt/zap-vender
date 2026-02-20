@@ -8,6 +8,9 @@ type Campaign = {
     name: string;
     description?: string;
     type: CampaignType;
+    distribution_strategy?: 'single' | 'round_robin' | 'weighted_round_robin';
+    distribution_config?: Record<string, unknown> | null;
+    sender_accounts?: CampaignSenderAccount[];
     status: CampaignStatus;
     sent?: number;
     delivered?: number;
@@ -23,8 +26,29 @@ type Campaign = {
     start_at?: string;
 };
 
+type CampaignSenderAccount = {
+    session_id: string;
+    weight?: number;
+    daily_limit?: number;
+    is_active?: number | boolean;
+};
+
+type WhatsappSenderSession = {
+    session_id: string;
+    name?: string;
+    phone?: string;
+    status?: string;
+    connected?: boolean;
+    campaign_enabled?: number | boolean;
+    daily_limit?: number;
+};
+
 type CampaignResponse = {
     campaigns?: Campaign[];
+};
+
+type WhatsappSessionsResponse = {
+    sessions?: WhatsappSenderSession[];
 };
 
 type CampaignRecipient = {
@@ -45,6 +69,7 @@ type CampaignRecipientsResponse = {
 };
 
 let campaigns: Campaign[] = [];
+let senderSessions: WhatsappSenderSession[] = [];
 const DEFAULT_DELAY_MIN_SECONDS = 6;
 const DEFAULT_DELAY_MAX_SECONDS = 24;
 
@@ -167,6 +192,185 @@ function escapeCampaignText(value: unknown) {
         .replace(/'/g, '&#39;');
 }
 
+function escapeAttributeSelector(value: string) {
+    return String(value || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"');
+}
+
+function getDistributionStrategyLabel(strategy?: string) {
+    const normalized = String(strategy || 'single').toLowerCase();
+    if (normalized === 'round_robin') return 'Round-robin';
+    if (normalized === 'weighted_round_robin') return 'Round-robin por peso';
+    return 'Conta única';
+}
+
+function normalizeCampaignSenderAccounts(raw: unknown): CampaignSenderAccount[] {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<string>();
+    const normalized: CampaignSenderAccount[] = [];
+
+    for (const entry of raw) {
+        const sessionId = String((entry as CampaignSenderAccount)?.session_id || '').trim();
+        if (!sessionId || seen.has(sessionId)) continue;
+        seen.add(sessionId);
+
+        const weight = Number((entry as CampaignSenderAccount)?.weight);
+        const dailyLimit = Number((entry as CampaignSenderAccount)?.daily_limit);
+        const isActive = (entry as CampaignSenderAccount)?.is_active;
+
+        normalized.push({
+            session_id: sessionId,
+            weight: Number.isFinite(weight) && weight > 0 ? Math.floor(weight) : 1,
+            daily_limit: Number.isFinite(dailyLimit) && dailyLimit >= 0 ? Math.floor(dailyLimit) : 0,
+            is_active: typeof isActive === 'boolean' ? isActive : Number(isActive || 1) > 0
+        });
+    }
+
+    return normalized;
+}
+
+function toBooleanFlag(value: unknown, fallback = true) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value > 0;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'nao', 'não', 'off'].includes(normalized)) return false;
+    }
+    return fallback;
+}
+
+async function loadSenderSessions() {
+    const selectedBeforeRefresh = collectCampaignSenderAccountsFromForm();
+    try {
+        const response: WhatsappSessionsResponse = await api.get('/api/whatsapp/sessions?includeDisabled=true');
+        senderSessions = Array.isArray(response.sessions) ? response.sessions : [];
+    } catch (error) {
+        senderSessions = [];
+    } finally {
+        renderCampaignSenderAccountsSelector(normalizeCampaignSenderAccounts(selectedBeforeRefresh));
+    }
+}
+
+function renderCampaignSenderAccountsSelector(selectedAccounts: CampaignSenderAccount[] = []) {
+    const container = document.getElementById('campaignSenderAccounts') as HTMLElement | null;
+    if (!container) return;
+
+    const selectedBySession = new Map<string, CampaignSenderAccount>(
+        normalizeCampaignSenderAccounts(selectedAccounts).map((account) => [account.session_id, account])
+    );
+
+    if (!senderSessions.length) {
+        container.innerHTML = '<p style="color: var(--gray-500); font-size: 13px; margin: 0;">Nenhuma conta WhatsApp disponível. A campanha usará a conta padrão.</p>';
+        return;
+    }
+
+    container.innerHTML = senderSessions.map((session) => {
+        const sessionId = String(session.session_id || '').trim();
+        const selected = selectedBySession.get(sessionId);
+        const checked = !!selected;
+        const weight = selected?.weight && selected.weight > 0 ? selected.weight : 1;
+        const dailyLimit = selected?.daily_limit && selected.daily_limit >= 0 ? selected.daily_limit : 0;
+        const connected = !!session.connected;
+        const campaignEnabled = toBooleanFlag(session.campaign_enabled, true);
+        const disabledBySession = !campaignEnabled || !connected;
+        const statusLabel = connected ? 'Conectada' : 'Desconectada';
+
+        return `
+            <div class="sender-account-item ${checked ? 'selected' : ''} ${disabledBySession ? 'disabled' : ''}" data-session-id="${escapeCampaignText(sessionId)}">
+                <label class="checkbox-wrapper" style="align-items: center; gap: 8px;">
+                    <input
+                        type="checkbox"
+                        class="campaign-sender-toggle"
+                        data-session-id="${escapeCampaignText(sessionId)}"
+                        ${checked ? 'checked' : ''}
+                        ${disabledBySession ? 'disabled' : ''}
+                    />
+                    <span class="checkbox-custom"></span>
+                    <strong>${escapeCampaignText(session.name || session.phone || sessionId)}</strong>
+                </label>
+                <div style="font-size: 12px; color: var(--gray-500); margin-top: 6px;">
+                    ${escapeCampaignText(session.phone || sessionId)} · ${statusLabel}
+                </div>
+                <div class="form-row" style="margin-top: 10px; gap: 10px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-size: 11px;">Peso</label>
+                        <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            class="form-input campaign-sender-weight"
+                            data-session-id="${escapeCampaignText(sessionId)}"
+                            value="${weight}"
+                            ${checked && !disabledBySession ? '' : 'disabled'}
+                        />
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-size: 11px;">Limite diário (0 = sem limite)</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            class="form-input campaign-sender-daily-limit"
+                            data-session-id="${escapeCampaignText(sessionId)}"
+                            value="${dailyLimit}"
+                            ${checked && !disabledBySession ? '' : 'disabled'}
+                        />
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    const toggles = Array.from(container.querySelectorAll<HTMLInputElement>('.campaign-sender-toggle'));
+    toggles.forEach((toggle) => {
+        toggle.addEventListener('change', () => {
+            const sessionId = String(toggle.dataset.sessionId || '');
+            const checked = toggle.checked;
+            const selectorSessionId = escapeAttributeSelector(sessionId);
+            const row = container.querySelector(`.sender-account-item[data-session-id="${selectorSessionId}"]`);
+            if (row) {
+                row.classList.toggle('selected', checked);
+            }
+            container.querySelectorAll<HTMLInputElement>(`.campaign-sender-weight[data-session-id="${selectorSessionId}"], .campaign-sender-daily-limit[data-session-id="${selectorSessionId}"]`)
+                .forEach((input) => {
+                    input.disabled = !checked;
+                });
+        });
+    });
+}
+
+function collectCampaignSenderAccountsFromForm() {
+    const container = document.getElementById('campaignSenderAccounts') as HTMLElement | null;
+    if (!container) return [];
+
+    const toggles = Array.from(container.querySelectorAll<HTMLInputElement>('.campaign-sender-toggle'))
+        .filter((input) => input.checked && !input.disabled);
+    const accounts: CampaignSenderAccount[] = [];
+
+    toggles.forEach((toggle) => {
+        const sessionId = String(toggle.dataset.sessionId || '').trim();
+        if (!sessionId) return;
+        const selectorSessionId = escapeAttributeSelector(sessionId);
+
+        const weightInput = container.querySelector<HTMLInputElement>(`.campaign-sender-weight[data-session-id="${selectorSessionId}"]`);
+        const dailyLimitInput = container.querySelector<HTMLInputElement>(`.campaign-sender-daily-limit[data-session-id="${selectorSessionId}"]`);
+
+        const weight = Number(weightInput?.value || '1');
+        const dailyLimit = Number(dailyLimitInput?.value || '0');
+
+        accounts.push({
+            session_id: sessionId,
+            weight: Number.isFinite(weight) && weight > 0 ? Math.floor(weight) : 1,
+            daily_limit: Number.isFinite(dailyLimit) && dailyLimit >= 0 ? Math.floor(dailyLimit) : 0,
+            is_active: true
+        });
+    });
+
+    return accounts;
+}
+
 function renderCampaignMessages(campaign: Campaign) {
     const campaignMessages = document.getElementById('campaignMessages') as HTMLElement | null;
     if (!campaignMessages) return;
@@ -185,6 +389,19 @@ function renderCampaignMessages(campaign: Campaign) {
             <pre style="white-space: pre-wrap; margin: 0; font-family: inherit;">${escapeCampaignText(step)}</pre>
         </div>
     `).join('');
+}
+
+function renderCampaignSenderAccountsSummary(campaign: Campaign) {
+    const accounts = normalizeCampaignSenderAccounts(campaign.sender_accounts);
+    if (!accounts.length) {
+        return 'Automático (contas habilitadas no WhatsApp)';
+    }
+    return accounts.map((account) => {
+        const weight = Number(account.weight || 1);
+        const dailyLimit = Number(account.daily_limit || 0);
+        const dailyLimitLabel = dailyLimit > 0 ? `${dailyLimit}/dia` : 'sem limite';
+        return `${account.session_id} (peso ${weight}, ${dailyLimitLabel})`;
+    }).join(' | ');
 }
 
 async function loadCampaignRecipients(campaign: Campaign) {
@@ -270,6 +487,8 @@ function resetCampaignForm() {
     const idInput = document.getElementById('campaignId') as HTMLInputElement | null;
     if (idInput) idInput.value = '';
     syncCampaignSegmentOptions();
+    setSelectValue(document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null, 'single');
+    renderCampaignSenderAccountsSelector([]);
     setDelayRangeInputs(DEFAULT_DELAY_MIN_SECONDS, DEFAULT_DELAY_MAX_SECONDS);
     setCampaignModalTitle('new');
 }
@@ -334,16 +553,22 @@ function openBroadcastModal() {
     openCampaignModal();
 
     setSelectValue(document.getElementById('campaignType') as HTMLSelectElement | null, 'broadcast');
+    setSelectValue(document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null, 'round_robin');
     setSelectValue(document.getElementById('campaignSegment') as HTMLSelectElement | null, 'all');
     setDelayRangeInputs(DEFAULT_DELAY_MIN_SECONDS, DEFAULT_DELAY_MAX_SECONDS);
 }
 
-function initCampanhas() {
+async function initCampanhas() {
     syncCampaignSegmentOptions();
-    loadCampaigns();
+    await Promise.all([
+        loadCampaigns(),
+        loadSenderSessions()
+    ]);
 }
 
-onReady(initCampanhas);
+onReady(() => {
+    void initCampanhas();
+});
 
 function shouldUseLocalCampaignFallback(error: unknown) {
     const message = String((error as Error)?.message || '').toLowerCase();
@@ -520,6 +745,7 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         name: (document.getElementById('campaignName') as HTMLInputElement | null)?.value.trim() || '',
         description: (document.getElementById('campaignDescription') as HTMLInputElement | null)?.value.trim() || '',
         type: ((document.getElementById('campaignType') as HTMLSelectElement | null)?.value || 'broadcast') as CampaignType,
+        distribution_strategy: ((document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null)?.value || 'single') as Campaign['distribution_strategy'],
         status,
         segment: (document.getElementById('campaignSegment') as HTMLSelectElement | null)?.value || '',
         tag_filter: (document.getElementById('campaignTagFilter') as HTMLInputElement | null)?.value.trim() || '',
@@ -527,7 +753,8 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         delay: delayMinMs,
         delay_min: delayMinMs,
         delay_max: delayMaxMs,
-        start_at: (document.getElementById('campaignStart') as HTMLInputElement | null)?.value || ''
+        start_at: (document.getElementById('campaignStart') as HTMLInputElement | null)?.value || '',
+        sender_accounts: collectCampaignSenderAccountsFromForm()
     };
 
     if (!data.name || !data.message) {
@@ -623,6 +850,8 @@ function viewCampaign(id: number) {
         <p><strong>Descrição:</strong> ${campaign.description || 'Sem descrição'}</p>
         <p><strong>Tipo:</strong> ${getCampaignTypeLabel(campaign.type)}</p>
         <p><strong>Status:</strong> ${getCampaignStatusLabel(campaign.status)}</p>
+        <p><strong>Distribuição:</strong> ${escapeCampaignText(getDistributionStrategyLabel(campaign.distribution_strategy || 'single'))}</p>
+        <p><strong>Contas de envio:</strong> ${escapeCampaignText(renderCampaignSenderAccountsSummary(campaign))}</p>
         <p><strong>Tag:</strong> ${campaign.tag_filter || 'Todas'}</p>
         <p><strong>Criada em:</strong> ${formatDate(campaign.created_at, 'datetime')}</p>
     `;
@@ -650,6 +879,10 @@ function editCampaign(id: number) {
     if (descriptionInput) descriptionInput.value = campaign.description || '';
 
     setSelectValue(document.getElementById('campaignType') as HTMLSelectElement | null, campaign.type || 'broadcast');
+    setSelectValue(
+        document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null,
+        String(campaign.distribution_strategy || 'single')
+    );
     setSelectValue(document.getElementById('campaignStatus') as HTMLSelectElement | null, campaign.status || 'draft');
     setSelectValue(document.getElementById('campaignSegment') as HTMLSelectElement | null, campaign.segment || 'all');
     const tagFilterInput = document.getElementById('campaignTagFilter') as HTMLInputElement | null;
@@ -663,6 +896,8 @@ function editCampaign(id: number) {
 
     const startInput = document.getElementById('campaignStart') as HTMLInputElement | null;
     if (startInput) startInput.value = formatInputDateTime(campaign.start_at);
+
+    renderCampaignSenderAccountsSelector(normalizeCampaignSenderAccounts(campaign.sender_accounts));
 
     setCampaignModalTitle('edit');
 
@@ -769,5 +1004,3 @@ windowAny.deleteCampaign = deleteCampaign;
 windowAny.switchCampaignTab = switchCampaignTab;
 
 export { initCampanhas };
-
-

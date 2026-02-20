@@ -13,6 +13,7 @@ class QueueService extends EventEmitter {
         this.isProcessing = false;
         this.intervalId = null;
         this.sendFunction = null;
+        this.resolveSessionForMessage = null;
         this.defaultDelay = 3000; // 3 segundos entre mensagens
         this.maxMessagesPerMinute = 30;
         this.messagesSentThisMinute = 0;
@@ -25,8 +26,11 @@ class QueueService extends EventEmitter {
     /**
      * Inicializar o serviço de fila
      */
-    async init(sendFunction) {
+    async init(sendFunction, options = {}) {
         this.sendFunction = sendFunction;
+        this.resolveSessionForMessage = typeof options.resolveSessionForMessage === 'function'
+            ? options.resolveSessionForMessage
+            : null;
         
         // Carregar configurações do banco
         const delay = await Settings.get('bulk_message_delay');
@@ -47,12 +51,27 @@ class QueueService extends EventEmitter {
      * Adicionar mensagem à fila
      */
     async add(options) {
-        const { leadId, conversationId, campaignId, content, mediaType, mediaUrl, priority, scheduledAt } = options;
+        const {
+            leadId,
+            conversationId,
+            campaignId,
+            content,
+            mediaType,
+            mediaUrl,
+            priority,
+            scheduledAt,
+            sessionId,
+            isFirstContact,
+            assignmentMeta
+        } = options;
         
         const result = await MessageQueue.add({
             lead_id: leadId,
             conversation_id: conversationId,
             campaign_id: campaignId || null,
+            session_id: sessionId || null,
+            is_first_contact: isFirstContact !== false,
+            assignment_meta: assignmentMeta || null,
             content,
             media_type: mediaType || 'text',
             media_url: mediaUrl,
@@ -74,6 +93,16 @@ class QueueService extends EventEmitter {
         }
 
         const results = [];
+        const sessionAssignments = (options.sessionAssignments && typeof options.sessionAssignments === 'object')
+            ? options.sessionAssignments
+            : {};
+        const assignmentMetaByLead = (options.assignmentMetaByLead && typeof options.assignmentMetaByLead === 'object')
+            ? options.assignmentMetaByLead
+            : {};
+        const perLeadIsFirstContact = (options.isFirstContactByLead && typeof options.isFirstContactByLead === 'object')
+            ? options.isFirstContactByLead
+            : {};
+        const defaultIsFirstContact = options.isFirstContact !== false;
         const delayMs = Number(options.delayMs);
         const delayMinInput = Number(options.delayMinMs);
         const delayMaxInput = Number(options.delayMaxMs);
@@ -121,7 +150,12 @@ class QueueService extends EventEmitter {
                 mediaType: options.mediaType,
                 mediaUrl: options.mediaUrl,
                 priority: options.priority || 0,
-                scheduledAt
+                scheduledAt,
+                sessionId: sessionAssignments[String(leadId)] || options.sessionId || null,
+                isFirstContact: Object.prototype.hasOwnProperty.call(perLeadIsFirstContact, String(leadId))
+                    ? perLeadIsFirstContact[String(leadId)]
+                    : defaultIsFirstContact,
+                assignmentMeta: assignmentMetaByLead[String(leadId)] || options.assignmentMeta || null
             });
             
             results.push(result);
@@ -302,8 +336,29 @@ class QueueService extends EventEmitter {
                 throw new Error('Lead bloqueado');
             }
             
+            let assignedSessionId = String(message.session_id || '').trim();
+            if (!assignedSessionId && this.resolveSessionForMessage) {
+                const allocation = await this.resolveSessionForMessage({
+                    message,
+                    lead
+                });
+                assignedSessionId = String(allocation?.sessionId || '').trim();
+                if (assignedSessionId) {
+                    await MessageQueue.setAssignment(
+                        message.id,
+                        assignedSessionId,
+                        allocation?.assignmentMeta || null
+                    );
+                }
+            }
+
+            if (!assignedSessionId) {
+                throw new Error('Nenhuma conta de WhatsApp disponivel para envio');
+            }
+
             // Enviar mensagem
             await this.sendFunction({
+                sessionId: assignedSessionId,
                 to: lead.phone,
                 jid: lead.jid,
                 content: message.content,
@@ -320,6 +375,7 @@ class QueueService extends EventEmitter {
             this.emit('message:sent', { 
                 id: message.id, 
                 leadId: message.lead_id,
+                sessionId: assignedSessionId,
                 content: message.content 
             });
             

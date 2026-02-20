@@ -7,6 +7,8 @@ type WhatsappGlobals = {
   startConnection?: () => void;
   requestPairingCode?: () => void;
   disconnect?: () => void;
+  changeSession?: (sessionId: string) => void;
+  createSessionPrompt?: () => void;
   toggleSidebar?: () => void;
   logout?: () => void;
 };
@@ -178,6 +180,8 @@ export default function Whatsapp() {
             display: flex;
             align-items: center;
             gap: 15px;
+            justify-content: space-between;
+            flex-wrap: wrap;
         }
 
         .whatsapp-react .card-header-icon {
@@ -213,6 +217,22 @@ export default function Whatsapp() {
             font-size: 20px;
             font-weight: 700;
             color: var(--dark);
+        }
+        .whatsapp-react .session-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-left: auto;
+            min-width: min(100%, 420px);
+        }
+        .whatsapp-react .session-controls .form-select {
+            flex: 1;
+            min-width: 200px;
+        }
+        .whatsapp-react .session-controls .btn {
+            width: auto;
+            padding: 10px 14px;
+            font-size: 13px;
         }
 
         .whatsapp-react .card-body {
@@ -589,6 +609,16 @@ export default function Whatsapp() {
                 padding: 18px;
             }
 
+            .whatsapp-react .session-controls {
+                width: 100%;
+                margin-left: 0;
+                min-width: 0;
+            }
+
+            .whatsapp-react .session-controls .btn {
+                flex-shrink: 0;
+            }
+
             .whatsapp-react .qr-wrapper {
                 min-width: 0;
                 width: 100%;
@@ -733,8 +763,23 @@ export default function Whatsapp() {
               <div className="whatsapp-grid">
                   <div className="card">
                       <div className="card-header">
-                          <div className="card-header-icon green"><span className="icon icon-whatsapp"></span></div>
-                          <h2>Conexão WhatsApp</h2>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <div className="card-header-icon green"><span className="icon icon-whatsapp"></span></div>
+                              <h2>Conexão WhatsApp</h2>
+                          </div>
+                          <div className="session-controls">
+                              <select
+                                  id="whatsapp-session-select"
+                                  className="form-select"
+                                  defaultValue="self_whatsapp_session"
+                                  onChange={(event) => globals.changeSession?.((event.target as HTMLSelectElement).value)}
+                              >
+                                  <option value="self_whatsapp_session">self_whatsapp_session</option>
+                              </select>
+                              <button type="button" className="btn btn-outline" onClick={() => globals.createSessionPrompt?.()}>
+                                  + Nova Conta
+                              </button>
+                          </div>
                       </div>
                       
                       <div className="card-body">

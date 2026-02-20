@@ -42,7 +42,21 @@ const { getDatabase, close: closeDatabase, query, run } = require('./database/co
 
 const { migrate } = require('./database/migrate');
 
-const { Lead, Conversation, Message, MessageQueue, Template, Campaign, Automation, Flow, Tag, Settings, User } = require('./database/models');
+const {
+    Lead,
+    Conversation,
+    Message,
+    MessageQueue,
+    Template,
+    Campaign,
+    CampaignSenderAccount,
+    Automation,
+    Flow,
+    Tag,
+    Settings,
+    User,
+    WhatsAppSession
+} = require('./database/models');
 
 
 
@@ -53,6 +67,7 @@ const webhookService = require('./services/webhookService');
 const queueService = require('./services/queueService');
 
 const flowService = require('./services/flowService');
+const senderAllocatorService = require('./services/senderAllocatorService');
 
 
 
@@ -492,6 +507,9 @@ const typingStatus = new Map();
 const jidAliasMap = new Map();
 const sessionInitLocks = new Set();
 
+senderAllocatorService.setRuntimeSessionsGetter(() => sessions);
+senderAllocatorService.setDefaultSessionId('self_whatsapp_session');
+
 
 
 function getSessionUser(sessionId) {
@@ -516,6 +534,34 @@ function getSessionPhone(sessionId) {
 
     return user?.phone || (user?.id ? extractNumber(user.id) : null);
 
+}
+
+function sanitizeSessionId(value, fallback = '') {
+    const normalized = String(value || '').trim();
+    return normalized || fallback;
+}
+
+function normalizeSenderAccountsPayload(value) {
+    if (!Array.isArray(value)) return [];
+    return senderAllocatorService.normalizeSenderAccounts(value);
+}
+
+function normalizeCampaignDistributionStrategy(value, fallback = 'single') {
+    return senderAllocatorService.normalizeStrategy(value, fallback);
+}
+
+function parseCampaignDistributionConfig(value) {
+    if (value === undefined || value === null || value === '') {
+        return null;
+    }
+    if (typeof value === 'object') {
+        return value;
+    }
+    try {
+        return JSON.parse(String(value));
+    } catch (_) {
+        return null;
+    }
 }
 
 
@@ -4403,6 +4449,19 @@ function sessionExists(sessionId) {
                 conversationId: options.conversationId || null
             }
         );
+    }, {
+        resolveSessionForMessage: async ({ message, lead }) => {
+            const allocation = await senderAllocatorService.allocateForSingleLead({
+                leadId: lead?.id,
+                campaignId: message?.campaign_id || null,
+                sessionId: message?.session_id || null,
+                strategy: 'round_robin'
+            });
+            return {
+                sessionId: allocation?.sessionId || null,
+                assignmentMeta: allocation?.assignmentMeta || null
+            };
+        }
     });
 
     flowService.init(async (options) => {
@@ -4797,7 +4856,7 @@ io.on('connection', (socket) => {
 
 app.get('/api/whatsapp/status', optionalAuth, (req, res) => {
 
-    const sessionId = 'self_whatsapp_session';
+    const sessionId = sanitizeSessionId(req.query?.sessionId, 'self_whatsapp_session');
 
     const session = sessions.get(sessionId);
 
@@ -4817,13 +4876,43 @@ app.get('/api/whatsapp/status', optionalAuth, (req, res) => {
 
 });
 
+app.get('/api/whatsapp/sessions', authenticate, async (req, res) => {
+    try {
+        const includeDisabled = String(req.query?.includeDisabled ?? 'true').toLowerCase() !== 'false';
+        const sessionsList = await senderAllocatorService.listDispatchSessions({ includeDisabled });
+        res.json({ success: true, sessions: sessionsList });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/whatsapp/sessions/:sessionId', authenticate, async (req, res) => {
+    try {
+        const sessionId = sanitizeSessionId(req.params.sessionId);
+        if (!sessionId) {
+            return res.status(400).json({ error: 'sessionId invalido' });
+        }
+
+        const updated = await WhatsAppSession.upsertDispatchConfig(sessionId, {
+            campaign_enabled: req.body?.campaign_enabled,
+            daily_limit: req.body?.daily_limit,
+            hourly_limit: req.body?.hourly_limit,
+            cooldown_until: req.body?.cooldown_until
+        });
+
+        res.json({ success: true, session: updated });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
 
 
 app.post('/api/whatsapp/disconnect', authenticate, async (req, res) => {
 
     try {
 
-        const sessionId = 'self_whatsapp_session';
+        const sessionId = sanitizeSessionId(req.body?.sessionId || req.query?.sessionId, 'self_whatsapp_session');
 
         await whatsappService.logoutSession(sessionId, SESSIONS_DIR);
 
@@ -5914,7 +6003,7 @@ app.post('/api/send', authenticate, async (req, res) => {
 
 app.post('/api/messages/send', authenticate, async (req, res) => {
 
-    const { leadId, phone, content, type, options } = req.body;
+    const { leadId, phone, content, type, options, sessionId } = req.body;
 
 
 
@@ -5940,7 +6029,8 @@ app.post('/api/messages/send', authenticate, async (req, res) => {
 
     try {
 
-        const result = await sendMessage('self_whatsapp_session', to, content, type || 'text', options || {});
+        const resolvedSessionId = sanitizeSessionId(sessionId, 'self_whatsapp_session');
+        const result = await sendMessage(resolvedSessionId, to, content, type || 'text', options || {});
 
         res.json({
 
@@ -6003,9 +6093,31 @@ app.get('/api/queue/status', authenticate, async (req, res) => {
 
 app.post('/api/queue/add', authenticate, async (req, res) => {
 
-    const { leadId, conversationId, campaignId, content, mediaType, mediaUrl, priority, scheduledAt } = req.body;
+    const {
+        leadId,
+        conversationId,
+        campaignId,
+        content,
+        mediaType,
+        mediaUrl,
+        priority,
+        scheduledAt,
+        sessionId,
+        isFirstContact,
+        assignmentMeta
+    } = req.body;
 
     
+
+    let resolvedSessionId = sanitizeSessionId(sessionId);
+    if (!resolvedSessionId) {
+        const allocation = await senderAllocatorService.allocateForSingleLead({
+            leadId,
+            campaignId,
+            strategy: 'round_robin'
+        });
+        resolvedSessionId = sanitizeSessionId(allocation?.sessionId);
+    }
 
     const result = await queueService.add({
 
@@ -6014,6 +6126,12 @@ app.post('/api/queue/add', authenticate, async (req, res) => {
         conversationId,
 
         campaignId,
+
+        sessionId: resolvedSessionId || null,
+
+        isFirstContact: isFirstContact !== false,
+
+        assignmentMeta: assignmentMeta || null,
 
         content,
 
@@ -6061,13 +6179,50 @@ app.post('/api/queue/bulk', authenticate, async (req, res) => {
         options.delayMaxMs = legacyDelayMax;
     }
 
+    const hasSessionAssignments = options.sessionAssignments && typeof options.sessionAssignments === 'object';
+    const normalizedLeadIds = Array.isArray(leadIds) ? leadIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0) : [];
+    const fixedSessionId = sanitizeSessionId(
+        options.sessionId || options.session_id || req.body?.sessionId || req.body?.session_id
+    );
+    const senderAccounts = normalizeSenderAccountsPayload(
+        options.senderAccounts || options.sender_accounts || req.body?.sender_accounts || req.body?.senderAccounts
+    );
+    const distributionStrategy = normalizeCampaignDistributionStrategy(
+        options.distributionStrategy || options.distribution_strategy || req.body?.distribution_strategy,
+        fixedSessionId ? 'single' : (senderAccounts.length ? 'weighted_round_robin' : 'round_robin')
+    );
+
+    let distribution = { strategyUsed: fixedSessionId ? 'single' : distributionStrategy, summary: {} };
+    if (!hasSessionAssignments) {
+        const allocationPlan = await senderAllocatorService.buildDistributionPlan({
+            leadIds: normalizedLeadIds,
+            campaignId: options.campaignId || req.body?.campaignId || null,
+            senderAccounts,
+            strategy: distributionStrategy,
+            sessionId: fixedSessionId || null
+        });
+        options.sessionAssignments = allocationPlan.assignmentsByLead;
+        options.assignmentMetaByLead = allocationPlan.assignmentMetaByLead;
+        distribution = {
+            strategyUsed: allocationPlan.strategyUsed,
+            summary: allocationPlan.summary || {}
+        };
+    }
+
     
 
     const results = await queueService.addBulk(leadIds, content, options);
 
     
 
-    res.json({ success: true, queued: results.length });
+    res.json({
+        success: true,
+        queued: results.length,
+        distribution: {
+            strategy: distribution.strategyUsed,
+            by_session: distribution.summary
+        }
+    });
 
 });
 
@@ -6175,6 +6330,38 @@ function sanitizeCampaignPayload(input = {}, options = {}) {
         }
     } else if (applyDefaultType) {
         payload.type = 'broadcast';
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(payload, 'distribution_strategy') && Object.prototype.hasOwnProperty.call(payload, 'distributionStrategy')) {
+        payload.distribution_strategy = payload.distributionStrategy;
+    }
+    const hasDistributionStrategy = Object.prototype.hasOwnProperty.call(payload, 'distribution_strategy');
+    if (hasDistributionStrategy) {
+        const normalizedDistributionStrategy = normalizeCampaignDistributionStrategy(payload.distribution_strategy, applyDefaultType ? 'single' : 'round_robin');
+        payload.distribution_strategy = normalizedDistributionStrategy;
+    } else if (applyDefaultType) {
+        payload.distribution_strategy = 'single';
+    }
+
+    const hasDistributionConfig =
+        Object.prototype.hasOwnProperty.call(payload, 'distribution_config') ||
+        Object.prototype.hasOwnProperty.call(payload, 'distributionConfig');
+    if (hasDistributionConfig) {
+        const rawDistributionConfig = Object.prototype.hasOwnProperty.call(payload, 'distribution_config')
+            ? payload.distribution_config
+            : payload.distributionConfig;
+        const parsedDistributionConfig = parseCampaignDistributionConfig(rawDistributionConfig);
+        payload.distribution_config = parsedDistributionConfig ? JSON.stringify(parsedDistributionConfig) : null;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'distributionConfig')) {
+        delete payload.distributionConfig;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'sender_accounts')) {
+        delete payload.sender_accounts;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'senderAccounts')) {
+        delete payload.senderAccounts;
     }
 
 
@@ -6389,6 +6576,29 @@ async function resolveCampaignLeadIds(options = {}) {
 
 }
 
+function serializeCampaign(campaign, senderAccounts = []) {
+    if (!campaign) return null;
+    const parsedDistributionConfig = parseCampaignDistributionConfig(campaign.distribution_config);
+    return {
+        ...campaign,
+        distribution_strategy: normalizeCampaignDistributionStrategy(campaign.distribution_strategy, 'single'),
+        distribution_config: parsedDistributionConfig,
+        sender_accounts: normalizeSenderAccountsPayload(senderAccounts || [])
+    };
+}
+
+async function attachCampaignSenderAccounts(campaign) {
+    if (!campaign?.id) return serializeCampaign(campaign, []);
+    const senderAccounts = await CampaignSenderAccount.listByCampaignId(campaign.id, { onlyActive: false });
+    return serializeCampaign(campaign, senderAccounts);
+}
+
+async function attachCampaignSenderAccountsList(campaigns = []) {
+    return await Promise.all(
+        (campaigns || []).map((campaign) => attachCampaignSenderAccounts(campaign))
+    );
+}
+
 async function migrateLegacyTriggerCampaignsToAutomations() {
     let legacyCampaigns = [];
 
@@ -6551,6 +6761,19 @@ async function queueCampaignMessages(campaign) {
 
     }
 
+    const senderAccounts = await CampaignSenderAccount.listByCampaignId(campaign.id, { onlyActive: true });
+    const distributionStrategy = normalizeCampaignDistributionStrategy(
+        campaign?.distribution_strategy,
+        senderAccounts.length ? 'round_robin' : 'single'
+    );
+    const distributionPlan = await senderAllocatorService.buildDistributionPlan({
+        leadIds,
+        campaignId: campaign.id,
+        senderAccounts,
+        strategy: distributionStrategy
+    });
+    const sessionAssignments = distributionPlan.assignmentsByLead || {};
+    const assignmentMetaByLead = distributionPlan.assignmentMetaByLead || {};
 
     const startAtMs = parseCampaignStartAt(campaign.start_at);
 
@@ -6582,6 +6805,12 @@ async function queueCampaignMessages(campaign) {
 
                     campaignId: campaign.id,
 
+                    sessionId: sessionAssignments[String(leadId)] || null,
+
+                    isFirstContact: stepIndex === 0,
+
+                    assignmentMeta: assignmentMetaByLead[String(leadId)] || null,
+
                     content,
 
                     mediaType: 'text',
@@ -6612,7 +6841,13 @@ async function queueCampaignMessages(campaign) {
 
             delayMaxMs,
 
-            campaignId: campaign.id
+            campaignId: campaign.id,
+
+            sessionAssignments,
+
+            assignmentMetaByLead,
+
+            isFirstContact: true
 
         });
 
@@ -6628,7 +6863,15 @@ async function queueCampaignMessages(campaign) {
     await Campaign.refreshMetrics(campaign.id);
 
 
-    return { queued: queuedCount, recipients: leadIds.length, steps: steps.length };
+    return {
+        queued: queuedCount,
+        recipients: leadIds.length,
+        steps: steps.length,
+        distribution: {
+            strategy: distributionPlan.strategyUsed || distributionStrategy,
+            by_session: distributionPlan.summary || {}
+        }
+    };
 
 }
 
@@ -6653,7 +6896,7 @@ app.get('/api/campaigns', optionalAuth, async (req, res) => {
 
 
 
-    res.json({ success: true, campaigns });
+    res.json({ success: true, campaigns: await attachCampaignSenderAccountsList(campaigns) });
 
 });
 
@@ -6669,7 +6912,7 @@ app.get('/api/campaigns/:id', optionalAuth, async (req, res) => {
 
     }
 
-    res.json({ success: true, campaign });
+    res.json({ success: true, campaign: await attachCampaignSenderAccounts(campaign) });
 
 });
 
@@ -6729,6 +6972,9 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
 
     try {
 
+        const senderAccountsPayload = normalizeSenderAccountsPayload(
+            req.body?.sender_accounts ?? req.body?.senderAccounts
+        );
         const payload = sanitizeCampaignPayload({
 
             ...req.body,
@@ -6738,13 +6984,14 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
         }, { applyDefaultType: true });
 
         const result = await Campaign.create(payload);
+        await CampaignSenderAccount.replaceForCampaign(result.id, senderAccountsPayload);
 
-        let campaign = await Campaign.findById(result.id);
+        let campaign = await attachCampaignSenderAccounts(await Campaign.findById(result.id));
         let queueResult = { queued: 0, recipients: 0 };
 
         if (campaign?.status === 'active') {
             queueResult = await queueCampaignMessages(campaign);
-            campaign = await Campaign.findById(result.id);
+            campaign = await attachCampaignSenderAccounts(await Campaign.findById(result.id));
         }
 
         res.json({ success: true, campaign, queue: queueResult });
@@ -6771,17 +7018,26 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
 
         }
 
+        const senderAccountsProvided =
+            Object.prototype.hasOwnProperty.call(req.body || {}, 'sender_accounts') ||
+            Object.prototype.hasOwnProperty.call(req.body || {}, 'senderAccounts');
+        const senderAccountsPayload = senderAccountsProvided
+            ? normalizeSenderAccountsPayload(req.body?.sender_accounts ?? req.body?.senderAccounts)
+            : null;
         const payload = sanitizeCampaignPayload(req.body, { applyDefaultType: false });
         const shouldQueue = campaign.status !== 'active' && payload.status === 'active';
 
         await Campaign.update(req.params.id, payload);
+        if (senderAccountsProvided) {
+            await CampaignSenderAccount.replaceForCampaign(req.params.id, senderAccountsPayload || []);
+        }
 
-        let updatedCampaign = await Campaign.findById(req.params.id);
+        let updatedCampaign = await attachCampaignSenderAccounts(await Campaign.findById(req.params.id));
         let queueResult = { queued: 0, recipients: 0 };
 
         if (shouldQueue && updatedCampaign) {
             queueResult = await queueCampaignMessages(updatedCampaign);
-            updatedCampaign = await Campaign.findById(req.params.id);
+            updatedCampaign = await attachCampaignSenderAccounts(await Campaign.findById(req.params.id));
         }
 
         res.json({ success: true, campaign: updatedCampaign, queue: queueResult });

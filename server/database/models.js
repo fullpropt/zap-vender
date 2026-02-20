@@ -243,6 +243,37 @@ function compareFlowKeywordScoreDesc(a, b) {
     return 0;
 }
 
+function toJsonStringOrNull(value) {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed || null;
+    }
+    try {
+        return JSON.stringify(value);
+    } catch (_) {
+        return null;
+    }
+}
+
+function parseNonNegativeInteger(value, fallback = 0) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    const normalized = Math.floor(num);
+    return normalized >= 0 ? normalized : fallback;
+}
+
+function normalizeBooleanFlag(value, fallback = 1) {
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    if (typeof value === 'number') return value > 0 ? 1 : 0;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return 1;
+        if (['0', 'false', 'no', 'nao', 'não', 'off'].includes(normalized)) return 0;
+    }
+    return fallback;
+}
+
 // ============================================
 // LEADS
 // ============================================
@@ -753,13 +784,18 @@ const Campaign = {
         const uuid = generateUUID();
 
         const result = await run(`
-            INSERT INTO campaigns (uuid, name, description, type, status, segment, tag_filter, message, delay, delay_min, delay_max, start_at, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO campaigns (
+                uuid, name, description, type, distribution_strategy, distribution_config,
+                status, segment, tag_filter, message, delay, delay_min, delay_max, start_at, created_by
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             data.name,
             data.description,
             data.type || 'broadcast',
+            String(data.distribution_strategy || 'single').trim() || 'single',
+            toJsonStringOrNull(data.distribution_config),
             data.status || 'draft',
             data.segment,
             data.tag_filter || null,
@@ -823,13 +859,20 @@ const Campaign = {
 
         const allowedFields = [
             'name', 'description', 'type', 'status', 'segment', 'tag_filter',
-            'message', 'delay', 'delay_min', 'delay_max', 'start_at', 'sent', 'delivered', 'read', 'replied'
+            'message', 'delay', 'delay_min', 'delay_max', 'start_at', 'sent', 'delivered', 'read', 'replied',
+            'distribution_strategy', 'distribution_config'
         ];
 
         for (const [key, value] of Object.entries(data)) {
             if (allowedFields.includes(key)) {
                 fields.push(`${key} = ?`);
-                values.push(value);
+                if (key === 'distribution_strategy') {
+                    values.push(String(value || '').trim() || 'single');
+                } else if (key === 'distribution_config') {
+                    values.push(toJsonStringOrNull(value));
+                } else {
+                    values.push(value);
+                }
             }
         }
 
@@ -895,6 +938,165 @@ const Campaign = {
 
     async delete(id) {
         return await run('DELETE FROM campaigns WHERE id = ?', [id]);
+    }
+};
+
+const CampaignSenderAccount = {
+    normalizeRows(rows = []) {
+        return rows.map((row) => ({
+            ...row,
+            weight: parseNonNegativeInteger(row.weight, 1) || 1,
+            daily_limit: parseNonNegativeInteger(row.daily_limit, 0),
+            is_active: normalizeBooleanFlag(row.is_active, 1)
+        }));
+    },
+
+    async listByCampaignId(campaignId, options = {}) {
+        const onlyActive = options.onlyActive !== false;
+        const rows = await query(`
+            SELECT id, campaign_id, session_id, weight, daily_limit, is_active, created_at, updated_at
+            FROM campaign_sender_accounts
+            WHERE campaign_id = ?
+              ${onlyActive ? 'AND is_active = 1' : ''}
+            ORDER BY id ASC
+        `, [campaignId]);
+        return this.normalizeRows(rows);
+    },
+
+    async replaceForCampaign(campaignId, accounts = []) {
+        await run('DELETE FROM campaign_sender_accounts WHERE campaign_id = ?', [campaignId]);
+
+        const normalized = [];
+        const seen = new Set();
+
+        for (const entry of accounts || []) {
+            const sessionId = String(entry?.session_id || entry?.sessionId || '').trim();
+            if (!sessionId || seen.has(sessionId)) continue;
+            seen.add(sessionId);
+
+            const payload = {
+                session_id: sessionId,
+                weight: Math.max(1, parseNonNegativeInteger(entry?.weight, 1)),
+                daily_limit: parseNonNegativeInteger(entry?.daily_limit ?? entry?.dailyLimit, 0),
+                is_active: normalizeBooleanFlag(entry?.is_active ?? entry?.isActive, 1)
+            };
+            normalized.push(payload);
+        }
+
+        for (const account of normalized) {
+            await run(`
+                INSERT INTO campaign_sender_accounts (campaign_id, session_id, weight, daily_limit, is_active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `, [campaignId, account.session_id, account.weight, account.daily_limit, account.is_active]);
+        }
+
+        return this.listByCampaignId(campaignId, { onlyActive: false });
+    }
+};
+
+const WhatsAppSession = {
+    async list(options = {}) {
+        const includeDisabled = options.includeDisabled !== false;
+        const rows = await query(`
+            SELECT
+                id,
+                session_id,
+                phone,
+                name,
+                status,
+                COALESCE(campaign_enabled, 1) AS campaign_enabled,
+                COALESCE(daily_limit, 0) AS daily_limit,
+                COALESCE(hourly_limit, 0) AS hourly_limit,
+                cooldown_until,
+                qr_code,
+                last_connected_at,
+                created_at,
+                updated_at
+            FROM whatsapp_sessions
+            ${includeDisabled ? '' : 'WHERE COALESCE(campaign_enabled, 1) = 1'}
+            ORDER BY updated_at DESC, id DESC
+        `);
+        return rows.map((row) => ({
+            ...row,
+            campaign_enabled: normalizeBooleanFlag(row.campaign_enabled, 1),
+            daily_limit: parseNonNegativeInteger(row.daily_limit, 0),
+            hourly_limit: parseNonNegativeInteger(row.hourly_limit, 0)
+        }));
+    },
+
+    async findBySessionId(sessionId) {
+        const normalizedSessionId = String(sessionId || '').trim();
+        if (!normalizedSessionId) return null;
+        const row = await queryOne(`
+            SELECT
+                id,
+                session_id,
+                phone,
+                name,
+                status,
+                COALESCE(campaign_enabled, 1) AS campaign_enabled,
+                COALESCE(daily_limit, 0) AS daily_limit,
+                COALESCE(hourly_limit, 0) AS hourly_limit,
+                cooldown_until,
+                qr_code,
+                last_connected_at,
+                created_at,
+                updated_at
+            FROM whatsapp_sessions
+            WHERE session_id = ?
+        `, [normalizedSessionId]);
+
+        if (!row) return null;
+
+        return {
+            ...row,
+            campaign_enabled: normalizeBooleanFlag(row.campaign_enabled, 1),
+            daily_limit: parseNonNegativeInteger(row.daily_limit, 0),
+            hourly_limit: parseNonNegativeInteger(row.hourly_limit, 0)
+        };
+    },
+
+    async upsertDispatchConfig(sessionId, data = {}) {
+        const normalizedSessionId = String(sessionId || '').trim();
+        if (!normalizedSessionId) {
+            throw new Error('session_id e obrigatorio');
+        }
+
+        const existing = await this.findBySessionId(normalizedSessionId);
+        const campaignEnabled = Object.prototype.hasOwnProperty.call(data, 'campaign_enabled')
+            ? normalizeBooleanFlag(data.campaign_enabled, existing?.campaign_enabled ?? 1)
+            : (existing?.campaign_enabled ?? 1);
+        const dailyLimit = Object.prototype.hasOwnProperty.call(data, 'daily_limit')
+            ? parseNonNegativeInteger(data.daily_limit, existing?.daily_limit ?? 0)
+            : (existing?.daily_limit ?? 0);
+        const hourlyLimit = Object.prototype.hasOwnProperty.call(data, 'hourly_limit')
+            ? parseNonNegativeInteger(data.hourly_limit, existing?.hourly_limit ?? 0)
+            : (existing?.hourly_limit ?? 0);
+        const cooldownUntil = Object.prototype.hasOwnProperty.call(data, 'cooldown_until')
+            ? (data.cooldown_until ? String(data.cooldown_until) : null)
+            : (existing?.cooldown_until || null);
+
+        await run(`
+            INSERT INTO whatsapp_sessions (
+                session_id, status, campaign_enabled, daily_limit, hourly_limit, cooldown_until, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT (session_id) DO UPDATE SET
+                campaign_enabled = EXCLUDED.campaign_enabled,
+                daily_limit = EXCLUDED.daily_limit,
+                hourly_limit = EXCLUDED.hourly_limit,
+                cooldown_until = EXCLUDED.cooldown_until,
+                updated_at = CURRENT_TIMESTAMP
+        `, [
+            normalizedSessionId,
+            existing?.status || 'disconnected',
+            campaignEnabled,
+            dailyLimit,
+            hourlyLimit,
+            cooldownUntil
+        ]);
+
+        return this.findBySessionId(normalizedSessionId);
     }
 };
 
@@ -1171,13 +1373,19 @@ const MessageQueue = {
         const uuid = generateUUID();
         
         const result = await run(`
-            INSERT INTO message_queue (uuid, lead_id, conversation_id, campaign_id, content, media_type, media_url, priority, scheduled_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO message_queue (
+                uuid, lead_id, conversation_id, campaign_id, session_id, is_first_contact, assignment_meta,
+                content, media_type, media_url, priority, scheduled_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             data.lead_id,
             data.conversation_id,
             data.campaign_id || null,
+            data.session_id || null,
+            normalizeBooleanFlag(data.is_first_contact, 1),
+            toJsonStringOrNull(data.assignment_meta),
             data.content,
             data.media_type || 'text',
             data.media_url,
@@ -1222,6 +1430,14 @@ const MessageQueue = {
                 error_message = ?
             WHERE id = ?
         `, [errorMessage, id]);
+    },
+
+    async setAssignment(id, sessionId, assignmentMeta = null) {
+        return await run(`
+            UPDATE message_queue
+            SET session_id = ?, assignment_meta = ?
+            WHERE id = ?
+        `, [sessionId || null, toJsonStringOrNull(assignmentMeta), id]);
     },
     
     async cancel(id) {
@@ -1589,11 +1805,13 @@ module.exports = {
     Message,
     Template,
     Campaign,
+    CampaignSenderAccount,
     Automation,
     Flow,
     MessageQueue,
     Tag,
     Webhook,
+    WhatsAppSession,
     Settings,
     User
 };

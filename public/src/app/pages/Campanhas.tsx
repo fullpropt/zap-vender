@@ -170,6 +170,25 @@ export default function Campanhas() {
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 25px;
         }
+        .sender-accounts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 12px;
+        }
+        .sender-account-item {
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            background: var(--gray-50);
+            padding: 12px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .sender-account-item.selected {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent);
+        }
+        .sender-account-item.disabled {
+            opacity: 0.65;
+        }
       `}</style>
       <button className="mobile-menu-toggle" onClick={() => { document.querySelector('.sidebar')?.classList.toggle('open'); document.querySelector('.sidebar-overlay')?.classList.toggle('active'); }}>☰</button>
           <div className="sidebar-overlay"></div>
@@ -298,6 +317,14 @@ export default function Campanhas() {
                                   </select>
                               </div>
                               <div className="form-group">
+                                  <label className="form-label">Distribuição</label>
+                                  <select className="form-select" id="campaignDistributionStrategy">
+                                      <option value="single">Conta única</option>
+                                      <option value="round_robin">Round-robin</option>
+                                      <option value="weighted_round_robin">Round-robin por peso</option>
+                                  </select>
+                              </div>
+                              <div className="form-group">
                                   <label className="form-label">Status</label>
                                   <select className="form-select" id="campaignStatus">
                                       <option value="draft">Rascunho</option>
@@ -321,6 +348,16 @@ export default function Campanhas() {
                           <div className="form-group">
                               <label className="form-label">Filtrar por Tag (opcional)</label>
                               <input type="text" className="form-input" id="campaignTagFilter" placeholder="Ex: vip" />
+                          </div>
+
+                          <div className="form-group">
+                              <label className="form-label">Contas de Envio (WhatsApp)</label>
+                              <div id="campaignSenderAccounts" className="sender-accounts-grid">
+                                  <p style={{ color: 'var(--gray-500)', margin: 0 }}>Carregando contas...</p>
+                              </div>
+                              <p style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 8 }}>
+                                  Se nenhuma conta for marcada, a campanha usa automaticamente as contas conectadas e habilitadas.
+                              </p>
                           </div>
       
                           <div className="form-group">
