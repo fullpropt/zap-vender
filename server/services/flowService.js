@@ -176,27 +176,31 @@ class FlowService extends EventEmitter {
      */
     async continueFlow(execution, message) {
         const currentNode = this.findNode(execution.flow, execution.currentNode);
-        
+
         if (!currentNode) {
             await this.endFlow(execution, 'completed');
             return null;
         }
-        
-        // Se o nó atual é de espera, processar resposta
+
+        if (currentNode.type === 'intent') {
+            execution.variables.last_response = message.text;
+            const selectedHandle = await this.pickTriggerIntentHandle(execution, currentNode, message.text);
+            await this.goToNextNode(execution, currentNode, selectedHandle);
+            return execution;
+        }
+
         if (currentNode.type === 'wait' || currentNode.type === 'condition') {
             execution.variables.last_response = message.text;
-            
-            // Encontrar próximo nó baseado na resposta
+
             const nextNodeId = this.evaluateCondition(execution.flow, currentNode, message.text);
-            
+
             if (nextNodeId) {
                 await this.executeNode(execution, nextNodeId);
             } else {
-                // Resposta não reconhecida, repetir mensagem anterior ou encerrar
                 await this.endFlow(execution, 'completed');
             }
         }
-        
+
         return execution;
     }
     
@@ -246,10 +250,14 @@ class FlowService extends EventEmitter {
                     break;
                     
                 case 'wait':
-                    // Aguardar resposta do usuário
-                    // O fluxo será continuado quando chegar nova mensagem
+                    // Aguarda resposta do usuario
+                    // O fluxo sera continuado quando chegar nova mensagem
                     break;
-                    
+
+                case 'intent':
+                    // Aguarda resposta para classificar a intencao no meio do fluxo
+                    break;
+
                 case 'condition':
                     // Aguardar resposta para avaliar condição
                     break;
@@ -332,8 +340,12 @@ class FlowService extends EventEmitter {
      * Ir para próximo nó
      */
     resolveTriggerIntentRoutes(node) {
+        const nodeType = String(node?.type || '').trim().toLowerCase();
         const subtype = String(node?.subtype || '').trim().toLowerCase();
-        if (node?.type !== 'trigger' || (subtype !== 'keyword' && subtype !== 'intent')) {
+        if (nodeType === 'trigger' && subtype !== 'keyword' && subtype !== 'intent') {
+            return [];
+        }
+        if (nodeType !== 'trigger' && nodeType !== 'intent') {
             return [];
         }
 
@@ -360,11 +372,11 @@ class FlowService extends EventEmitter {
         }));
     }
 
-    async pickTriggerIntentHandle(execution, node) {
+    async pickTriggerIntentHandle(execution, node, responseText = null) {
         const routes = this.resolveTriggerIntentRoutes(node);
         if (routes.length === 0) return null;
 
-        const messageText = String(execution?.triggerMessageText || execution?.variables?.trigger_message || '').trim();
+        const messageText = String(responseText ?? execution?.triggerMessageText ?? execution?.variables?.trigger_message ?? '').trim();
         if (!messageText) return null;
         const strictIntentRouting = isStrictFlowIntentRoutingEnabled() && isFlowIntentClassifierConfigured();
 
@@ -441,7 +453,7 @@ class FlowService extends EventEmitter {
         }
 
         const subtype = String(currentNode?.subtype || '').trim().toLowerCase();
-        const isIntentNode = currentNode?.type === 'trigger' && (subtype === 'keyword' || subtype === 'intent');
+        const isIntentNode = currentNode?.type === 'intent' || (currentNode?.type === 'trigger' && (subtype === 'keyword' || subtype === 'intent'));
         const normalizeHandle = (value) => {
             const normalized = String(value || '').trim();
             return normalized || 'default';
@@ -581,5 +593,7 @@ class FlowService extends EventEmitter {
 
 module.exports = new FlowService();
 module.exports.FlowService = FlowService;
+
+
 
 

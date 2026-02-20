@@ -1,7 +1,7 @@
 ﻿// Flow builder page logic migrated to module
 
 // Estado do construtor
-type NodeType = 'trigger' | 'message' | 'wait' | 'condition' | 'delay' | 'transfer' | 'tag' | 'status' | 'webhook' | 'end';
+type NodeType = 'trigger' | 'intent' | 'message' | 'wait' | 'condition' | 'delay' | 'transfer' | 'tag' | 'status' | 'webhook' | 'end';
 type NodeData = {
     label: string;
     keyword?: string;
@@ -62,7 +62,9 @@ let hasInitialized = false;
 const DEFAULT_HANDLE = 'default';
 
 function isIntentTrigger(node?: FlowNode | null) {
-    return !!node && node.type === 'trigger' && (node.subtype === 'keyword' || node.subtype === 'intent');
+    if (!node) return false;
+    if (node.type === 'intent') return true;
+    return node.type === 'trigger' && (node.subtype === 'keyword' || node.subtype === 'intent');
 }
 
 function normalizeRouteId(value: string) {
@@ -299,6 +301,7 @@ function addNode(type: NodeType, subtype: string, x: number, y: number) {
 function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
     const defaults = {
         trigger: { label: subtype === 'keyword' || subtype === 'intent' ? 'Intenção' : 'Novo Contato', keyword: '', intentRoutes: [] },
+        intent: { label: 'Intenção', keyword: '', intentRoutes: [] },
         message: { label: 'Mensagem', content: 'Olá! Como posso ajudar?' },
         wait: { label: 'Aguardar Resposta', timeout: 300 },
         condition: { label: 'Condição', conditions: [] },
@@ -341,6 +344,7 @@ function renderNode(node: FlowNode) {
     
     const icons = {
         trigger: 'icon-bolt',
+        intent: 'icon-bolt',
         message: 'icon-message',
         wait: 'icon-clock',
         condition: 'icon-bolt',
@@ -482,6 +486,7 @@ function getNodePreview(node: FlowNode) {
         case 'delay':
             return `Aguardar ${node.data.seconds}s`;
         case 'trigger':
+        case 'intent':
             if (isIntentTrigger(node)) {
                 const routes = getIntentRoutes(node);
                 if (routes.length === 0) return 'Defina as intenções para iniciar o fluxo';
@@ -558,6 +563,7 @@ function renderProperties() {
     
     switch (selectedNode.type) {
         case 'trigger':
+        case 'intent':
             if (isIntentTrigger(selectedNode)) {
                 syncIntentRoutesFromNode(selectedNode);
                 const routes = getIntentRoutes(selectedNode);
@@ -862,6 +868,9 @@ function endConnection(nodeId: string, portType: string) {
 
         edges.push(newEdge);
         renderConnections();
+        if (selectedNode?.id === newEdge.source) {
+            renderProperties();
+        }
     }
 
     cancelConnection();
@@ -952,7 +961,6 @@ function renderConnections() {
         path.setAttribute('data-target', edge.target);
 
         const removeConnection = () => {
-            if (!confirm('Remover esta conexão?')) return;
             edges = edges.filter((item) => !isSameEdge(item, edge));
             renderConnections();
         };
@@ -1065,7 +1073,9 @@ function buildTriggerPayload(trigger?: FlowNode) {
 function normalizeLoadedFlowData() {
     nodes = nodes.map((node) => {
         if (isIntentTrigger(node)) {
-            node.subtype = 'keyword';
+            if (node.type === 'trigger') {
+                node.subtype = 'keyword';
+            }
             if (!node.data.label || node.data.label.toLowerCase() === 'palavra-chave') {
                 node.data.label = 'Intenção';
             }

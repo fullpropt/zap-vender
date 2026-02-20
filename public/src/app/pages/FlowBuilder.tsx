@@ -284,6 +284,7 @@ export default function FlowBuilder() {
         }
         
         .flow-node-header.trigger { background: rgba(16, 185, 129, 0.1); }
+        .flow-node-header.intent { background: rgba(16, 185, 129, 0.1); }
         .flow-node-header.message { background: rgba(59, 130, 246, 0.1); }
         .flow-node-header.condition { background: rgba(245, 158, 11, 0.1); }
         .flow-node-header.wait { background: rgba(100, 116, 139, 0.1); }
@@ -989,6 +990,13 @@ export default function FlowBuilder() {
                       
                       <div className="node-category">
                           <h3>Lógica</h3>
+                          <div className="node-item" draggable="true" data-type="intent">
+                              <div className="icon trigger icon-bolt"></div>
+                              <div className="info">
+                                  <div className="name">Intenção</div>
+                                  <div className="desc">Aguarda resposta e ramifica por intenção</div>
+                              </div>
+                          </div>
                           <div className="node-item" draggable="true" data-type="condition">
                               <div className="icon condition icon-bolt"></div>
                               <div className="info">
