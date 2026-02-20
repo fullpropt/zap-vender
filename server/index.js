@@ -68,6 +68,12 @@ const queueService = require('./services/queueService');
 
 const flowService = require('./services/flowService');
 const senderAllocatorService = require('./services/senderAllocatorService');
+const {
+    DEFAULT_WHATSAPP_SESSION_ID,
+    LEGACY_WHATSAPP_SESSION_ALIASES,
+    listDefaultSessionCandidates,
+    sanitizeSessionId: sanitizeConfiguredSessionId
+} = require('./config/sessionDefaults');
 
 
 
@@ -508,7 +514,7 @@ const jidAliasMap = new Map();
 const sessionInitLocks = new Set();
 
 senderAllocatorService.setRuntimeSessionsGetter(() => sessions);
-senderAllocatorService.setDefaultSessionId('self_whatsapp_session');
+senderAllocatorService.setDefaultSessionId(DEFAULT_WHATSAPP_SESSION_ID);
 
 
 
@@ -537,8 +543,56 @@ function getSessionPhone(sessionId) {
 }
 
 function sanitizeSessionId(value, fallback = '') {
-    const normalized = String(value || '').trim();
-    return normalized || fallback;
+    return sanitizeConfiguredSessionId(value, fallback);
+}
+
+function hasRuntimeOrStoredSession(sessionId) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId) return false;
+    if (sessions.has(normalizedSessionId)) return true;
+    return sessionExists(normalizedSessionId);
+}
+
+function resolveDefaultSessionId(preferredSessionId = '') {
+    const preferred = sanitizeSessionId(preferredSessionId);
+    if (preferred) return preferred;
+
+    const candidates = listDefaultSessionCandidates();
+    for (const candidate of candidates) {
+        const runtimeSession = sessions.get(candidate);
+        if (runtimeSession?.isConnected) {
+            return candidate;
+        }
+    }
+
+    for (const candidate of candidates) {
+        if (hasRuntimeOrStoredSession(candidate)) {
+            return candidate;
+        }
+    }
+
+    for (const [runtimeSessionId, runtimeSession] of sessions.entries()) {
+        if (runtimeSession?.isConnected) {
+            return sanitizeSessionId(runtimeSessionId, DEFAULT_WHATSAPP_SESSION_ID);
+        }
+    }
+
+    return DEFAULT_WHATSAPP_SESSION_ID;
+}
+
+function resolveSessionIdOrDefault(sessionId, fallbackSessionId = '') {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (normalizedSessionId && !LEGACY_WHATSAPP_SESSION_ALIASES.includes(normalizedSessionId)) {
+        return normalizedSessionId;
+    }
+
+    const fallback = resolveDefaultSessionId(fallbackSessionId);
+    const resolvedSessionId = sanitizeSessionId(normalizedSessionId, fallback);
+    if (LEGACY_WHATSAPP_SESSION_ALIASES.includes(resolvedSessionId) && hasRuntimeOrStoredSession(resolvedSessionId)) {
+        return resolvedSessionId;
+    }
+
+    return resolvedSessionId;
 }
 
 function normalizeSenderAccountsPayload(value) {
@@ -1674,7 +1728,7 @@ async function sendMessageToWhatsApp(options) {
 
     const { to, jid, content, mediaType, mediaUrl, sessionId } = options;
 
-    const sid = sessionId || 'self_whatsapp_session';
+    const sid = resolveSessionIdOrDefault(sessionId);
 
     const session = whatsappService.getSession(sid);
 
@@ -2742,7 +2796,7 @@ const AUTOMATION_EVENT_TYPES = {
     SCHEDULE: 'schedule',
     INACTIVITY: 'inactivity'
 };
-const DEFAULT_AUTOMATION_SESSION_ID = 'self_whatsapp_session';
+const DEFAULT_AUTOMATION_SESSION_ID = DEFAULT_WHATSAPP_SESSION_ID;
 const AUTOMATION_SCHEDULE_POLL_MS = 30000;
 const LEGACY_CAMPAIGN_TRIGGER_MODE = 'legacy_campaign_trigger';
 
@@ -4491,7 +4545,7 @@ function sessionExists(sessionId) {
     await bootstrapPromise;
 
     await queueService.init(async (options) => {
-        const sid = options.sessionId || 'self_whatsapp_session';
+        const sid = resolveSessionIdOrDefault(options.sessionId);
         const to = options.to || extractNumber(options.jid || '');
 
         if (!to) {
@@ -4529,10 +4583,7 @@ function sessionExists(sessionId) {
     });
 
     flowService.init(async (options) => {
-        const resolvedSessionId = sanitizeSessionId(
-            options?.sessionId || options?.session_id,
-            'self_whatsapp_session'
-        );
+        const resolvedSessionId = resolveSessionIdOrDefault(options?.sessionId || options?.session_id);
         return await sendMessageToWhatsApp({
             ...options,
             sessionId: resolvedSessionId
@@ -4948,7 +4999,7 @@ io.on('connection', (socket) => {
 
 app.get('/api/whatsapp/status', optionalAuth, (req, res) => {
 
-    const sessionId = sanitizeSessionId(req.query?.sessionId, 'self_whatsapp_session');
+    const sessionId = resolveSessionIdOrDefault(req.query?.sessionId);
 
     const session = sessions.get(sessionId);
 
@@ -5022,7 +5073,7 @@ app.post('/api/whatsapp/disconnect', authenticate, async (req, res) => {
 
     try {
 
-        const sessionId = sanitizeSessionId(req.body?.sessionId || req.query?.sessionId, 'self_whatsapp_session');
+        const sessionId = resolveSessionIdOrDefault(req.body?.sessionId || req.query?.sessionId);
 
         await whatsappService.logoutSession(sessionId, SESSIONS_DIR);
 
@@ -6154,7 +6205,7 @@ app.post('/api/messages/send', authenticate, async (req, res) => {
 
     try {
 
-        const resolvedSessionId = sanitizeSessionId(sessionId, 'self_whatsapp_session');
+        const resolvedSessionId = resolveSessionIdOrDefault(sessionId);
         const result = await sendMessage(resolvedSessionId, to, content, type || 'text', options || {});
 
         res.json({

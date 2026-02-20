@@ -45,13 +45,23 @@ type SocketMessage = Message & {
     mediaType?: string;
 };
 
-const SESSION_ID = 'self_whatsapp_session';
+const DEFAULT_SESSION_ID = 'default_whatsapp_session';
 let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
 let currentContact: Contact | null = null;
 let contacts: Contact[] = [];
 let messages: Record<string, Message[]> = {};
 let typingContacts = new Set<string>();
 let isConnected = false;
+
+function getSessionId() {
+    const appSessionId = String((window as any).APP?.sessionId || '').trim();
+    if (appSessionId) return appSessionId;
+
+    const storedSessionId = String(localStorage.getItem('zapvender_active_whatsapp_session') || '').trim();
+    if (storedSessionId) return storedSessionId;
+
+    return DEFAULT_SESSION_ID;
+}
 
 // ============================================
 // INICIALIZAÇÃO
@@ -98,7 +108,7 @@ function initSocket() {
     
     socket.on('connect', () => {
         console.log('Socket conectado');
-        socket.emit('check-session', { sessionId: SESSION_ID });
+        socket.emit('check-session', { sessionId: getSessionId() });
     });
     
     socket.on('disconnect', () => {
@@ -244,7 +254,7 @@ function setupEventListeners() {
 // CONTATOS
 // ============================================
 function loadContacts() {
-    socket?.emit('get-contacts', { sessionId: SESSION_ID });
+    socket?.emit('get-contacts', { sessionId: getSessionId() });
 }
 
 function renderContacts(filteredContacts: Contact[] | null = null) {
@@ -356,7 +366,7 @@ function selectContact(jid: string) {
     loadMessages(contact);
     
     // Marcar como lido
-    socket?.emit('mark-read', { sessionId: SESSION_ID, contactJid: jid });
+    socket?.emit('mark-read', { sessionId: getSessionId(), contactJid: jid });
 }
 
 // ============================================
@@ -364,7 +374,7 @@ function selectContact(jid: string) {
 // ============================================
 function loadMessages(contact: Contact) {
     socket?.emit('get-messages', { 
-        sessionId: SESSION_ID, 
+        sessionId: getSessionId(), 
         contactJid: contact.jid,
         leadId: contact.leadId
     });
@@ -475,7 +485,7 @@ function handleNewMessage(message: SocketMessage) {
         renderMessages();
         
         // Marcar como lido
-        socket?.emit('mark-read', { sessionId: SESSION_ID, contactJid: currentContact.jid });
+        socket?.emit('mark-read', { sessionId: getSessionId(), contactJid: currentContact.jid });
     }
     
     // Notificação sonora
@@ -501,7 +511,7 @@ function sendMessage() {
     if (!text || !currentContact || !isConnected) return;
     
     socket?.emit('send-message', {
-        sessionId: SESSION_ID,
+        sessionId: getSessionId(),
         to: currentContact.number,
         message: text,
         type: 'text'
@@ -627,7 +637,7 @@ async function sendFile() {
             const type = file.type.startsWith('image/') ? 'image' : 'document';
             
             socket?.emit('send-message', {
-                sessionId: SESSION_ID,
+                sessionId: getSessionId(),
                 to: currentContact.number,
                 message: result.file.url,
                 type,

@@ -24,9 +24,10 @@ type WhatsappSessionItem = {
 // Configurações
 const CONFIG = {
     SOCKET_URL: window.location.origin,
-    DEFAULT_SESSION_ID: 'self_whatsapp_session',
+    DEFAULT_SESSION_ID: 'default_whatsapp_session',
     QR_REFRESH_INTERVAL: 30000
 };
+const LEGACY_DEFAULT_SESSION_ID = 'self_whatsapp_session';
 
 // Estado
 let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
@@ -253,7 +254,14 @@ async function loadSessionOptions(preferredSessionId?: string) {
     );
 
     const storedSessionId = getStoredSessionId();
-    const candidates = [fallbackSessionId, storedSessionId, getCurrentSessionId(), getDefaultSessionId(), CONFIG.DEFAULT_SESSION_ID];
+    const candidates = [
+        fallbackSessionId,
+        storedSessionId,
+        getCurrentSessionId(),
+        getDefaultSessionId(),
+        CONFIG.DEFAULT_SESSION_ID,
+        LEGACY_DEFAULT_SESSION_ID
+    ];
     let nextSessionId = candidates.find((candidate) => {
         const normalizedCandidate = sanitizeSessionId(candidate);
         if (!normalizedCandidate) return false;

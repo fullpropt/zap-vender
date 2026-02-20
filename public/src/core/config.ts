@@ -62,7 +62,7 @@ const CONFIG: Config = {
     SOCKET_URL: window.location.origin,
     
     // ID da sessão WhatsApp
-    SESSION_ID: 'self_whatsapp_session',
+    SESSION_ID: 'default_whatsapp_session',
     
     // Código do país padrão
     COUNTRY_CODE: '55',

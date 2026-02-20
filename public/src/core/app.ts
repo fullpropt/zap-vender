@@ -39,12 +39,24 @@ type ApiRequestOptions = RequestInit & {
 // ============================================
 
 const BUILD_ID = '2026-02-09T16:50:00Z';
+const DEFAULT_SESSION_ID = 'default_whatsapp_session';
+
+function sanitizeSessionId(value: unknown, fallback = '') {
+    const normalized = String(value || '').trim();
+    return normalized || fallback;
+}
+
+function resolveInitialSessionId() {
+    const stored = sanitizeSessionId(localStorage.getItem('zapvender_active_whatsapp_session'));
+    return stored || DEFAULT_SESSION_ID;
+}
+
 const APP: AppState = {
     version: '4.1.1',
     socketUrl: window.location.hostname === 'localhost' 
         ? 'http://localhost:3001' 
         : window.location.origin,
-    sessionId: 'self_whatsapp_session',
+    sessionId: resolveInitialSessionId(),
     countryCode: '55',
     socket: null,
     whatsappStatus: 'disconnected',
@@ -817,4 +829,3 @@ windowAny.LEAD_STATUS = LEAD_STATUS;
 windowAny.FUNNEL_STAGES = FUNNEL_STAGES;
 
 export {};
-

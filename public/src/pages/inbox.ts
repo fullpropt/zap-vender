@@ -225,7 +225,9 @@ function resolveConversationSessionId(conversation: Conversation | null | undefi
     if (fromConversation) return fromConversation;
     const appSession = sanitizeSessionId((window as any).APP?.sessionId);
     if (appSession) return appSession;
-    return 'self_whatsapp_session';
+    const storedSession = sanitizeSessionId(localStorage.getItem('zapvender_active_whatsapp_session'));
+    if (storedSession) return storedSession;
+    return 'default_whatsapp_session';
 }
 
 function parseLeadCustomFields(value: unknown) {

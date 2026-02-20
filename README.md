@@ -244,7 +244,7 @@ DELETE /api/leads/:id
 POST /api/send
 Content-Type: application/json
 {
-    "sessionId": "self_whatsapp_session",
+    "sessionId": "default_whatsapp_session",
     "to": "5527999999999",
     "message": "Olá! Esta é uma mensagem de teste.",
     "type": "text"

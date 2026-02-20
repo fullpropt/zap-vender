@@ -32,7 +32,7 @@
 
 ### 1.5 Multi-tenant
 
-- **Atual:** Uma sessão fixa (`self_whatsapp_session`), sem isolamento por tenant.
+- **Atual:** Uma sessão fixa (`default_whatsapp_session`), sem isolamento por tenant.
 - **Para multi-tenant:** É necessário tenant_id em leads/conversas/mensagens, sessão ou número por tenant (Cloud API: um app pode ter vários números) e isolamento de dados e filas por tenant.
 
 ### 1.6 Segurança

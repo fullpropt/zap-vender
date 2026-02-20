@@ -4,6 +4,7 @@
  */
 
 const { ValidationError } = require('./errorHandler');
+const { DEFAULT_WHATSAPP_SESSION_ID } = require('../config/sessionDefaults');
 
 /**
  * Valida se um campo é obrigatório
@@ -183,7 +184,7 @@ function validateMessageSend(req, res, next) {
         const validData = {
             to: isPhone(to, 'to'),
             message: isString(sanitizeString(message), 'message', { min: 1, max: 4096 }),
-            sessionId: sessionId || 'self_whatsapp_session'
+            sessionId: sessionId || DEFAULT_WHATSAPP_SESSION_ID
         };
         
         if (type) {

@@ -5,13 +5,14 @@
 
 const { query } = require('../database/connection');
 const { CampaignSenderAccount, WhatsAppSession } = require('../database/models');
+const { DEFAULT_WHATSAPP_SESSION_ID } = require('../config/sessionDefaults');
 
 class SenderAllocatorService {
     constructor(options = {}) {
         this.runtimeSessionsGetter = typeof options.getRuntimeSessions === 'function'
             ? options.getRuntimeSessions
             : () => new Map();
-        this.defaultSessionId = this.sanitizeSessionId(options.defaultSessionId) || 'self_whatsapp_session';
+        this.defaultSessionId = this.sanitizeSessionId(options.defaultSessionId) || DEFAULT_WHATSAPP_SESSION_ID;
         this.cursorByScope = new Map();
     }
 
