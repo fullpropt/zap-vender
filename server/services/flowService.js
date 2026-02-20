@@ -411,6 +411,44 @@ function pickKeywordFlowIdByLocalFallback(messageText = '', candidateFlows = [])
     return fuzzyMatch?.flowId || null;
 }
 
+function resolveFlowStartNodeId(flow = null) {
+    const nodes = Array.isArray(flow?.nodes) ? flow.nodes : [];
+    if (nodes.length === 0) return null;
+
+    const explicitStartNode = nodes.find((node) => String(node?.id || '') === 'start');
+    if (explicitStartNode?.id) return String(explicitStartNode.id);
+
+    const triggerType = String(flow?.trigger_type || '').trim().toLowerCase();
+    const triggerSubtype = triggerType === 'keyword' ? 'keyword' : triggerType;
+
+    const isTriggerNodeMatch = (node) => {
+        if (String(node?.type || '').trim().toLowerCase() !== 'trigger') return false;
+        const nodeSubtype = String(node?.subtype || '').trim().toLowerCase();
+        if (!triggerSubtype) return true;
+        if (triggerSubtype === 'keyword') {
+            return nodeSubtype === 'keyword' || nodeSubtype === 'intent';
+        }
+        return nodeSubtype === triggerSubtype;
+    };
+
+    const matchingTriggerNode = nodes.find(isTriggerNodeMatch);
+    if (matchingTriggerNode?.id) return String(matchingTriggerNode.id);
+
+    const anyTriggerNode = nodes.find((node) => String(node?.type || '').trim().toLowerCase() === 'trigger');
+    if (anyTriggerNode?.id) return String(anyTriggerNode.id);
+
+    const edges = Array.isArray(flow?.edges) ? flow.edges : [];
+    const incomingTargets = new Set(
+        edges
+            .map((edge) => String(edge?.target || '').trim())
+            .filter(Boolean)
+    );
+    const rootNode = nodes.find((node) => !incomingTargets.has(String(node?.id || '').trim()));
+    if (rootNode?.id) return String(rootNode.id);
+
+    return String(nodes[0]?.id || '') || null;
+}
+
 function buildIntentFuzzyCandidates(routes = []) {
     const candidates = [];
     for (const route of routes) {
@@ -532,6 +570,10 @@ class FlowService extends EventEmitter {
     pickKeywordFlowByLocalFallback(messageText, candidateFlows = []) {
         return pickKeywordFlowIdByLocalFallback(messageText, candidateFlows);
     }
+
+    resolveStartNodeId(flow) {
+        return resolveFlowStartNodeId(flow);
+    }
     
     /**
      * Processar mensagem recebida e verificar triggers
@@ -600,6 +642,12 @@ class FlowService extends EventEmitter {
      */
     async startFlow(flow, lead, conversation, triggerMessage = null) {
         const executionUuid = generateUUID();
+        const startNodeId = this.resolveStartNodeId(flow);
+
+        if (!startNodeId) {
+            console.warn(`[flow-intent] Fluxo ${flow?.id || 'desconhecido'} sem nó inicial válido; execução encerrada.`);
+            return null;
+        }
         
         // Criar registro de execução
         const result = await run(`
@@ -610,7 +658,7 @@ class FlowService extends EventEmitter {
             flow.id,
             conversation?.id,
             lead.id,
-            'start',
+            startNodeId,
             JSON.stringify({
                 lead: {
                     nome: lead.name,
@@ -628,7 +676,7 @@ class FlowService extends EventEmitter {
             flow,
             lead,
             conversation,
-            currentNode: 'start',
+            currentNode: startNodeId,
             variables: {
                 nome: lead.name || 'Cliente',
                 telefone: lead.phone,
@@ -651,7 +699,7 @@ class FlowService extends EventEmitter {
         });
         
         // Executar primeiro nó
-        await this.executeNode(execution, 'start');
+        await this.executeNode(execution, startNodeId);
         
         return execution;
     }
