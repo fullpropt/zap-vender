@@ -142,6 +142,7 @@ class SenderAllocatorService {
                 status: connected ? 'connected' : String(row.status || 'disconnected'),
                 campaign_enabled: this.toBoolean(row.campaign_enabled, true),
                 daily_limit: this.toNonNegativeInt(row.daily_limit, 0),
+                dispatch_weight: Math.max(1, this.toNonNegativeInt(row.dispatch_weight, 1)),
                 hourly_limit: this.toNonNegativeInt(row.hourly_limit, 0)
             });
         }
@@ -158,6 +159,7 @@ class SenderAllocatorService {
                 connected: Boolean(runtime?.isConnected),
                 campaign_enabled: true,
                 daily_limit: 0,
+                dispatch_weight: 1,
                 hourly_limit: 0,
                 cooldown_until: null,
                 qr_code: null,
@@ -336,7 +338,7 @@ class SenderAllocatorService {
             for (const session of sessions) {
                 pushCandidate({
                     session_id: session.session_id,
-                    weight: 1,
+                    weight: this.toNonNegativeInt(session.dispatch_weight, 1) || 1,
                     daily_limit: session.daily_limit,
                     is_active: true,
                     campaign_enabled: session.campaign_enabled,
@@ -354,7 +356,7 @@ class SenderAllocatorService {
             const fallbackSession = sessionsById.get(defaultSessionId);
             pushCandidate({
                 session_id: defaultSessionId,
-                weight: 1,
+                weight: this.toNonNegativeInt(fallbackSession?.dispatch_weight, 1) || 1,
                 daily_limit: fallbackSession?.daily_limit ?? 0,
                 is_active: true,
                 campaign_enabled: fallbackSession?.campaign_enabled ?? true,

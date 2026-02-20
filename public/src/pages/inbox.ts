@@ -159,6 +159,10 @@ function getSessionStatusLabel(session: WhatsappSessionItem) {
     return connected ? 'Conectada' : 'Desconectada';
 }
 
+function isInboxSessionConnected(session: WhatsappSessionItem) {
+    return Boolean(session.connected) || String(session.status || '').toLowerCase() === 'connected';
+}
+
 function getSessionDisplayName(session: WhatsappSessionItem) {
     const sessionId = sanitizeSessionId(session.session_id);
     const name = String(session.name || '').trim();
@@ -204,6 +208,43 @@ function renderInboxSessionFilterOptions() {
 
     select.innerHTML = options.join('');
     select.value = inboxSessionFilter;
+    renderInboxSessionIndicator();
+}
+
+function renderInboxSessionIndicator() {
+    const container = document.getElementById('inboxSessionIndicator') as HTMLElement | null;
+    if (!container) return;
+
+    const nameEl = container.querySelector('.inbox-session-highlight-name') as HTMLElement | null;
+    const metaEl = container.querySelector('.inbox-session-highlight-meta') as HTMLElement | null;
+    const statusEl = container.querySelector('.inbox-session-highlight-status') as HTMLElement | null;
+
+    if (!inboxSessionFilter) {
+        if (nameEl) nameEl.textContent = 'Todas as contas';
+        if (metaEl) metaEl.textContent = 'Mostrando conversas de todas as contas';
+        if (statusEl) {
+            statusEl.textContent = 'Filtro geral';
+            statusEl.className = 'inbox-session-highlight-status all';
+        }
+        return;
+    }
+
+    const selectedSession = findInboxSessionById(inboxSessionFilter);
+    const sessionDisplayName = selectedSession ? getSessionDisplayName(selectedSession) : inboxSessionFilter;
+    const sessionId = selectedSession ? sanitizeSessionId(selectedSession.session_id, inboxSessionFilter) : inboxSessionFilter;
+    const connected = selectedSession ? isInboxSessionConnected(selectedSession) : false;
+    const statusLabel = selectedSession ? getSessionStatusLabel(selectedSession) : 'Indisponível';
+
+    if (nameEl) nameEl.textContent = sessionDisplayName;
+    if (metaEl) {
+        metaEl.textContent = selectedSession
+            ? `${sessionId} • ${statusLabel}`
+            : `${inboxSessionFilter} • Conta não encontrada na lista`;
+    }
+    if (statusEl) {
+        statusEl.textContent = statusLabel;
+        statusEl.className = `inbox-session-highlight-status ${connected ? 'connected' : 'disconnected'}`;
+    }
 }
 
 async function loadInboxSessionFilters() {
@@ -231,6 +272,7 @@ async function loadInboxSessionFilters() {
 function changeInboxSessionFilter(sessionId: string) {
     inboxSessionFilter = sanitizeSessionId(sessionId);
     persistInboxSessionFilter(inboxSessionFilter);
+    renderInboxSessionIndicator();
     currentConversation = null;
     currentLeadDetails = null;
     renderContactInfoPanel();

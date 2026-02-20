@@ -5385,6 +5385,7 @@ app.put('/api/whatsapp/sessions/:sessionId', authenticate, async (req, res) => {
             name: req.body?.name,
             campaign_enabled: req.body?.campaign_enabled,
             daily_limit: req.body?.daily_limit,
+            dispatch_weight: req.body?.dispatch_weight,
             hourly_limit: req.body?.hourly_limit,
             cooldown_until: req.body?.cooldown_until
         });

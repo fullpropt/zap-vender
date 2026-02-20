@@ -99,6 +99,62 @@ export default function Inbox() {
             font-size: 13px;
             padding: 9px 10px;
         }
+        .inbox-session-highlight {
+            margin-bottom: 12px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(var(--primary-rgb), 0.36);
+            background: rgba(var(--primary-rgb), 0.12);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .inbox-session-highlight-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--gray-600);
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+        .inbox-session-highlight-name {
+            font-size: 14px;
+            color: var(--dark);
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .inbox-session-highlight-meta {
+            font-size: 11px;
+            color: var(--gray-700);
+            margin-top: 3px;
+            line-height: 1.3;
+        }
+        .inbox-session-highlight-status {
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.38);
+            background: rgba(148, 163, 184, 0.18);
+            color: var(--gray-700);
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .inbox-session-highlight-status.connected {
+            color: #14532d;
+            border-color: rgba(16, 185, 129, 0.38);
+            background: rgba(16, 185, 129, 0.16);
+        }
+        .inbox-session-highlight-status.disconnected {
+            color: #7f1d1d;
+            border-color: rgba(239, 68, 68, 0.38);
+            background: rgba(239, 68, 68, 0.16);
+        }
+        .inbox-session-highlight-status.all {
+            color: #1e3a8a;
+            border-color: rgba(59, 130, 246, 0.35);
+            background: rgba(59, 130, 246, 0.15);
+        }
         .conversations-tabs {
             display: flex;
             gap: 10px;
@@ -582,6 +638,17 @@ export default function Inbox() {
                 font-size: 18px;
                 margin-bottom: 10px;
             }
+            .inbox-session-highlight {
+                padding: 8px 10px;
+                gap: 8px;
+            }
+            .inbox-session-highlight-name {
+                font-size: 13px;
+            }
+            .inbox-session-highlight-status {
+                font-size: 10px;
+                padding: 3px 8px;
+            }
             .conversations-tabs {
                 margin-bottom: 10px;
             }
@@ -696,6 +763,14 @@ export default function Inbox() {
                 >
                   <option value="">Todas as contas</option>
                 </select>
+              </div>
+              <div className="inbox-session-highlight" id="inboxSessionIndicator">
+                <div>
+                  <div className="inbox-session-highlight-label">Conta exibida</div>
+                  <div className="inbox-session-highlight-name">Todas as contas</div>
+                  <div className="inbox-session-highlight-meta">Mostrando conversas de todas as contas</div>
+                </div>
+                <span className="inbox-session-highlight-status all">Filtro geral</span>
               </div>
               <div className="conversations-tabs">
                 <button id="filterAllBtn" className="active" onClick={() => globals.filterConversations?.('all')}>Todos</button>

@@ -1044,6 +1044,7 @@ const WhatsAppSession = {
                 status,
                 COALESCE(campaign_enabled, 1) AS campaign_enabled,
                 COALESCE(daily_limit, 0) AS daily_limit,
+                COALESCE(dispatch_weight, 1) AS dispatch_weight,
                 COALESCE(hourly_limit, 0) AS hourly_limit,
                 cooldown_until,
                 qr_code,
@@ -1058,6 +1059,7 @@ const WhatsAppSession = {
             ...row,
             campaign_enabled: normalizeBooleanFlag(row.campaign_enabled, 1),
             daily_limit: parseNonNegativeInteger(row.daily_limit, 0),
+            dispatch_weight: Math.max(1, parseNonNegativeInteger(row.dispatch_weight, 1) || 1),
             hourly_limit: parseNonNegativeInteger(row.hourly_limit, 0)
         }));
     },
@@ -1074,6 +1076,7 @@ const WhatsAppSession = {
                 status,
                 COALESCE(campaign_enabled, 1) AS campaign_enabled,
                 COALESCE(daily_limit, 0) AS daily_limit,
+                COALESCE(dispatch_weight, 1) AS dispatch_weight,
                 COALESCE(hourly_limit, 0) AS hourly_limit,
                 cooldown_until,
                 qr_code,
@@ -1090,6 +1093,7 @@ const WhatsAppSession = {
             ...row,
             campaign_enabled: normalizeBooleanFlag(row.campaign_enabled, 1),
             daily_limit: parseNonNegativeInteger(row.daily_limit, 0),
+            dispatch_weight: Math.max(1, parseNonNegativeInteger(row.dispatch_weight, 1) || 1),
             hourly_limit: parseNonNegativeInteger(row.hourly_limit, 0)
         };
     },
@@ -1110,6 +1114,9 @@ const WhatsAppSession = {
         const dailyLimit = Object.prototype.hasOwnProperty.call(data, 'daily_limit')
             ? parseNonNegativeInteger(data.daily_limit, existing?.daily_limit ?? 0)
             : (existing?.daily_limit ?? 0);
+        const dispatchWeight = Object.prototype.hasOwnProperty.call(data, 'dispatch_weight')
+            ? Math.max(1, parseNonNegativeInteger(data.dispatch_weight, existing?.dispatch_weight ?? 1) || 1)
+            : Math.max(1, parseNonNegativeInteger(existing?.dispatch_weight, 1) || 1);
         const hourlyLimit = Object.prototype.hasOwnProperty.call(data, 'hourly_limit')
             ? parseNonNegativeInteger(data.hourly_limit, existing?.hourly_limit ?? 0)
             : (existing?.hourly_limit ?? 0);
@@ -1119,13 +1126,14 @@ const WhatsAppSession = {
 
         await run(`
             INSERT INTO whatsapp_sessions (
-                session_id, name, status, campaign_enabled, daily_limit, hourly_limit, cooldown_until, updated_at
+                session_id, name, status, campaign_enabled, daily_limit, dispatch_weight, hourly_limit, cooldown_until, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT (session_id) DO UPDATE SET
                 name = EXCLUDED.name,
                 campaign_enabled = EXCLUDED.campaign_enabled,
                 daily_limit = EXCLUDED.daily_limit,
+                dispatch_weight = EXCLUDED.dispatch_weight,
                 hourly_limit = EXCLUDED.hourly_limit,
                 cooldown_until = EXCLUDED.cooldown_until,
                 updated_at = CURRENT_TIMESTAMP
@@ -1135,6 +1143,7 @@ const WhatsAppSession = {
             existing?.status || 'disconnected',
             campaignEnabled,
             dailyLimit,
+            dispatchWeight,
             hourlyLimit,
             cooldownUntil
         ]);

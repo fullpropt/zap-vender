@@ -272,6 +272,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_sessions (
     status TEXT DEFAULT 'disconnected' CHECK(status IN ('disconnected', 'connecting', 'connected', 'qr_pending')),
     campaign_enabled INTEGER DEFAULT 1,
     daily_limit INTEGER DEFAULT 0,
+    dispatch_weight INTEGER DEFAULT 1,
     hourly_limit INTEGER DEFAULT 0,
     cooldown_until TEXT,
     qr_code TEXT,
@@ -338,6 +339,7 @@ ALTER TABLE campaigns ADD COLUMN distribution_config TEXT;
 ALTER TABLE automations ADD COLUMN session_scope TEXT;
 ALTER TABLE whatsapp_sessions ADD COLUMN campaign_enabled INTEGER DEFAULT 1;
 ALTER TABLE whatsapp_sessions ADD COLUMN daily_limit INTEGER DEFAULT 0;
+ALTER TABLE whatsapp_sessions ADD COLUMN dispatch_weight INTEGER DEFAULT 1;
 ALTER TABLE whatsapp_sessions ADD COLUMN hourly_limit INTEGER DEFAULT 0;
 ALTER TABLE whatsapp_sessions ADD COLUMN cooldown_until TEXT;
 

@@ -39,6 +39,9 @@ type WhatsAppSessionRecord = {
     phone?: string;
     status?: string;
     connected?: boolean;
+    campaign_enabled?: boolean | number;
+    daily_limit?: number;
+    dispatch_weight?: number;
 };
 
 let templatesCache: TemplateItem[] = [];
@@ -141,6 +144,18 @@ function getSessionDisplayName(session: WhatsAppSessionRecord) {
     const phone = String(session.phone || '').trim();
     if (phone) return phone;
     return sanitizeSessionId(session.session_id);
+}
+
+function parseDispatchWeight(value: unknown, fallback = 1) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.max(1, Math.floor(parsed));
+}
+
+function parseDailyLimit(value: unknown, fallback = 0) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+    return Math.max(0, Math.floor(parsed));
 }
 
 function decodeSessionToken(sessionToken: string) {
@@ -989,6 +1004,9 @@ function renderWhatsAppAccountsManager() {
         const displayName = getSessionDisplayName(session);
         const phone = String(session.phone || '').trim();
         const subtitle = phone ? `${sessionId} - ${phone}` : sessionId;
+        const campaignEnabled = parseBooleanSetting(session.campaign_enabled, true);
+        const dispatchWeight = parseDispatchWeight(session.dispatch_weight, 1);
+        const dailyLimit = parseDailyLimit(session.daily_limit, 0);
 
         return `
             <div class="connection-account-item">
@@ -1010,7 +1028,38 @@ function renderWhatsAppAccountsManager() {
                             placeholder="Ex: Comercial SP"
                         />
                     </div>
-                    <button class="btn btn-outline" onclick="saveWhatsAppSessionName('${token}')">Salvar nome</button>
+                    <div class="form-group connection-account-inline-field">
+                        <label class="form-label">Peso</label>
+                        <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            class="form-input connection-session-weight-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            value="${dispatchWeight}"
+                        />
+                    </div>
+                    <div class="form-group connection-account-inline-field">
+                        <label class="form-label">Limite diário</label>
+                        <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            class="form-input connection-session-daily-limit-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            value="${dailyLimit}"
+                        />
+                    </div>
+                    <label class="connection-campaign-toggle" title="Participa de campanhas e transmissões">
+                        <input
+                            type="checkbox"
+                            class="connection-session-enabled-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            ${campaignEnabled ? 'checked' : ''}
+                        />
+                        Usar em campanhas
+                    </label>
+                    <button class="btn btn-outline" onclick="saveWhatsAppSessionName('${token}')">Salvar</button>
                     <button class="btn btn-outline-danger" onclick="removeWhatsAppSession('${token}')">Remover</button>
                 </div>
             </div>
@@ -1039,15 +1088,27 @@ async function saveWhatsAppSessionName(sessionToken: string) {
     if (!sessionId) return;
 
     const selectorSessionId = escapeAttributeSelector(sessionId);
-    const input = document.querySelector<HTMLInputElement>(`.connection-session-name-input[data-session-id="${selectorSessionId}"]`);
-    const name = String(input?.value || '').trim();
+    const nameInput = document.querySelector<HTMLInputElement>(`.connection-session-name-input[data-session-id="${selectorSessionId}"]`);
+    const weightInput = document.querySelector<HTMLInputElement>(`.connection-session-weight-input[data-session-id="${selectorSessionId}"]`);
+    const dailyLimitInput = document.querySelector<HTMLInputElement>(`.connection-session-daily-limit-input[data-session-id="${selectorSessionId}"]`);
+    const enabledInput = document.querySelector<HTMLInputElement>(`.connection-session-enabled-input[data-session-id="${selectorSessionId}"]`);
+
+    const name = String(nameInput?.value || '').trim();
+    const dispatchWeight = parseDispatchWeight(weightInput?.value, 1);
+    const dailyLimit = parseDailyLimit(dailyLimitInput?.value, 0);
+    const campaignEnabled = Boolean(enabledInput?.checked);
 
     try {
-        await api.put(`/api/whatsapp/sessions/${encodeURIComponent(sessionId)}`, { name });
-        showToast('success', 'Sucesso', 'Nome da conta atualizado.');
+        await api.put(`/api/whatsapp/sessions/${encodeURIComponent(sessionId)}`, {
+            name,
+            campaign_enabled: campaignEnabled,
+            daily_limit: dailyLimit,
+            dispatch_weight: dispatchWeight
+        });
+        showToast('success', 'Sucesso', 'Configurações da conta atualizadas.');
         await refreshWhatsAppAccounts();
     } catch (error) {
-        showToast('error', 'Erro', 'Nao foi possivel atualizar o nome da conta.');
+        showToast('error', 'Erro', 'Nao foi possivel atualizar a conta.');
     }
 }
 

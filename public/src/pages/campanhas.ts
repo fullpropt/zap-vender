@@ -41,6 +41,14 @@ type WhatsappSenderSession = {
     connected?: boolean;
     campaign_enabled?: number | boolean;
     daily_limit?: number;
+    dispatch_weight?: number;
+};
+
+type SettingsTag = {
+    id: number;
+    name: string;
+    color?: string;
+    description?: string;
 };
 
 type CampaignResponse = {
@@ -70,6 +78,7 @@ type CampaignRecipientsResponse = {
 
 let campaigns: Campaign[] = [];
 let senderSessions: WhatsappSenderSession[] = [];
+let campaignTagsCache: SettingsTag[] = [];
 const DEFAULT_DELAY_MIN_SECONDS = 6;
 const DEFAULT_DELAY_MAX_SECONDS = 24;
 
@@ -173,6 +182,47 @@ function syncCampaignSegmentOptions() {
     setSelectValue(segmentSelect, currentValue);
 }
 
+function renderCampaignTagFilterOptions(selectedValue = '') {
+    const tagSelect = document.getElementById('campaignTagFilter') as HTMLSelectElement | null;
+    if (!tagSelect) return;
+
+    const normalizedSelectedValue = String(selectedValue || '').trim();
+    const tags = Array.isArray(campaignTagsCache) ? [...campaignTagsCache] : [];
+    tags.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+    const options = [
+        '<option value="">Todas as tags</option>',
+        ...tags.map((tag) => `<option value="${escapeCampaignText(tag.name || '')}">${escapeCampaignText(tag.name || '')}</option>`)
+    ];
+
+    if (normalizedSelectedValue && !tags.some((tag) => String(tag.name || '').trim() === normalizedSelectedValue)) {
+        options.push(`<option value="${escapeCampaignText(normalizedSelectedValue)}">${escapeCampaignText(normalizedSelectedValue)}</option>`);
+    }
+
+    tagSelect.innerHTML = options.join('');
+    setSelectValue(tagSelect, normalizedSelectedValue);
+}
+
+async function loadCampaignTags() {
+    try {
+        const response = await api.get('/api/tags');
+        campaignTagsCache = Array.isArray(response?.tags) ? response.tags : [];
+    } catch (error) {
+        campaignTagsCache = [];
+    }
+    renderCampaignTagFilterOptions((document.getElementById('campaignTagFilter') as HTMLSelectElement | null)?.value || '');
+}
+
+function getSessionDispatchWeight(session: WhatsappSenderSession) {
+    const parsed = Number(session?.dispatch_weight);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+}
+
+function getSessionDailyLimit(session: WhatsappSenderSession) {
+    const parsed = Number(session?.daily_limit);
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+}
+
 function splitCampaignMessageSteps(campaign: Campaign) {
     const rawMessage = String(campaign.message || '').trim();
     if (!rawMessage) return [];
@@ -257,8 +307,8 @@ function renderCampaignSenderAccountsSelector(selectedAccounts: CampaignSenderAc
     const container = document.getElementById('campaignSenderAccounts') as HTMLElement | null;
     if (!container) return;
 
-    const selectedBySession = new Map<string, CampaignSenderAccount>(
-        normalizeCampaignSenderAccounts(selectedAccounts).map((account) => [account.session_id, account])
+    const selectedBySession = new Set<string>(
+        normalizeCampaignSenderAccounts(selectedAccounts).map((account) => account.session_id)
     );
 
     if (!senderSessions.length) {
@@ -266,20 +316,21 @@ function renderCampaignSenderAccountsSelector(selectedAccounts: CampaignSenderAc
         return;
     }
 
-    container.innerHTML = senderSessions.map((session) => {
+    const sortedSessions = [...senderSessions].sort((a, b) => Number(Boolean(b.connected)) - Number(Boolean(a.connected)));
+    container.innerHTML = sortedSessions.map((session) => {
         const sessionId = String(session.session_id || '').trim();
-        const selected = selectedBySession.get(sessionId);
-        const checked = !!selected;
-        const weight = selected?.weight && selected.weight > 0 ? selected.weight : 1;
-        const dailyLimit = selected?.daily_limit && selected.daily_limit >= 0 ? selected.daily_limit : 0;
+        const checked = selectedBySession.has(sessionId);
         const connected = !!session.connected;
         const campaignEnabled = toBooleanFlag(session.campaign_enabled, true);
         const disabledBySession = !campaignEnabled || !connected;
         const statusLabel = connected ? 'Conectada' : 'Desconectada';
+        const weight = getSessionDispatchWeight(session);
+        const dailyLimit = getSessionDailyLimit(session);
+        const dailyLimitLabel = dailyLimit > 0 ? `${dailyLimit}/dia` : 'Sem limite';
 
         return `
             <div class="sender-account-item ${checked ? 'selected' : ''} ${disabledBySession ? 'disabled' : ''}" data-session-id="${escapeCampaignText(sessionId)}">
-                <label class="checkbox-wrapper" style="align-items: center; gap: 8px;">
+                <label class="checkbox-wrapper" style="align-items: center; gap: 10px; margin: 0;">
                     <input
                         type="checkbox"
                         class="campaign-sender-toggle"
@@ -288,37 +339,12 @@ function renderCampaignSenderAccountsSelector(selectedAccounts: CampaignSenderAc
                         ${disabledBySession ? 'disabled' : ''}
                     />
                     <span class="checkbox-custom"></span>
-                    <strong>${escapeCampaignText(session.name || session.phone || sessionId)}</strong>
+                    <span class="sender-account-main">
+                        <span class="sender-account-title">${escapeCampaignText(session.name || session.phone || sessionId)}</span>
+                        <span class="sender-account-meta">${escapeCampaignText(session.phone || sessionId)} • ${statusLabel} • Peso ${weight}</span>
+                    </span>
                 </label>
-                <div style="font-size: 12px; color: var(--gray-500); margin-top: 6px;">
-                    ${escapeCampaignText(session.phone || sessionId)} · ${statusLabel}
-                </div>
-                <div class="form-row" style="margin-top: 10px; gap: 10px;">
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label class="form-label" style="font-size: 11px;">Peso</label>
-                        <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            class="form-input campaign-sender-weight"
-                            data-session-id="${escapeCampaignText(sessionId)}"
-                            value="${weight}"
-                            ${checked && !disabledBySession ? '' : 'disabled'}
-                        />
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label class="form-label" style="font-size: 11px;">Limite diário (0 = sem limite)</label>
-                        <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            class="form-input campaign-sender-daily-limit"
-                            data-session-id="${escapeCampaignText(sessionId)}"
-                            value="${dailyLimit}"
-                            ${checked && !disabledBySession ? '' : 'disabled'}
-                        />
-                    </div>
-                </div>
+                <span class="sender-account-limit">${escapeCampaignText(dailyLimitLabel)}</span>
             </div>
         `;
     }).join('');
@@ -333,10 +359,6 @@ function renderCampaignSenderAccountsSelector(selectedAccounts: CampaignSenderAc
             if (row) {
                 row.classList.toggle('selected', checked);
             }
-            container.querySelectorAll<HTMLInputElement>(`.campaign-sender-weight[data-session-id="${selectorSessionId}"], .campaign-sender-daily-limit[data-session-id="${selectorSessionId}"]`)
-                .forEach((input) => {
-                    input.disabled = !checked;
-                });
         });
     });
 }
@@ -352,18 +374,12 @@ function collectCampaignSenderAccountsFromForm() {
     toggles.forEach((toggle) => {
         const sessionId = String(toggle.dataset.sessionId || '').trim();
         if (!sessionId) return;
-        const selectorSessionId = escapeAttributeSelector(sessionId);
-
-        const weightInput = container.querySelector<HTMLInputElement>(`.campaign-sender-weight[data-session-id="${selectorSessionId}"]`);
-        const dailyLimitInput = container.querySelector<HTMLInputElement>(`.campaign-sender-daily-limit[data-session-id="${selectorSessionId}"]`);
-
-        const weight = Number(weightInput?.value || '1');
-        const dailyLimit = Number(dailyLimitInput?.value || '0');
+        const session = senderSessions.find((item) => String(item.session_id || '').trim() === sessionId);
 
         accounts.push({
             session_id: sessionId,
-            weight: Number.isFinite(weight) && weight > 0 ? Math.floor(weight) : 1,
-            daily_limit: Number.isFinite(dailyLimit) && dailyLimit >= 0 ? Math.floor(dailyLimit) : 0,
+            weight: getSessionDispatchWeight(session || { session_id: sessionId }),
+            daily_limit: getSessionDailyLimit(session || { session_id: sessionId }),
             is_active: true
         });
     });
@@ -487,6 +503,7 @@ function resetCampaignForm() {
     const idInput = document.getElementById('campaignId') as HTMLInputElement | null;
     if (idInput) idInput.value = '';
     syncCampaignSegmentOptions();
+    renderCampaignTagFilterOptions('');
     setSelectValue(document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null, 'single');
     renderCampaignSenderAccountsSelector([]);
     setDelayRangeInputs(DEFAULT_DELAY_MIN_SECONDS, DEFAULT_DELAY_MAX_SECONDS);
@@ -495,6 +512,8 @@ function resetCampaignForm() {
 
 function openCampaignModal() {
     resetCampaignForm();
+    void loadCampaignTags();
+    void loadSenderSessions();
     const win = window as Window & { openModal?: (id: string) => void };
     win.openModal?.('newCampaignModal');
 }
@@ -562,7 +581,8 @@ async function initCampanhas() {
     syncCampaignSegmentOptions();
     await Promise.all([
         loadCampaigns(),
-        loadSenderSessions()
+        loadSenderSessions(),
+        loadCampaignTags()
     ]);
 }
 
@@ -748,7 +768,7 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         distribution_strategy: ((document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null)?.value || 'single') as Campaign['distribution_strategy'],
         status,
         segment: (document.getElementById('campaignSegment') as HTMLSelectElement | null)?.value || '',
-        tag_filter: (document.getElementById('campaignTagFilter') as HTMLInputElement | null)?.value.trim() || '',
+        tag_filter: (document.getElementById('campaignTagFilter') as HTMLSelectElement | null)?.value || '',
         message: (document.getElementById('campaignMessage') as HTMLTextAreaElement | null)?.value.trim() || '',
         delay: delayMinMs,
         delay_min: delayMinMs,
@@ -868,6 +888,7 @@ function editCampaign(id: number) {
     const campaign = campaigns.find(c => c.id === id);
     if (!campaign) return;
     syncCampaignSegmentOptions();
+    renderCampaignTagFilterOptions(campaign.tag_filter || '');
 
     const idInput = document.getElementById('campaignId') as HTMLInputElement | null;
     if (idInput) idInput.value = String(campaign.id);
@@ -885,8 +906,8 @@ function editCampaign(id: number) {
     );
     setSelectValue(document.getElementById('campaignStatus') as HTMLSelectElement | null, campaign.status || 'draft');
     setSelectValue(document.getElementById('campaignSegment') as HTMLSelectElement | null, campaign.segment || 'all');
-    const tagFilterInput = document.getElementById('campaignTagFilter') as HTMLInputElement | null;
-    if (tagFilterInput) tagFilterInput.value = campaign.tag_filter || '';
+    const tagFilterInput = document.getElementById('campaignTagFilter') as HTMLSelectElement | null;
+    if (tagFilterInput) setSelectValue(tagFilterInput, campaign.tag_filter || '');
 
     const messageInput = document.getElementById('campaignMessage') as HTMLTextAreaElement | null;
     if (messageInput) messageInput.value = campaign.message || '';

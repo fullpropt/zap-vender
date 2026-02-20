@@ -197,7 +197,7 @@ export default function Configuracoes() {
         }
         .connection-account-body {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) auto auto;
+            grid-template-columns: minmax(220px, 1fr) 120px 170px auto auto;
             gap: 10px;
             align-items: end;
         }
@@ -207,6 +207,23 @@ export default function Configuracoes() {
         .connection-account-body .btn {
             width: auto;
             white-space: nowrap;
+        }
+        .connection-account-inline-field .form-label {
+            font-size: 11px;
+            margin-bottom: 6px;
+        }
+        .connection-campaign-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--gray-700);
+            white-space: nowrap;
+            padding-bottom: 9px;
+        }
+        .connection-campaign-toggle input {
+            width: 16px;
+            height: 16px;
         }
         @media (max-width: 768px) {
             .connection-account-body {
@@ -274,7 +291,7 @@ export default function Configuracoes() {
       
               <div className="settings-container">
                   <nav className="settings-nav">
-                      <div className="settings-nav-item active" onClick={() => globals.showPanel?.('conexao')}><span className="icon icon-whatsapp icon-sm"></span> Conexão</div>
+                      <div className="settings-nav-item active" onClick={() => globals.showPanel?.('conexao')}><span className="icon icon-whatsapp icon-sm"></span> Contas</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('general')}><span className="icon icon-building icon-sm"></span> Campos</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('contact-fields')}><span className="icon icon-contacts icon-sm"></span> Campos Dinâmicos</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('labels')}><span className="icon icon-tag icon-sm"></span> Etiquetas</div>
@@ -289,11 +306,11 @@ export default function Configuracoes() {
       
                   <div className="settings-panels">
                       <div className="settings-panel active" id="panel-conexao">
-                          <h3 className="settings-section-title">Conexão</h3>
+                          <h3 className="settings-section-title">Contas</h3>
                           <div className="connection-status-card" id="connectionStatusCard">
                               <h4 style={{ marginTop: 0 }}>Contas WhatsApp</h4>
                               <p className="connection-info">
-                                  Gerencie os nomes de exibição e remova contas que não deseja mais usar.
+                                  Gerencie nome de exibição, participação em campanhas, peso e limite diário de cada conta.
                               </p>
                               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
                                   <button className="btn btn-outline" onClick={() => globals.refreshWhatsAppAccounts?.()}>Atualizar lista</button>

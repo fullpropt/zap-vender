@@ -7,7 +7,6 @@ type CampanhasGlobals = {
   loadCampaigns?: () => void;
   openModal?: (id: string) => void;
   openCampaignModal?: () => void;
-  openBroadcastModal?: () => void;
   closeModal?: (id: string) => void;
   saveCampaign?: (status: 'active' | 'draft') => void;
   switchCampaignTab?: (tab: string) => void;
@@ -171,16 +170,26 @@ export default function Campanhas() {
             gap: 25px;
         }
         .sender-accounts-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 240px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 8px;
+            background: var(--gray-50);
         }
         .sender-account-item {
             border: 1px solid var(--border-color);
             border-radius: var(--border-radius);
-            background: var(--gray-50);
-            padding: 12px;
+            background: var(--surface);
+            padding: 10px 12px;
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
         }
         .sender-account-item.selected {
             border-color: var(--primary);
@@ -188,6 +197,36 @@ export default function Campanhas() {
         }
         .sender-account-item.disabled {
             opacity: 0.65;
+        }
+        .sender-account-main {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .sender-account-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--dark);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sender-account-meta {
+            font-size: 12px;
+            color: var(--gray-600);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sender-account-limit {
+            font-size: 11px;
+            color: var(--gray-600);
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            padding: 2px 8px;
+            background: var(--gray-50);
+            white-space: nowrap;
         }
       `}</style>
       <button className="mobile-menu-toggle" onClick={() => { document.querySelector('.sidebar')?.classList.toggle('open'); document.querySelector('.sidebar-overlay')?.classList.toggle('active'); }}>☰</button>
@@ -245,7 +284,6 @@ export default function Campanhas() {
                   </div>
                   <div className="page-actions">
                       <button className="btn btn-outline" onClick={() => globals.loadCampaigns?.()}><span className="icon icon-refresh icon-sm"></span> Atualizar</button>
-                      <button className="btn btn-outline" onClick={() => globals.openBroadcastModal?.()}><span className="icon icon-broadcast icon-sm"></span> Nova Transmissão</button>
                       <button className="btn btn-primary" onClick={() => (globals.openCampaignModal ? globals.openCampaignModal() : globals.openModal?.('newCampaignModal'))}><span className="icon icon-add icon-sm"></span> Nova Campanha</button>
                   </div>
               </div>
@@ -347,7 +385,9 @@ export default function Campanhas() {
 
                           <div className="form-group">
                               <label className="form-label">Filtrar por Tag (opcional)</label>
-                              <input type="text" className="form-input" id="campaignTagFilter" placeholder="Ex: vip" />
+                              <select className="form-select" id="campaignTagFilter" defaultValue="">
+                                  <option value="">Todas as tags</option>
+                              </select>
                           </div>
 
                           <div className="form-group">
@@ -356,7 +396,7 @@ export default function Campanhas() {
                                   <p style={{ color: 'var(--gray-500)', margin: 0 }}>Carregando contas...</p>
                               </div>
                               <p style={{ fontSize: 12, color: 'var(--gray-500)', marginTop: 8 }}>
-                                  Se nenhuma conta for marcada, a campanha usa automaticamente as contas conectadas e habilitadas.
+                                  Se nenhuma conta for marcada, a campanha usa automaticamente as contas habilitadas em Configurações &gt; Contas.
                               </p>
                           </div>
       
