@@ -76,11 +76,37 @@ type CampaignRecipientsResponse = {
     tag_filter?: string;
 };
 
+type ContactFieldDefinition = {
+    key?: string;
+    label?: string;
+    source?: string;
+    is_default?: boolean;
+};
+
+type ContactFieldsResponse = {
+    fields?: ContactFieldDefinition[];
+    customFields?: ContactFieldDefinition[];
+};
+
+type CampaignMessageVariable = {
+    key: string;
+    label: string;
+};
+
 let campaigns: Campaign[] = [];
 let senderSessions: WhatsappSenderSession[] = [];
 let campaignTagsCache: SettingsTag[] = [];
-const DEFAULT_DELAY_MIN_SECONDS = 6;
-const DEFAULT_DELAY_MAX_SECONDS = 24;
+let campaignContactFieldsCache: ContactFieldDefinition[] = [];
+let campaignMessageVariableGlobalEventsBound = false;
+const DEFAULT_DELAY_MIN_SECONDS = 5;
+const DEFAULT_DELAY_MAX_SECONDS = 15;
+const FIXED_CAMPAIGN_MESSAGE_VARIABLES: ReadonlyArray<CampaignMessageVariable> = Object.freeze([
+    { key: 'nome', label: 'Nome do contato' },
+    { key: 'telefone', label: 'Telefone' },
+    { key: 'email', label: 'Email' },
+    { key: 'veiculo', label: 'Veículo' },
+    { key: 'placa', label: 'Placa' }
+]);
 
 function getCampaignStatusLabel(status: CampaignStatus) {
     if (status === 'active') return 'Ativa';
@@ -211,6 +237,174 @@ async function loadCampaignTags() {
         campaignTagsCache = [];
     }
     renderCampaignTagFilterOptions((document.getElementById('campaignTagFilter') as HTMLSelectElement | null)?.value || '');
+}
+
+function normalizeCampaignVariableKey(value: unknown) {
+    return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .trim();
+}
+
+function getCampaignMessageCustomVariables(): CampaignMessageVariable[] {
+    const fixedKeys = new Set(FIXED_CAMPAIGN_MESSAGE_VARIABLES.map((item) => item.key));
+    const dedupe = new Map<string, CampaignMessageVariable>();
+    const fields = Array.isArray(campaignContactFieldsCache) ? campaignContactFieldsCache : [];
+
+    fields.forEach((field) => {
+        const source = String(field?.source || '').trim().toLowerCase();
+        if (source !== 'custom') return;
+
+        const key = normalizeCampaignVariableKey(field?.key);
+        if (!key || fixedKeys.has(key) || dedupe.has(key)) return;
+
+        const label = String(field?.label || key).trim() || key;
+        dedupe.set(key, { key, label });
+    });
+
+    return Array.from(dedupe.values()).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+}
+
+function getCampaignMessageVariableElements() {
+    const toggleButton = document.getElementById('campaignMessageVariableToggle') as HTMLButtonElement | null;
+    const menu = document.getElementById('campaignMessageVariableMenu') as HTMLElement | null;
+    return { toggleButton, menu };
+}
+
+function setCampaignMessageVariableMenuOpen(isOpen: boolean) {
+    const { toggleButton, menu } = getCampaignMessageVariableElements();
+    if (!menu) return;
+
+    menu.hidden = !isOpen;
+    if (toggleButton) {
+        toggleButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    }
+}
+
+function closeCampaignMessageVariableMenu() {
+    setCampaignMessageVariableMenuOpen(false);
+}
+
+function toggleCampaignMessageVariableMenu() {
+    const { menu } = getCampaignMessageVariableElements();
+    if (!menu) return;
+    setCampaignMessageVariableMenuOpen(menu.hidden);
+}
+
+function insertCampaignMessageVariable(variableKey: string) {
+    const normalizedKey = normalizeCampaignVariableKey(variableKey);
+    if (!normalizedKey) return;
+
+    const textarea = document.getElementById('campaignMessage') as HTMLTextAreaElement | null;
+    if (!textarea) return;
+
+    const token = `{{${normalizedKey}}}`;
+    const isFocused = document.activeElement === textarea;
+    const start = isFocused && typeof textarea.selectionStart === 'number'
+        ? textarea.selectionStart
+        : textarea.value.length;
+    const end = isFocused && typeof textarea.selectionEnd === 'number'
+        ? textarea.selectionEnd
+        : textarea.value.length;
+    const previousValue = textarea.value;
+
+    textarea.value = `${previousValue.slice(0, start)}${token}${previousValue.slice(end)}`;
+    textarea.focus();
+    const cursor = start + token.length;
+    textarea.selectionStart = cursor;
+    textarea.selectionEnd = cursor;
+
+    closeCampaignMessageVariableMenu();
+}
+
+function renderCampaignMessageVariableOptions() {
+    const fixedContainer = document.getElementById('campaignMessageVariableFixedList') as HTMLElement | null;
+    const customContainer = document.getElementById('campaignMessageVariableCustomList') as HTMLElement | null;
+    if (!fixedContainer || !customContainer) return;
+
+    const renderOption = (variable: CampaignMessageVariable) => `
+        <button type="button" class="campaign-variable-option" data-variable-key="${escapeCampaignText(variable.key)}">
+            <span class="campaign-variable-token">{{${escapeCampaignText(variable.key)}}}</span>
+            <span class="campaign-variable-label">${escapeCampaignText(variable.label)}</span>
+        </button>
+    `;
+
+    fixedContainer.innerHTML = FIXED_CAMPAIGN_MESSAGE_VARIABLES.map(renderOption).join('');
+
+    const customVariables = getCampaignMessageCustomVariables();
+    customContainer.innerHTML = customVariables.length
+        ? customVariables.map(renderOption).join('')
+        : '<p class="campaign-variable-empty">Nenhuma tag personalizada cadastrada.</p>';
+
+    const menu = document.getElementById('campaignMessageVariableMenu') as HTMLElement | null;
+    if (!menu) return;
+
+    const variableButtons = Array.from(menu.querySelectorAll<HTMLButtonElement>('.campaign-variable-option'));
+    variableButtons.forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            insertCampaignMessageVariable(String(button.dataset.variableKey || ''));
+        });
+    });
+}
+
+function bindCampaignMessageVariablePicker() {
+    const { toggleButton, menu } = getCampaignMessageVariableElements();
+    if (!toggleButton || !menu) return;
+
+    if (toggleButton.dataset.bound !== '1') {
+        toggleButton.dataset.bound = '1';
+        toggleButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleCampaignMessageVariableMenu();
+        });
+    }
+
+    if (menu.dataset.bound !== '1') {
+        menu.dataset.bound = '1';
+        menu.addEventListener('click', (event) => {
+            event.stopPropagation();
+        });
+    }
+
+    renderCampaignMessageVariableOptions();
+
+    if (!campaignMessageVariableGlobalEventsBound) {
+        campaignMessageVariableGlobalEventsBound = true;
+
+        document.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target instanceof Element) {
+                if (target.closest('#campaignMessageVariableToggle') || target.closest('#campaignMessageVariableMenu')) {
+                    return;
+                }
+            }
+            closeCampaignMessageVariableMenu();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeCampaignMessageVariableMenu();
+            }
+        });
+    }
+}
+
+async function loadCampaignMessageVariables() {
+    try {
+        const response: ContactFieldsResponse = await api.get('/api/contact-fields');
+        campaignContactFieldsCache = Array.isArray(response?.fields) ? response.fields : [];
+    } catch (error) {
+        campaignContactFieldsCache = [];
+    }
+
+    renderCampaignMessageVariableOptions();
 }
 
 function getSessionDispatchWeight(session: WhatsappSenderSession) {
@@ -508,13 +702,17 @@ function resetCampaignForm() {
     setSelectValue(document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null, 'single');
     renderCampaignSenderAccountsSelector([]);
     setDelayRangeInputs(DEFAULT_DELAY_MIN_SECONDS, DEFAULT_DELAY_MAX_SECONDS);
+    closeCampaignMessageVariableMenu();
+    bindCampaignMessageVariablePicker();
     setCampaignModalTitle('new');
 }
 
 function openCampaignModal() {
     resetCampaignForm();
     void loadCampaignTags();
+    void loadCampaignMessageVariables();
     void loadSenderSessions();
+    bindCampaignMessageVariablePicker();
     const win = window as Window & { openModal?: (id: string) => void };
     win.openModal?.('newCampaignModal');
 }
@@ -580,10 +778,12 @@ function openBroadcastModal() {
 
 async function initCampanhas() {
     syncCampaignSegmentOptions();
+    bindCampaignMessageVariablePicker();
     await Promise.all([
         loadCampaigns(),
         loadSenderSessions(),
-        loadCampaignTags()
+        loadCampaignTags(),
+        loadCampaignMessageVariables()
     ]);
 }
 
@@ -913,6 +1113,8 @@ function editCampaign(id: number) {
 
     const messageInput = document.getElementById('campaignMessage') as HTMLTextAreaElement | null;
     if (messageInput) messageInput.value = campaign.message || '';
+    closeCampaignMessageVariableMenu();
+    bindCampaignMessageVariablePicker();
 
     const { minMs, maxMs } = resolveCampaignDelayRangeMs(campaign);
     setDelayRangeInputs(Math.round(minMs / 1000), Math.round(maxMs / 1000));

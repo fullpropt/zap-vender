@@ -228,6 +228,107 @@ export default function Campanhas() {
             background: var(--gray-50);
             white-space: nowrap;
         }
+        .campaign-message-editor {
+            position: relative;
+        }
+        .campaign-message-editor .form-textarea {
+            padding-top: 44px;
+        }
+        .campaign-message-tools {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 5;
+        }
+        .campaign-variable-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--gray-50);
+            color: var(--gray-700);
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 8px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .campaign-variable-trigger:hover {
+            border-color: rgba(var(--primary-rgb), 0.45);
+            color: var(--dark);
+        }
+        .campaign-variable-menu[hidden] {
+            display: none;
+        }
+        .campaign-variable-menu {
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            width: min(300px, 78vw);
+            max-height: 260px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--surface);
+            box-shadow: var(--shadow-lg);
+            padding: 8px;
+        }
+        .campaign-variable-section + .campaign-variable-section {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border-color);
+        }
+        .campaign-variable-section-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--gray-600);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 6px;
+        }
+        .campaign-variable-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .campaign-variable-option {
+            width: 100%;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--dark);
+            text-align: left;
+            cursor: pointer;
+            padding: 6px 8px;
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .campaign-variable-option:hover {
+            border-color: rgba(var(--primary-rgb), 0.35);
+            background: rgba(var(--primary-rgb), 0.08);
+        }
+        .campaign-variable-token {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--primary);
+            white-space: nowrap;
+        }
+        .campaign-variable-label {
+            font-size: 12px;
+            color: var(--gray-600);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .campaign-variable-empty {
+            font-size: 12px;
+            color: var(--gray-500);
+            margin: 0;
+            padding: 2px 0 4px;
+        }
       `}</style>
       <button className="mobile-menu-toggle" onClick={() => { document.querySelector('.sidebar')?.classList.toggle('open'); document.querySelector('.sidebar-overlay')?.classList.toggle('active'); }}>☰</button>
           <div className="sidebar-overlay"></div>
@@ -393,14 +494,35 @@ export default function Campanhas() {
                               </p>
                           </div>
       
+
                           <div className="form-group">
                               <label className="form-label required">Mensagem</label>
-                              <textarea className="form-textarea" id="campaignMessage" rows="5" placeholder="Digite a mensagem da campanha...
-      
-      Variáveis disponíveis:
-      {{nome}} - Nome do contato
-      {{veiculo}} - Veículo
-      {{placa}} - Placa"></textarea>
+                              <div className="campaign-message-editor">
+                                  <textarea className="form-textarea" id="campaignMessage" rows="5" placeholder="Digite a mensagem da campanha..."></textarea>
+                                  <div className="campaign-message-tools">
+                                      <button
+                                          type="button"
+                                          className="campaign-variable-trigger"
+                                          id="campaignMessageVariableToggle"
+                                          aria-haspopup="true"
+                                          aria-expanded="false"
+                                          title="Inserir tag na mensagem"
+                                      >
+                                          <span className="icon icon-tag icon-sm"></span>
+                                          Inserir tag
+                                      </button>
+                                      <div className="campaign-variable-menu" id="campaignMessageVariableMenu" hidden>
+                                          <div className="campaign-variable-section">
+                                              <div className="campaign-variable-section-title">Fixas</div>
+                                              <div className="campaign-variable-list" id="campaignMessageVariableFixedList"></div>
+                                          </div>
+                                          <div className="campaign-variable-section">
+                                              <div className="campaign-variable-section-title">Personalizadas</div>
+                                              <div className="campaign-variable-list" id="campaignMessageVariableCustomList"></div>
+                                          </div>
+                                      </div>
+                                  </div>
+                              </div>
                           </div>
       
                           <div className="form-row">
@@ -408,10 +530,10 @@ export default function Campanhas() {
                                   <label className="form-label">Intervalo entre envios (aleatório)</label>
                                   <div className="form-row">
                                       <div className="form-group" style={{ marginBottom: 0 }}>
-                                          <input type="number" min={1} step={1} className="form-input" id="campaignDelayMin" defaultValue="6" placeholder="Mínimo (s)" />
+                                          <input type="number" min={1} step={1} className="form-input" id="campaignDelayMin" defaultValue="5" placeholder="Mínimo (s)" />
                                       </div>
                                       <div className="form-group" style={{ marginBottom: 0 }}>
-                                          <input type="number" min={1} step={1} className="form-input" id="campaignDelayMax" defaultValue="24" placeholder="Máximo (s)" />
+                                          <input type="number" min={1} step={1} className="form-input" id="campaignDelayMax" defaultValue="15" placeholder="Máximo (s)" />
                                       </div>
                                   </div>
                               </div>
