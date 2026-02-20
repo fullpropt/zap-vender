@@ -327,11 +327,34 @@ export default function Inbox() {
             font-size: 10px;
             color: var(--gray-600);
             margin-top: 5px;
-            text-align: right;
+            display: inline-flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 4px;
+            width: 100%;
         }
         .message-status {
+            display: inline-flex;
+            align-items: center;
+            line-height: 1;
+            font-size: 11px;
+            letter-spacing: -2px;
+            color: rgba(226, 236, 247, 0.9);
+            min-width: 14px;
+        }
+        .message-status .tick {
             display: inline-block;
-            margin-left: 5px;
+        }
+        .message-status.is-single {
+            letter-spacing: 0;
+        }
+        .message-status.is-read {
+            color: #53bdeb;
+        }
+        .message-status.is-failed {
+            color: #f87171;
+            letter-spacing: 0;
+            font-weight: 700;
         }
         .message-content {
             display: flex;
@@ -358,8 +381,24 @@ export default function Inbox() {
         }
         .message-media-audio {
             display: block;
-            width: min(260px, 100%);
+            width: 100%;
+            min-width: 250px;
             max-width: 100%;
+            height: 38px;
+        }
+        .chat-messages .message.media-audio {
+            min-width: 280px;
+            max-width: min(360px, 75%);
+        }
+        .message-media-download {
+            color: var(--gray-700);
+            text-decoration: none;
+            font-size: 11px;
+            font-weight: 600;
+            width: fit-content;
+        }
+        .chat-messages .message.sent .message-media-download {
+            color: rgba(236, 255, 246, 0.9);
         }
         .message-media-video {
             display: block;
@@ -403,6 +442,28 @@ export default function Inbox() {
             gap: 15px;
             align-items: flex-end;
         }
+        .chat-input .chat-input-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: none;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+            flex-shrink: 0;
+        }
+        .chat-input .chat-send-btn {
+            background: var(--whatsapp);
+        }
+        .chat-input .chat-attach-btn {
+            background: var(--surface-muted);
+            border: 1px solid var(--border-color);
+            color: var(--gray-700);
+        }
+        .chat-input .chat-input-btn:hover { transform: scale(1.05); }
         .chat-input textarea {
             flex: 1;
             border: 1px solid var(--border-color);
@@ -420,21 +481,6 @@ export default function Inbox() {
             outline: none;
             border-color: var(--primary);
         }
-        .chat-input button {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            border: none;
-            background: var(--whatsapp);
-            color: white;
-            cursor: pointer;
-            font-size: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: transform 0.2s;
-        }
-        .chat-input button:hover { transform: scale(1.05); }
         .quick-reply-toolbar {
             position: relative;
             display: flex;
@@ -695,9 +741,16 @@ export default function Inbox() {
                 padding: 10px 12px;
                 gap: 10px;
             }
-            .chat-input button {
+            .chat-input .chat-input-btn {
                 width: 42px;
                 height: 42px;
+            }
+            .chat-messages .message.media-audio {
+                min-width: 0;
+                max-width: 100%;
+            }
+            .message-media-audio {
+                min-width: 210px;
             }
             .conversations-header {
                 padding: 14px 12px;

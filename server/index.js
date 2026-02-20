@@ -2032,6 +2032,16 @@ async function sendMessageToWhatsApp(options) {
 
         });
 
+    } else if (mediaType === 'video' && mediaUrl) {
+
+        result = await session.socket.sendMessage(targetJid, {
+
+            video: { url: mediaUrl },
+
+            caption: content || ''
+
+        });
+
     } else if (mediaType === 'document' && mediaUrl) {
 
         result = await session.socket.sendMessage(targetJid, {
@@ -4869,6 +4879,16 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
         });
 
+    } else if (type === 'video') {
+
+        result = await session.socket.sendMessage(jid, {
+
+            video: { url: options.url || message },
+
+            caption: options.caption || ''
+
+        });
+
     } else if (type === 'document') {
 
         result = await session.socket.sendMessage(jid, {
@@ -4887,9 +4907,9 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
             audio: { url: options.url || message },
 
-            mimetype: 'audio/mp4',
+            mimetype: options.mimetype || 'audio/ogg; codecs=opus',
 
-            ptt: true
+            ptt: options.ptt === true
 
         });
 
@@ -4942,6 +4962,10 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
             media_type: type,
 
             media_url: type !== 'text' ? (options.url || message) : null,
+
+            media_mime_type: type !== 'text' ? (options.mimetype || null) : null,
+
+            media_filename: type !== 'text' ? (options.fileName || null) : null,
 
             status: 'sent',
 

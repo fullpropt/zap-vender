@@ -89,6 +89,7 @@ let contactFieldsCache: ContactField[] = [];
 let isContactInfoOpen = false;
 let inboxSessionFilter = '';
 let inboxAvailableSessions: WhatsappSessionItem[] = [];
+let mediaUploadInProgress = false;
 
 const INBOX_SESSION_FILTER_STORAGE_KEY = 'zapvender_inbox_session_filter';
 
@@ -639,7 +640,33 @@ function initSocket() {
         });
 
         socket.on('message-status', (data) => {
-            // Atualizar status da mensagem
+            const status = String(data?.status || '').trim();
+            const messageId = String(data?.messageId || '').trim();
+            if (!status || !messageId) return;
+
+            let changed = false;
+            messages = messages.map((message) => {
+                const raw = message as Record<string, any>;
+                const candidateIds = [
+                    String(raw.message_id || ''),
+                    String(raw.messageId || ''),
+                    String(message.id || '')
+                ].filter(Boolean);
+
+                if (!candidateIds.includes(messageId)) {
+                    return message;
+                }
+
+                changed = true;
+                return {
+                    ...message,
+                    status
+                };
+            });
+
+            if (changed) {
+                renderMessagesInto(document.getElementById('chatMessages') as HTMLElement | null);
+            }
         });
     } catch (e) {
         console.log('Socket não disponível');
@@ -1018,13 +1045,16 @@ async function sendQuickReplyAudio(quickReply: TemplateItem) {
 
     try {
         const sessionId = resolveConversationSessionId(currentConversation);
-        await api.post('/api/send', {
+        const response = await api.post('/api/send', {
             sessionId,
             to: currentConversation.phone,
             message: mediaUrl,
             type: 'audio',
             options: { url: mediaUrl }
         });
+        if (response?.messageId) {
+            (newMessage as Record<string, any>).message_id = String(response.messageId);
+        }
         newMessage.status = 'sent';
         renderMessagesInto(chatMessages);
     } catch (error) {
@@ -1039,6 +1069,35 @@ function getMediaUrl(url?: string | null) {
     if (url.startsWith('http')) return url;
     const base = (window as any).APP?.socketUrl || '';
     return `${base}${url}`;
+}
+
+function normalizeMessageStatus(status?: string) {
+    const normalized = String(status || 'sent').trim().toLowerCase();
+    if (['read', 'lida'].includes(normalized)) return 'read';
+    if (['delivered', 'entregue'].includes(normalized)) return 'delivered';
+    if (['failed', 'error', 'erro'].includes(normalized)) return 'failed';
+    if (['pending', 'queued', 'enviando'].includes(normalized)) return 'pending';
+    return 'sent';
+}
+
+function renderMessageStatus(status?: string) {
+    const normalized = normalizeMessageStatus(status);
+    if (normalized === 'failed') {
+        return `<span class="message-status is-failed" title="Falha no envio">!</span>`;
+    }
+
+    const isDouble = normalized === 'delivered' || normalized === 'read';
+    const isRead = normalized === 'read';
+    const label = isRead
+        ? 'Lida'
+        : (normalized === 'delivered' ? 'Entregue' : (normalized === 'pending' ? 'Enviando' : 'Enviada'));
+
+    return `
+        <span class="message-status ${isDouble ? 'is-double' : 'is-single'} ${isRead ? 'is-read' : ''}" title="${label}">
+            <span class="tick tick-1">✓</span>
+            ${isDouble ? `<span class="tick tick-2">✓</span>` : ''}
+        </span>
+    `;
 }
 
 function isMediaPreviewText(value?: string | null) {
@@ -1099,8 +1158,9 @@ function renderMessageContent(message: ChatMessage) {
     if (mediaType === 'audio' && mediaUrl) {
         const safeUrl = escapeHtml(mediaUrl);
         return `
-            <div class="message-media">
+            <div class="message-media message-media-audio-wrap">
                 <audio controls preload="metadata" class="message-media-audio" src="${safeUrl}"></audio>
+                <a class="message-media-download" href="${safeUrl}" target="_blank" rel="noopener noreferrer" download>Baixar audio</a>
             </div>
             ${hasReadableText ? `<div class="message-caption">${safeText}</div>` : ''}
         `;
@@ -1131,6 +1191,134 @@ function renderMessageContent(message: ChatMessage) {
     }
 
     return `<div class="message-text">${safeText}</div>`;
+}
+
+function detectOutgoingMediaType(file: File): 'image' | 'video' | 'audio' | 'document' {
+    const mime = String(file?.type || '').toLowerCase();
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('video/')) return 'video';
+    if (mime.startsWith('audio/')) return 'audio';
+    return 'document';
+}
+
+function getAuthToken() {
+    return sessionStorage.getItem('selfDashboardToken') || '';
+}
+
+async function uploadMediaFile(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch('/api/upload', {
+        method: 'POST',
+        headers,
+        body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data?.success || !data?.file?.url) {
+        throw new Error(data?.error || 'Falha ao enviar arquivo');
+    }
+    return data.file as {
+        url: string;
+        mimetype?: string;
+        originalname?: string;
+        filename?: string;
+    };
+}
+
+function triggerMediaPicker() {
+    if (!currentConversation) {
+        showToast('info', 'Info', 'Selecione uma conversa primeiro');
+        return;
+    }
+    const input = document.getElementById('chatMediaInput') as HTMLInputElement | null;
+    if (!input) return;
+    input.click();
+}
+
+async function handleMediaInputChange(event: Event) {
+    const target = event.target as HTMLInputElement | null;
+    const file = target?.files?.[0];
+    if (!target) return;
+
+    try {
+        if (!file || !currentConversation) return;
+        if (mediaUploadInProgress) {
+            showToast('warning', 'Aviso', 'Aguarde o envio atual terminar');
+            return;
+        }
+        if (APP.whatsappStatus !== 'connected') {
+            showToast('warning', 'Aviso', 'WhatsApp nao esta conectado');
+            return;
+        }
+
+        mediaUploadInProgress = true;
+        const mediaType = detectOutgoingMediaType(file);
+        const uploadedFile = await uploadMediaFile(file);
+        const mediaUrl = String(uploadedFile.url || '').trim();
+        if (!mediaUrl) {
+            throw new Error('Arquivo enviado sem URL');
+        }
+
+        const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+        const caption = (mediaType === 'image' || mediaType === 'video' || mediaType === 'document')
+            ? String(input?.value || '').trim()
+            : '';
+
+        const tempMessage: ChatMessage = {
+            id: `temp-media-${Date.now()}`,
+            content: caption || `[${mediaType}]`,
+            direction: 'outgoing',
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            media_type: mediaType,
+            media_url: mediaUrl,
+            media_mime_type: uploadedFile.mimetype || file.type || null,
+            media_filename: uploadedFile.originalname || file.name || null
+        };
+
+        messages.push(tempMessage);
+        const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
+        renderMessagesInto(chatMessages);
+        scrollToBottom();
+
+        const sessionId = resolveConversationSessionId(currentConversation);
+        const response = await api.post('/api/send', {
+            sessionId,
+            to: currentConversation.phone,
+            message: mediaUrl,
+            type: mediaType,
+            options: {
+                url: mediaUrl,
+                mimetype: uploadedFile.mimetype || file.type || '',
+                fileName: uploadedFile.originalname || file.name || 'arquivo',
+                caption,
+                ptt: false
+            }
+        });
+        if (response?.messageId) {
+            (tempMessage as Record<string, any>).message_id = String(response.messageId);
+        }
+
+        tempMessage.status = 'sent';
+        renderMessagesInto(chatMessages);
+        if (caption && input) {
+            input.value = '';
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Nao foi possivel enviar o arquivo';
+        showToast('error', 'Erro', message);
+    } finally {
+        mediaUploadInProgress = false;
+        target.value = '';
+    }
 }
 
 function renderChat() {
@@ -1173,8 +1361,12 @@ function renderChat() {
         </div>
 
         <div class="chat-input">
+            <input id="chatMediaInput" type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" onchange="handleMediaInputChange(event)" style="display:none" />
+            <button class="chat-input-btn chat-attach-btn" onclick="triggerMediaPicker()" title="Anexar arquivo">
+                <span class="icon icon-attachment icon-sm"></span>
+            </button>
             <textarea id="messageInput" placeholder="Digite uma mensagem..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
-            <button onclick="sendMessage()" title="Enviar"><span class="icon icon-send icon-sm"></span></button>
+            <button class="chat-input-btn chat-send-btn" onclick="sendMessage()" title="Enviar"><span class="icon icon-send icon-sm"></span></button>
         </div>
     `;
 
@@ -1196,11 +1388,11 @@ function renderMessages() {
         const contentHtml = renderMessageContent(m);
 
         return `
-        <div class="message ${m.direction === 'outgoing' ? 'sent' : 'received'}">
+        <div class="message ${m.direction === 'outgoing' ? 'sent' : 'received'} ${m.media_type && m.media_type !== 'text' ? `media-${m.media_type}` : ''}">
             <div class="message-content">${contentHtml}</div>
             <div class="message-time">
                 ${formatDate(m.created_at, 'time')}
-                ${m.direction === 'outgoing' ? `<span class="message-status">${m.status === 'read' ? 'vv' : m.status === 'delivered' ? 'vv' : 'v'}</span>` : ''}
+                ${m.direction === 'outgoing' ? renderMessageStatus(m.status) : ''}
             </div>
         </div>
     `;
@@ -1254,12 +1446,15 @@ async function sendMessage() {
 
     try {
         const sessionId = resolveConversationSessionId(currentConversation);
-        await api.post('/api/send', {
+        const response = await api.post('/api/send', {
             sessionId,
             to: currentConversation.phone,
             message: content,
             type: 'text'
         });
+        if (response?.messageId) {
+            (newMessage as Record<string, any>).message_id = String(response.messageId);
+        }
         
         newMessage.status = 'sent';
         renderMessagesInto(chatMessages);
@@ -1360,6 +1555,8 @@ const windowAny = window as Window & {
     selectQuickReply?: (id: number) => void;
     handleKeyDown?: (event: KeyboardEvent) => void;
     sendMessage?: () => Promise<void>;
+    triggerMediaPicker?: () => void;
+    handleMediaInputChange?: (event: Event) => Promise<void>;
     openWhatsApp?: () => void;
     viewContact?: () => void;
     toggleContactInfo?: (forceOpen?: boolean) => void;
@@ -1379,6 +1576,8 @@ windowAny.closeQuickReplyPicker = closeQuickReplyPicker;
 windowAny.selectQuickReply = selectQuickReply;
 windowAny.handleKeyDown = handleKeyDown;
 windowAny.sendMessage = sendMessage;
+windowAny.triggerMediaPicker = triggerMediaPicker;
+windowAny.handleMediaInputChange = handleMediaInputChange;
 windowAny.openWhatsApp = openWhatsApp;
 windowAny.viewContact = viewContact;
 windowAny.toggleContactInfo = toggleContactInfo;
