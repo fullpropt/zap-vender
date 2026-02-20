@@ -69,10 +69,11 @@ let connectionStart: { nodeId: string; portType: string; handle: string; label?:
 let connectionStartPort: HTMLElement | null = null;
 let connectionPreviewPath: SVGPathElement | null = null;
 let lastPointer = { x: 0, y: 0 };
-let hasInitialized = false;
+let hasGlobalCanvasListeners = false;
 let contactFieldsCache: ContactField[] = [];
 
 const DEFAULT_HANDLE = 'default';
+const LAST_OPEN_FLOW_ID_STORAGE_KEY = 'flow_builder:last_open_flow_id';
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', source: 'name', is_default: true, required: true, placeholder: 'Nome completo' },
     { key: 'telefone', label: 'Telefone', source: 'phone', is_default: true, required: true, placeholder: 'Somente números com DDD' },
@@ -305,6 +306,29 @@ function getSessionToken() {
     return sessionStorage.getItem('selfDashboardToken');
 }
 
+function readLastOpenFlowId() {
+    try {
+        const raw = localStorage.getItem(LAST_OPEN_FLOW_ID_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = Number.parseInt(raw, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function persistLastOpenFlowId(flowId: number | null) {
+    try {
+        if (Number.isFinite(flowId) && Number(flowId) > 0) {
+            localStorage.setItem(LAST_OPEN_FLOW_ID_STORAGE_KEY, String(Math.trunc(Number(flowId))));
+        } else {
+            localStorage.removeItem(LAST_OPEN_FLOW_ID_STORAGE_KEY);
+        }
+    } catch (_) {
+        // ignore storage failure
+    }
+}
+
 function buildAuthHeaders(includeJson = false): Record<string, string> {
     const headers: Record<string, string> = {};
     const token = getSessionToken();
@@ -354,6 +378,23 @@ function toggleFlowActive() {
     setCurrentFlowActive(!currentFlowIsActive);
 }
 
+async function restoreLastFlowOrOpenModal() {
+    const fallbackFlowId = currentFlowId || readLastOpenFlowId();
+    if (!fallbackFlowId) {
+        openFlowsModal();
+        return;
+    }
+
+    const restored = await loadFlow(fallbackFlowId, {
+        silent: true,
+        keepModalClosed: true
+    });
+
+    if (!restored) {
+        openFlowsModal();
+    }
+}
+
 // Inicializacao
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -364,16 +405,20 @@ function onReady(callback: () => void) {
 }
 
 function initFlowBuilder() {
-    if (hasInitialized) return;
-    hasInitialized = true;
+    const canvas = document.getElementById('flowCanvas') as HTMLElement | null;
+    if (!canvas) return;
+    if (canvas.dataset.flowBuilderReady === '1') return;
+    canvas.dataset.flowBuilderReady = '1';
 
-    setCurrentFlowActive(true);
+    if (currentFlowId === null) {
+        setCurrentFlowActive(true);
+    }
     renderFlowVariableTags();
     loadFlowVariableFields();
     setupDragAndDrop();
     setupCanvasEvents();
     applyZoom();
-    openFlowsModal();
+    restoreLastFlowOrOpenModal();
 }
 
 onReady(initFlowBuilder);
@@ -386,7 +431,11 @@ function setupDragAndDrop() {
     if (!flowCanvas) return;
     
     nodeItems.forEach(item => {
-        item.addEventListener('dragstart', (e) => {
+        const nodeItem = item as HTMLElement;
+        if (nodeItem.dataset.flowDragBound === '1') return;
+        nodeItem.dataset.flowDragBound = '1';
+
+        nodeItem.addEventListener('dragstart', (e) => {
             e.dataTransfer?.setData('nodeType', item.dataset.type || '');
             e.dataTransfer?.setData('nodeSubtype', item.dataset.subtype || '');
         });
@@ -413,6 +462,8 @@ function setupDragAndDrop() {
 
     const dropTargets = [flowCanvas, canvasContainer].filter(Boolean) as HTMLElement[];
     dropTargets.forEach((target) => {
+        if (target.dataset.flowDropBound === '1') return;
+        target.dataset.flowDropBound = '1';
         target.addEventListener('dragenter', handleDragOver);
         target.addEventListener('dragover', handleDragOver);
         target.addEventListener('drop', handleDrop);
@@ -423,41 +474,48 @@ function setupDragAndDrop() {
 function setupCanvasEvents() {
     const canvas = document.getElementById('flowCanvas') as HTMLElement | null;
     if (!canvas) return;
+
+    if (canvas.dataset.flowCanvasEventsBound !== '1') {
+        canvas.dataset.flowCanvasEventsBound = '1';
     
-    canvas.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement | null;
-        if (
-            target === canvas ||
-            target?.id === 'canvasContainer' ||
-            target?.id === 'connectionsSvg' ||
-            target?.classList.contains('connections-svg')
-        ) {
-            deselectNode();
-        }
-    });
+        canvas.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement | null;
+            if (
+                target === canvas ||
+                target?.id === 'canvasContainer' ||
+                target?.id === 'connectionsSvg' ||
+                target?.classList.contains('connections-svg')
+            ) {
+                deselectNode();
+            }
+        });
 
-    canvas.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        const target = e.target as HTMLElement | null;
-        const isCanvasBackground =
-            target === canvas ||
-            target?.id === 'canvasContainer' ||
-            target?.id === 'connectionsSvg' ||
-            target?.classList.contains('connections-svg') ||
-            target?.classList.contains('empty-canvas');
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            const target = e.target as HTMLElement | null;
+            const isCanvasBackground =
+                target === canvas ||
+                target?.id === 'canvasContainer' ||
+                target?.id === 'connectionsSvg' ||
+                target?.classList.contains('connections-svg') ||
+                target?.classList.contains('empty-canvas');
 
-        if (!isCanvasBackground) return;
-        startPan(e.clientX, e.clientY, canvas);
-    });
+            if (!isCanvasBackground) return;
+            startPan(e.clientX, e.clientY, canvas);
+        });
 
-    canvas.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        const delta = e.deltaY < 0 ? 0.1 : -0.1;
-        setZoom(zoom + delta);
-    }, { passive: false });
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY < 0 ? 0.1 : -0.1;
+            setZoom(zoom + delta);
+        }, { passive: false });
+    }
 
-    document.addEventListener('mousemove', handleDocumentMouseMove);
-    document.addEventListener('mouseup', handleDocumentMouseUp);
+    if (!hasGlobalCanvasListeners) {
+        document.addEventListener('mousemove', handleDocumentMouseMove);
+        document.addEventListener('mouseup', handleDocumentMouseUp);
+        hasGlobalCanvasListeners = true;
+    }
 }
 
 // Adicionar no
@@ -1494,6 +1552,7 @@ async function saveFlow() {
 
         if (result.success) {
             currentFlowId = result.flow.id;
+            persistLastOpenFlowId(currentFlowId);
             setCurrentFlowActive(result.flow?.is_active);
             alert('Fluxo salvo com sucesso!');
         } else {
@@ -1674,6 +1733,7 @@ async function discardFlow(id: number, event?: Event) {
 
         if (currentFlowId === id) {
             resetEditorState();
+            persistLastOpenFlowId(null);
         }
 
         await loadFlows();
@@ -1682,8 +1742,13 @@ async function discardFlow(id: number, event?: Event) {
     }
 }
 
+type LoadFlowOptions = {
+    silent?: boolean;
+    keepModalClosed?: boolean;
+};
+
 // Carregar fluxo
-async function loadFlow(id: number) {
+async function loadFlow(id: number, options: LoadFlowOptions = {}): Promise<boolean> {
     try {
         const response = await fetch(`/api/flows/${id}`, {
             headers: buildAuthHeaders(false)
@@ -1692,7 +1757,9 @@ async function loadFlow(id: number) {
         
         if (result.success) {
             resetEditorState();
-            closeFlowsModal();
+            if (!options.keepModalClosed) {
+                closeFlowsModal();
+            }
 
             // Limpar canvas
             const canvasContainer = document.getElementById('canvasContainer') as HTMLElement | null;
@@ -1703,6 +1770,7 @@ async function loadFlow(id: number) {
             
             // Carregar dados
             currentFlowId = result.flow.id;
+            persistLastOpenFlowId(currentFlowId);
             nodes = result.flow.nodes || [];
             edges = result.flow.edges || [];
             normalizeLoadedFlowData();
@@ -1716,11 +1784,21 @@ async function loadFlow(id: number) {
             
             // Renderizar conexões
             setTimeout(() => renderConnections(), 100);
+            return true;
         } else {
-            alert('Erro ao carregar fluxo: ' + result.error);
+            if (response.status === 404) {
+                persistLastOpenFlowId(null);
+            }
+            if (!options.silent) {
+                alert('Erro ao carregar fluxo: ' + result.error);
+            }
+            return false;
         }
     } catch (error) {
-        alert('Erro ao carregar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+        if (!options.silent) {
+            alert('Erro ao carregar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+        }
+        return false;
     }
 }
 
@@ -1766,7 +1844,7 @@ const windowAny = window as Window & {
     removeCondition?: (index: number) => void;
     updateCondition?: (index: number, key: 'value' | 'next', value: string) => void;
     deleteNode?: (id: string) => void;
-    loadFlow?: (id: number) => Promise<void>;
+    loadFlow?: (id: number, options?: LoadFlowOptions) => Promise<boolean>;
     toggleFlowActivation?: (id: number, event?: Event) => Promise<void>;
     duplicateFlow?: (id: number, event?: Event) => Promise<void>;
     discardFlow?: (id: number, event?: Event) => Promise<void>;
