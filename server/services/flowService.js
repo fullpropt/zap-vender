@@ -10,7 +10,12 @@ const { classifyKeywordFlowIntent, classifyIntentRoute } = require('./intentClas
 const INTENT_STOPWORDS = new Set([
     'a', 'o', 'as', 'os', 'de', 'da', 'do', 'das', 'dos',
     'e', 'em', 'no', 'na', 'nos', 'nas', 'um', 'uma', 'uns', 'umas',
-    'ao', 'aos', 'para', 'pra', 'pro', 'por', 'com', 'sem'
+    'ao', 'aos', 'para', 'pra', 'pro', 'por', 'com', 'sem',
+    'que', 'eu', 'voce', 'voces', 'vc', 'vcs', 'me', 'te', 'se',
+    'como', 'onde', 'qual', 'quais', 'quando', 'quanto', 'quanta',
+    'posso', 'pode', 'podem', 'quero', 'queria', 'gostaria', 'tem',
+    'tenho', 'tinha', 'tiver', 'isso', 'isto', 'aquele', 'aquela',
+    'esse', 'essa'
 ]);
 
 function isStrictFlowIntentRoutingEnabled() {
@@ -52,14 +57,60 @@ function tokenizeIntentText(value = '') {
     return normalizeIntentText(value)
         .split(' ')
         .map((token) => token.trim())
+        .map((token) => normalizeIntentToken(token))
         .filter((token) => token.length >= 2 && !INTENT_STOPWORDS.has(token));
+}
+
+function normalizeIntentToken(token = '') {
+    let normalized = normalizeIntentText(token);
+    if (!normalized) return '';
+
+    if (normalized.length > 4 && normalized.endsWith('s')) {
+        normalized = normalized.slice(0, -1);
+    }
+
+    const verbSuffixes = [
+        'ariam', 'eriam', 'iriam', 'assem', 'essem', 'issem',
+        'ando', 'endo', 'indo', 'arei', 'erei', 'irei',
+        'aria', 'eria', 'iria', 'aram', 'eram', 'iram',
+        'ava', 'iam', 'ado', 'ido', 'ar', 'er', 'ir'
+    ];
+    for (const suffix of verbSuffixes) {
+        if (normalized.length > suffix.length + 2 && normalized.endsWith(suffix)) {
+            normalized = normalized.slice(0, -suffix.length);
+            break;
+        }
+    }
+
+    return normalized;
+}
+
+function getCommonPrefixLength(a = '', b = '') {
+    const max = Math.min(a.length, b.length);
+    let length = 0;
+    for (let i = 0; i < max; i += 1) {
+        if (a[i] !== b[i]) break;
+        length += 1;
+    }
+    return length;
+}
+
+function isIntentTokenSimilar(messageToken = '', phraseToken = '') {
+    if (!messageToken || !phraseToken) return false;
+    if (messageToken === phraseToken) return true;
+
+    const commonPrefixLength = getCommonPrefixLength(messageToken, phraseToken);
+    if (commonPrefixLength >= 5) return true;
+    if (commonPrefixLength >= 4 && Math.abs(messageToken.length - phraseToken.length) <= 2) return true;
+
+    return false;
 }
 
 function hasIntentPrefixTokenMatch(messageTokens = [], phraseToken = '') {
     if (!phraseToken || phraseToken.length < 4) return false;
     return messageTokens.some((messageToken) => {
         if (!messageToken || messageToken.length < 4) return false;
-        return messageToken.startsWith(phraseToken) || phraseToken.startsWith(messageToken);
+        return isIntentTokenSimilar(messageToken, phraseToken);
     });
 }
 
@@ -93,14 +144,17 @@ function scoreIntentPhraseMatch(normalizedMessage = '', messageTokens = [], norm
         return { matched: false, exact: false, score: 0, strongMatches: 0 };
     }
 
-    const coverage = (strongMatches + (weakMatches * 0.6)) / phraseTokens.length;
+    const coverage = (strongMatches + (weakMatches * 0.7)) / phraseTokens.length;
+    const unmatchedCount = Math.max(0, phraseTokens.length - strongMatches - weakMatches);
+    const minCoverage = unmatchedCount <= 1 ? 0.55 : 0.65;
     const hasEnoughSignal = (
         strongMatches >= 2
         || (phraseTokens.length === 1 && strongMatches >= 1)
-        || (strongMatches >= 1 && weakMatches >= 1 && phraseTokens.length <= 3)
+        || (strongMatches >= 1 && weakMatches >= 1)
+        || (weakMatches >= 2 && phraseTokens.length <= 3)
     );
 
-    if (!hasEnoughSignal || coverage < 0.65) {
+    if (!hasEnoughSignal || coverage < minCoverage) {
         return { matched: false, exact: false, score: coverage, strongMatches };
     }
 
