@@ -711,28 +711,69 @@ export default function FlowBuilder() {
         .intent-routes-editor {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 10px;
             margin-top: 12px;
         }
 
-        .intent-route-row {
-            display: grid;
-            grid-template-columns: 1fr 32px;
-            grid-template-areas:
-                "name remove"
-                "phrases phrases";
-            gap: 6px 8px;
+        .intent-routes-intro {
+            font-size: 12px;
+            color: var(--gray);
+            margin-bottom: 4px;
+        }
+
+        .intent-route-card {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #f8fafc;
+            padding: 10px;
+        }
+
+        .intent-route-card-header {
+            display: flex;
             align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
         }
 
-        .intent-route-name-input {
-            grid-area: name;
-            min-width: 0;
+        .intent-route-badge {
+            font-size: 11px;
+            font-weight: 700;
+            color: #475569;
+            background: rgba(148, 163, 184, 0.2);
+            border-radius: 999px;
+            padding: 4px 8px;
+            letter-spacing: 0.02em;
         }
 
+        .intent-route-field {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 8px;
+        }
+
+        .intent-route-field:last-child {
+            margin-bottom: 0;
+        }
+
+        .intent-route-field label {
+            margin: 0;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            color: var(--gray);
+        }
+
+        .intent-route-name-input,
         .intent-route-phrases-input {
-            grid-area: phrases;
             min-width: 0;
+        }
+
+        .intent-route-field-hint {
+            margin-top: 2px;
+            font-size: 11px;
+            color: var(--gray);
         }
         
         .condition-row {
@@ -746,8 +787,7 @@ export default function FlowBuilder() {
             flex: 1;
         }
         
-        .condition-row .remove-btn,
-        .intent-route-row .remove-btn {
+        .condition-row .remove-btn {
             width: 32px;
             height: 36px;
             border: none;
@@ -757,8 +797,24 @@ export default function FlowBuilder() {
             cursor: pointer;
         }
 
-        .intent-route-row .remove-btn {
-            grid-area: remove;
+        .intent-route-card .remove-btn {
+            width: 28px;
+            height: 28px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: white;
+            color: var(--gray);
+            border-radius: 6px;
+            cursor: pointer;
+            line-height: 1;
+            font-size: 16px;
+            padding: 0;
+            transition: all 0.2s;
+        }
+
+        .intent-route-card .remove-btn:hover {
+            border-color: rgba(239, 68, 68, 0.4);
+            background: rgba(239, 68, 68, 0.08);
+            color: var(--danger);
         }
         
         .add-condition-btn {
@@ -831,56 +887,9 @@ export default function FlowBuilder() {
             overflow-y: auto;
         }
 
-        .flow-management {
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            background: var(--lighter);
-            padding: 14px;
-            margin-bottom: 14px;
-        }
-
-        .flow-management-title {
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            color: var(--gray);
-            margin: 0 0 10px;
-        }
-
-        .flow-management-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) 130px;
-            gap: 8px;
-            margin-bottom: 10px;
-        }
-
-        .flow-config-input,
-        .flow-config-select {
-            width: 100%;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: white;
-            color: var(--dark);
-            font-size: 14px;
-            padding: 9px 11px;
-        }
-
-        .flow-config-input:focus,
-        .flow-config-select:focus {
-            outline: none;
-            border-color: rgba(var(--primary-rgb), 0.5);
-            box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
-        }
-
-        .flow-management-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-        }
-
         .modal-footer {
             display: flex;
-            justify-content: flex-end;
+            justify-content: center;
             padding: 16px 20px;
             border-top: 1px solid var(--border);
             background: white;
@@ -923,11 +932,37 @@ export default function FlowBuilder() {
         .flow-list-item .info {
             flex: 1;
         }
+
+        .flow-list-item .name-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
         
         .flow-list-item .name {
             font-weight: 600;
             color: var(--dark);
             margin-bottom: 4px;
+        }
+
+        .flow-inline-icon {
+            width: 24px;
+            height: 24px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: #64748b;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .flow-inline-icon:hover {
+            border-color: var(--border);
+            background: white;
+            color: #334155;
         }
         
         .flow-list-item .meta {
@@ -954,6 +989,15 @@ export default function FlowBuilder() {
             transition: all 0.2s;
         }
 
+        .flow-list-icon-btn {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         .flow-list-btn:hover {
             border-color: rgba(var(--primary-rgb), 0.35);
             background: #f9fbff;
@@ -968,6 +1012,10 @@ export default function FlowBuilder() {
             border-color: rgba(239, 68, 68, 0.36);
             background: rgba(239, 68, 68, 0.08);
             color: #b91c1c;
+        }
+
+        .flow-list-duplicate {
+            color: #475569;
         }
 
         .flow-list-toggle {
@@ -1045,15 +1093,8 @@ export default function FlowBuilder() {
                 grid-template-columns: 1fr;
                 gap: 8px;
             }
-            .flow-management-grid {
-                grid-template-columns: 1fr;
-            }
-            .flow-management-actions {
-                justify-content: stretch;
-            }
-            .flow-management-actions .toolbar-btn {
-                flex: 1;
-                justify-content: center;
+            .flow-list-item .name-row {
+                width: 100%;
             }
         }
       `}</style>
@@ -1112,6 +1153,9 @@ export default function FlowBuilder() {
                   <div className="header-actions">
                       <button className="toolbar-btn secondary" onClick={() => globals.openFlowsModal?.()}>
                           <span className="icon icon-list icon-sm"></span> Meus Fluxos
+                      </button>
+                      <button className="toolbar-btn secondary" onClick={() => globals.saveFlow?.()}>
+                          <span className="icon icon-save icon-sm"></span> Salvar
                       </button>
                       <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
                           <span className="icon icon-add icon-sm"></span> Novo Fluxo
@@ -1266,24 +1310,6 @@ export default function FlowBuilder() {
                       <button className="modal-close" onClick={() => globals.closeFlowsModal?.()}>&times;</button>
                   </div>
                   <div className="modal-body">
-                      <div className="flow-management">
-                          <h3 className="flow-management-title">Fluxo Atual</h3>
-                          <div className="flow-management-grid">
-                              <input type="text" id="flowName" className="flow-config-input" placeholder="Nome do fluxo" />
-                              <select id="flowStatus" className="flow-config-select" defaultValue="1" onChange={() => globals.updateFlowStatusFromSelect?.()}>
-                                  <option value="1">Ativo</option>
-                                  <option value="0">Inativo</option>
-                              </select>
-                          </div>
-                          <div className="flow-management-actions">
-                              <button className="toolbar-btn secondary" onClick={() => globals.clearCanvas?.()}>
-                                  <span className="icon icon-delete icon-sm"></span> Limpar
-                              </button>
-                              <button className="toolbar-btn primary" onClick={() => globals.saveFlow?.()}>
-                                  <span className="icon icon-save icon-sm"></span> Salvar
-                              </button>
-                          </div>
-                      </div>
                       <div id="flowsList"></div>
                   </div>
                   <div className="modal-footer">

@@ -55,6 +55,7 @@ let nodes: FlowNode[] = [];
 let edges: Edge[] = [];
 let selectedNode: FlowNode | null = null;
 let currentFlowId: number | null = null;
+let currentFlowName = '';
 let currentFlowIsActive = true;
 let zoom = 1;
 let pan = { x: 0, y: 0 };
@@ -843,12 +844,23 @@ function renderProperties() {
                 html += `
                     <div class="property-group">
                         <label>Intenções</label>
+                        <div class="intent-routes-intro">Defina um título curto para a saída e as frases que devem acionar essa intenção.</div>
                         <div class="intent-routes-editor">
                             ${routes.map((route, index) => `
-                                <div class="intent-route-row">
-                                    <input class="intent-route-name-input" type="text" value="${escapeHtml(route.label)}" title="${escapeHtml(route.label)}" placeholder="Nome da saída" onchange="updateIntentRoute(${index}, 'label', this.value)">
-                                    <input class="intent-route-phrases-input" type="text" value="${escapeHtml(route.phrases)}" title="${escapeHtml(route.phrases)}" placeholder="Frases gatilho (separe por vírgula)" onchange="updateIntentRoute(${index}, 'phrases', this.value)">
-                                    <button class="remove-btn" onclick="removeIntentRoute(${index})">×</button>
+                                <div class="intent-route-card">
+                                    <div class="intent-route-card-header">
+                                        <span class="intent-route-badge">Intenção ${index + 1}</span>
+                                        <button class="remove-btn" title="Remover intenção" onclick="removeIntentRoute(${index})">×</button>
+                                    </div>
+                                    <div class="intent-route-field">
+                                        <label>Título da saída</label>
+                                        <input class="intent-route-name-input" type="text" value="${escapeHtml(route.label)}" title="${escapeHtml(route.label)}" placeholder="Ex.: Comprar óculos" onchange="updateIntentRoute(${index}, 'label', this.value)">
+                                    </div>
+                                    <div class="intent-route-field">
+                                        <label>Frases que ativam esta intenção</label>
+                                        <input class="intent-route-phrases-input" type="text" value="${escapeHtml(route.phrases)}" title="${escapeHtml(route.phrases)}" placeholder="Ex.: onde posso comprar, como comprar óculos" onchange="updateIntentRoute(${index}, 'phrases', this.value)">
+                                        <div class="intent-route-field-hint">Separe variações por vírgula.</div>
+                                    </div>
                                 </div>
                             `).join('')}
                         </div>
@@ -1418,6 +1430,7 @@ function resetEditorState() {
     nodes = [];
     edges = [];
     currentFlowId = null;
+    currentFlowName = '';
     currentFlowIsActive = true;
     zoom = 1;
     pan = { x: 0, y: 0 };
@@ -1435,9 +1448,6 @@ function resetEditorState() {
 
     const connectionsSvg = document.getElementById('connectionsSvg') as HTMLElement | null;
     if (connectionsSvg) connectionsSvg.innerHTML = '';
-
-    const flowName = document.getElementById('flowName') as HTMLInputElement | null;
-    if (flowName) flowName.value = '';
 
     renderFlowStatusControls();
     applyZoom();
@@ -1500,7 +1510,12 @@ function normalizeLoadedFlowData() {
 
 // Salvar fluxo
 async function saveFlow() {
-    const name = (document.getElementById('flowName') as HTMLInputElement | null)?.value.trim() || '';
+    let name = String(currentFlowName || '').trim();
+    if (!name) {
+        const typedName = prompt('Digite um nome para o fluxo:', 'Novo Fluxo');
+        if (!typedName) return;
+        name = typedName.trim();
+    }
     if (!name) {
         alert('Digite um nome para o fluxo');
         return;
@@ -1544,6 +1559,7 @@ async function saveFlow() {
 
         if (result.success) {
             currentFlowId = result.flow.id;
+            currentFlowName = String(result.flow?.name || name).trim();
             persistLastOpenFlowId(currentFlowId);
             setCurrentFlowActive(result.flow?.is_active);
             alert('Fluxo salvo com sucesso!');
@@ -1604,23 +1620,71 @@ function renderFlowsList(flows: FlowSummary[]) {
     container.innerHTML = flows.map(flow => {
         const isActive = toBoolean(flow.is_active, true);
         const isCurrent = Number(flow.id) === Number(currentFlowId);
+        const flowName = String(flow.name || '').trim() || 'Sem nome';
+        const escapedFlowName = escapeHtml(flowName);
+        const encodedName = encodeURIComponent(flowName);
         return `
         <div class="flow-list-item ${isCurrent ? 'is-current' : ''}" onclick="loadFlow(${flow.id})">
             <div class="icon icon-flows"></div>
             <div class="info">
-                <div class="name">${flow.name}</div>
+                <div class="name-row">
+                    <div class="name">${escapedFlowName}</div>
+                    <button class="flow-inline-icon" title="Editar nome" onclick="renameFlow(${flow.id}, decodeURIComponent('${encodedName}'), event)">
+                        <span class="icon icon-edit icon-sm"></span>
+                    </button>
+                </div>
                 <div class="meta">Gatilho: ${getTriggerLabel(flow.trigger_type)} | ${flow.nodes?.length || 0} blocos | ${isActive ? 'Ativo' : 'Inativo'}</div>
             </div>
             <div class="flow-list-actions">
                 <button class="flow-list-btn flow-list-toggle ${isActive ? 'is-active' : 'is-inactive'}" title="${isActive ? 'Desativar fluxo' : 'Ativar fluxo'}" onclick="toggleFlowActivation(${flow.id}, event)">
                     ${isActive ? 'Desativar' : 'Ativar'}
                 </button>
-                <button class="flow-list-btn flow-list-duplicate" title="Duplicar fluxo" onclick="duplicateFlow(${flow.id}, event)">Duplicar</button>
-                <button class="flow-list-btn flow-list-delete" title="Descartar fluxo" onclick="discardFlow(${flow.id}, event)">Descartar</button>
+                <button class="flow-list-btn flow-list-icon-btn flow-list-duplicate" title="Duplicar fluxo" onclick="duplicateFlow(${flow.id}, event)">
+                    <span class="icon icon-templates icon-sm"></span>
+                </button>
+                <button class="flow-list-btn flow-list-icon-btn flow-list-delete" title="Descartar fluxo" onclick="discardFlow(${flow.id}, event)">
+                    <span class="icon icon-delete icon-sm"></span>
+                </button>
             </div>
         </div>
     `;
     }).join('');
+}
+
+async function renameFlow(id: number, currentName = '', event?: Event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    const typedName = prompt('Novo nome do fluxo:', String(currentName || '').trim());
+    if (typedName === null) return;
+
+    const nextName = typedName.trim();
+    if (!nextName) {
+        alert('O nome do fluxo não pode ficar vazio.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/flows/${id}`, {
+            method: 'PUT',
+            headers: buildAuthHeaders(true),
+            body: JSON.stringify({ name: nextName })
+        });
+        const result = await response.json();
+
+        if (!result.success) {
+            alert('Erro ao renomear fluxo: ' + (result.error || 'Falha inesperada'));
+            return;
+        }
+
+        if (Number(currentFlowId) === Number(id)) {
+            currentFlowName = nextName;
+        }
+
+        await loadFlows();
+    } catch (error) {
+        alert('Erro ao renomear fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+    }
 }
 
 async function toggleFlowActivation(id: number, event?: Event) {
@@ -1693,10 +1757,8 @@ async function duplicateFlow(id: number, event?: Event) {
         edges = flow.edges || [];
         normalizeLoadedFlowData();
         currentFlowId = null;
+        currentFlowName = `${flow.name || 'Fluxo'} (copia)`;
         setCurrentFlowActive(flow?.is_active);
-
-        const flowName = document.getElementById('flowName') as HTMLInputElement | null;
-        if (flowName) flowName.value = `${flow.name || 'Fluxo'} (copia)`;
 
         nodes.forEach(node => renderNode(node));
         setTimeout(() => renderConnections(), 100);
@@ -1762,14 +1824,12 @@ async function loadFlow(id: number, options: LoadFlowOptions = {}): Promise<bool
             
             // Carregar dados
             currentFlowId = result.flow.id;
+            currentFlowName = String(result.flow?.name || '').trim();
             persistLastOpenFlowId(currentFlowId);
             nodes = result.flow.nodes || [];
             edges = result.flow.edges || [];
             normalizeLoadedFlowData();
             setCurrentFlowActive(result.flow?.is_active);
-            
-            const flowName = document.getElementById('flowName') as HTMLInputElement | null;
-            if (flowName) flowName.value = result.flow.name;
             
             // Renderizar nós
             nodes.forEach(node => renderNode(node));
@@ -1797,10 +1857,6 @@ async function loadFlow(id: number, options: LoadFlowOptions = {}): Promise<bool
 // Criar novo fluxo
 function createNewFlow() {
     resetEditorState();
-    const flowName = document.getElementById('flowName') as HTMLInputElement | null;
-    if (flowName) {
-        flowName.focus();
-    }
     closeFlowsModal();
 }
 
@@ -1838,6 +1894,7 @@ const windowAny = window as Window & {
     updateCondition?: (index: number, key: 'value' | 'next', value: string) => void;
     deleteNode?: (id: string) => void;
     loadFlow?: (id: number, options?: LoadFlowOptions) => Promise<boolean>;
+    renameFlow?: (id: number, currentName?: string, event?: Event) => Promise<void>;
     toggleFlowActivation?: (id: number, event?: Event) => Promise<void>;
     duplicateFlow?: (id: number, event?: Event) => Promise<void>;
     discardFlow?: (id: number, event?: Event) => Promise<void>;
@@ -1865,6 +1922,7 @@ windowAny.removeCondition = removeCondition;
 windowAny.updateCondition = updateCondition;
 windowAny.deleteNode = deleteNode;
 windowAny.loadFlow = loadFlow;
+windowAny.renameFlow = renameFlow;
 windowAny.toggleFlowActivation = toggleFlowActivation;
 windowAny.duplicateFlow = duplicateFlow;
 windowAny.discardFlow = discardFlow;
