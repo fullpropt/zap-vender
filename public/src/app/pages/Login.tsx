@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 import { brandFullLogoUrl, brandName } from '../lib/brand';
 
 type LoginGlobals = {
@@ -44,9 +44,20 @@ export default function Login() {
             box-sizing: border-box;
         }
 
+        .login-react {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0f172a 0%, #111827 55%, #020617 100%);
+            background:
+                radial-gradient(900px 520px at 85% 8%, rgba(23, 140, 73, 0.16) 0%, rgba(23, 140, 73, 0) 60%),
+                radial-gradient(700px 420px at 12% 86%, rgba(30, 64, 175, 0.14) 0%, rgba(30, 64, 175, 0) 65%),
+                linear-gradient(135deg, #020817 0%, #091224 50%, #020617 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -54,97 +65,88 @@ export default function Login() {
         }
 
         .login-container {
-            background: linear-gradient(160deg, #3a4759 0%, #2f3b4c 100%);
-            padding: 40px;
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.16);
-            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.35);
+            background: linear-gradient(165deg, rgba(18, 33, 54, 0.97) 0%, rgba(12, 24, 40, 0.97) 100%);
+            padding: 34px 34px 28px;
+            border-radius: 22px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            box-shadow: 0 26px 72px rgba(2, 6, 23, 0.58);
             width: 100%;
-            max-width: 400px;
+            max-width: 430px;
         }
 
         .login-logo {
             display: flex;
             justify-content: center;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
         }
 
         .login-logo img {
             width: clamp(150px, 42vw, 210px);
             height: auto;
             display: block;
-            filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.35));
+            filter: drop-shadow(0 10px 18px rgba(2, 6, 23, 0.45));
         }
 
         .login-title {
             text-align: center;
-            color: #eaf6ef;
-            margin-bottom: 30px;
-            font-size: 24px;
-            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-        }
-
-        .auth-tabs {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .auth-tab {
-            padding: 10px 12px;
-            border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.24);
-            background: rgba(255, 255, 255, 0.14);
-            color: #effaf3;
+            color: #e8eef8;
+            margin-bottom: 6px;
+            font-size: 30px;
+            line-height: 1.15;
             font-weight: 700;
-            cursor: pointer;
-            transition: all 0.2s ease;
         }
 
-        .auth-tab.active {
-            background: #16a34a;
-            color: #fff;
-            border-color: #16a34a;
+        .login-subtitle {
+            text-align: center;
+            color: #9fb0c8;
+            margin-bottom: 24px;
+            font-size: 14px;
+        }
+
+        .form-section-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #dbe6f7;
+            margin-bottom: 14px;
         }
 
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
 
         .form-label {
             display: block;
-            margin-bottom: 8px;
-            color: #effaf3;
+            margin-bottom: 7px;
+            color: #d8e4f6;
             font-weight: 600;
         }
 
         .form-input {
             width: 100%;
-            padding: 14px 16px;
-            border: 1px solid rgba(15, 23, 42, 0.2);
+            padding: 13px 14px;
+            border: 1px solid rgba(148, 163, 184, 0.32);
             border-radius: 10px;
-            font-size: 16px;
-            color: #0f172a;
-            background: #d7e0eb;
+            font-size: 15px;
+            color: #eaf1ff;
+            background: rgba(30, 47, 72, 0.86);
             transition: all 0.3s;
         }
 
         .form-input::placeholder {
-            color: #64748b;
+            color: #8ea3bf;
         }
 
         .form-input:focus {
             outline: none;
-            border-color: #16a34a;
-            box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
-            background: #e2e8f0;
+            border-color: rgba(23, 140, 73, 0.78);
+            box-shadow: 0 0 0 3px rgba(23, 140, 73, 0.18);
+            background: rgba(34, 56, 84, 0.94);
         }
 
         .btn-login {
             width: 100%;
-            padding: 16px;
-            background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+            padding: 15px;
+            background: linear-gradient(135deg, #1aae5e 0%, #178c49 100%);
             color: white;
             border: none;
             border-radius: 10px;
@@ -156,53 +158,92 @@ export default function Login() {
 
         .btn-login:hover {
             transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(22, 163, 74, 0.35);
+            box-shadow: 0 12px 32px rgba(23, 140, 73, 0.34);
         }
 
         .error-message {
-            background: #fee2e2;
-            color: #dc2626;
+            background: rgba(127, 29, 29, 0.34);
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            color: #fecaca;
             padding: 12px;
             border-radius: 8px;
-            margin-bottom: 20px;
+            margin-bottom: 14px;
             text-align: center;
             display: none;
+            font-size: 13px;
         }
 
         .hidden {
             display: none;
         }
 
+        .auth-switch {
+            margin-top: 14px;
+            text-align: center;
+            color: #a8bbd4;
+            font-size: 13px;
+        }
+
+        .auth-switch-link {
+            border: none;
+            background: transparent;
+            color: #49c97d;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 0;
+            margin-left: 4px;
+            text-decoration: none;
+        }
+
+        .auth-switch-link:hover {
+            color: #7ce9a7;
+            text-decoration: underline;
+        }
+
         .security-badge {
             text-align: center;
             margin-top: 20px;
-            color: #d5deea;
+            color: #9fb0c8;
             font-size: 12px;
+            letter-spacing: 0.02em;
+        }
+
+        @media (max-width: 640px) {
+            .login-react {
+                padding: 14px;
+            }
+
+            .login-container {
+                padding: 24px 18px 20px;
+                border-radius: 16px;
+            }
+
+            .login-title {
+                font-size: 24px;
+            }
         }
       `}</style>
+
       <div className="login-container">
         <div className="login-logo">
           <img src={brandFullLogoUrl} alt={brandName} />
         </div>
-        <h1 className="login-title">Acesso ao Dashboard</h1>
-
-        <div className="auth-tabs">
-          <button id="loginTab" type="button" className="auth-tab active" onClick={() => globals.showLogin?.()}>Entrar</button>
-          <button id="registerTab" type="button" className="auth-tab" onClick={() => globals.showRegister?.()}>Criar conta</button>
-        </div>
+        <h1 className="login-title" id="authTitle">Acesso ao Dashboard</h1>
+        <p className="login-subtitle" id="authSubtitle">{'Entre com seu usu\u00E1rio para continuar.'}</p>
 
         <div className="error-message" id="errorMsg">
-          Usuário ou senha incorretos
+          {'Usu\u00E1rio ou senha incorretos'}
         </div>
 
         <form id="loginForm" onSubmit={(event) => globals.handleLogin?.(event as unknown as Event)}>
+          <h2 className="form-section-title">Entrar</h2>
           <div className="form-group">
-            <label className="form-label">Usuário</label>
+            <label className="form-label">{'Usu\u00E1rio'}</label>
             <input
               type="text"
               className="form-input"
               id="username"
-              placeholder="Digite seu e-mail ou usuário"
+              placeholder={'Digite seu e-mail ou usu\u00E1rio'}
               required
               autoComplete="off"
             />
@@ -214,6 +255,13 @@ export default function Login() {
           </div>
 
           <button type="submit" className="btn-login">Entrar</button>
+
+          <div className="auth-switch">
+            {'Ainda n\u00E3o tem conta?'}
+            <button type="button" className="auth-switch-link" onClick={() => globals.showRegister?.()}>
+              Criar conta
+            </button>
+          </div>
         </form>
 
         <div className="error-message" id="registerErrorMsg">
@@ -221,6 +269,7 @@ export default function Login() {
         </div>
 
         <form id="registerForm" className="hidden" onSubmit={(event) => globals.handleRegister?.(event as unknown as Event)}>
+          <h2 className="form-section-title">Criar conta</h2>
           <div className="form-group">
             <label className="form-label">Nome</label>
             <input
@@ -256,10 +305,17 @@ export default function Login() {
           </div>
 
           <button type="submit" className="btn-login">Criar conta</button>
+
+          <div className="auth-switch">
+            {'J\u00E1 tem conta?'}
+            <button type="button" className="auth-switch-link" onClick={() => globals.showLogin?.()}>
+              Entrar
+            </button>
+          </div>
         </form>
 
         <div className="security-badge">
-          Conexão segura e criptografada
+          {'Conex\u00E3o segura e criptografada'}
         </div>
       </div>
     </div>

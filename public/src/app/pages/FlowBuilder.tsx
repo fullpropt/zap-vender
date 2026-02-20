@@ -287,11 +287,11 @@ export default function FlowBuilder() {
             color: #334155;
         }
         
-        .node-item .icon.trigger { background: rgba(16, 185, 129, 0.15); }
-        .node-item .icon.message { background: rgba(59, 130, 246, 0.15); }
-        .node-item .icon.condition { background: rgba(245, 158, 11, 0.15); }
-        .node-item .icon.action { background: rgba(139, 92, 246, 0.15); }
-        .node-item .icon.delay { background: rgba(100, 116, 139, 0.15); }
+        .node-item .icon.trigger { background: rgba(16, 185, 129, 0.15); color: #047857; }
+        .node-item .icon.message { background: rgba(59, 130, 246, 0.16); color: #1d4ed8; }
+        .node-item .icon.condition { background: rgba(245, 158, 11, 0.17); color: #b45309; }
+        .node-item .icon.action { background: rgba(139, 92, 246, 0.15); color: #6d28d9; }
+        .node-item .icon.delay { background: rgba(245, 158, 11, 0.17); color: #b45309; }
         
         .node-item .info {
             flex: 1;
@@ -366,12 +366,12 @@ export default function FlowBuilder() {
         }
         
         .flow-node-header.trigger { background: rgba(16, 185, 129, 0.1); }
-        .flow-node-header.intent { background: rgba(16, 185, 129, 0.1); }
+        .flow-node-header.intent { background: rgba(245, 158, 11, 0.1); }
         .flow-node-header.message { background: rgba(59, 130, 246, 0.1); }
         .flow-node-header.condition { background: rgba(245, 158, 11, 0.1); }
-        .flow-node-header.wait { background: rgba(100, 116, 139, 0.1); }
+        .flow-node-header.wait { background: rgba(59, 130, 246, 0.1); }
         .flow-node-header.action { background: rgba(139, 92, 246, 0.1); }
-        .flow-node-header.delay { background: rgba(100, 116, 139, 0.1); }
+        .flow-node-header.delay { background: rgba(245, 158, 11, 0.1); }
         .flow-node-header.transfer { background: rgba(239, 68, 68, 0.1); }
         .flow-node-header.event { background: rgba(139, 92, 246, 0.1); }
         
@@ -380,6 +380,15 @@ export default function FlowBuilder() {
             color: #334155;
             opacity: 0.95;
         }
+        .flow-node-header.trigger .icon { color: #047857; }
+        .flow-node-header.message .icon,
+        .flow-node-header.wait .icon { color: #1d4ed8; }
+        .flow-node-header.intent .icon,
+        .flow-node-header.condition .icon,
+        .flow-node-header.delay .icon { color: #b45309; }
+        .flow-node-header.action .icon,
+        .flow-node-header.event .icon { color: #6d28d9; }
+        .flow-node-header.transfer .icon { color: #b91c1c; }
 
         .flow-node-header .title-group {
             flex: 1;
@@ -911,7 +920,9 @@ export default function FlowBuilder() {
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.5);
+            padding: 16px;
+            background: rgba(2, 6, 23, 0.74);
+            backdrop-filter: blur(2px);
             z-index: 1000;
             align-items: center;
             justify-content: center;
@@ -922,12 +933,17 @@ export default function FlowBuilder() {
         }
         
         .modal {
-            background: white;
+            background: linear-gradient(
+                180deg,
+                rgba(18, 33, 54, 0.98) 0%,
+                rgba(12, 24, 40, 0.98) 100%
+            );
+            border: 1px solid rgba(148, 163, 184, 0.28);
             border-radius: 16px;
-            width: 90%;
-            max-width: 600px;
-            max-height: 80vh;
+            width: min(680px, 100%);
+            max-height: 82vh;
             overflow: hidden;
+            box-shadow: 0 22px 48px rgba(2, 6, 23, 0.45);
         }
         
         .modal-header {
@@ -935,12 +951,13 @@ export default function FlowBuilder() {
             justify-content: space-between;
             align-items: center;
             padding: 20px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
         }
         
         .modal-header h2 {
             font-size: 18px;
-            color: var(--dark);
+            color: #e7edf7;
+            letter-spacing: 0.01em;
         }
         
         .modal-close {
@@ -948,18 +965,18 @@ export default function FlowBuilder() {
             height: 34px;
             border-radius: 8px;
             border: 1px solid rgba(100, 116, 139, 0.32);
-            background: #f8fafc;
+            background: rgba(15, 23, 42, 0.72);
             font-size: 24px;
             line-height: 1;
-            color: #334155;
+            color: #cbd5e1;
             cursor: pointer;
             transition: all 0.2s;
         }
 
         .modal-close:hover {
-            border-color: rgba(59, 130, 246, 0.4);
-            background: #eff6ff;
-            color: #1d4ed8;
+            border-color: rgba(var(--primary-rgb), 0.48);
+            background: rgba(var(--primary-rgb), 0.14);
+            color: #eafff3;
         }
         
         .modal-body {
@@ -972,8 +989,8 @@ export default function FlowBuilder() {
             display: flex;
             justify-content: center;
             padding: 16px 20px;
-            border-top: 1px solid var(--border);
-            background: white;
+            border-top: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(2, 6, 23, 0.28);
         }
         
         .flow-list-item {
@@ -981,35 +998,40 @@ export default function FlowBuilder() {
             align-items: center;
             gap: 15px;
             padding: 15px;
-            border: 1px solid var(--border);
-            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.26);
+            border-radius: 12px;
             margin-bottom: 10px;
             cursor: pointer;
             transition: all 0.2s;
+            background: rgba(15, 23, 42, 0.4);
         }
         
         .flow-list-item:hover {
-            border-color: rgba(var(--primary-rgb), 0.32);
-            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
-            background: #f9fbff;
+            border-color: rgba(var(--primary-rgb), 0.4);
+            box-shadow: 0 8px 18px rgba(2, 6, 23, 0.26);
+            background: rgba(var(--primary-rgb), 0.08);
         }
 
         .flow-list-item.is-current {
-            border-color: rgba(var(--primary-rgb), 0.5);
-            background: rgba(var(--primary-rgb), 0.08);
+            border-color: rgba(var(--primary-rgb), 0.58);
+            background: linear-gradient(
+                90deg,
+                rgba(var(--primary-rgb), 0.14) 0%,
+                rgba(15, 23, 42, 0.34) 100%
+            );
         }
         
         .flow-list-item .icon {
-            width: 45px;
-            height: 45px;
-            background: rgba(148, 163, 184, 0.2);
-            border: 1px solid rgba(100, 116, 139, 0.28);
+            width: 42px;
+            height: 42px;
+            background: rgba(148, 163, 184, 0.14);
+            border: 1px solid rgba(100, 116, 139, 0.34);
             border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 20px;
-            color: #334155;
+            color: #cbd5e1;
         }
         
         .flow-list-item .info {
@@ -1024,7 +1046,7 @@ export default function FlowBuilder() {
         
         .flow-list-item .name {
             font-weight: 600;
-            color: var(--dark);
+            color: #e7edf7;
             margin-bottom: 4px;
         }
 
@@ -1032,8 +1054,8 @@ export default function FlowBuilder() {
             width: 24px;
             height: 24px;
             border: 1px solid rgba(100, 116, 139, 0.32);
-            background: white;
-            color: #334155;
+            background: rgba(15, 23, 42, 0.62);
+            color: #cbd5e1;
             border-radius: 6px;
             display: inline-flex;
             align-items: center;
@@ -1048,14 +1070,14 @@ export default function FlowBuilder() {
         }
 
         .flow-inline-icon:hover {
-            border-color: rgba(59, 130, 246, 0.4);
-            background: #eff6ff;
-            color: #1d4ed8;
+            border-color: rgba(var(--primary-rgb), 0.48);
+            background: rgba(var(--primary-rgb), 0.14);
+            color: #eafff3;
         }
         
         .flow-list-item .meta {
             font-size: 12px;
-            color: var(--gray);
+            color: #9fb0c8;
         }
 
         .flow-list-actions {
@@ -1067,8 +1089,8 @@ export default function FlowBuilder() {
 
         .flow-list-btn {
             border: 1px solid rgba(100, 116, 139, 0.35);
-            background: #f8fafc;
-            color: #1f2937;
+            background: rgba(15, 23, 42, 0.62);
+            color: #dbe6f7;
             border-radius: 8px;
             font-size: 12px;
             font-weight: 600;
@@ -1092,67 +1114,68 @@ export default function FlowBuilder() {
         }
 
         .flow-list-btn:hover {
-            border-color: rgba(var(--primary-rgb), 0.35);
-            background: #f9fbff;
-            color: #1f2937;
+            border-color: rgba(var(--primary-rgb), 0.42);
+            background: rgba(var(--primary-rgb), 0.16);
+            color: #ecfff4;
         }
 
         .flow-list-delete {
-            color: #b91c1c;
-            border-color: rgba(239, 68, 68, 0.4);
-            background: rgba(254, 242, 242, 0.85);
+            color: #fecaca;
+            border-color: rgba(239, 68, 68, 0.5);
+            background: rgba(127, 29, 29, 0.22);
         }
 
         .flow-list-delete:hover {
-            border-color: rgba(239, 68, 68, 0.36);
-            background: rgba(239, 68, 68, 0.08);
-            color: #b91c1c;
+            border-color: rgba(248, 113, 113, 0.7);
+            background: rgba(185, 28, 28, 0.34);
+            color: #fee2e2;
         }
 
         .flow-list-duplicate {
-            color: #1e3a8a;
-            border-color: rgba(59, 130, 246, 0.35);
-            background: rgba(239, 246, 255, 0.85);
+            color: #bfdbfe;
+            border-color: rgba(59, 130, 246, 0.46);
+            background: rgba(30, 58, 138, 0.22);
         }
 
         .flow-list-duplicate:hover {
-            border-color: rgba(59, 130, 246, 0.5);
-            background: rgba(219, 234, 254, 0.8);
-            color: #1d4ed8;
+            border-color: rgba(96, 165, 250, 0.75);
+            background: rgba(37, 99, 235, 0.3);
+            color: #dbeafe;
         }
 
         .flow-list-toggle {
-            color: #334155;
+            color: #dbe6f7;
         }
 
         .flow-list-toggle.is-active {
-            border-color: rgba(var(--primary-rgb), 0.34);
-            background: rgba(var(--primary-rgb), 0.1);
-            color: #0f5132;
+            border-color: rgba(var(--primary-rgb), 0.5);
+            background: rgba(var(--primary-rgb), 0.2);
+            color: #eafff3;
         }
 
         .flow-list-toggle.is-active:hover {
-            border-color: rgba(var(--primary-rgb), 0.5);
-            background: rgba(var(--primary-rgb), 0.15);
+            border-color: rgba(var(--primary-rgb), 0.62);
+            background: rgba(var(--primary-rgb), 0.26);
         }
 
         .flow-list-toggle.is-inactive {
             border-color: rgba(148, 163, 184, 0.5);
-            background: rgba(148, 163, 184, 0.18);
-            color: #334155;
+            background: rgba(148, 163, 184, 0.14);
+            color: #cbd5e1;
         }
 
         .flow-list-toggle.is-inactive:hover {
-            border-color: rgba(var(--primary-rgb), 0.34);
-            background: rgba(var(--primary-rgb), 0.1);
-            color: #0f5132;
+            border-color: rgba(var(--primary-rgb), 0.42);
+            background: rgba(var(--primary-rgb), 0.16);
+            color: #ecfff4;
         }
 
         .flow-list-empty {
             text-align: center;
-            color: var(--gray);
-            border: 2px dashed var(--border);
-            border-radius: 10px;
+            color: #9fb0c8;
+            border: 1px dashed rgba(148, 163, 184, 0.4);
+            background: rgba(15, 23, 42, 0.35);
+            border-radius: 12px;
             padding: 18px 14px;
         }
         
@@ -1314,7 +1337,7 @@ export default function FlowBuilder() {
                               </div>
                           </div>
                           <div className="node-item" draggable="true" data-type="wait">
-                              <div className="icon delay icon-clock"></div>
+                              <div className="icon message icon-clock"></div>
                               <div className="info">
                                   <div className="name">Aguardar Resposta</div>
                                   <div className="desc">Espera input do usuário</div>
@@ -1325,7 +1348,7 @@ export default function FlowBuilder() {
                       <div className="node-category">
                           <h3>Lógica</h3>
                           <div className="node-item" draggable="true" data-type="intent">
-                              <div className="icon trigger icon-bolt"></div>
+                              <div className="icon condition icon-bolt"></div>
                               <div className="info">
                                   <div className="name">Intenção</div>
                                   <div className="desc">Aguarda resposta e ramifica por intenção</div>

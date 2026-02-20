@@ -493,7 +493,7 @@ function LeadModals() {
               className="modal-close"
               onClick={() => globals.closeModal?.('customEventModal')}
             >
-              Ã—
+              {'\u00D7'}
             </button>
           </div>
           <div className="modal-body">
@@ -504,7 +504,7 @@ function LeadModals() {
                 <input type="text" className="form-input" id="customEventName" placeholder="Ex.: Conversa Qualificada" />
               </div>
               <div className="form-group">
-                <label className="form-label">DescriÃ§Ã£o (opcional)</label>
+                <label className="form-label">Descrição (opcional)</label>
                 <textarea
                   className="form-textarea"
                   id="customEventDescription"

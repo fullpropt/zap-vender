@@ -48,21 +48,25 @@ function setErrorMessage(target: HTMLElement | null, message: string) {
 function setAuthMode(mode: AuthMode) {
     const loginForm = document.getElementById('loginForm');
     const registerForm = document.getElementById('registerForm');
-    const loginTab = document.getElementById('loginTab');
-    const registerTab = document.getElementById('registerTab');
+    const authTitle = document.getElementById('authTitle');
+    const authSubtitle = document.getElementById('authSubtitle');
     const loginError = getErrorMessageElement();
     const registerError = getRegisterErrorElement();
 
     if (mode === 'login') {
         loginForm?.classList.remove('hidden');
         registerForm?.classList.add('hidden');
-        loginTab?.classList.add('active');
-        registerTab?.classList.remove('active');
+        if (authTitle) authTitle.textContent = 'Acesso ao Dashboard';
+        if (authSubtitle) authSubtitle.textContent = 'Entre com seu usu\u00E1rio para continuar.';
+        const usernameInput = document.getElementById('username') as HTMLInputElement | null;
+        usernameInput?.focus();
     } else {
         loginForm?.classList.add('hidden');
         registerForm?.classList.remove('hidden');
-        loginTab?.classList.remove('active');
-        registerTab?.classList.add('active');
+        if (authTitle) authTitle.textContent = 'Criar conta';
+        if (authSubtitle) authSubtitle.textContent = 'Cadastre sua conta para acessar a plataforma.';
+        const registerNameInput = document.getElementById('registerName') as HTMLInputElement | null;
+        registerNameInput?.focus();
     }
 
     if (loginError) loginError.style.display = 'none';
@@ -101,7 +105,7 @@ async function handleLogin(e: Event) {
         const data: LoginResponse = await response.json();
 
         if (!response.ok || !data?.token) {
-            throw new Error(data?.error || 'Credenciais inválidas');
+            throw new Error(data?.error || 'Credenciais inv\u00E1lidas');
         }
 
         saveSession(data, identifier);
@@ -134,7 +138,7 @@ async function handleRegister(e: Event) {
     }
 
     if (password !== confirm) {
-        setErrorMessage(errorMsg, 'As senhas não coincidem');
+        setErrorMessage(errorMsg, 'As senhas n\u00E3o coincidem');
         return false;
     }
 
