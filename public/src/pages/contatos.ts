@@ -11,6 +11,8 @@ type Contact = {
     email?: string;
     status: LeadStatus;
     tags?: string;
+    session_id?: string;
+    session_label?: string;
     last_message_at?: string;
     created_at: string;
     notes?: string;
@@ -122,6 +124,70 @@ function escapeHtml(value: string) {
 function sanitizeSessionId(value: unknown, fallback = '') {
     const normalized = String(value || '').trim();
     return normalized || fallback;
+}
+
+function parseLeadTags(value: unknown) {
+    if (!value) return [];
+
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => String(item || '').trim())
+            .filter(Boolean);
+    }
+
+    const raw = String(value || '').trim();
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+            return parsed
+                .map((item) => String(item || '').trim())
+                .filter(Boolean);
+        }
+    } catch {
+        // fallback para texto legado
+    }
+
+    return raw
+        .split(/[,;|]/)
+        .map((item) => String(item || '').trim())
+        .filter(Boolean);
+}
+
+function getContactSessionId(contact: Contact) {
+    return sanitizeSessionId((contact as Record<string, any>).session_id || (contact as Record<string, any>).sessionId);
+}
+
+function getContactSessionLabel(contact: Contact) {
+    const sessionId = getContactSessionId(contact);
+    const fromApi = String((contact as Record<string, any>).session_label || (contact as Record<string, any>).sessionLabel || '').trim();
+    if (fromApi) return fromApi;
+    const known = contactsAvailableSessions.find((session) => sanitizeSessionId(session.session_id) === sessionId);
+    if (known) return getSessionDisplayName(known);
+    return sessionId;
+}
+
+function renderContactTagChips(contact: Contact) {
+    const chips: string[] = [];
+    const tags = parseLeadTags(contact.tags);
+
+    if (!contactsSessionFilter) {
+        const sessionId = getContactSessionId(contact);
+        if (sessionId) {
+            const sessionLabel = getContactSessionLabel(contact) || sessionId;
+            chips.push(
+                `<span class="badge contacts-tag-chip contacts-tag-chip-session" title="${escapeHtml(sessionId)}">Conta: ${escapeHtml(sessionLabel)}</span>`
+            );
+        }
+    }
+
+    for (const tag of tags) {
+        chips.push(`<span class="badge badge-gray contacts-tag-chip">${escapeHtml(tag)}</span>`);
+    }
+
+    if (chips.length === 0) return '-';
+    return `<div class="contacts-tags-cell">${chips.join('')}</div>`;
 }
 
 function getStoredContactsSessionFilter() {
@@ -437,7 +503,7 @@ function renderContacts() {
                 </td>
                 <td><a href="https://wa.me/55${c.phone}" target="_blank" style="color: var(--whatsapp);">${formatPhone(c.phone)}</a></td>
                 <td>${getStatusBadge(c.status)}</td>
-                <td>${c.tags || '-'}</td>
+                <td>${renderContactTagChips(c)}</td>
                 <td>${c.last_message_at ? timeAgo(c.last_message_at) : '-'}</td>
                 <td>
                     <div style="display: flex; gap: 5px;">
@@ -472,13 +538,15 @@ function filterContacts() {
     const search = (document.getElementById('searchContacts') as HTMLInputElement | null)?.value.toLowerCase() || '';
     const status = (document.getElementById('filterStatus') as HTMLSelectElement | null)?.value || '';
     const tag = (document.getElementById('filterTag') as HTMLSelectElement | null)?.value || '';
+    const normalizedTag = String(tag || '').trim().toLowerCase();
 
     filteredContacts = allContacts.filter(c => {
         const matchSearch = !search ||
             (c.name && c.name.toLowerCase().includes(search)) ||
             (c.phone && c.phone.includes(search));
         const matchStatus = !status || c.status == (parseInt(status, 10) as LeadStatus);
-        const matchTag = !tag || (c.tags && c.tags.includes(tag));
+        const contactTags = parseLeadTags(c.tags).map((item) => item.toLowerCase());
+        const matchTag = !normalizedTag || contactTags.includes(normalizedTag);
         return matchSearch && matchStatus && matchTag;
     });
 

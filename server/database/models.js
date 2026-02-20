@@ -415,7 +415,27 @@ const Lead = {
     },
     
     async list(options = {}) {
-        let sql = 'SELECT * FROM leads WHERE 1=1';
+        let sql = `
+            SELECT
+                leads.*,
+                (
+                    SELECT c.session_id
+                    FROM conversations c
+                    WHERE c.lead_id = leads.id
+                    ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
+                    LIMIT 1
+                ) AS session_id,
+                (
+                    SELECT COALESCE(NULLIF(TRIM(ws.name), ''), NULLIF(TRIM(ws.phone), ''), c.session_id)
+                    FROM conversations c
+                    LEFT JOIN whatsapp_sessions ws ON ws.session_id = c.session_id
+                    WHERE c.lead_id = leads.id
+                    ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
+                    LIMIT 1
+                ) AS session_label
+            FROM leads
+            WHERE 1=1
+        `;
         const params = [];
         
         if (options.status) {

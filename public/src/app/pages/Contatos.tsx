@@ -232,26 +232,25 @@ export default function Contatos() {
         <div className="table-container">
           <div className="table-header">
             <div className="table-title"><span className="icon icon-contacts icon-sm"></span> Lista de Contatos</div>
-            <div className="table-filters">
-              <div className="search-box">
+            <div className="table-filters contacts-table-filters">
+              <div className="search-box contacts-search-box">
                 <span className="search-icon icon icon-search icon-sm"></span>
                 <input type="text" id="searchContacts" placeholder="Buscar..." onKeyUp={() => globals.filterContacts?.()} />
               </div>
-              <select className="form-select" id="filterStatus" onChange={() => globals.filterContacts?.()} style={{ width: 'auto' }}>
+              <select className="form-select contacts-filter-select" id="filterStatus" onChange={() => globals.filterContacts?.()}>
                 <option value="">Todos os Status</option>
                 <option value="1">Novo</option>
                 <option value="2">Em Andamento</option>
                 <option value="3">Concluído</option>
                 <option value="4">Perdido</option>
               </select>
-              <select className="form-select" id="filterTag" onChange={() => globals.filterContacts?.()} style={{ width: 'auto' }}>
+              <select className="form-select contacts-filter-select" id="filterTag" onChange={() => globals.filterContacts?.()}>
                 <option value="">Todas as Tags</option>
               </select>
               <select
-                className="form-select"
+                className="form-select contacts-filter-select"
                 id="filterSession"
                 onChange={(event) => globals.changeContactsSessionFilter?.(event.currentTarget.value)}
-                style={{ width: 'auto' }}
               >
                 <option value="">Todas as contas</option>
               </select>

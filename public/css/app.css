@@ -776,6 +776,25 @@ body {
     flex-wrap: wrap;
 }
 
+.contacts-table-filters {
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.contacts-search-box {
+    min-width: 220px;
+    max-width: 260px;
+    flex: 1 1 240px;
+}
+
+.contacts-filter-select {
+    min-width: 170px;
+    width: auto;
+    flex: 0 0 auto;
+}
+
 .table-wrapper {
     overflow-x: auto;
 }
@@ -987,6 +1006,25 @@ tr:last-child td {
 .badge-gray {
     background: var(--gray-100);
     color: var(--gray-700);
+}
+
+.contacts-tags-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.contacts-tag-chip {
+    font-size: 11px;
+    line-height: 1.1;
+    padding: 3px 8px;
+}
+
+.contacts-tag-chip-session {
+    background: rgba(var(--primary-rgb), 0.14);
+    color: var(--primary-light);
+    border: 1px solid rgba(var(--primary-rgb), 0.35);
 }
 
 .status-dot {
@@ -1547,6 +1585,22 @@ body.sidebar-open .mobile-menu-toggle {
     .table-filters {
         width: 100%;
         flex-direction: column;
+    }
+
+    .contacts-table-filters {
+        overflow-x: visible;
+        flex-wrap: wrap;
+    }
+
+    .contacts-search-box {
+        min-width: 100%;
+        max-width: 100%;
+        flex: 1 1 100%;
+    }
+
+    .contacts-filter-select {
+        width: 100%;
+        min-width: 100%;
     }
     
     .search-box {
