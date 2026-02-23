@@ -485,6 +485,21 @@ const Lead = {
             sql += ' AND assigned_to = ?';
             params.push(options.assigned_to);
         }
+
+        if (options.owner_user_id) {
+            const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+            if (ownerUserId) {
+                sql += `
+                    AND EXISTS (
+                        SELECT 1
+                        FROM users owner_scope
+                        WHERE owner_scope.id = leads.assigned_to
+                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                    )
+                `;
+                params.push(ownerUserId, ownerUserId);
+            }
+        }
         
         if (options.search) {
             sql += ' AND (name LIKE ? OR phone LIKE ?)';
@@ -523,6 +538,21 @@ const Lead = {
         if (options.assigned_to) {
             sql += ' AND assigned_to = ?';
             params.push(options.assigned_to);
+        }
+
+        if (options.owner_user_id) {
+            const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+            if (ownerUserId) {
+                sql += `
+                    AND EXISTS (
+                        SELECT 1
+                        FROM users owner_scope
+                        WHERE owner_scope.id = leads.assigned_to
+                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                    )
+                `;
+                params.push(ownerUserId, ownerUserId);
+            }
         }
 
         if (options.session_id) {
@@ -1094,10 +1124,24 @@ const WhatsAppSession = {
     async list(options = {}) {
         const includeDisabled = options.includeDisabled !== false;
         const createdBy = parsePositiveInteger(options.created_by);
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
         const filters = [];
         const params = [];
 
-        if (createdBy) {
+        if (ownerUserId) {
+            filters.push(`
+                (
+                    whatsapp_sessions.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = whatsapp_sessions.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `);
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
             filters.push('created_by = ?');
             params.push(createdBy);
         }
@@ -1140,10 +1184,24 @@ const WhatsAppSession = {
     async findBySessionId(sessionId, options = {}) {
         const normalizedSessionId = String(sessionId || '').trim();
         if (!normalizedSessionId) return null;
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
         const createdBy = parsePositiveInteger(options.created_by);
         const params = [normalizedSessionId];
         let ownerFilter = '';
-        if (createdBy) {
+        if (ownerUserId) {
+            ownerFilter = `
+                AND (
+                    whatsapp_sessions.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = whatsapp_sessions.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
             ownerFilter = ' AND created_by = ?';
             params.push(createdBy);
         }
@@ -1190,11 +1248,19 @@ const WhatsAppSession = {
 
         const existing = await this.findBySessionId(normalizedSessionId);
         const existingCreatedBy = parsePositiveInteger(existing?.created_by);
+        const requestedOwnerUserId = parsePositiveInteger(data.owner_user_id);
         const requestedCreatedBy = parsePositiveInteger(data.created_by);
-        if (existingCreatedBy && requestedCreatedBy && existingCreatedBy !== requestedCreatedBy) {
+        if (requestedOwnerUserId && existing) {
+            const ownedExisting = await this.findBySessionId(normalizedSessionId, {
+                owner_user_id: requestedOwnerUserId
+            });
+            if (!ownedExisting) {
+                throw new Error('Sem permissao para atualizar esta sessao');
+            }
+        } else if (existingCreatedBy && requestedCreatedBy && existingCreatedBy !== requestedCreatedBy) {
             throw new Error('Sem permissao para atualizar esta sessao');
         }
-        const resolvedCreatedBy = existingCreatedBy || requestedCreatedBy || null;
+        const resolvedCreatedBy = requestedOwnerUserId || requestedCreatedBy || existingCreatedBy || null;
         const resolvedName = Object.prototype.hasOwnProperty.call(data, 'name')
             ? (data.name ? String(data.name).trim().slice(0, 120) : null)
             : (existing?.name || null);
@@ -1226,7 +1292,7 @@ const WhatsAppSession = {
                 dispatch_weight = EXCLUDED.dispatch_weight,
                 hourly_limit = EXCLUDED.hourly_limit,
                 cooldown_until = EXCLUDED.cooldown_until,
-                created_by = COALESCE(whatsapp_sessions.created_by, EXCLUDED.created_by),
+                created_by = COALESCE(EXCLUDED.created_by, whatsapp_sessions.created_by),
                 updated_at = CURRENT_TIMESTAMP
         `, [
             normalizedSessionId,
@@ -1249,11 +1315,20 @@ const WhatsAppSession = {
             throw new Error('session_id e obrigatorio');
         }
 
+        const requesterOwnerUserId = parsePositiveInteger(options.owner_user_id);
         const requesterCreatedBy = parsePositiveInteger(options.created_by);
-        if (requesterCreatedBy) {
-            const existing = await this.findBySessionId(normalizedSessionId);
-            const owner = parsePositiveInteger(existing?.created_by);
-            if (!existing || owner !== requesterCreatedBy) {
+        if (requesterOwnerUserId) {
+            const existing = await this.findBySessionId(normalizedSessionId, {
+                owner_user_id: requesterOwnerUserId
+            });
+            if (!existing) {
+                throw new Error('Sem permissao para remover esta sessao');
+            }
+        } else if (requesterCreatedBy) {
+            const existing = await this.findBySessionId(normalizedSessionId, {
+                created_by: requesterCreatedBy
+            });
+            if (!existing) {
                 throw new Error('Sem permissao para remover esta sessao');
             }
         }

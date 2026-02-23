@@ -135,7 +135,7 @@ class SenderAllocatorService {
         const hasOwnerScope = ownerUserId > 0;
         const storedSessions = await WhatsAppSession.list({
             includeDisabled: true,
-            created_by: hasOwnerScope ? ownerUserId : undefined
+            owner_user_id: hasOwnerScope ? ownerUserId : undefined
         });
         const runtimeSessions = this.getRuntimeSessionsMap();
 

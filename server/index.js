@@ -193,19 +193,63 @@ function canAccessCreatedRecord(req, createdBy) {
     return Number(createdBy) === getRequesterUserId(req);
 }
 
+function getScopedSettingsPrefix(userId) {
+    const normalizedUserId = Number(userId);
+    if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
+        return '';
+    }
+    return `user:${normalizedUserId}:`;
+}
+
+function buildScopedSettingsKey(baseKey, userId) {
+    const normalizedKey = String(baseKey || '').trim();
+    if (!normalizedKey) return normalizedKey;
+    const prefix = getScopedSettingsPrefix(userId);
+    return prefix ? `${prefix}${normalizedKey}` : normalizedKey;
+}
+
+function normalizeSettingsForResponse(settings = {}, scopedUserId = null) {
+    const result = {};
+    const prefix = getScopedSettingsPrefix(scopedUserId);
+
+    for (const [key, value] of Object.entries(settings || {})) {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey) continue;
+        if (prefix) {
+            if (!normalizedKey.startsWith(prefix)) continue;
+            result[normalizedKey.slice(prefix.length)] = value;
+            continue;
+        }
+
+        if (normalizedKey.startsWith('user:')) continue;
+        result[normalizedKey] = value;
+    }
+
+    return result;
+}
+
 function getSocketRequesterUserId(socket) {
     const userId = Number(socket?.user?.id || 0);
     return Number.isInteger(userId) && userId > 0 ? userId : 0;
 }
 
-function getSocketRequesterRole(socket) {
-    return String(socket?.user?.role || '').trim().toLowerCase();
-}
+async function resolveSocketOwnerUserId(socket) {
+    const requesterId = getSocketRequesterUserId(socket);
+    if (!requesterId) return null;
 
-function getScopedSocketUserId(socket) {
-    const role = getSocketRequesterRole(socket);
-    const userId = getSocketRequesterUserId(socket);
-    return role === 'agent' && userId > 0 ? userId : null;
+    const currentUser = await User.findById(requesterId);
+    let ownerUserId = Number(currentUser?.owner_user_id || socket?.user?.owner_user_id || 0);
+    if (!Number.isInteger(ownerUserId) || ownerUserId <= 0) {
+        ownerUserId = requesterId;
+        await User.update(requesterId, { owner_user_id: ownerUserId });
+    }
+    if (socket.user) {
+        socket.user.owner_user_id = ownerUserId;
+    }
+    if (currentUser && Number(currentUser.owner_user_id || 0) !== ownerUserId) {
+        await User.update(requesterId, { owner_user_id: ownerUserId });
+    }
+    return ownerUserId;
 }
 
 
@@ -5818,11 +5862,12 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const scopedUserId = getScopedSocketUserId(socket);
-        if (scopedUserId) {
-            const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId);
-            const storedOwnerUserId = Number(storedSession?.created_by || 0);
-            if (!(storedOwnerUserId > 0 && storedOwnerUserId === scopedUserId)) {
+        const ownerScopeUserId = await resolveSocketOwnerUserId(socket);
+        if (ownerScopeUserId) {
+            const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId, {
+                owner_user_id: ownerScopeUserId
+            });
+            if (!storedSession) {
                 socket.emit('session-status', { status: 'disconnected', sessionId: normalizedSessionId });
                 return;
             }
@@ -5844,7 +5889,7 @@ io.on('connection', (socket) => {
         if (sessionExists(normalizedSessionId)) {
             socket.emit('session-status', { status: 'reconnecting', sessionId: normalizedSessionId });
             await createSession(normalizedSessionId, socket, 0, {
-                ownerUserId: scopedUserId || undefined
+                ownerUserId: ownerScopeUserId || undefined
             });
             return;
         }
@@ -5864,14 +5909,19 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const scopedUserId = getScopedSocketUserId(socket);
+        const ownerScopeUserId = await resolveSocketOwnerUserId(socket);
         const storedSession = await WhatsAppSession.findBySessionId(sessionId);
-        const storedOwnerUserId = Number(storedSession?.created_by || 0);
-        if (scopedUserId && storedOwnerUserId > 0 && storedOwnerUserId !== scopedUserId) {
-            socket.emit('error', { message: 'Sem permissao para acessar esta conta', code: 'SESSION_FORBIDDEN' });
-            return;
+        if (ownerScopeUserId && storedSession) {
+            const ownedSession = await WhatsAppSession.findBySessionId(sessionId, {
+                owner_user_id: ownerScopeUserId
+            });
+            if (!ownedSession) {
+                socket.emit('error', { message: 'Sem permissao para acessar esta conta', code: 'SESSION_FORBIDDEN' });
+                return;
+            }
         }
-        const resolvedOwnerUserId = scopedUserId || (storedOwnerUserId > 0 ? storedOwnerUserId : null);
+        const storedOwnerUserId = Number(storedSession?.created_by || 0);
+        const resolvedOwnerUserId = ownerScopeUserId || (storedOwnerUserId > 0 ? storedOwnerUserId : null);
 
         const existingSession = sessions.get(sessionId);
 
@@ -5920,14 +5970,19 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const scopedUserId = getScopedSocketUserId(socket);
+        const ownerScopeUserId = await resolveSocketOwnerUserId(socket);
         const storedSession = await WhatsAppSession.findBySessionId(sessionId);
-        const storedOwnerUserId = Number(storedSession?.created_by || 0);
-        if (scopedUserId && storedOwnerUserId > 0 && storedOwnerUserId !== scopedUserId) {
-            socket.emit('error', { message: 'Sem permissao para acessar esta conta', code: 'SESSION_FORBIDDEN' });
-            return;
+        if (ownerScopeUserId && storedSession) {
+            const ownedSession = await WhatsAppSession.findBySessionId(sessionId, {
+                owner_user_id: ownerScopeUserId
+            });
+            if (!ownedSession) {
+                socket.emit('error', { message: 'Sem permissao para acessar esta conta', code: 'SESSION_FORBIDDEN' });
+                return;
+            }
         }
-        const resolvedOwnerUserId = scopedUserId || (storedOwnerUserId > 0 ? storedOwnerUserId : null);
+        const storedOwnerUserId = Number(storedSession?.created_by || 0);
+        const resolvedOwnerUserId = ownerScopeUserId || (storedOwnerUserId > 0 ? storedOwnerUserId : null);
 
         const existingSession = sessions.get(sessionId);
         if (existingSession) {
@@ -6214,11 +6269,12 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const scopedUserId = getScopedSocketUserId(socket);
-        if (scopedUserId) {
-            const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId);
-            const storedOwnerUserId = Number(storedSession?.created_by || 0);
-            if (!(storedOwnerUserId > 0 && storedOwnerUserId === scopedUserId)) {
+        const ownerScopeUserId = await resolveSocketOwnerUserId(socket);
+        if (ownerScopeUserId) {
+            const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId, {
+                owner_user_id: ownerScopeUserId
+            });
+            if (!storedSession) {
                 socket.emit('error', { message: 'Sem permissao para remover esta conta', code: 'SESSION_FORBIDDEN' });
                 return;
             }
@@ -6322,10 +6378,10 @@ app.get('/api/whatsapp/status', optionalAuth, (req, res) => {
 app.get('/api/whatsapp/sessions', authenticate, async (req, res) => {
     try {
         const includeDisabled = String(req.query?.includeDisabled ?? 'true').toLowerCase() !== 'false';
-        const scopedUserId = getScopedUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
         const sessionsList = await senderAllocatorService.listDispatchSessions({
             includeDisabled,
-            ownerUserId: scopedUserId || undefined
+            ownerUserId: ownerScopeUserId || undefined
         });
         res.json({ success: true, sessions: sessionsList });
     } catch (error) {
@@ -6340,12 +6396,16 @@ app.put('/api/whatsapp/sessions/:sessionId', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'sessionId invalido' });
         }
 
-        const scopedUserId = getScopedUserId(req);
-        if (scopedUserId) {
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        if (ownerScopeUserId) {
             const existingSession = await WhatsAppSession.findBySessionId(sessionId);
-            const ownerUserId = Number(existingSession?.created_by || 0);
-            if (ownerUserId > 0 && ownerUserId !== scopedUserId) {
-                return res.status(403).json({ error: 'Sem permissao para editar esta conta' });
+            if (existingSession) {
+                const ownedSession = await WhatsAppSession.findBySessionId(sessionId, {
+                    owner_user_id: ownerScopeUserId
+                });
+                if (!ownedSession) {
+                    return res.status(403).json({ error: 'Sem permissao para editar esta conta' });
+                }
             }
         }
 
@@ -6356,7 +6416,8 @@ app.put('/api/whatsapp/sessions/:sessionId', authenticate, async (req, res) => {
             dispatch_weight: req.body?.dispatch_weight,
             hourly_limit: req.body?.hourly_limit,
             cooldown_until: req.body?.cooldown_until,
-            created_by: scopedUserId || undefined
+            owner_user_id: ownerScopeUserId || undefined,
+            created_by: ownerScopeUserId || undefined
         });
 
         res.json({ success: true, session: updated });
@@ -6372,18 +6433,20 @@ app.delete('/api/whatsapp/sessions/:sessionId', authenticate, async (req, res) =
             return res.status(400).json({ error: 'sessionId invalido' });
         }
 
-        const scopedUserId = getScopedUserId(req);
-        if (scopedUserId) {
-            const existingSession = await WhatsAppSession.findBySessionId(sessionId);
-            const ownerUserId = Number(existingSession?.created_by || 0);
-            if (!(ownerUserId > 0 && ownerUserId === scopedUserId)) {
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        if (ownerScopeUserId) {
+            const existingSession = await WhatsAppSession.findBySessionId(sessionId, {
+                owner_user_id: ownerScopeUserId
+            });
+            if (!existingSession) {
                 return res.status(404).json({ error: 'Conta nao encontrada' });
             }
         }
 
         await whatsappService.logoutSession(sessionId, SESSIONS_DIR);
         await WhatsAppSession.deleteBySessionId(sessionId, {
-            created_by: scopedUserId || undefined
+            owner_user_id: ownerScopeUserId || undefined,
+            created_by: ownerScopeUserId || undefined
         });
 
         io.emit('whatsapp-status', { sessionId, status: 'disconnected' });
@@ -6400,11 +6463,12 @@ app.post('/api/whatsapp/disconnect', authenticate, async (req, res) => {
     try {
 
         const sessionId = resolveSessionIdOrDefault(req.body?.sessionId || req.query?.sessionId);
-        const scopedUserId = getScopedUserId(req);
-        if (scopedUserId) {
-            const existingSession = await WhatsAppSession.findBySessionId(sessionId);
-            const ownerUserId = Number(existingSession?.created_by || 0);
-            if (!(ownerUserId > 0 && ownerUserId === scopedUserId)) {
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        if (ownerScopeUserId) {
+            const existingSession = await WhatsAppSession.findBySessionId(sessionId, {
+                owner_user_id: ownerScopeUserId
+            });
+            if (!existingSession) {
                 return res.status(404).json({ error: 'Conta nao encontrada' });
             }
         }
@@ -7190,8 +7254,9 @@ function sanitizeStoredContactFields(rawValue) {
     return result;
 }
 
-async function getContactFieldConfig() {
-    const raw = await Settings.get('contact_data_fields');
+async function getContactFieldConfig(ownerUserId = null) {
+    const settingsKey = buildScopedSettingsKey('contact_data_fields', ownerUserId);
+    const raw = await Settings.get(settingsKey);
     const customFields = sanitizeStoredContactFields(raw);
     const defaultFields = DEFAULT_CONTACT_FIELDS.map((field) => ({ ...field }));
     const fields = [
@@ -7209,7 +7274,8 @@ async function getContactFieldConfig() {
 
 app.get('/api/contact-fields', authenticate, async (req, res) => {
     try {
-        const payload = await getContactFieldConfig();
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const payload = await getContactFieldConfig(ownerScopeUserId);
         res.json({ success: true, ...payload });
     } catch (error) {
         console.error('Falha ao carregar campos de contato:', error);
@@ -7219,10 +7285,12 @@ app.get('/api/contact-fields', authenticate, async (req, res) => {
 
 app.put('/api/contact-fields', authenticate, async (req, res) => {
     try {
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const settingsKey = buildScopedSettingsKey('contact_data_fields', ownerScopeUserId);
         const incoming = Array.isArray(req.body?.fields) ? req.body.fields : [];
         const customFields = sanitizeStoredContactFields(incoming);
-        await Settings.set('contact_data_fields', customFields, 'json');
-        const payload = await getContactFieldConfig();
+        await Settings.set(settingsKey, customFields, 'json');
+        const payload = await getContactFieldConfig(ownerScopeUserId);
         res.json({ success: true, ...payload });
     } catch (error) {
         console.error('Falha ao salvar campos de contato:', error);
@@ -7322,6 +7390,7 @@ app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
             .trim()
             .toLowerCase();
         const scopedUserId = getScopedUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
         if (!DASHBOARD_PERIOD_METRICS.has(metric)) {
             return res.status(400).json({ success: false, error: 'Métrica inválida' });
@@ -7353,7 +7422,13 @@ app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
         let rows = [];
         if (metric === 'novos_contatos') {
             const params = [startAt, endExclusiveAt];
-            const ownerFilter = scopedUserId ? ' AND assigned_to = ?' : '';
+            const ownerFilter = ownerScopeUserId
+                ? ' AND EXISTS (SELECT 1 FROM users u WHERE u.id = assigned_to AND (u.owner_user_id = ? OR u.id = ?))'
+                : '';
+            if (ownerScopeUserId) {
+                params.push(ownerScopeUserId, ownerScopeUserId);
+            }
+            const assignedFilter = scopedUserId ? ' AND assigned_to = ?' : '';
             if (scopedUserId) {
                 params.push(scopedUserId);
             }
@@ -7363,7 +7438,7 @@ app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
                     TO_CHAR((created_at AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS day,
                     COUNT(*)::int AS total
                 FROM leads
-                WHERE created_at >= ? AND created_at < ?${ownerFilter}
+                WHERE created_at >= ? AND created_at < ?${ownerFilter}${assignedFilter}
                 GROUP BY (created_at AT TIME ZONE 'UTC')::date
                 ORDER BY (created_at AT TIME ZONE 'UTC')::date ASC
                 `,
@@ -7371,7 +7446,13 @@ app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
             );
         } else if (metric === 'mensagens') {
             const params = [startAt, endExclusiveAt];
-            const ownerFilter = scopedUserId ? ' AND l.assigned_to = ?' : '';
+            const ownerFilter = ownerScopeUserId
+                ? ' AND EXISTS (SELECT 1 FROM users u WHERE u.id = l.assigned_to AND (u.owner_user_id = ? OR u.id = ?))'
+                : '';
+            if (ownerScopeUserId) {
+                params.push(ownerScopeUserId, ownerScopeUserId);
+            }
+            const assignedFilter = scopedUserId ? ' AND l.assigned_to = ?' : '';
             if (scopedUserId) {
                 params.push(scopedUserId);
             }
@@ -7382,7 +7463,7 @@ app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
                     COUNT(*)::int AS total
                 FROM messages m
                 LEFT JOIN leads l ON l.id = m.lead_id
-                WHERE COALESCE(m.sent_at, m.created_at) >= ? AND COALESCE(m.sent_at, m.created_at) < ?${ownerFilter}
+                WHERE COALESCE(m.sent_at, m.created_at) >= ? AND COALESCE(m.sent_at, m.created_at) < ?${ownerFilter}${assignedFilter}
                 GROUP BY (COALESCE(m.sent_at, m.created_at) AT TIME ZONE 'UTC')::date
                 ORDER BY (COALESCE(m.sent_at, m.created_at) AT TIME ZONE 'UTC')::date ASC
                 `,
@@ -7390,7 +7471,13 @@ app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
             );
         } else {
             const params = [startAt, endExclusiveAt];
-            const ownerFilter = scopedUserId ? ' AND l.assigned_to = ?' : '';
+            const ownerFilter = ownerScopeUserId
+                ? ' AND EXISTS (SELECT 1 FROM users u WHERE u.id = l.assigned_to AND (u.owner_user_id = ? OR u.id = ?))'
+                : '';
+            if (ownerScopeUserId) {
+                params.push(ownerScopeUserId, ownerScopeUserId);
+            }
+            const assignedFilter = scopedUserId ? ' AND l.assigned_to = ?' : '';
             if (scopedUserId) {
                 params.push(scopedUserId);
             }
@@ -7402,7 +7489,7 @@ app.get('/api/dashboard/stats-period', optionalAuth, async (req, res) => {
                 FROM messages m
                 LEFT JOIN leads l ON l.id = m.lead_id
                 WHERE COALESCE(m.sent_at, m.created_at) >= ? AND COALESCE(m.sent_at, m.created_at) < ?
-                  AND m.is_from_me = 0${ownerFilter}
+                  AND m.is_from_me = 0${ownerFilter}${assignedFilter}
                 GROUP BY (COALESCE(m.sent_at, m.created_at) AT TIME ZONE 'UTC')::date
                 ORDER BY (COALESCE(m.sent_at, m.created_at) AT TIME ZONE 'UTC')::date ASC
                 `,
@@ -7622,6 +7709,7 @@ app.get('/api/leads', optionalAuth, async (req, res) => {
     const { status, search, limit, offset, assigned_to } = req.query;
     const sessionId = sanitizeSessionId(req.query.session_id || req.query.sessionId);
     const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
     const requestedAssignedTo = assigned_to ? parseInt(assigned_to, 10) : undefined;
     const resolvedAssignedTo = scopedUserId || requestedAssignedTo;
 
@@ -7632,6 +7720,8 @@ app.get('/api/leads', optionalAuth, async (req, res) => {
         search,
 
         assigned_to: resolvedAssignedTo,
+
+        owner_user_id: ownerScopeUserId || undefined,
 
         session_id: sessionId || undefined,
 
@@ -7644,6 +7734,7 @@ app.get('/api/leads', optionalAuth, async (req, res) => {
     const total = await Lead.count({
         status: status ? parseInt(status) : undefined,
         assigned_to: resolvedAssignedTo,
+        owner_user_id: ownerScopeUserId || undefined,
         session_id: sessionId || undefined
     });
 
@@ -9724,7 +9815,8 @@ app.post('/api/webhook/incoming', async (req, res) => {
 
 app.get('/api/settings', authenticate, async (req, res) => {
 
-    const settings = await Settings.getAll();
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const settings = normalizeSettingsForResponse(await Settings.getAll(), ownerScopeUserId);
 
     res.json({ success: true, settings });
 
@@ -9734,6 +9826,7 @@ app.get('/api/settings', authenticate, async (req, res) => {
 
 app.put('/api/settings', authenticate, async (req, res) => {
 
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
     const incomingSettings = req.body && typeof req.body === 'object' ? req.body : {};
     const changedKeys = Object.keys(incomingSettings);
 
@@ -9745,7 +9838,7 @@ app.put('/api/settings', authenticate, async (req, res) => {
 
                      typeof value === 'object' ? 'json' : 'string';
 
-        await Settings.set(key, value, type);
+        await Settings.set(buildScopedSettingsKey(key, ownerScopeUserId), value, type);
 
     }
 
@@ -9757,7 +9850,7 @@ app.put('/api/settings', authenticate, async (req, res) => {
         Object.prototype.hasOwnProperty.call(incomingSettings, 'bulk_message_delay') ||
         Object.prototype.hasOwnProperty.call(incomingSettings, 'max_messages_per_minute');
 
-    if (hasQueueSettings) {
+    if (hasQueueSettings && !ownerScopeUserId) {
 
         await queueService.updateSettings({
 
@@ -9770,7 +9863,7 @@ app.put('/api/settings', authenticate, async (req, res) => {
     }
 
     const touchedBusinessHours = changedKeys.some((key) => String(key || '').startsWith('business_hours_'));
-    if (touchedBusinessHours) {
+    if (touchedBusinessHours && !ownerScopeUserId) {
         invalidateBusinessHoursSettingsCache();
         if (typeof queueService.invalidateBusinessHoursCache === 'function') {
             queueService.invalidateBusinessHoursCache();
@@ -9779,7 +9872,10 @@ app.put('/api/settings', authenticate, async (req, res) => {
 
     
 
-    res.json({ success: true, settings: await Settings.getAll() });
+    res.json({
+        success: true,
+        settings: normalizeSettingsForResponse(await Settings.getAll(), ownerScopeUserId)
+    });
 
 });
 
