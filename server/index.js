@@ -176,7 +176,8 @@ function getRequesterRole(req) {
 }
 
 function isScopedAgent(req) {
-    return getRequesterRole(req) === 'agent' && getRequesterUserId(req) > 0;
+    const role = getRequesterRole(req);
+    return (role === 'agent' || role === 'user') && getRequesterUserId(req) > 0;
 }
 
 function getScopedUserId(req) {
@@ -193,6 +194,41 @@ function canAccessCreatedRecord(req, createdBy) {
     return Number(createdBy) === getRequesterUserId(req);
 }
 
+function getScopedSettingsPrefix(userId) {
+    const normalizedUserId = Number(userId);
+    if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
+        return '';
+    }
+    return `user:${normalizedUserId}:`;
+}
+
+function buildScopedSettingsKey(baseKey, userId) {
+    const normalizedKey = String(baseKey || '').trim();
+    if (!normalizedKey) return normalizedKey;
+    const prefix = getScopedSettingsPrefix(userId);
+    return prefix ? `${prefix}${normalizedKey}` : normalizedKey;
+}
+
+function normalizeSettingsForResponse(settings = {}, scopedUserId = null) {
+    const result = {};
+    const prefix = getScopedSettingsPrefix(scopedUserId);
+
+    for (const [key, value] of Object.entries(settings || {})) {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey) continue;
+        if (prefix) {
+            if (!normalizedKey.startsWith(prefix)) continue;
+            result[normalizedKey.slice(prefix.length)] = value;
+            continue;
+        }
+
+        if (normalizedKey.startsWith('user:')) continue;
+        result[normalizedKey] = value;
+    }
+
+    return result;
+}
+
 function getSocketRequesterUserId(socket) {
     const userId = Number(socket?.user?.id || 0);
     return Number.isInteger(userId) && userId > 0 ? userId : 0;
@@ -205,7 +241,7 @@ function getSocketRequesterRole(socket) {
 function getScopedSocketUserId(socket) {
     const role = getSocketRequesterRole(socket);
     const userId = getSocketRequesterUserId(socket);
-    return role === 'agent' && userId > 0 ? userId : null;
+    return (role === 'agent' || role === 'user') && userId > 0 ? userId : null;
 }
 
 
@@ -6502,8 +6538,9 @@ function sanitizeStoredContactFields(rawValue) {
     return result;
 }
 
-async function getContactFieldConfig() {
-    const raw = await Settings.get('contact_data_fields');
+async function getContactFieldConfig(ownerUserId = null) {
+    const settingsKey = buildScopedSettingsKey('contact_data_fields', ownerUserId);
+    const raw = await Settings.get(settingsKey);
     const customFields = sanitizeStoredContactFields(raw);
     const defaultFields = DEFAULT_CONTACT_FIELDS.map((field) => ({ ...field }));
     const fields = [
@@ -6521,7 +6558,7 @@ async function getContactFieldConfig() {
 
 app.get('/api/contact-fields', authenticate, async (req, res) => {
     try {
-        const payload = await getContactFieldConfig();
+        const payload = await getContactFieldConfig(getScopedUserId(req));
         res.json({ success: true, ...payload });
     } catch (error) {
         console.error('Falha ao carregar campos de contato:', error);
@@ -6531,10 +6568,12 @@ app.get('/api/contact-fields', authenticate, async (req, res) => {
 
 app.put('/api/contact-fields', authenticate, async (req, res) => {
     try {
+        const scopedUserId = getScopedUserId(req);
+        const settingsKey = buildScopedSettingsKey('contact_data_fields', scopedUserId);
         const incoming = Array.isArray(req.body?.fields) ? req.body.fields : [];
         const customFields = sanitizeStoredContactFields(incoming);
-        await Settings.set('contact_data_fields', customFields, 'json');
-        const payload = await getContactFieldConfig();
+        await Settings.set(settingsKey, customFields, 'json');
+        const payload = await getContactFieldConfig(scopedUserId);
         res.json({ success: true, ...payload });
     } catch (error) {
         console.error('Falha ao salvar campos de contato:', error);
@@ -7138,8 +7177,14 @@ app.delete('/api/leads/:id', authenticate, async (req, res) => {
 
 app.get('/api/tags', optionalAuth, async (req, res) => {
     try {
-        await Tag.syncFromLeads();
-        const tags = await Tag.list();
+        const scopedUserId = getScopedUserId(req);
+        await Tag.syncFromLeads({
+            assigned_to: scopedUserId || undefined,
+            created_by: scopedUserId || undefined
+        });
+        const tags = await Tag.list({
+            created_by: scopedUserId || undefined
+        });
         res.json({ success: true, tags });
     } catch (error) {
         console.error('Falha ao listar tags:', error);
@@ -7149,6 +7194,7 @@ app.get('/api/tags', optionalAuth, async (req, res) => {
 
 app.post('/api/tags', authenticate, async (req, res) => {
     try {
+        const scopedUserId = getScopedUserId(req);
         const name = normalizeTagNameInput(req.body?.name);
         const color = normalizeTagColorInput(req.body?.color);
         const description = normalizeTagDescriptionInput(req.body?.description);
@@ -7157,12 +7203,19 @@ app.post('/api/tags', authenticate, async (req, res) => {
             return res.status(400).json({ success: false, error: 'Nome da tag é obrigatório' });
         }
 
-        const existing = await Tag.findByName(name);
+        const existing = await Tag.findByName(name, {
+            created_by: scopedUserId || undefined
+        });
         if (existing) {
             return res.status(409).json({ success: false, error: 'Já existe uma tag com este nome' });
         }
 
-        const tag = await Tag.create({ name, color, description });
+        const tag = await Tag.create({
+            name,
+            color,
+            description,
+            created_by: scopedUserId || undefined
+        });
         res.status(201).json({ success: true, tag });
     } catch (error) {
         console.error('Falha ao criar tag:', error);
@@ -7172,12 +7225,15 @@ app.post('/api/tags', authenticate, async (req, res) => {
 
 app.put('/api/tags/:id', authenticate, async (req, res) => {
     try {
+        const scopedUserId = getScopedUserId(req);
         const tagId = parseInt(req.params.id, 10);
         if (!Number.isInteger(tagId) || tagId <= 0) {
             return res.status(400).json({ success: false, error: 'ID de tag inválido' });
         }
 
-        const currentTag = await Tag.findById(tagId);
+        const currentTag = await Tag.findById(tagId, {
+            created_by: scopedUserId || undefined
+        });
         if (!currentTag) {
             return res.status(404).json({ success: false, error: 'Tag não encontrada' });
         }
@@ -7189,7 +7245,9 @@ app.put('/api/tags/:id', authenticate, async (req, res) => {
                 return res.status(400).json({ success: false, error: 'Nome da tag é obrigatório' });
             }
 
-            const duplicate = await Tag.findByName(nextName);
+            const duplicate = await Tag.findByName(nextName, {
+                created_by: scopedUserId || undefined
+            });
             if (duplicate && Number(duplicate.id) !== tagId) {
                 return res.status(409).json({ success: false, error: 'Já existe uma tag com este nome' });
             }
@@ -7202,7 +7260,9 @@ app.put('/api/tags/:id', authenticate, async (req, res) => {
             payload.description = normalizeTagDescriptionInput(req.body.description);
         }
 
-        const updatedTag = await Tag.update(tagId, payload);
+        const updatedTag = await Tag.update(tagId, payload, {
+            created_by: scopedUserId || undefined
+        });
         if (!updatedTag) {
             return res.status(404).json({ success: false, error: 'Tag não encontrada' });
         }
@@ -7211,11 +7271,20 @@ app.put('/api/tags/:id', authenticate, async (req, res) => {
             payload.name &&
             normalizeTagNameInput(currentTag.name).toLowerCase() !== normalizeTagNameInput(updatedTag.name).toLowerCase()
         ) {
-            await Tag.renameInLeads(currentTag.name, updatedTag.name);
-            await run(
-                'UPDATE campaigns SET tag_filter = ? WHERE LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
-                [updatedTag.name, currentTag.name]
-            );
+            await Tag.renameInLeads(currentTag.name, updatedTag.name, {
+                assigned_to: scopedUserId || undefined
+            });
+            if (scopedUserId) {
+                await run(
+                    'UPDATE campaigns SET tag_filter = ? WHERE created_by = ? AND LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
+                    [updatedTag.name, scopedUserId, currentTag.name]
+                );
+            } else {
+                await run(
+                    'UPDATE campaigns SET tag_filter = ? WHERE LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
+                    [updatedTag.name, currentTag.name]
+                );
+            }
         }
 
         res.json({ success: true, tag: updatedTag });
@@ -7227,22 +7296,36 @@ app.put('/api/tags/:id', authenticate, async (req, res) => {
 
 app.delete('/api/tags/:id', authenticate, async (req, res) => {
     try {
+        const scopedUserId = getScopedUserId(req);
         const tagId = parseInt(req.params.id, 10);
         if (!Number.isInteger(tagId) || tagId <= 0) {
             return res.status(400).json({ success: false, error: 'ID de tag inválido' });
         }
 
-        const currentTag = await Tag.findById(tagId);
+        const currentTag = await Tag.findById(tagId, {
+            created_by: scopedUserId || undefined
+        });
         if (!currentTag) {
             return res.status(404).json({ success: false, error: 'Tag não encontrada' });
         }
 
-        await Tag.delete(tagId);
-        await Tag.removeFromLeads(currentTag.name);
-        await run(
-            'UPDATE campaigns SET tag_filter = NULL WHERE LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
-            [currentTag.name]
-        );
+        await Tag.delete(tagId, {
+            created_by: scopedUserId || undefined
+        });
+        await Tag.removeFromLeads(currentTag.name, {
+            assigned_to: scopedUserId || undefined
+        });
+        if (scopedUserId) {
+            await run(
+                'UPDATE campaigns SET tag_filter = NULL WHERE created_by = ? AND LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
+                [scopedUserId, currentTag.name]
+            );
+        } else {
+            await run(
+                'UPDATE campaigns SET tag_filter = NULL WHERE LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
+                [currentTag.name]
+            );
+        }
 
         res.json({ success: true });
     } catch (error) {
@@ -9027,7 +9110,8 @@ app.post('/api/webhook/incoming', async (req, res) => {
 
 app.get('/api/settings', authenticate, async (req, res) => {
 
-    const settings = await Settings.getAll();
+    const scopedUserId = getScopedUserId(req);
+    const settings = normalizeSettingsForResponse(await Settings.getAll(), scopedUserId);
 
     res.json({ success: true, settings });
 
@@ -9037,6 +9121,7 @@ app.get('/api/settings', authenticate, async (req, res) => {
 
 app.put('/api/settings', authenticate, async (req, res) => {
 
+    const scopedUserId = getScopedUserId(req);
     const incomingSettings = req.body && typeof req.body === 'object' ? req.body : {};
     const changedKeys = Object.keys(incomingSettings);
 
@@ -9048,7 +9133,7 @@ app.put('/api/settings', authenticate, async (req, res) => {
 
                      typeof value === 'object' ? 'json' : 'string';
 
-        await Settings.set(key, value, type);
+        await Settings.set(buildScopedSettingsKey(key, scopedUserId), value, type);
 
     }
 
@@ -9060,7 +9145,7 @@ app.put('/api/settings', authenticate, async (req, res) => {
         Object.prototype.hasOwnProperty.call(incomingSettings, 'bulk_message_delay') ||
         Object.prototype.hasOwnProperty.call(incomingSettings, 'max_messages_per_minute');
 
-    if (hasQueueSettings) {
+    if (hasQueueSettings && !scopedUserId) {
 
         await queueService.updateSettings({
 
@@ -9073,7 +9158,7 @@ app.put('/api/settings', authenticate, async (req, res) => {
     }
 
     const touchedBusinessHours = changedKeys.some((key) => String(key || '').startsWith('business_hours_'));
-    if (touchedBusinessHours) {
+    if (touchedBusinessHours && !scopedUserId) {
         invalidateBusinessHoursSettingsCache();
         if (typeof queueService.invalidateBusinessHoursCache === 'function') {
             queueService.invalidateBusinessHoursCache();
@@ -9082,7 +9167,10 @@ app.put('/api/settings', authenticate, async (req, res) => {
 
     
 
-    res.json({ success: true, settings: await Settings.getAll() });
+    res.json({
+        success: true,
+        settings: normalizeSettingsForResponse(await Settings.getAll(), scopedUserId)
+    });
 
 });
 

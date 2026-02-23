@@ -315,9 +315,10 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 CREATE TABLE IF NOT EXISTS tags (
     id SERIAL PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
     color TEXT DEFAULT '#5a2a6b',
     description TEXT,
+    created_by INTEGER REFERENCES users(id),
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -345,6 +346,8 @@ ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS dispatch_weight INTEGER D
 ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS hourly_limit INTEGER DEFAULT 0;
 ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS cooldown_until TIMESTAMPTZ;
 ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id);
+ALTER TABLE tags ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id);
+ALTER TABLE tags DROP CONSTRAINT IF EXISTS tags_name_key;
 
 ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_lead_id_fkey;
 ALTER TABLE messages ADD CONSTRAINT messages_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE;
@@ -390,6 +393,8 @@ CREATE INDEX IF NOT EXISTS idx_queue_session ON message_queue(session_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_campaign ON campaign_sender_accounts(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_session ON campaign_sender_accounts(session_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_sessions_created_by ON whatsapp_sessions(created_by);
+CREATE INDEX IF NOT EXISTS idx_tags_created_by ON tags(created_by);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_name_owner_unique ON tags(LOWER(TRIM(name)), COALESCE(created_by, 0));
 
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_type, entity_id);

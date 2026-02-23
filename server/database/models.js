@@ -1892,23 +1892,61 @@ const MessageQueue = {
 
 const DEFAULT_TAG_COLOR = '#5a2a6b';
 
+function normalizeTagOwnerId(value) {
+    return parsePositiveInteger(value, null);
+}
+
+function buildTagOwnerFilter(options = {}, params = []) {
+    const createdBy = normalizeTagOwnerId(options.created_by);
+    const includeAll = options.include_all === true;
+
+    if (createdBy) {
+        params.push(createdBy);
+        return ' AND created_by = ?';
+    }
+
+    if (includeAll) {
+        return '';
+    }
+
+    return ' AND created_by IS NULL';
+}
+
 const Tag = {
-    async list() {
+    async list(options = {}) {
+        const params = [];
+        const ownerFilter = buildTagOwnerFilter(options, params);
         return await query(`
-            SELECT id, name, color, description, created_at
+            SELECT id, name, color, description, created_by, created_at
             FROM tags
+            WHERE 1=1
+            ${ownerFilter}
             ORDER BY LOWER(name) ASC, id ASC
-        `);
+        `, params);
     },
 
-    async findById(id) {
-        return await queryOne('SELECT id, name, color, description, created_at FROM tags WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const params = [id];
+        const ownerFilter = buildTagOwnerFilter(options, params);
+        return await queryOne(`
+            SELECT id, name, color, description, created_by, created_at
+            FROM tags
+            WHERE id = ?
+            ${ownerFilter}
+        `, params);
     },
 
-    async findByName(name) {
+    async findByName(name, options = {}) {
+        const params = [name];
+        const ownerFilter = buildTagOwnerFilter(options, params);
         return await queryOne(
-            'SELECT id, name, color, description, created_at FROM tags WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))',
-            [name]
+            `
+            SELECT id, name, color, description, created_by, created_at
+            FROM tags
+            WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+            ${ownerFilter}
+            `,
+            params
         );
     },
 
@@ -1916,16 +1954,20 @@ const Tag = {
         const tagName = normalizeTagValue(data.name);
         const tagColor = normalizeTagValue(data.color) || DEFAULT_TAG_COLOR;
         const tagDescription = normalizeTagValue(data.description);
+        const ownerUserId = normalizeTagOwnerId(data.created_by);
 
         const result = await run(`
-            INSERT INTO tags (name, color, description)
-            VALUES (?, ?, ?)
-        `, [tagName, tagColor, tagDescription || null]);
+            INSERT INTO tags (name, color, description, created_by)
+            VALUES (?, ?, ?, ?)
+        `, [tagName, tagColor, tagDescription || null, ownerUserId]);
 
-        return await this.findById(result.lastInsertRowid);
+        return await this.findById(result.lastInsertRowid, {
+            created_by: ownerUserId || undefined,
+            include_all: !ownerUserId
+        });
     },
 
-    async update(id, data) {
+    async update(id, data, options = {}) {
         const fields = [];
         const values = [];
 
@@ -1943,23 +1985,40 @@ const Tag = {
             values.push(description || null);
         }
 
-        if (fields.length === 0) return await this.findById(id);
+        if (fields.length === 0) return await this.findById(id, options);
 
-        values.push(id);
-        await run(`UPDATE tags SET ${fields.join(', ')} WHERE id = ?`, values);
+        const ownerParams = [];
+        const ownerFilter = buildTagOwnerFilter(options, ownerParams);
 
-        return await this.findById(id);
+        values.push(id, ...ownerParams);
+        await run(`UPDATE tags SET ${fields.join(', ')} WHERE id = ?${ownerFilter}`, values);
+
+        return await this.findById(id, options);
     },
 
-    async delete(id) {
-        return await run('DELETE FROM tags WHERE id = ?', [id]);
+    async delete(id, options = {}) {
+        const params = [id];
+        const ownerFilter = buildTagOwnerFilter(options, params);
+        return await run(`DELETE FROM tags WHERE id = ?${ownerFilter}`, params);
     },
 
-    async syncFromLeads() {
-        const rows = await query("SELECT tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
+    async syncFromLeads(options = {}) {
+        const assignedTo = parsePositiveInteger(options.assigned_to, null);
+        const ownerUserId = normalizeTagOwnerId(options.created_by);
+        const params = [];
+        let sql = "SELECT tags FROM leads WHERE tags IS NOT NULL AND tags <> ''";
+        if (assignedTo) {
+            sql += ' AND assigned_to = ?';
+            params.push(assignedTo);
+        }
+
+        const rows = await query(sql, params);
         if (!rows || rows.length === 0) return;
 
-        const existingTags = await this.list();
+        const existingTags = await this.list({
+            created_by: ownerUserId || undefined,
+            include_all: !ownerUserId
+        });
         const existingKeys = new Set(existingTags.map((tag) => normalizeTagKey(tag.name)));
         const discoveredTags = new Set();
 
@@ -1974,21 +2033,29 @@ const Tag = {
             if (existingKeys.has(key)) continue;
 
             await run(
-                `INSERT INTO tags (name, color, description)
-                 VALUES (?, ?, ?)
-                 ON CONFLICT(name) DO NOTHING`,
-                [tagName, DEFAULT_TAG_COLOR, null]
+                `INSERT INTO tags (name, color, description, created_by)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT DO NOTHING`,
+                [tagName, DEFAULT_TAG_COLOR, null, ownerUserId]
             );
             existingKeys.add(key);
         }
     },
 
-    async renameInLeads(previousName, nextName) {
+    async renameInLeads(previousName, nextName, options = {}) {
         const previousKey = normalizeTagKey(previousName);
         const sanitizedNext = normalizeTagValue(nextName);
         if (!previousKey || !sanitizedNext) return 0;
 
-        const leads = await query("SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
+        const assignedTo = parsePositiveInteger(options.assigned_to, null);
+        const params = [];
+        let sql = "SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''";
+        if (assignedTo) {
+            sql += ' AND assigned_to = ?';
+            params.push(assignedTo);
+        }
+
+        const leads = await query(sql, params);
         let updatedLeads = 0;
 
         for (const lead of leads) {
@@ -2022,11 +2089,19 @@ const Tag = {
         return updatedLeads;
     },
 
-    async removeFromLeads(tagName) {
+    async removeFromLeads(tagName, options = {}) {
         const normalized = normalizeTagKey(tagName);
         if (!normalized) return 0;
 
-        const leads = await query("SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
+        const assignedTo = parsePositiveInteger(options.assigned_to, null);
+        const params = [];
+        let sql = "SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''";
+        if (assignedTo) {
+            sql += ' AND assigned_to = ?';
+            params.push(assignedTo);
+        }
+
+        const leads = await query(sql, params);
         let updatedLeads = 0;
 
         for (const lead of leads) {
