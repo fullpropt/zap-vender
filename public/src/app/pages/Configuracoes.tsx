@@ -504,10 +504,11 @@ export default function Configuracoes() {
                                           className="form-textarea"
                                           id="outsideHoursAutoReplyMessage"
                                           rows={4}
-                                          placeholder="Olá! Nosso atendimento está fora do horário no momento. Retornaremos assim que estivermos online."
+                                          placeholder=""
                                       ></textarea>
-                                      <p className="form-help">Enviada quando receber mensagem fora do expediente.</p>
+                                      <p className="form-help">Esse texto fica apenas no formulário e não é salvo.</p>
                                   </div>
+
                               </div>
 
                               <button className="btn btn-primary" onClick={() => globals.saveBusinessHoursSettings?.()}>

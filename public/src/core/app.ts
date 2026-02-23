@@ -40,10 +40,70 @@ type ApiRequestOptions = RequestInit & {
 
 const BUILD_ID = '2026-02-09T16:50:00Z';
 const DEFAULT_SESSION_ID = 'default_whatsapp_session';
+const LAST_IDENTITY_STORAGE_KEY = 'self_last_identity';
+const APP_LOCAL_STORAGE_EXACT_KEYS = [
+    'isLoggedIn',
+    'selfSettings',
+    'self_leads',
+    'self_templates',
+    'self_messages',
+    'self_contacts',
+    'whatsapp_connected',
+    'whatsapp_user',
+    'zapvender_active_whatsapp_session',
+    'zapvender_inbox_session_filter',
+    'zapvender_contacts_session_filter',
+    'zapvender_last_open_flow_id'
+];
+const APP_LOCAL_STORAGE_PREFIXES = ['self_', 'zapvender_', 'whatsapp_'];
 
 function sanitizeSessionId(value: unknown, fallback = '') {
     const normalized = String(value || '').trim();
     return normalized || fallback;
+}
+
+function normalizeIdentityPart(value: unknown): string {
+    return String(value || '').trim().toLowerCase();
+}
+
+function clearAppLocalStorageState() {
+    const toRemove: string[] = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+        const key = String(localStorage.key(index) || '');
+        if (!key || key === LAST_IDENTITY_STORAGE_KEY) continue;
+        const hasExactMatch = APP_LOCAL_STORAGE_EXACT_KEYS.includes(key);
+        const hasPrefixMatch = APP_LOCAL_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix));
+        if (hasExactMatch || hasPrefixMatch) {
+            toRemove.push(key);
+        }
+    }
+    toRemove.forEach((key) => localStorage.removeItem(key));
+}
+
+function resolveCurrentSessionIdentity(): string {
+    const explicitIdentity = normalizeIdentityPart(sessionStorage.getItem('selfDashboardIdentity'));
+    if (explicitIdentity) return explicitIdentity;
+
+    const userId = normalizeIdentityPart(sessionStorage.getItem('selfDashboardUserId'));
+    if (userId) return `id:${userId}`;
+
+    const userEmail = normalizeIdentityPart(sessionStorage.getItem('selfDashboardUserEmail'));
+    if (userEmail) return `email:${userEmail}`;
+
+    const userName = normalizeIdentityPart(sessionStorage.getItem('selfDashboardUser'));
+    return userName ? `name:${userName}` : '';
+}
+
+function ensureStorageIdentityConsistency() {
+    const currentIdentity = resolveCurrentSessionIdentity();
+    if (!currentIdentity) return;
+
+    const previousIdentity = normalizeIdentityPart(localStorage.getItem(LAST_IDENTITY_STORAGE_KEY));
+    if (previousIdentity && previousIdentity !== currentIdentity) {
+        clearAppLocalStorageState();
+    }
+
+    localStorage.setItem(LAST_IDENTITY_STORAGE_KEY, currentIdentity);
 }
 
 function resolveInitialSessionId() {
@@ -129,6 +189,8 @@ function initApp() {
 // ============================================
 
 function checkAuth() {
+    ensureStorageIdentityConsistency();
+
     const token = sessionStorage.getItem('selfDashboardToken');
     const expiry = sessionStorage.getItem('selfDashboardExpiry');
     const user = sessionStorage.getItem('selfDashboardUser');

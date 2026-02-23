@@ -7,6 +7,7 @@ const audioFixer = require('../server/utils/audioFixer');
 const connectionFixer = require('../server/utils/connectionFixer');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 describe('WhatsApp Integration Tests', () => {
     describe('AudioFixer', () => {
@@ -44,13 +45,9 @@ describe('WhatsApp Integration Tests', () => {
         });
 
         test('deve preparar áudio com formato correto', async () => {
-            // Criar arquivo de teste temporário
-            const testDir = path.join(__dirname, '..', 'uploads', 'test');
-            if (!fs.existsSync(testDir)) {
-                fs.mkdirSync(testDir, { recursive: true });
-            }
-
-            const testFile = path.join(testDir, 'test-audio.ogg');
+            // Criar diretório e arquivo temporários exclusivos
+            const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-fixer-test-'));
+            const testFile = path.join(testDir, `test-audio-${Date.now()}-${process.pid}.ogg`);
             
             // Criar arquivo vazio para teste
             fs.writeFileSync(testFile, Buffer.alloc(100));
@@ -66,9 +63,9 @@ describe('WhatsApp Integration Tests', () => {
                 expect(result).toHaveProperty('ptt');
                 expect(result.ptt).toBe(true);
             } finally {
-                // Limpar arquivo de teste
-                if (fs.existsSync(testFile)) {
-                    fs.unlinkSync(testFile);
+                // Limpar diretório temporário de teste
+                if (fs.existsSync(testDir)) {
+                    fs.rmSync(testDir, { recursive: true, force: true });
                 }
             }
         });
