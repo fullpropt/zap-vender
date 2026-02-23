@@ -391,6 +391,7 @@ async function loadContacts() {
     try {
         showLoading('Carregando contatos...');
         allContacts = await fetchAllContacts();
+        pruneSelectedContactsByCurrentDataset();
         filteredContacts = [...allContacts];
         updateStats();
         renderContacts();
@@ -552,19 +553,48 @@ function updateStats() {
     }
 }
 
+function syncSelectionUi() {
+    const bulkActions = document.getElementById('bulkActions') as HTMLElement | null;
+    const selectedCount = document.getElementById('selectedCount') as HTMLElement | null;
+    const selectAll = document.getElementById('selectAll') as HTMLInputElement | null;
+
+    if (bulkActions) bulkActions.style.display = selectedContacts.length > 0 ? 'block' : 'none';
+    if (selectedCount) selectedCount.textContent = String(selectedContacts.length);
+
+    if (!selectAll) return;
+
+    if (filteredContacts.length === 0) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+        return;
+    }
+
+    const filteredIds = new Set(filteredContacts.map((contact) => contact.id));
+    const selectedInFilter = selectedContacts.filter((id) => filteredIds.has(id)).length;
+
+    selectAll.checked = selectedInFilter > 0 && selectedInFilter === filteredContacts.length;
+    selectAll.indeterminate = selectedInFilter > 0 && selectedInFilter < filteredContacts.length;
+}
+
+function pruneSelectedContactsByCurrentDataset() {
+    const availableIds = new Set(allContacts.map((contact) => contact.id));
+    selectedContacts = selectedContacts.filter((id) => availableIds.has(id));
+}
+
 function renderContacts() {
     const tbody = document.getElementById('contactsTableBody') as HTMLElement | null;
     if (!tbody) return;
     const start = (currentPage - 1) * perPage;
     const end = start + perPage;
     const pageContacts = filteredContacts.slice(start, end);
+    const selectedIds = new Set(selectedContacts);
 
     if (pageContacts.length === 0) {
         tbody.innerHTML = `<tr><td colspan="7" class="table-empty"><div class="table-empty-icon icon icon-empty icon-lg"></div><p>Nenhum contato encontrado</p></td></tr>`;
     } else {
         tbody.innerHTML = pageContacts.map(c => `
             <tr data-id="${c.id}">
-                <td><label class="checkbox-wrapper"><input type="checkbox" class="contact-checkbox" value="${c.id}" onchange="updateSelection()"><span class="checkbox-custom"></span></label></td>
+                <td><label class="checkbox-wrapper"><input type="checkbox" class="contact-checkbox" value="${c.id}" onchange="updateSelection()" ${selectedIds.has(c.id) ? 'checked' : ''}><span class="checkbox-custom"></span></label></td>
                 <td>
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <div class="avatar" style="background: ${getAvatarColor(c.name)}">${getInitials(c.name)}</div>
@@ -600,6 +630,8 @@ function renderContacts() {
     }
     if (prevPage) prevPage.disabled = currentPage === 1;
     if (nextPage) nextPage.disabled = currentPage >= totalPages;
+
+    syncSelectionUi();
 }
 
 function changePage(delta: number) {
@@ -623,34 +655,45 @@ function filterContacts() {
         return matchSearch && matchStatus && matchTag;
     });
 
+    const filteredIds = new Set(filteredContacts.map((contact) => contact.id));
+    selectedContacts = selectedContacts.filter((id) => filteredIds.has(id));
+
     currentPage = 1;
     renderContacts();
 }
 
 function toggleSelectAll() {
     const checked = (document.getElementById('selectAll') as HTMLInputElement | null)?.checked || false;
-    document.querySelectorAll('.contact-checkbox').forEach(cb => {
-        (cb as HTMLInputElement).checked = checked;
-    });
-    updateSelection();
+    if (checked) {
+        selectedContacts = Array.from(new Set(filteredContacts.map((contact) => contact.id)));
+    } else {
+        const filteredIds = new Set(filteredContacts.map((contact) => contact.id));
+        selectedContacts = selectedContacts.filter((id) => !filteredIds.has(id));
+    }
+    renderContacts();
 }
 
 function updateSelection() {
-    selectedContacts = Array.from(document.querySelectorAll('.contact-checkbox:checked'))
-        .map(cb => parseInt((cb as HTMLInputElement).value, 10));
-    const bulkActions = document.getElementById('bulkActions') as HTMLElement | null;
-    const selectedCount = document.getElementById('selectedCount') as HTMLElement | null;
-    if (bulkActions) bulkActions.style.display = selectedContacts.length > 0 ? 'block' : 'none';
-    if (selectedCount) selectedCount.textContent = String(selectedContacts.length);
+    const start = (currentPage - 1) * perPage;
+    const end = start + perPage;
+    const pageContacts = filteredContacts.slice(start, end);
+    const pageIds = new Set(pageContacts.map((contact) => contact.id));
+
+    const checkedOnPage = Array.from(document.querySelectorAll('.contact-checkbox:checked'))
+        .map((checkbox) => parseInt((checkbox as HTMLInputElement).value, 10))
+        .filter((id) => Number.isInteger(id) && id > 0);
+
+    selectedContacts = selectedContacts.filter((id) => !pageIds.has(id));
+    selectedContacts.push(...checkedOnPage);
+    selectedContacts = Array.from(new Set(selectedContacts));
+
+    syncSelectionUi();
 }
 
 function clearSelection() {
-    const selectAll = document.getElementById('selectAll') as HTMLInputElement | null;
-    if (selectAll) selectAll.checked = false;
-    document.querySelectorAll('.contact-checkbox').forEach(cb => {
-        (cb as HTMLInputElement).checked = false;
-    });
-    updateSelection();
+    selectedContacts = [];
+    syncSelectionUi();
+    renderContacts();
 }
 
 async function saveContact() {

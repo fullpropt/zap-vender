@@ -344,7 +344,7 @@ const limiter = rateLimit({
 
     max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
 
-    message: { error: 'Muitas requisições, tente novamente mais tarde' }
+    message: 'Muitas requisicoes, tente novamente mais tarde'
 
 });
 
