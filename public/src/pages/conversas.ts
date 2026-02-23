@@ -660,6 +660,13 @@ function toggleSidebar() {
 
 function logout() {
     localStorage.removeItem('isLoggedIn');
+    sessionStorage.removeItem('selfDashboardToken');
+    sessionStorage.removeItem('selfDashboardExpiry');
+    sessionStorage.removeItem('selfDashboardUser');
+    sessionStorage.removeItem('selfDashboardRefreshToken');
+    sessionStorage.removeItem('selfDashboardUserId');
+    sessionStorage.removeItem('selfDashboardUserEmail');
+    sessionStorage.removeItem('selfDashboardIdentity');
     window.location.href = getLoginUrl();
 }
 

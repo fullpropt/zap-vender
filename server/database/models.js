@@ -393,6 +393,16 @@ const Lead = {
                 await this.update(lead.id, { name: nextName });
                 lead.name = nextName;
             }
+
+            const requestedAssignee = Number(data?.assigned_to);
+            if (
+                Number.isInteger(requestedAssignee)
+                && requestedAssignee > 0
+                && (!Number.isInteger(Number(lead.assigned_to)) || Number(lead.assigned_to) <= 0)
+            ) {
+                await this.update(lead.id, { assigned_to: requestedAssignee });
+                lead.assigned_to = requestedAssignee;
+            }
             return { lead, created: false };
         }
         
@@ -503,6 +513,11 @@ const Lead = {
             params.push(options.status);
         }
 
+        if (options.assigned_to) {
+            sql += ' AND assigned_to = ?';
+            params.push(options.assigned_to);
+        }
+
         if (options.session_id) {
             sql += ' AND EXISTS (SELECT 1 FROM conversations c WHERE c.lead_id = leads.id AND c.session_id = ?)';
             params.push(String(options.session_id).trim());
@@ -559,8 +574,18 @@ const Conversation = {
         if (conversation) {
             return { conversation, created: false };
         }
+
+        let assignedTo = Number(data?.assigned_to);
+        if (!Number.isInteger(assignedTo) || assignedTo <= 0) {
+            const lead = await Lead.findById(data.lead_id);
+            const leadAssignedTo = Number(lead?.assigned_to);
+            assignedTo = Number.isInteger(leadAssignedTo) && leadAssignedTo > 0 ? leadAssignedTo : null;
+        }
         
-        const result = await this.create(data);
+        const result = await this.create({
+            ...data,
+            assigned_to: assignedTo
+        });
         return { conversation: await this.findById(result.id), created: true };
     },
     
@@ -797,6 +822,11 @@ const Template = {
         if (options.category) {
             sql += ' AND category = ?';
             params.push(options.category);
+        }
+
+        if (options.created_by) {
+            sql += ' AND created_by = ?';
+            params.push(options.created_by);
         }
         
         sql += ' ORDER BY usage_count DESC, name ASC';
@@ -1412,6 +1442,11 @@ const Flow = {
             sql += ' AND is_active = ?';
             params.push(options.is_active);
         }
+
+        if (options.created_by) {
+            sql += ' AND created_by = ?';
+            params.push(options.created_by);
+        }
         
         sql += ' ORDER BY priority DESC, name ASC';
         
@@ -1533,6 +1568,11 @@ const CustomEvent = {
             params.push(normalizeBooleanFlag(options.is_active, 1));
         }
 
+        if (options.created_by) {
+            filters.push('ce.created_by = ?');
+            params.push(options.created_by);
+        }
+
         const search = normalizeCustomEventName(options.search || '');
         if (search) {
             filters.push('(LOWER(ce.name) LIKE LOWER(?) OR LOWER(ce.event_key) LIKE LOWER(?))');
@@ -1578,6 +1618,11 @@ const CustomEvent = {
         if (options.is_active !== undefined && options.is_active !== null && options.is_active !== '') {
             filters.push('ce.is_active = ?');
             params.push(normalizeBooleanFlag(options.is_active, 1));
+        }
+
+        if (options.created_by) {
+            filters.push('ce.created_by = ?');
+            params.push(options.created_by);
         }
 
         if (filters.length > 0) {

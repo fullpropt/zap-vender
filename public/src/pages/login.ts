@@ -3,13 +3,35 @@
 type LoginResponse = {
     token?: string;
     refreshToken?: string;
-    user?: { name?: string };
+    user?: { id?: number | string; uuid?: string; name?: string; email?: string };
     error?: string;
 };
 
 type RegisterResponse = LoginResponse;
 
 type AuthMode = 'login' | 'register';
+
+const APP_LOCAL_STORAGE_EXACT_KEYS = [
+    'isLoggedIn',
+    'selfSettings',
+    'self_leads',
+    'self_templates',
+    'self_messages',
+    'self_contacts',
+    'whatsapp_connected',
+    'whatsapp_user',
+    'zapvender_active_whatsapp_session',
+    'zapvender_inbox_session_filter',
+    'zapvender_contacts_session_filter',
+    'zapvender_last_open_flow_id'
+];
+
+const APP_LOCAL_STORAGE_PREFIXES = [
+    'self_',
+    'zapvender_',
+    'whatsapp_'
+];
+const LAST_IDENTITY_STORAGE_KEY = 'self_last_identity';
 
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -73,14 +95,76 @@ function setAuthMode(mode: AuthMode) {
     if (registerError) registerError.style.display = 'none';
 }
 
+function normalizeIdentityPart(value: unknown): string {
+    return String(value || '')
+        .trim()
+        .toLowerCase();
+}
+
+function resolveSessionIdentity(data: LoginResponse, fallbackName: string): string {
+    const userId = normalizeIdentityPart(data?.user?.id);
+    if (userId) return `id:${userId}`;
+
+    const userEmail = normalizeIdentityPart(data?.user?.email);
+    if (userEmail) return `email:${userEmail}`;
+
+    const userUuid = normalizeIdentityPart(data?.user?.uuid);
+    if (userUuid) return `uuid:${userUuid}`;
+
+    const userName = normalizeIdentityPart(data?.user?.name || fallbackName);
+    return userName ? `name:${userName}` : '';
+}
+
+function clearAppLocalStorageState() {
+    const toRemove: string[] = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+        const key = String(localStorage.key(index) || '');
+        if (!key) continue;
+        if (key === LAST_IDENTITY_STORAGE_KEY) continue;
+        const hasExactMatch = APP_LOCAL_STORAGE_EXACT_KEYS.includes(key);
+        const hasPrefixMatch = APP_LOCAL_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix));
+        if (hasExactMatch || hasPrefixMatch) {
+            toRemove.push(key);
+        }
+    }
+
+    toRemove.forEach((key) => localStorage.removeItem(key));
+}
+
 function saveSession(data: LoginResponse, fallbackName: string) {
     if (!data?.token) return;
+    const previousIdentity = normalizeIdentityPart(localStorage.getItem(LAST_IDENTITY_STORAGE_KEY));
+    const nextIdentity = resolveSessionIdentity(data, fallbackName);
+
+    if (!previousIdentity || !nextIdentity || previousIdentity !== nextIdentity) {
+        clearAppLocalStorageState();
+    }
+
     sessionStorage.setItem('selfDashboardToken', data.token);
     if (data.refreshToken) {
         sessionStorage.setItem('selfDashboardRefreshToken', data.refreshToken);
+    } else {
+        sessionStorage.removeItem('selfDashboardRefreshToken');
     }
     sessionStorage.setItem('selfDashboardUser', data.user?.name || fallbackName);
-    sessionStorage.setItem('selfDashboardExpiry', Date.now() + (8 * 60 * 60 * 1000));
+    if (data?.user?.id !== undefined && data?.user?.id !== null) {
+        sessionStorage.setItem('selfDashboardUserId', String(data.user.id));
+    } else {
+        sessionStorage.removeItem('selfDashboardUserId');
+    }
+    if (data?.user?.email) {
+        sessionStorage.setItem('selfDashboardUserEmail', String(data.user.email));
+    } else {
+        sessionStorage.removeItem('selfDashboardUserEmail');
+    }
+    if (nextIdentity) {
+        sessionStorage.setItem('selfDashboardIdentity', nextIdentity);
+        localStorage.setItem(LAST_IDENTITY_STORAGE_KEY, nextIdentity);
+    } else {
+        sessionStorage.removeItem('selfDashboardIdentity');
+        localStorage.removeItem(LAST_IDENTITY_STORAGE_KEY);
+    }
+    sessionStorage.setItem('selfDashboardExpiry', String(Date.now() + (8 * 60 * 60 * 1000)));
 }
 
 async function handleLogin(e: Event) {
