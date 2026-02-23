@@ -472,6 +472,45 @@ const Lead = {
             };
         });
     },
+
+    async bulkDelete(ids = []) {
+        const leadIds = Array.from(
+            new Set(
+                (Array.isArray(ids) ? ids : [])
+                    .map((value) => parseInt(value, 10))
+                    .filter((value) => Number.isInteger(value) && value > 0)
+            )
+        );
+
+        if (!leadIds.length) {
+            return {
+                lastInsertRowid: null,
+                changes: 0
+            };
+        }
+
+        return await transaction(async (client) => {
+            const cleanupStatements = [
+                'DELETE FROM message_queue WHERE lead_id = ANY($1::int[])',
+                'DELETE FROM flow_executions WHERE lead_id = ANY($1::int[])',
+                'DELETE FROM messages WHERE lead_id = ANY($1::int[])',
+                'DELETE FROM lead_tags WHERE lead_id = ANY($1::int[])',
+                'DELETE FROM automation_lead_runs WHERE lead_id = ANY($1::int[])',
+                'UPDATE custom_event_logs SET lead_id = NULL WHERE lead_id = ANY($1::int[])',
+                'DELETE FROM conversations WHERE lead_id = ANY($1::int[])'
+            ];
+
+            for (const statement of cleanupStatements) {
+                await executeLeadCleanupQuery(client, statement, leadIds);
+            }
+
+            const result = await client.query('DELETE FROM leads WHERE id = ANY($1::int[])', [leadIds]);
+            return {
+                lastInsertRowid: null,
+                changes: result.rowCount
+            };
+        });
+    },
     
     async list(options = {}) {
         let sql = `

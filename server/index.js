@@ -7983,27 +7983,42 @@ app.post('/api/leads/bulk-delete', authenticate, async (req, res) => {
         let failed = 0;
         const errors = [];
 
+        const existingLeads = await query(
+            'SELECT id, assigned_to FROM leads WHERE id = ANY(?::int[])',
+            [leadIds]
+        );
+        const leadById = new Map(
+            (existingLeads || []).map((lead) => [Number(lead.id), lead])
+        );
+        const allowedLeadIds = [];
+
         for (const leadId of leadIds) {
+            const lead = leadById.get(leadId);
+            if (!lead) {
+                skipped += 1;
+                continue;
+            }
+
+            if (!canAccessAssignedRecord(req, lead.assigned_to)) {
+                skipped += 1;
+                continue;
+            }
+
+            allowedLeadIds.push(leadId);
+        }
+
+        if (allowedLeadIds.length > 0) {
             try {
-                const lead = await Lead.findById(leadId);
-                if (!lead) {
-                    skipped += 1;
-                    continue;
-                }
-
-                if (!canAccessAssignedRecord(req, lead.assigned_to)) {
-                    skipped += 1;
-                    continue;
-                }
-
-                await Lead.delete(leadId);
-                deleted += 1;
+                const bulkDeleteResult = await Lead.bulkDelete(allowedLeadIds);
+                const deletedCount = Number(bulkDeleteResult?.changes || 0);
+                const notDeletedCount = Math.max(allowedLeadIds.length - deletedCount, 0);
+                deleted += deletedCount;
+                skipped += notDeletedCount;
             } catch (error) {
-                failed += 1;
+                failed += allowedLeadIds.length;
                 if (errors.length < 25) {
                     errors.push({
-                        id: leadId,
-                        error: String(error?.message || 'Erro ao excluir lead')
+                        error: String(error?.message || 'Erro ao excluir leads em lote')
                     });
                 }
             }
