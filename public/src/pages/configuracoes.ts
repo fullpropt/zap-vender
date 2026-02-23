@@ -220,6 +220,11 @@ function parseBooleanSetting(value: unknown, fallback = false) {
     return fallback;
 }
 
+function clearBusinessHoursMessageField() {
+    const messageInput = document.getElementById('outsideHoursAutoReplyMessage') as HTMLTextAreaElement | null;
+    if (messageInput) messageInput.value = '';
+}
+
 function applyBusinessHoursSettings(values: Partial<{ enabled: boolean; start: string; end: string }>) {
     const enabledInput = document.getElementById('businessHoursEnabled') as HTMLInputElement | null;
     const startInput = document.getElementById('businessHoursStart') as HTMLInputElement | null;
@@ -234,6 +239,7 @@ function applyBusinessHoursSettings(values: Partial<{ enabled: boolean; start: s
     if (enabledInput) enabledInput.checked = normalized.enabled;
     if (startInput) startInput.value = normalized.start;
     if (endInput) endInput.value = normalized.end;
+    clearBusinessHoursMessageField();
 }
 
 function readBusinessHoursSettingsFromForm() {
@@ -329,6 +335,7 @@ async function saveBusinessHoursSettings() {
     } catch (error) {
         showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
     }
+    clearBusinessHoursMessageField();
 }
 
 async function loadSettingsTags() {

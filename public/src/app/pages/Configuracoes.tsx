@@ -498,6 +498,17 @@ export default function Configuracoes() {
                                       </div>
                                   </div>
 
+                                  <div className="form-group">
+                                      <label className="form-label">Mensagem automática fora do horário</label>
+                                      <textarea
+                                          className="form-textarea"
+                                          id="outsideHoursAutoReplyMessage"
+                                          rows={4}
+                                          placeholder=""
+                                      ></textarea>
+                                      <p className="form-help">Esse texto fica apenas no formulário e não é salvo.</p>
+                                  </div>
+
                               </div>
 
                               <button className="btn btn-primary" onClick={() => globals.saveBusinessHoursSettings?.()}>
