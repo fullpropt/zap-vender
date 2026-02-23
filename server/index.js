@@ -6202,6 +6202,10 @@ app.post('/api/auth/register', async (req, res) => {
 
 
 
+        const existingUsers = await User.listAll();
+        const hasActiveAdmin = (existingUsers || []).some((item) => isUserActive(item) && isUserAdminRole(item.role));
+        const role = hasActiveAdmin ? 'agent' : 'admin';
+
         await User.create({
 
             name: String(name || '').trim(),
@@ -6210,7 +6214,7 @@ app.post('/api/auth/register', async (req, res) => {
 
             password_hash: hashPassword(String(password)),
 
-            role: 'agent'
+            role
 
         });
 
@@ -6322,12 +6326,25 @@ app.post('/api/auth/refresh', async (req, res) => {
 
 
 
-const ALLOWED_USER_ROLES = new Set(['admin', 'supervisor', 'agent']);
+const ALLOWED_USER_ROLES = new Set(['admin', 'agent']);
 
 function normalizeUserRoleInput(value) {
     const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === 'user') return 'agent';
+    if (normalized === 'user' || normalized === 'supervisor') return 'agent';
     return ALLOWED_USER_ROLES.has(normalized) ? normalized : 'agent';
+}
+
+function isUserAdminRole(value) {
+    return String(value || '').trim().toLowerCase() === 'admin';
+}
+
+function isUserActive(user) {
+    return Number(user?.is_active) > 0;
+}
+
+async function countActiveAdmins() {
+    const users = await User.listAll();
+    return (users || []).filter((item) => isUserActive(item) && isUserAdminRole(item.role)).length;
 }
 
 function normalizeUserActiveInput(value, fallback = 1) {
@@ -6439,6 +6456,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
             return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
         }
 
+        const currentIsActiveAdmin = isUserActive(current) && isUserAdminRole(current.role);
         const payload = {};
 
         if (Object.prototype.hasOwnProperty.call(req.body || {}, 'name')) {
@@ -6474,11 +6492,62 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
             }
         }
 
+        const nextRole = Object.prototype.hasOwnProperty.call(payload, 'role') ? payload.role : current.role;
+        const nextIsActive = Object.prototype.hasOwnProperty.call(payload, 'is_active')
+            ? (Number(payload.is_active) > 0 ? 1 : 0)
+            : (isUserActive(current) ? 1 : 0);
+        const willStopBeingActiveAdmin = currentIsActiveAdmin && (!isUserAdminRole(nextRole) || Number(nextIsActive) === 0);
+
+        if (willStopBeingActiveAdmin) {
+            const activeAdminCount = await countActiveAdmins();
+            if (activeAdminCount <= 1) {
+                return res.status(400).json({ success: false, error: 'E necessario manter pelo menos um administrador ativo' });
+            }
+        }
+
         await User.update(targetId, payload);
         const updated = await User.findById(targetId);
         res.json({ success: true, user: sanitizeUserPayload(updated) });
     } catch (error) {
         res.status(500).json({ success: false, error: 'Erro ao atualizar usuário' });
+    }
+});
+
+app.delete('/api/users/:id', authenticate, async (req, res) => {
+    try {
+        const requesterRole = String(req.user?.role || '').toLowerCase();
+        const requesterId = Number(req.user?.id || 0);
+        if (requesterRole !== 'admin') {
+            return res.status(403).json({ success: false, error: 'Sem permissao para remover usuarios' });
+        }
+
+        const targetId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(targetId) || targetId <= 0) {
+            return res.status(400).json({ success: false, error: 'Usuario invalido' });
+        }
+
+        if (targetId === requesterId) {
+            return res.status(400).json({ success: false, error: 'Nao e possivel remover o proprio usuario' });
+        }
+
+        const current = await User.findById(targetId);
+        if (!current) {
+            return res.status(404).json({ success: false, error: 'Usuario nao encontrado' });
+        }
+
+        const isTargetActiveAdmin = isUserActive(current) && isUserAdminRole(current.role);
+        if (isTargetActiveAdmin) {
+            const activeAdminCount = await countActiveAdmins();
+            if (activeAdminCount <= 1) {
+                return res.status(400).json({ success: false, error: 'E necessario manter pelo menos um administrador ativo' });
+            }
+        }
+
+        await User.update(targetId, { is_active: 0 });
+        const updated = await User.findById(targetId);
+        res.json({ success: true, user: sanitizeUserPayload(updated) });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Erro ao remover usuario' });
     }
 });
 

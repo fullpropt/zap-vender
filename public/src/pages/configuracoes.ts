@@ -1248,8 +1248,8 @@ async function saveNotificationSettings() {
 
 function normalizeUserRole(value: unknown) {
     const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === 'user') return 'agent';
-    if (normalized === 'admin' || normalized === 'supervisor') return normalized;
+    if (normalized === 'user' || normalized === 'supervisor') return 'agent';
+    if (normalized === 'admin') return 'admin';
     return 'agent';
 }
 
@@ -1272,25 +1272,44 @@ function isManagedUserActive(user: ManagedUser) {
     return Number(user.is_active) > 0;
 }
 
-function getCurrentUserRoleFromToken() {
+function getCurrentUserTokenPayload() {
     const token = sessionStorage.getItem('selfDashboardToken');
-    if (!token) return '';
+    if (!token) return null;
 
     try {
         const parts = token.split('.');
-        if (parts.length < 2) return '';
+        if (parts.length < 2) return null;
         const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
         const padded = payloadBase64 + '='.repeat((4 - (payloadBase64.length % 4)) % 4);
-        const payload = JSON.parse(atob(padded));
-        return String(payload?.role || '').trim().toLowerCase();
+        return JSON.parse(atob(padded));
     } catch {
-        return '';
+        return null;
     }
+}
+
+function getCurrentUserRoleFromToken() {
+    return String(getCurrentUserTokenPayload()?.role || '').trim().toLowerCase();
+}
+
+function getCurrentUserIdFromToken() {
+    const value = Number(getCurrentUserTokenPayload()?.id || 0);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function isCurrentUserAdmin() {
+    return getCurrentUserRoleFromToken() === 'admin';
+}
+
+function updateUsersPanelPermissions() {
+    const addUserButton = document.getElementById('addUserButton') as HTMLButtonElement | null;
+    if (addUserButton) addUserButton.style.display = isCurrentUserAdmin() ? '' : 'none';
 }
 
 function renderUsersTable() {
     const tbody = document.getElementById('usersTableBody') as HTMLElement | null;
     if (!tbody) return;
+    const isAdmin = isCurrentUserAdmin();
+    const currentUserId = getCurrentUserIdFromToken();
 
     if (!usersCache.length) {
         tbody.innerHTML = `
@@ -1307,6 +1326,7 @@ function renderUsersTable() {
     tbody.innerHTML = usersCache.map((user) => {
         const active = isManagedUserActive(user);
         const userId = Number(user.id) || 0;
+        const canDelete = isAdmin && userId > 0 && userId !== currentUserId;
         return `
             <tr data-user-id="${userId}">
                 <td>${escapeHtml(String(user.name || 'Sem nome'))}</td>
@@ -1317,6 +1337,11 @@ function renderUsersTable() {
                     <button class="btn btn-sm btn-outline" onclick="openEditUserModal(${userId})" title="Editar usuário">
                         <span class="icon icon-edit icon-sm"></span>
                     </button>
+                    ${canDelete ? `
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${userId})" title="Remover usuario">
+                        <span class="icon icon-delete icon-sm"></span>
+                    </button>
+                    ` : ''}
                 </td>
             </tr>
         `;
@@ -1324,6 +1349,7 @@ function renderUsersTable() {
 }
 
 async function loadUsers() {
+    updateUsersPanelPermissions();
     const tbody = document.getElementById('usersTableBody') as HTMLElement | null;
     if (tbody) {
         tbody.innerHTML = `
@@ -1381,7 +1407,7 @@ function openEditUserModal(id: number) {
     if (editUserRole) editUserRole.value = normalizeUserRole(user.role);
     if (editUserActive) editUserActive.value = isManagedUserActive(user) ? '1' : '0';
 
-    const isAdmin = getCurrentUserRoleFromToken() === 'admin';
+    const isAdmin = isCurrentUserAdmin();
     if (editUserRole) editUserRole.disabled = !isAdmin;
     if (editUserActive) editUserActive.disabled = !isAdmin;
 
@@ -1405,7 +1431,7 @@ async function updateUser() {
     }
 
     const payload: Record<string, unknown> = { name, email };
-    const isAdmin = getCurrentUserRoleFromToken() === 'admin';
+    const isAdmin = isCurrentUserAdmin();
     if (isAdmin) {
         payload.role = normalizeUserRole(editUserRole?.value || 'agent');
         payload.is_active = editUserActive?.value === '0' ? 0 : 1;
@@ -1422,6 +1448,11 @@ async function updateUser() {
 }
 
 async function addUser() {
+    if (!isCurrentUserAdmin()) {
+        showToast('warning', 'Aviso', 'Apenas administradores podem adicionar usuarios');
+        return;
+    }
+
     const name = (document.getElementById('newUserName') as HTMLInputElement | null)?.value.trim() || '';
     const email = (document.getElementById('newUserEmail') as HTMLInputElement | null)?.value.trim() || '';
     const password = (document.getElementById('newUserPassword') as HTMLInputElement | null)?.value || '';
@@ -1452,6 +1483,31 @@ async function addUser() {
         showToast('success', 'Sucesso', 'Usuário adicionado!');
     } catch (error: any) {
         showToast('error', 'Erro', error?.message || 'Não foi possível adicionar o usuário');
+    }
+}
+
+async function deleteUser(id: number) {
+    if (!isCurrentUserAdmin()) {
+        showToast('warning', 'Aviso', 'Apenas administradores podem remover usuarios');
+        return;
+    }
+
+    const userId = Number(id);
+    if (!Number.isFinite(userId) || userId <= 0) {
+        showToast('error', 'Erro', 'Usuario invalido');
+        return;
+    }
+
+    const user = usersCache.find((item) => Number(item.id) === userId);
+    const name = String(user?.name || 'este usuario');
+    if (!confirm(`Deseja remover ${name}?`)) return;
+
+    try {
+        await api.delete(`/api/users/${userId}`);
+        await loadUsers();
+        showToast('success', 'Sucesso', 'Usuario removido!');
+    } catch (error: any) {
+        showToast('error', 'Erro', error?.message || 'Nao foi possivel remover o usuario');
     }
 }
 
@@ -1522,6 +1578,7 @@ const windowAny = window as Window & {
     deleteSettingsTag?: (id: number) => Promise<void>;
     loadUsers?: () => Promise<void>;
     addUser?: () => Promise<void>;
+    deleteUser?: (id: number) => Promise<void>;
     openEditUserModal?: (id: number) => void;
     updateUser?: () => Promise<void>;
     changePassword?: () => Promise<void>;
@@ -1557,6 +1614,7 @@ windowAny.updateSettingsTag = updateSettingsTag;
 windowAny.deleteSettingsTag = deleteSettingsTag;
 windowAny.loadUsers = loadUsers;
 windowAny.addUser = addUser;
+windowAny.deleteUser = deleteUser;
 windowAny.openEditUserModal = openEditUserModal;
 windowAny.updateUser = updateUser;
 windowAny.changePassword = changePassword;

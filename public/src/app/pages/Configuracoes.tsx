@@ -652,7 +652,7 @@ export default function Configuracoes() {
                                       </tbody>
                                   </table>
                               </div>
-                              <button className="btn btn-primary mt-4" onClick={() => globals.openModal?.('addUserModal')}><span className="icon icon-add icon-sm"></span> Adicionar Usuário</button>
+                              <button id="addUserButton" className="btn btn-primary mt-4" onClick={() => globals.openModal?.('addUserModal')}><span className="icon icon-add icon-sm"></span> Adicionar Usuário</button>
                           </div>
       
                           <div className="settings-section">
@@ -728,7 +728,6 @@ export default function Configuracoes() {
                           <label className="form-label">Função</label>
                           <select className="form-select" id="newUserRole">
                               <option value="agent">Usuário</option>
-                              <option value="supervisor">Supervisor</option>
                               <option value="admin">Administrador</option>
                           </select>
                       </div>
@@ -758,12 +757,11 @@ export default function Configuracoes() {
                       </div>
                       <div className="form-row">
                           <div className="form-group">
-                              <label className="form-label">Função</label>
-                              <select className="form-select" id="editUserRole">
-                                  <option value="agent">Usuário</option>
-                                  <option value="supervisor">Supervisor</option>
-                                  <option value="admin">Administrador</option>
-                              </select>
+                               <label className="form-label">Função</label>
+                               <select className="form-select" id="editUserRole">
+                                   <option value="agent">Usuário</option>
+                                   <option value="admin">Administrador</option>
+                               </select>
                           </div>
                           <div className="form-group">
                               <label className="form-label">Status</label>
