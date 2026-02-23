@@ -157,7 +157,7 @@ npm run update
 ## 📊 Estrutura do Projeto
 
 ```
-self-protecao-veicular/
+zap-vender/
 ├── server/
 │   ├── utils/
 │   │   ├── audioFixer.js          # ✅ NOVO - Corrige problemas de áudio

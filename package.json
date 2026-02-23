@@ -1,5 +1,5 @@
 {
-  "name": "self-protecao-veicular",
+  "name": "zap-vender",
   "version": "4.1.0",
   "description": "Sistema de CRM com integração WhatsApp para SELF Proteção Veicular - Plataforma de automação de mensagens estilo BotConversa",
   "main": "server/index.js",
@@ -42,7 +42,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fullpropt/self-protecao-veicular.git"
+    "url": "https://github.com/fullpropt/zap-vender.git"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.16",

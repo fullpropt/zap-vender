@@ -140,7 +140,7 @@ AUTO_COMMIT=true  # Fazer commit automático após atualização
 ## 📦 Estrutura de Arquivos Criados
 
 ```
-self-protecao-veicular/
+zap-vender/
 ├── server/
 │   └── utils/
 │       ├── audioFixer.js          # ✅ NOVO - Corrige problemas de áudio

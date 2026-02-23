@@ -42,8 +42,8 @@ Sistema completo de integração WhatsApp com gerenciamento de conversas e leads
 
 1. **Clonar o repositório**
 ```bash
-git clone https://github.com/seu-usuario/self-protecao-veicular.git
-cd self-protecao-veicular
+git clone https://github.com/seu-usuario/zap-vender.git
+cd zap-vender
 ```
 
 2. **Instalar dependências**
@@ -162,7 +162,7 @@ GET /api/sessions
 ## 🗂️ Estrutura de Arquivos
 
 ```
-self-protecao-veicular/
+zap-vender/
 ├── server/
 │   └── index.js              # Servidor Node.js com Baileys
 ├── public/

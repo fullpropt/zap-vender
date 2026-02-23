@@ -46,8 +46,8 @@ Sistema completo de CRM com integração WhatsApp para gestão de leads, automa�
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/fullpropt/self-protecao-veicular.git
-cd self-protecao-veicular
+git clone https://github.com/fullpropt/zap-vender.git
+cd zap-vender
 ```
 
 ### 2. Configure as variáveis de ambiente
@@ -149,7 +149,7 @@ O projeto já inclui os arquivos de configuração:
 ## 📁 Estrutura do Projeto
 
 ```
-self-protecao-veicular/
+zap-vender/
 ├── server/
 │   ├── index.js              # Servidor principal
 │   ├── database/
