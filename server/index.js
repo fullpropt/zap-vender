@@ -6628,20 +6628,6 @@ app.post('/api/account/delete', authenticate, async (req, res) => {
             return res.status(403).json({ success: false, error: 'Apenas o admin principal pode excluir a conta' });
         }
 
-        const currentPassword = String(req.body?.currentPassword || '');
-        if (!currentPassword) {
-            return res.status(400).json({ success: false, error: 'Senha atual e obrigatoria' });
-        }
-
-        const { verifyPassword } = require('./middleware/auth');
-        const currentUser = await User.findByIdWithPassword(requesterId);
-        if (!currentUser) {
-            return res.status(404).json({ success: false, error: 'Usuario nao encontrado' });
-        }
-        if (!verifyPassword(currentPassword, currentUser.password_hash)) {
-            return res.status(400).json({ success: false, error: 'Senha atual invalida' });
-        }
-
         // Exclusao de conta em modo seguro: desativa todos os usuarios da conta
         await run(
             'UPDATE users SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE owner_user_id = ? OR id = ?',

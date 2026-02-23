@@ -1554,10 +1554,6 @@ async function deleteAccount() {
         return;
     }
 
-    const deleteAccountConfirmText = document.getElementById('deleteAccountConfirmText') as HTMLInputElement | null;
-    const deleteAccountPassword = document.getElementById('deleteAccountPassword') as HTMLInputElement | null;
-    if (deleteAccountConfirmText) deleteAccountConfirmText.value = '';
-    if (deleteAccountPassword) deleteAccountPassword.value = '';
     openModal('confirmDeleteAccountModal');
 }
 
@@ -1567,22 +1563,8 @@ async function confirmDeleteAccount() {
         return;
     }
 
-    const deleteAccountConfirmText = document.getElementById('deleteAccountConfirmText') as HTMLInputElement | null;
-    const deleteAccountPassword = document.getElementById('deleteAccountPassword') as HTMLInputElement | null;
-    const typed = String(deleteAccountConfirmText?.value || '').trim();
-    const currentPassword = String(deleteAccountPassword?.value || '').trim();
-
-    if (typed !== 'EXCLUIR') {
-        showToast('error', 'Erro', 'Digite EXCLUIR para confirmar');
-        return;
-    }
-    if (!currentPassword) {
-        showToast('error', 'Erro', 'Senha atual obrigatoria');
-        return;
-    }
-
     try {
-        await api.post('/api/account/delete', { currentPassword });
+        await api.post('/api/account/delete');
         closeModal('confirmDeleteAccountModal');
         showToast('success', 'Sucesso', 'Conta excluida');
 
@@ -1601,10 +1583,6 @@ async function confirmDeleteAccount() {
 }
 
 function cancelDeleteAccount() {
-    const deleteAccountConfirmText = document.getElementById('deleteAccountConfirmText') as HTMLInputElement | null;
-    const deleteAccountPassword = document.getElementById('deleteAccountPassword') as HTMLInputElement | null;
-    if (deleteAccountConfirmText) deleteAccountConfirmText.value = '';
-    if (deleteAccountPassword) deleteAccountPassword.value = '';
     closeModal('confirmDeleteAccountModal');
 }
 

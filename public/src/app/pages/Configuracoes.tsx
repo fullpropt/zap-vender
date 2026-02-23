@@ -812,15 +812,7 @@ export default function Configuracoes() {
                       <button className="modal-close" onClick={() => globals.cancelDeleteAccount?.()}>{'\u00D7'}</button>
                   </div>
                   <div className="modal-body">
-                      <p className="text-muted mb-4">Esta ação excluirá sua conta e desativará todos os usuários vinculados.</p>
-                      <div className="form-group">
-                          <label className="form-label required">Digite EXCLUIR para confirmar</label>
-                          <input type="text" className="form-input" id="deleteAccountConfirmText" placeholder="EXCLUIR" />
-                      </div>
-                      <div className="form-group">
-                          <label className="form-label required">Senha atual</label>
-                          <input type="password" className="form-input" id="deleteAccountPassword" />
-                      </div>
+                      <p className="text-muted mb-4">Esta ação excluirá sua conta e desativará todos os usuários vinculados. Deseja continuar?</p>
                   </div>
                   <div className="modal-footer">
                       <button className="btn btn-outline" onClick={() => globals.cancelDeleteAccount?.()}>Cancelar</button>
