@@ -72,6 +72,13 @@ class SenderAllocatorService {
         return normalized >= 0 ? normalized : fallback;
     }
 
+    toPositiveInt(value, fallback = 0) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return fallback;
+        const normalized = Math.floor(parsed);
+        return normalized > 0 ? normalized : fallback;
+    }
+
     normalizeSenderAccounts(rawAccounts = []) {
         if (!Array.isArray(rawAccounts)) return [];
 
@@ -124,7 +131,12 @@ class SenderAllocatorService {
 
     async listDispatchSessions(options = {}) {
         const includeDisabled = options.includeDisabled !== false;
-        const storedSessions = await WhatsAppSession.list({ includeDisabled: true });
+        const ownerUserId = this.toPositiveInt(options.ownerUserId, 0);
+        const hasOwnerScope = ownerUserId > 0;
+        const storedSessions = await WhatsAppSession.list({
+            includeDisabled: true,
+            created_by: hasOwnerScope ? ownerUserId : undefined
+        });
         const runtimeSessions = this.getRuntimeSessionsMap();
 
         const merged = [];
@@ -153,6 +165,7 @@ class SenderAllocatorService {
         for (const [sessionId, runtime] of runtimeSessions.entries()) {
             const normalizedSessionId = this.sanitizeSessionId(sessionId);
             if (!normalizedSessionId || seen.has(normalizedSessionId)) continue;
+            if (hasOwnerScope) continue;
             merged.push({
                 id: null,
                 session_id: normalizedSessionId,
@@ -167,6 +180,7 @@ class SenderAllocatorService {
                 cooldown_until: null,
                 qr_code: null,
                 last_connected_at: null,
+                created_by: null,
                 created_at: null,
                 updated_at: null
             });
@@ -300,6 +314,7 @@ class SenderAllocatorService {
         const campaignId = Number(options.campaignId);
         let senderAccounts = this.normalizeSenderAccounts(options.senderAccounts || []);
         const defaultSessionId = this.sanitizeSessionId(options.defaultSessionId || this.defaultSessionId);
+        const ownerUserId = this.toPositiveInt(options.ownerUserId, 0);
 
         if (!senderAccounts.length && Number.isFinite(campaignId) && campaignId > 0) {
             senderAccounts = this.normalizeSenderAccounts(
@@ -307,7 +322,10 @@ class SenderAllocatorService {
             );
         }
 
-        const sessions = await this.listDispatchSessions({ includeDisabled: true });
+        const sessions = await this.listDispatchSessions({
+            includeDisabled: true,
+            ownerUserId: ownerUserId || undefined
+        });
         const sessionsById = new Map(
             sessions.map((session) => [this.sanitizeSessionId(session.session_id), session])
         );
@@ -418,7 +436,8 @@ class SenderAllocatorService {
         let pool = await this.resolvePool({
             campaignId: options.campaignId,
             senderAccounts: options.senderAccounts,
-            defaultSessionId: options.defaultSessionId
+            defaultSessionId: options.defaultSessionId,
+            ownerUserId: options.ownerUserId
         });
 
         if (fixedSessionId) {
@@ -530,7 +549,8 @@ class SenderAllocatorService {
             sessionId: options.sessionId,
             fixedSessionId: options.fixedSessionId,
             defaultSessionId: options.defaultSessionId,
-            excludeSessionIds: options.excludeSessionIds
+            excludeSessionIds: options.excludeSessionIds,
+            ownerUserId: options.ownerUserId
         });
         const key = String(normalizedLeadId);
         return {

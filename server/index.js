@@ -193,6 +193,21 @@ function canAccessCreatedRecord(req, createdBy) {
     return Number(createdBy) === getRequesterUserId(req);
 }
 
+function getSocketRequesterUserId(socket) {
+    const userId = Number(socket?.user?.id || 0);
+    return Number.isInteger(userId) && userId > 0 ? userId : 0;
+}
+
+function getSocketRequesterRole(socket) {
+    return String(socket?.user?.role || '').trim().toLowerCase();
+}
+
+function getScopedSocketUserId(socket) {
+    const role = getSocketRequesterRole(socket);
+    const userId = getSocketRequesterUserId(socket);
+    return role === 'agent' && userId > 0 ? userId : null;
+}
+
 
 
 // Avisar se chaves de segurança não foram configuradas (não bloqueia startup para deploy funcionar)
@@ -1996,12 +2011,16 @@ async function persistWhatsappSession(sessionId, status, options = {}) {
         const qr_code = options.qr_code || null;
 
         const last_connected_at = options.last_connected_at || null;
+        const requestedOwnerUserId = Number(options.ownerUserId);
+        const ownerUserId = Number.isInteger(requestedOwnerUserId) && requestedOwnerUserId > 0
+            ? requestedOwnerUserId
+            : null;
 
         await run(`
 
-            INSERT INTO whatsapp_sessions (session_id, status, qr_code, last_connected_at, updated_at)
+            INSERT INTO whatsapp_sessions (session_id, status, qr_code, last_connected_at, created_by, updated_at)
 
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 
             ON CONFLICT(session_id) DO UPDATE SET
 
@@ -2011,9 +2030,11 @@ async function persistWhatsappSession(sessionId, status, options = {}) {
 
                 last_connected_at = excluded.last_connected_at,
 
+                created_by = COALESCE(whatsapp_sessions.created_by, excluded.created_by),
+
                 updated_at = CURRENT_TIMESTAMP
 
-        `, [sessionId, status, qr_code, last_connected_at]);
+        `, [sessionId, status, qr_code, last_connected_at, ownerUserId]);
 
     } catch (error) {
 
@@ -2367,11 +2388,18 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
     const clientSocket = socket || { emit: () => {} };
     const pairingPhone = normalizePairingPhoneNumber(options.pairingPhone || options.phoneNumber);
     const shouldRequestPairingCode = Boolean(options.requestPairingCode && pairingPhone);
+    const requestedOwnerUserId = Number(options.ownerUserId);
+    const ownerUserId = Number.isInteger(requestedOwnerUserId) && requestedOwnerUserId > 0
+        ? requestedOwnerUserId
+        : null;
 
     if (sessionInitLocks.has(sessionId)) {
         const existingSession = sessions.get(sessionId);
         if (existingSession && socket) {
             existingSession.clientSocket = socket;
+            if (!existingSession.ownerUserId && ownerUserId) {
+                existingSession.ownerUserId = ownerUserId;
+            }
         }
 
         clientSocket.emit('session-status', {
@@ -2434,7 +2462,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         console.log(`[${sessionId}] Criando sessão... (Tentativa ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
 
-        persistWhatsappSession(sessionId, 'connecting');
+        persistWhatsappSession(sessionId, 'connecting', { ownerUserId });
 
         
 
@@ -2547,7 +2575,8 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
             pairingPhone: null,
 
-            pairingRequestedAt: null
+            pairingRequestedAt: null,
+            ownerUserId
 
         });
 
@@ -2597,7 +2626,10 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     webhookService.trigger('whatsapp.qr_generated', { sessionId });
 
-                    persistWhatsappSession(sessionId, 'qr_pending', { qr_code: qrDataUrl });
+                    persistWhatsappSession(sessionId, 'qr_pending', {
+                        qr_code: qrDataUrl,
+                        ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || null
+                    });
 
                     
 
@@ -2655,7 +2687,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                 console.log(`[${sessionId}] Conexão fechada. Status: ${statusCode}`);
 
-                persistWhatsappSession(sessionId, 'disconnected');
+                persistWhatsappSession(sessionId, 'disconnected', {
+                    ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || null
+                });
 
                 
 
@@ -2742,7 +2776,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     clientSocket.emit('disconnected', { sessionId, reason: 'logged_out' });
 
-                    persistWhatsappSession(sessionId, 'disconnected');
+                    persistWhatsappSession(sessionId, 'disconnected', {
+                        ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || null
+                    });
 
                     
 
@@ -2816,7 +2852,10 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     io.emit('whatsapp-status', { sessionId, status: 'connected', user: session.user });
 
-                    persistWhatsappSession(sessionId, 'connected', { last_connected_at: new Date().toISOString() });
+                    persistWhatsappSession(sessionId, 'connected', {
+                        last_connected_at: new Date().toISOString(),
+                        ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || null
+                    });
 
                     
 
@@ -5208,7 +5247,8 @@ function sessionExists(sessionId) {
                 leadId: lead?.id,
                 campaignId: message?.campaign_id || null,
                 sessionId: message?.session_id || null,
-                strategy: 'round_robin'
+                strategy: 'round_robin',
+                ownerUserId: Number(lead?.assigned_to || 0) > 0 ? Number(lead?.assigned_to) : undefined
             });
             return {
                 sessionId: allocation?.sessionId || null,
@@ -5249,39 +5289,66 @@ io.on('connection', (socket) => {
 
     socket.on('check-session', async ({ sessionId }) => {
 
-        const session = sessions.get(sessionId);
+        const normalizedSessionId = sanitizeSessionId(sessionId);
+        if (!normalizedSessionId) {
+            socket.emit('session-status', { status: 'disconnected', sessionId: null });
+            return;
+        }
+
+        const scopedUserId = getScopedSocketUserId(socket);
+        if (scopedUserId) {
+            const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId);
+            const storedOwnerUserId = Number(storedSession?.created_by || 0);
+            if (!(storedOwnerUserId > 0 && storedOwnerUserId === scopedUserId)) {
+                socket.emit('session-status', { status: 'disconnected', sessionId: normalizedSessionId });
+                return;
+            }
+        }
+
+        const session = sessions.get(normalizedSessionId);
 
         
         if (session) {
             session.clientSocket = socket;
             socket.emit('session-status', {
                 status: session.isConnected ? 'connected' : 'reconnecting',
-                sessionId,
+                sessionId: normalizedSessionId,
                 user: session.user
             });
             return;
         }
 
-        if (sessionExists(sessionId)) {
-            socket.emit('session-status', { status: 'reconnecting', sessionId });
-            await createSession(sessionId, socket);
+        if (sessionExists(normalizedSessionId)) {
+            socket.emit('session-status', { status: 'reconnecting', sessionId: normalizedSessionId });
+            await createSession(normalizedSessionId, socket, 0, {
+                ownerUserId: scopedUserId || undefined
+            });
             return;
         }
 
-        socket.emit('session-status', { status: 'disconnected', sessionId });
+        socket.emit('session-status', { status: 'disconnected', sessionId: normalizedSessionId });
 
     });
 
     
 
     socket.on('start-session', async (payload = {}) => {
-        const sessionId = payload.sessionId;
+        const sessionId = sanitizeSessionId(payload.sessionId);
         const pairingPhone = normalizePairingPhoneNumber(payload.phoneNumber);
         const shouldRequestPairingCode = Boolean(payload.requestPairingCode && pairingPhone);
         if (!sessionId) {
             socket.emit('error', { message: 'sessionId e obrigatorio', code: 'SESSION_ID_REQUIRED' });
             return;
         }
+
+        const scopedUserId = getScopedSocketUserId(socket);
+        const storedSession = await WhatsAppSession.findBySessionId(sessionId);
+        const storedOwnerUserId = Number(storedSession?.created_by || 0);
+        if (scopedUserId && storedOwnerUserId > 0 && storedOwnerUserId !== scopedUserId) {
+            socket.emit('error', { message: 'Sem permissao para acessar esta conta', code: 'SESSION_FORBIDDEN' });
+            return;
+        }
+        const resolvedOwnerUserId = scopedUserId || (storedOwnerUserId > 0 ? storedOwnerUserId : null);
 
         const existingSession = sessions.get(sessionId);
 
@@ -5296,7 +5363,8 @@ io.on('connection', (socket) => {
             if (!existingSession.isConnected && !existingSession.reconnecting && !sessionInitLocks.has(sessionId)) {
                 await createSession(sessionId, socket, 0, {
                     requestPairingCode: shouldRequestPairingCode,
-                    pairingPhone
+                    pairingPhone,
+                    ownerUserId: resolvedOwnerUserId || undefined
                 });
                 pairingHandledByCreate = shouldRequestPairingCode;
             }
@@ -5308,13 +5376,14 @@ io.on('connection', (socket) => {
 
         await createSession(sessionId, socket, 0, {
             requestPairingCode: shouldRequestPairingCode,
-            pairingPhone
+            pairingPhone,
+            ownerUserId: resolvedOwnerUserId || undefined
         });
 
     });
 
     socket.on('request-pairing-code', async (payload = {}) => {
-        const sessionId = payload.sessionId;
+        const sessionId = sanitizeSessionId(payload.sessionId);
         const pairingPhone = normalizePairingPhoneNumber(payload.phoneNumber);
         if (!sessionId) {
             socket.emit('error', { message: 'sessionId e obrigatorio', code: 'SESSION_ID_REQUIRED' });
@@ -5328,6 +5397,15 @@ io.on('connection', (socket) => {
             return;
         }
 
+        const scopedUserId = getScopedSocketUserId(socket);
+        const storedSession = await WhatsAppSession.findBySessionId(sessionId);
+        const storedOwnerUserId = Number(storedSession?.created_by || 0);
+        if (scopedUserId && storedOwnerUserId > 0 && storedOwnerUserId !== scopedUserId) {
+            socket.emit('error', { message: 'Sem permissao para acessar esta conta', code: 'SESSION_FORBIDDEN' });
+            return;
+        }
+        const resolvedOwnerUserId = scopedUserId || (storedOwnerUserId > 0 ? storedOwnerUserId : null);
+
         const existingSession = sessions.get(sessionId);
         if (existingSession) {
             existingSession.clientSocket = socket;
@@ -5335,7 +5413,8 @@ io.on('connection', (socket) => {
             if (!existingSession.isConnected && !existingSession.reconnecting && !sessionInitLocks.has(sessionId)) {
                 await createSession(sessionId, socket, 0, {
                     requestPairingCode: true,
-                    pairingPhone
+                    pairingPhone,
+                    ownerUserId: resolvedOwnerUserId || undefined
                 });
                 pairingHandledByCreate = true;
             }
@@ -5347,7 +5426,8 @@ io.on('connection', (socket) => {
 
         await createSession(sessionId, socket, 0, {
             requestPairingCode: true,
-            pairingPhone
+            pairingPhone,
+            ownerUserId: resolvedOwnerUserId || undefined
         });
     });
 
@@ -5588,15 +5668,31 @@ io.on('connection', (socket) => {
 
     socket.on('logout', async ({ sessionId }) => {
 
-        const session = sessions.get(sessionId);
+        const normalizedSessionId = sanitizeSessionId(sessionId);
+        if (!normalizedSessionId) {
+            socket.emit('error', { message: 'sessionId e obrigatorio', code: 'SESSION_ID_REQUIRED' });
+            return;
+        }
+
+        const scopedUserId = getScopedSocketUserId(socket);
+        if (scopedUserId) {
+            const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId);
+            const storedOwnerUserId = Number(storedSession?.created_by || 0);
+            if (!(storedOwnerUserId > 0 && storedOwnerUserId === scopedUserId)) {
+                socket.emit('error', { message: 'Sem permissao para remover esta conta', code: 'SESSION_FORBIDDEN' });
+                return;
+            }
+        }
+
+        const session = sessions.get(normalizedSessionId);
 
         
 
-        if (qrTimeouts.has(sessionId)) {
+        if (qrTimeouts.has(normalizedSessionId)) {
 
-            clearTimeout(qrTimeouts.get(sessionId));
+            clearTimeout(qrTimeouts.get(normalizedSessionId));
 
-            qrTimeouts.delete(sessionId);
+            qrTimeouts.delete(normalizedSessionId);
 
         }
 
@@ -5612,13 +5708,13 @@ io.on('connection', (socket) => {
 
             
 
-            sessions.delete(sessionId);
+            sessions.delete(normalizedSessionId);
 
-            reconnectAttempts.delete(sessionId);
+            reconnectAttempts.delete(normalizedSessionId);
 
             
 
-            const sessionPath = path.join(SESSIONS_DIR, sessionId);
+            const sessionPath = path.join(SESSIONS_DIR, normalizedSessionId);
 
             if (fs.existsSync(sessionPath)) {
 
@@ -5630,9 +5726,9 @@ io.on('connection', (socket) => {
 
         
 
-        socket.emit('disconnected', { sessionId });
+        socket.emit('disconnected', { sessionId: normalizedSessionId });
 
-        io.emit('whatsapp-status', { sessionId, status: 'disconnected' });
+        io.emit('whatsapp-status', { sessionId: normalizedSessionId, status: 'disconnected' });
 
     });
 
@@ -5683,7 +5779,11 @@ app.get('/api/whatsapp/status', optionalAuth, (req, res) => {
 app.get('/api/whatsapp/sessions', authenticate, async (req, res) => {
     try {
         const includeDisabled = String(req.query?.includeDisabled ?? 'true').toLowerCase() !== 'false';
-        const sessionsList = await senderAllocatorService.listDispatchSessions({ includeDisabled });
+        const scopedUserId = getScopedUserId(req);
+        const sessionsList = await senderAllocatorService.listDispatchSessions({
+            includeDisabled,
+            ownerUserId: scopedUserId || undefined
+        });
         res.json({ success: true, sessions: sessionsList });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -5697,13 +5797,23 @@ app.put('/api/whatsapp/sessions/:sessionId', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'sessionId invalido' });
         }
 
+        const scopedUserId = getScopedUserId(req);
+        if (scopedUserId) {
+            const existingSession = await WhatsAppSession.findBySessionId(sessionId);
+            const ownerUserId = Number(existingSession?.created_by || 0);
+            if (ownerUserId > 0 && ownerUserId !== scopedUserId) {
+                return res.status(403).json({ error: 'Sem permissao para editar esta conta' });
+            }
+        }
+
         const updated = await WhatsAppSession.upsertDispatchConfig(sessionId, {
             name: req.body?.name,
             campaign_enabled: req.body?.campaign_enabled,
             daily_limit: req.body?.daily_limit,
             dispatch_weight: req.body?.dispatch_weight,
             hourly_limit: req.body?.hourly_limit,
-            cooldown_until: req.body?.cooldown_until
+            cooldown_until: req.body?.cooldown_until,
+            created_by: scopedUserId || undefined
         });
 
         res.json({ success: true, session: updated });
@@ -5719,8 +5829,19 @@ app.delete('/api/whatsapp/sessions/:sessionId', authenticate, async (req, res) =
             return res.status(400).json({ error: 'sessionId invalido' });
         }
 
+        const scopedUserId = getScopedUserId(req);
+        if (scopedUserId) {
+            const existingSession = await WhatsAppSession.findBySessionId(sessionId);
+            const ownerUserId = Number(existingSession?.created_by || 0);
+            if (!(ownerUserId > 0 && ownerUserId === scopedUserId)) {
+                return res.status(404).json({ error: 'Conta nao encontrada' });
+            }
+        }
+
         await whatsappService.logoutSession(sessionId, SESSIONS_DIR);
-        await WhatsAppSession.deleteBySessionId(sessionId);
+        await WhatsAppSession.deleteBySessionId(sessionId, {
+            created_by: scopedUserId || undefined
+        });
 
         io.emit('whatsapp-status', { sessionId, status: 'disconnected' });
         res.json({ success: true, session_id: sessionId });
@@ -5736,6 +5857,14 @@ app.post('/api/whatsapp/disconnect', authenticate, async (req, res) => {
     try {
 
         const sessionId = resolveSessionIdOrDefault(req.body?.sessionId || req.query?.sessionId);
+        const scopedUserId = getScopedUserId(req);
+        if (scopedUserId) {
+            const existingSession = await WhatsAppSession.findBySessionId(sessionId);
+            const ownerUserId = Number(existingSession?.created_by || 0);
+            if (!(ownerUserId > 0 && ownerUserId === scopedUserId)) {
+                return res.status(404).json({ error: 'Conta nao encontrada' });
+            }
+        }
 
         await whatsappService.logoutSession(sessionId, SESSIONS_DIR);
 
@@ -7499,10 +7628,12 @@ app.post('/api/queue/add', authenticate, async (req, res) => {
 
     let resolvedSessionId = sanitizeSessionId(sessionId);
     if (!resolvedSessionId) {
+        const scopedUserId = getScopedUserId(req);
         const allocation = await senderAllocatorService.allocateForSingleLead({
             leadId,
             campaignId,
-            strategy: 'round_robin'
+            strategy: 'round_robin',
+            ownerUserId: scopedUserId || undefined
         });
         resolvedSessionId = sanitizeSessionId(allocation?.sessionId);
     }
@@ -7582,12 +7713,14 @@ app.post('/api/queue/bulk', authenticate, async (req, res) => {
 
     let distribution = { strategyUsed: fixedSessionId ? 'single' : distributionStrategy, summary: {} };
     if (!hasSessionAssignments) {
+        const scopedUserId = getScopedUserId(req);
         const allocationPlan = await senderAllocatorService.buildDistributionPlan({
             leadIds: normalizedLeadIds,
             campaignId: options.campaignId || req.body?.campaignId || null,
             senderAccounts,
             strategy: distributionStrategy,
-            sessionId: fixedSessionId || null
+            sessionId: fixedSessionId || null,
+            ownerUserId: scopedUserId || undefined
         });
         options.sessionAssignments = allocationPlan.assignmentsByLead;
         options.assignmentMetaByLead = allocationPlan.assignmentMetaByLead;
@@ -8189,7 +8322,8 @@ async function queueCampaignMessages(campaign, options = {}) {
         leadIds,
         campaignId: campaign.id,
         senderAccounts,
-        strategy: distributionStrategy
+        strategy: distributionStrategy,
+        ownerUserId: options.ownerUserId
     });
     const sessionAssignments = distributionPlan.assignmentsByLead || {};
     const assignmentMetaByLead = distributionPlan.assignmentMetaByLead || {};
@@ -8421,8 +8555,10 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
         let queueResult = { queued: 0, recipients: 0 };
 
         if (campaign?.status === 'active') {
+            const scopedUserId = getScopedUserId(req);
             queueResult = await queueCampaignMessages(campaign, {
-                assignedTo: getScopedUserId(req) || undefined
+                assignedTo: scopedUserId || undefined,
+                ownerUserId: scopedUserId || undefined
             });
             campaign = await attachCampaignSenderAccounts(await Campaign.findById(result.id));
         }
@@ -8473,8 +8609,10 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
         let queueResult = { queued: 0, recipients: 0 };
 
         if (shouldQueue && updatedCampaign) {
+            const scopedUserId = getScopedUserId(req);
             queueResult = await queueCampaignMessages(updatedCampaign, {
-                assignedTo: getScopedUserId(req) || undefined
+                assignedTo: scopedUserId || undefined,
+                ownerUserId: scopedUserId || undefined
             });
             updatedCampaign = await attachCampaignSenderAccounts(await Campaign.findById(req.params.id));
         }

@@ -284,6 +284,13 @@ function parseNonNegativeInteger(value, fallback = 0) {
     return normalized >= 0 ? normalized : fallback;
 }
 
+function parsePositiveInteger(value, fallback = null) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    const normalized = Math.floor(num);
+    return normalized > 0 ? normalized : fallback;
+}
+
 function normalizeBooleanFlag(value, fallback = 1) {
     if (typeof value === 'boolean') return value ? 1 : 0;
     if (typeof value === 'number') return value > 0 ? 1 : 0;
@@ -1086,6 +1093,19 @@ const CampaignSenderAccount = {
 const WhatsAppSession = {
     async list(options = {}) {
         const includeDisabled = options.includeDisabled !== false;
+        const createdBy = parsePositiveInteger(options.created_by);
+        const filters = [];
+        const params = [];
+
+        if (createdBy) {
+            filters.push('created_by = ?');
+            params.push(createdBy);
+        }
+
+        if (!includeDisabled) {
+            filters.push('COALESCE(campaign_enabled, 1) = 1');
+        }
+
         const rows = await query(`
             SELECT
                 id,
@@ -1100,24 +1120,34 @@ const WhatsAppSession = {
                 cooldown_until,
                 qr_code,
                 last_connected_at,
+                created_by,
                 created_at,
                 updated_at
             FROM whatsapp_sessions
-            ${includeDisabled ? '' : 'WHERE COALESCE(campaign_enabled, 1) = 1'}
+            ${filters.length ? `WHERE ${filters.join(' AND ')}` : ''}
             ORDER BY updated_at DESC, id DESC
-        `);
+        `, params);
         return rows.map((row) => ({
             ...row,
             campaign_enabled: normalizeBooleanFlag(row.campaign_enabled, 1),
             daily_limit: parseNonNegativeInteger(row.daily_limit, 0),
             dispatch_weight: Math.max(1, parseNonNegativeInteger(row.dispatch_weight, 1) || 1),
-            hourly_limit: parseNonNegativeInteger(row.hourly_limit, 0)
+            hourly_limit: parseNonNegativeInteger(row.hourly_limit, 0),
+            created_by: parsePositiveInteger(row.created_by)
         }));
     },
 
-    async findBySessionId(sessionId) {
+    async findBySessionId(sessionId, options = {}) {
         const normalizedSessionId = String(sessionId || '').trim();
         if (!normalizedSessionId) return null;
+        const createdBy = parsePositiveInteger(options.created_by);
+        const params = [normalizedSessionId];
+        let ownerFilter = '';
+        if (createdBy) {
+            ownerFilter = ' AND created_by = ?';
+            params.push(createdBy);
+        }
+
         const row = await queryOne(`
             SELECT
                 id,
@@ -1132,11 +1162,13 @@ const WhatsAppSession = {
                 cooldown_until,
                 qr_code,
                 last_connected_at,
+                created_by,
                 created_at,
                 updated_at
             FROM whatsapp_sessions
             WHERE session_id = ?
-        `, [normalizedSessionId]);
+            ${ownerFilter}
+        `, params);
 
         if (!row) return null;
 
@@ -1145,7 +1177,8 @@ const WhatsAppSession = {
             campaign_enabled: normalizeBooleanFlag(row.campaign_enabled, 1),
             daily_limit: parseNonNegativeInteger(row.daily_limit, 0),
             dispatch_weight: Math.max(1, parseNonNegativeInteger(row.dispatch_weight, 1) || 1),
-            hourly_limit: parseNonNegativeInteger(row.hourly_limit, 0)
+            hourly_limit: parseNonNegativeInteger(row.hourly_limit, 0),
+            created_by: parsePositiveInteger(row.created_by)
         };
     },
 
@@ -1156,6 +1189,12 @@ const WhatsAppSession = {
         }
 
         const existing = await this.findBySessionId(normalizedSessionId);
+        const existingCreatedBy = parsePositiveInteger(existing?.created_by);
+        const requestedCreatedBy = parsePositiveInteger(data.created_by);
+        if (existingCreatedBy && requestedCreatedBy && existingCreatedBy !== requestedCreatedBy) {
+            throw new Error('Sem permissao para atualizar esta sessao');
+        }
+        const resolvedCreatedBy = existingCreatedBy || requestedCreatedBy || null;
         const resolvedName = Object.prototype.hasOwnProperty.call(data, 'name')
             ? (data.name ? String(data.name).trim().slice(0, 120) : null)
             : (existing?.name || null);
@@ -1177,9 +1216,9 @@ const WhatsAppSession = {
 
         await run(`
             INSERT INTO whatsapp_sessions (
-                session_id, name, status, campaign_enabled, daily_limit, dispatch_weight, hourly_limit, cooldown_until, updated_at
+                session_id, name, status, campaign_enabled, daily_limit, dispatch_weight, hourly_limit, cooldown_until, created_by, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT (session_id) DO UPDATE SET
                 name = EXCLUDED.name,
                 campaign_enabled = EXCLUDED.campaign_enabled,
@@ -1187,6 +1226,7 @@ const WhatsAppSession = {
                 dispatch_weight = EXCLUDED.dispatch_weight,
                 hourly_limit = EXCLUDED.hourly_limit,
                 cooldown_until = EXCLUDED.cooldown_until,
+                created_by = COALESCE(whatsapp_sessions.created_by, EXCLUDED.created_by),
                 updated_at = CURRENT_TIMESTAMP
         `, [
             normalizedSessionId,
@@ -1196,16 +1236,26 @@ const WhatsAppSession = {
             dailyLimit,
             dispatchWeight,
             hourlyLimit,
-            cooldownUntil
+            cooldownUntil,
+            resolvedCreatedBy
         ]);
 
         return this.findBySessionId(normalizedSessionId);
     },
 
-    async deleteBySessionId(sessionId) {
+    async deleteBySessionId(sessionId, options = {}) {
         const normalizedSessionId = String(sessionId || '').trim();
         if (!normalizedSessionId) {
             throw new Error('session_id e obrigatorio');
+        }
+
+        const requesterCreatedBy = parsePositiveInteger(options.created_by);
+        if (requesterCreatedBy) {
+            const existing = await this.findBySessionId(normalizedSessionId);
+            const owner = parsePositiveInteger(existing?.created_by);
+            if (!existing || owner !== requesterCreatedBy) {
+                throw new Error('Sem permissao para remover esta sessao');
+            }
         }
 
         await run('DELETE FROM whatsapp_sessions WHERE session_id = ?', [normalizedSessionId]);
