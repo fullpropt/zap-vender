@@ -4,7 +4,7 @@ type Settings = {
     company?: { name?: string; cnpj?: string; phone?: string; email?: string };
     funnel?: Array<{ name?: string; color?: string; description?: string }>;
     whatsapp?: { interval?: string; messagesPerHour?: string; workStart?: string; workEnd?: string };
-    businessHours?: { enabled?: boolean; start?: string; end?: string; autoReplyMessage?: string };
+    businessHours?: { enabled?: boolean; start?: string; end?: string };
 };
 
 type TemplateItem = {
@@ -71,8 +71,7 @@ const DEFAULT_CONTACT_FIELDS: ContactField[] = [
 const DEFAULT_BUSINESS_HOURS_SETTINGS = {
     enabled: false,
     start: '08:00',
-    end: '18:00',
-    autoReplyMessage: 'Ol\u00E1! Nosso atendimento est\u00E1 fora do hor\u00E1rio de funcionamento no momento. Retornaremos assim que estivermos online.'
+    end: '18:00'
 };
 
 function onReady(callback: () => void) {
@@ -221,36 +220,31 @@ function parseBooleanSetting(value: unknown, fallback = false) {
     return fallback;
 }
 
-function applyBusinessHoursSettings(values: Partial<{ enabled: boolean; start: string; end: string; autoReplyMessage: string }>) {
+function applyBusinessHoursSettings(values: Partial<{ enabled: boolean; start: string; end: string }>) {
     const enabledInput = document.getElementById('businessHoursEnabled') as HTMLInputElement | null;
     const startInput = document.getElementById('businessHoursStart') as HTMLInputElement | null;
     const endInput = document.getElementById('businessHoursEnd') as HTMLInputElement | null;
-    const messageInput = document.getElementById('outsideHoursAutoReplyMessage') as HTMLTextAreaElement | null;
 
     const normalized = {
         enabled: parseBooleanSetting(values?.enabled, DEFAULT_BUSINESS_HOURS_SETTINGS.enabled),
         start: normalizeBusinessHoursTime(values?.start, DEFAULT_BUSINESS_HOURS_SETTINGS.start),
-        end: normalizeBusinessHoursTime(values?.end, DEFAULT_BUSINESS_HOURS_SETTINGS.end),
-        autoReplyMessage: String(values?.autoReplyMessage || DEFAULT_BUSINESS_HOURS_SETTINGS.autoReplyMessage).trim() || DEFAULT_BUSINESS_HOURS_SETTINGS.autoReplyMessage
+        end: normalizeBusinessHoursTime(values?.end, DEFAULT_BUSINESS_HOURS_SETTINGS.end)
     };
 
     if (enabledInput) enabledInput.checked = normalized.enabled;
     if (startInput) startInput.value = normalized.start;
     if (endInput) endInput.value = normalized.end;
-    if (messageInput) messageInput.value = normalized.autoReplyMessage;
 }
 
 function readBusinessHoursSettingsFromForm() {
     const enabledInput = document.getElementById('businessHoursEnabled') as HTMLInputElement | null;
     const startInput = document.getElementById('businessHoursStart') as HTMLInputElement | null;
     const endInput = document.getElementById('businessHoursEnd') as HTMLInputElement | null;
-    const messageInput = document.getElementById('outsideHoursAutoReplyMessage') as HTMLTextAreaElement | null;
 
     return {
         enabled: Boolean(enabledInput?.checked),
         start: normalizeBusinessHoursTime(startInput?.value, DEFAULT_BUSINESS_HOURS_SETTINGS.start),
-        end: normalizeBusinessHoursTime(endInput?.value, DEFAULT_BUSINESS_HOURS_SETTINGS.end),
-        autoReplyMessage: String(messageInput?.value || '').trim() || DEFAULT_BUSINESS_HOURS_SETTINGS.autoReplyMessage
+        end: normalizeBusinessHoursTime(endInput?.value, DEFAULT_BUSINESS_HOURS_SETTINGS.end)
     };
 }
 
@@ -275,8 +269,7 @@ async function loadSettings() {
         const businessHours = {
             enabled: parseBooleanSetting(serverSettings.business_hours_enabled, localSettings.businessHours?.enabled ?? DEFAULT_BUSINESS_HOURS_SETTINGS.enabled),
             start: normalizeBusinessHoursTime(serverSettings.business_hours_start, localSettings.businessHours?.start || DEFAULT_BUSINESS_HOURS_SETTINGS.start),
-            end: normalizeBusinessHoursTime(serverSettings.business_hours_end, localSettings.businessHours?.end || DEFAULT_BUSINESS_HOURS_SETTINGS.end),
-            autoReplyMessage: String(serverSettings.business_hours_auto_reply_message || localSettings.businessHours?.autoReplyMessage || DEFAULT_BUSINESS_HOURS_SETTINGS.autoReplyMessage).trim() || DEFAULT_BUSINESS_HOURS_SETTINGS.autoReplyMessage
+            end: normalizeBusinessHoursTime(serverSettings.business_hours_end, localSettings.businessHours?.end || DEFAULT_BUSINESS_HOURS_SETTINGS.end)
         };
 
         if (hasCompanySettings) {
@@ -330,8 +323,7 @@ async function saveBusinessHoursSettings() {
         await api.put('/api/settings', {
             business_hours_enabled: businessHours.enabled,
             business_hours_start: businessHours.start,
-            business_hours_end: businessHours.end,
-            business_hours_auto_reply_message: businessHours.autoReplyMessage
+            business_hours_end: businessHours.end
         });
         showToast('success', 'Sucesso', 'Horários atualizados!');
     } catch (error) {
