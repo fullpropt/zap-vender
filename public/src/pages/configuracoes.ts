@@ -121,6 +121,8 @@ function initConfiguracoes() {
             panel.classList.add('active');
         }
     }
+    clearBusinessHoursMessageField();
+    setTimeout(clearBusinessHoursMessageField, 250);
 }
 
 onReady(initConfiguracoes);
@@ -135,6 +137,9 @@ function showPanel(panelId: string) {
         refreshWhatsAppAccounts();
     } else if (panelId === 'users') {
         loadUsers();
+    } else if (panelId === 'hours') {
+        clearBusinessHoursMessageField();
+        setTimeout(clearBusinessHoursMessageField, 150);
     }
 }
 
@@ -222,7 +227,10 @@ function parseBooleanSetting(value: unknown, fallback = false) {
 
 function clearBusinessHoursMessageField() {
     const messageInput = document.getElementById('outsideHoursAutoReplyMessage') as HTMLTextAreaElement | null;
-    if (messageInput) messageInput.value = '';
+    if (!messageInput) return;
+    messageInput.value = '';
+    messageInput.defaultValue = '';
+    messageInput.textContent = '';
 }
 
 function applyBusinessHoursSettings(values: Partial<{ enabled: boolean; start: string; end: string }>) {
