@@ -519,6 +519,7 @@ const sessionInitLocks = new Set();
 const pendingCiphertextRecoveries = new Map();
 const pendingLidResolutionRecoveries = new Map();
 const recoveredFlowMessageIds = new Map();
+const reconnectInFlight = new Set();
 const FLOW_RECOVERY_DELAY_MS = parseInt(process.env.FLOW_RECOVERY_DELAY_MS || '', 10) || 2500;
 const FLOW_RECOVERY_WINDOW_MS = parseInt(process.env.FLOW_RECOVERY_WINDOW_MS || '', 10) || (5 * 60 * 1000);
 const FLOW_RECOVERY_TRACKER_LIMIT = 4000;
@@ -531,6 +532,23 @@ const BAILEYS_CIPHERTEXT_STUB_TYPE = 1;
 
 senderAllocatorService.setRuntimeSessionsGetter(() => sessions);
 senderAllocatorService.setDefaultSessionId(DEFAULT_WHATSAPP_SESSION_ID);
+
+function stopSessionHealthMonitor(session) {
+    if (!session) return;
+    if (session.healthMonitor && typeof session.healthMonitor.stop === 'function') {
+        try {
+            session.healthMonitor.stop();
+        } catch (error) {
+            // ignore monitor shutdown errors
+        }
+    }
+    session.healthMonitor = null;
+}
+
+function isActiveSessionSocket(sessionId, sock) {
+    const session = sessions.get(sessionId);
+    return Boolean(session && session.socket === sock);
+}
 
 
 
@@ -2413,7 +2431,24 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
     const sessionPath = path.join(SESSIONS_DIR, sessionId);
 
-    
+    const previousSession = sessions.get(sessionId);
+    if (previousSession?.socket) {
+        stopSessionHealthMonitor(previousSession);
+        try {
+            if (typeof previousSession.socket.ev?.removeAllListeners === 'function') {
+                previousSession.socket.ev.removeAllListeners();
+            }
+        } catch (error) {
+            // ignore stale listener cleanup failures
+        }
+        try {
+            if (typeof previousSession.socket.end === 'function') {
+                await previousSession.socket.end(new Error('session_replaced'));
+            }
+        } catch (error) {
+            // ignore stale socket shutdown failures
+        }
+    }
 
     if (qrTimeouts.has(sessionId)) {
 
@@ -2581,6 +2616,10 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
             const { connection, lastDisconnect, qr } = update;
 
             const session = sessions.get(sessionId);
+            if (!session || session.socket !== sock) {
+                return;
+            }
+            const activeClientSocket = session.clientSocket || clientSocket;
 
             
 
@@ -2604,7 +2643,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     
 
-                    clientSocket.emit('qr', { qr: qrDataUrl, sessionId, expiresIn: 30 });
+                    activeClientSocket.emit('qr', { qr: qrDataUrl, sessionId, expiresIn: 30 });
 
                     io.emit('whatsapp-qr', { qr: qrDataUrl, sessionId });
 
@@ -2628,7 +2667,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                         if (currentSession && !currentSession.isConnected) {
 
-                            clientSocket.emit('qr-expired', { sessionId });
+                            activeClientSocket.emit('qr-expired', { sessionId });
 
                         }
 
@@ -2644,7 +2683,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     console.error(`[${sessionId}] ? Erro ao gerar QR:`, qrError.message);
 
-                    clientSocket.emit('error', { message: 'Erro ao gerar QR Code' });
+                    activeClientSocket.emit('error', { message: 'Erro ao gerar QR Code' });
 
                 }
 
@@ -2667,6 +2706,8 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
 
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                session.isConnected = false;
+                stopSessionHealthMonitor(session);
 
                 
 
@@ -2700,75 +2741,59 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                 
 
-                if (shouldReconnect) {
+                if (reconnectInFlight.has(sessionId)) {
+                    console.log(`[${sessionId}] Reconexao ja em andamento, ignorando evento de fechamento duplicado.`);
+                    return;
+                }
 
-                    const currentAttempt = reconnectAttempts.get(sessionId) || 0;
+                reconnectInFlight.add(sessionId);
+                try {
+                    if (shouldReconnect) {
 
-                    
+                        const currentAttempt = reconnectAttempts.get(sessionId) || 0;
 
-                    if (currentAttempt < MAX_RECONNECT_ATTEMPTS) {
+                        if (currentAttempt < MAX_RECONNECT_ATTEMPTS) {
 
-                        reconnectAttempts.set(sessionId, currentAttempt + 1);
-
-                        
-
-                        if (session) {
+                            reconnectAttempts.set(sessionId, currentAttempt + 1);
 
                             session.reconnecting = true;
-
-                            session.isConnected = false;
-
                             if (!session.pairingMode) {
                                 session.pairingCode = null;
                                 session.pairingPhone = null;
                                 session.pairingRequestedAt = null;
                             }
 
+                            activeClientSocket.emit('reconnecting', { sessionId, attempt: currentAttempt + 1 });
+                            io.emit('whatsapp-status', { sessionId, status: 'reconnecting' });
+
+                            await delay(RECONNECT_DELAY);
+
+                            const reconnectOptions = session?.pairingMode
+                                ? { ...options, requestPairingCode: false }
+                                : options;
+                            await createSession(sessionId, activeClientSocket, currentAttempt + 1, reconnectOptions);
+
+                        } else {
+
+                            sessions.delete(sessionId);
+                            reconnectAttempts.delete(sessionId);
+                            activeClientSocket.emit('reconnect-failed', { sessionId });
+
                         }
-
-                        
-
-                        clientSocket.emit('reconnecting', { sessionId, attempt: currentAttempt + 1 });
-
-                        io.emit('whatsapp-status', { sessionId, status: 'reconnecting' });
-
-                        
-
-                        await delay(RECONNECT_DELAY);
-
-                        const reconnectOptions = session?.pairingMode
-                            ? { ...options, requestPairingCode: false }
-                            : options;
-                        await createSession(sessionId, clientSocket, currentAttempt + 1, reconnectOptions);
 
                     } else {
 
                         sessions.delete(sessionId);
-
                         reconnectAttempts.delete(sessionId);
+                        activeClientSocket.emit('disconnected', { sessionId, reason: 'logged_out' });
+                        persistWhatsappSession(sessionId, 'disconnected');
 
-                        clientSocket.emit('reconnect-failed', { sessionId });
-
+                        if (fs.existsSync(sessionPath)) {
+                            fs.rmSync(sessionPath, { recursive: true, force: true });
+                        }
                     }
-
-                } else {
-
-                    sessions.delete(sessionId);
-
-                    reconnectAttempts.delete(sessionId);
-
-                    clientSocket.emit('disconnected', { sessionId, reason: 'logged_out' });
-
-                    persistWhatsappSession(sessionId, 'disconnected');
-
-                    
-
-                    if (fs.existsSync(sessionPath)) {
-
-                        fs.rmSync(sessionPath, { recursive: true, force: true });
-
-                    }
-
+                } finally {
+                    reconnectInFlight.delete(sessionId);
                 }
 
             }
@@ -2777,7 +2802,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
             if (connection === 'connecting') {
 
-                clientSocket.emit('connecting', { sessionId });
+                activeClientSocket.emit('connecting', { sessionId });
 
                 io.emit('whatsapp-status', { sessionId, status: 'connecting' });
 
@@ -2829,7 +2854,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     
 
-                    clientSocket.emit('connected', { sessionId, user: session.user });
+                    activeClientSocket.emit('connected', { sessionId, user: session.user });
 
                     io.emit('whatsapp-status', { sessionId, status: 'connected', user: session.user });
 
@@ -2859,8 +2884,8 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     // Criar monitor de saúde da conexão
 
+                    stopSessionHealthMonitor(session);
                     const healthMonitor = connectionFixer.createHealthMonitor(sock, sessionId);
-
                     session.healthMonitor = healthMonitor;
 
                 }
@@ -2878,6 +2903,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
         // Receber mensagens
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
 
             if (type === 'notify' || type === 'append') {
 
@@ -2911,6 +2939,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
         // Status de mensagens
 
         sock.ev.on('messages.update', async (updates) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
 
             for (const update of updates) {
                 const patchedMessage = update?.update?.message;
@@ -2993,6 +3024,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
 
         sock.ev.on('contacts.set', async (payload) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
 
             const contacts = payload?.contacts || [];
             const sessionPhone = getSessionPhone(sessionId);
@@ -3008,6 +3042,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
 
         sock.ev.on('contacts.upsert', async (contacts) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
 
             const list = Array.isArray(contacts) ? contacts : [contacts];
             const sessionPhone = getSessionPhone(sessionId);
@@ -3021,6 +3058,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
         });
 
         sock.ev.on('chats.phoneNumberShare', async (payload) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
             try {
                 const mappedUserJid = registerJidAlias(
                     payload?.lid,
@@ -3053,6 +3093,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
         // Sincronizar lista de chats/contatos
 
         sock.ev.on('chats.set', async (payload) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
 
             try {
 
@@ -3069,6 +3112,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
 
         sock.ev.on('chats.upsert', async (payload) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
 
             try {
 
@@ -3085,6 +3131,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
 
         sock.ev.on('chats.update', async (payload) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
 
             try {
 
@@ -3103,6 +3152,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
         // Presença (digitando)
 
         sock.ev.on('presence.update', (presence) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
 
             const jid = presence.id;
 
@@ -3131,10 +3183,15 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
         
 
         sock.ev.on('error', (error) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
 
             console.error(`[${sessionId}] ? Erro:`, error.message);
 
-            clientSocket.emit('error', { message: error.message });
+            const activeSession = sessions.get(sessionId);
+            const activeClientSocket = activeSession?.clientSocket || clientSocket;
+            activeClientSocket.emit('error', { message: error.message });
 
         });
 
@@ -6007,9 +6064,12 @@ io.on('connection', (socket) => {
         
 
         if (session) {
+            stopSessionHealthMonitor(session);
 
             try {
-
+                if (typeof session.socket?.ev?.removeAllListeners === 'function') {
+                    session.socket.ev.removeAllListeners();
+                }
                 await session.socket.logout();
 
             } catch (e) {}
@@ -6019,6 +6079,7 @@ io.on('connection', (socket) => {
             sessions.delete(sessionId);
 
             reconnectAttempts.delete(sessionId);
+            reconnectInFlight.delete(sessionId);
 
             
 

@@ -680,6 +680,7 @@ function startQRTimer() {
 
 // Handle conexão estabelecida
 function handleConnected(user: { name?: string; phone?: string } | undefined) {
+    const wasConnected = isConnected;
     isConnected = true;
     isConnecting = false;
     if (qrTimer) clearInterval(qrTimer);
@@ -702,7 +703,9 @@ function handleConnected(user: { name?: string; phone?: string } | undefined) {
         if (userPhone) userPhone.textContent = user.phone ? formatPhone(user.phone) : '-';
     }
     
-    showToast('success', 'WhatsApp conectado com sucesso!');
+    if (!wasConnected) {
+        showToast('success', 'WhatsApp conectado com sucesso!');
+    }
 }
 
 // Handle desconexão

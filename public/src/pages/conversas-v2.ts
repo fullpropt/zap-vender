@@ -167,8 +167,11 @@ function initSocket() {
     });
     
     socket.on('connected', (data) => {
+        const wasConnected = isConnected;
         updateConnectionStatus(true, data.user);
-        showToast('success', 'WhatsApp Conectado', `Conectado como ${data.user?.name || 'Usuário'}`);
+        if (!wasConnected) {
+            showToast('success', 'WhatsApp Conectado', `Conectado como ${data.user?.name || 'Usuário'}`);
+        }
     });
     
     socket.on('disconnected', () => {

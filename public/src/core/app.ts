@@ -213,8 +213,11 @@ function initSocket() {
     
     APP.socket.on('connected', (data) => {
         if (!isPayloadForCurrentSession(data)) return;
+        const wasConnected = APP.whatsappStatus === 'connected';
         updateWhatsAppStatus('connected');
-        showToast('success', 'WhatsApp Conectado', 'Conexão estabelecida com sucesso!');
+        if (!wasConnected) {
+            showToast('success', 'WhatsApp Conectado', 'Conexão estabelecida com sucesso!');
+        }
     });
     
     APP.socket.on('disconnected', (data) => {
