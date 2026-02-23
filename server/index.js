@@ -1243,17 +1243,49 @@ async function streamToBuffer(stream) {
     return Buffer.concat(chunks);
 }
 
-async function persistIncomingMedia({ sessionId, messageId, content, mediaType }) {
+async function persistIncomingMedia({ sessionId, messageId, content, mediaType, sourceMessage = null }) {
     try {
-        const descriptor = resolveIncomingMediaPayload(content, mediaType);
+        let descriptor = resolveIncomingMediaPayload(content, mediaType);
         if (!descriptor) return null;
 
         const baileys = await baileysLoader.getBaileys();
         const downloadContentFromMessage = baileys?.downloadContentFromMessage;
         if (typeof downloadContentFromMessage !== 'function') return null;
 
-        const stream = await downloadContentFromMessage(descriptor.payload, descriptor.downloadType);
-        const buffer = await streamToBuffer(stream);
+        const downloadBuffer = async (currentDescriptor) => {
+            const stream = await downloadContentFromMessage(currentDescriptor.payload, currentDescriptor.downloadType);
+            return await streamToBuffer(stream);
+        };
+
+        let buffer = null;
+        try {
+            buffer = await downloadBuffer(descriptor);
+        } catch (downloadError) {
+            const session = sessions.get(sessionId);
+            const socket = session?.socket;
+            const canRefreshMediaMessage = Boolean(
+                sourceMessage &&
+                socket &&
+                typeof socket.updateMediaMessage === 'function'
+            );
+
+            if (!canRefreshMediaMessage) {
+                throw downloadError;
+            }
+
+            try {
+                await socket.updateMediaMessage(sourceMessage);
+                const refreshedContent = unwrapMessageContent(sourceMessage?.message);
+                const refreshedDescriptor = resolveIncomingMediaPayload(refreshedContent, mediaType);
+                if (refreshedDescriptor) {
+                    descriptor = refreshedDescriptor;
+                }
+                buffer = await downloadBuffer(descriptor);
+            } catch (refreshError) {
+                throw refreshError;
+            }
+        }
+
         if (!buffer || buffer.length === 0) return null;
 
         const ext = resolveMediaExtension({
@@ -4195,6 +4227,13 @@ function resolveConversationJidForBackfill({ lead = null, contactJid = '' } = {}
     return '';
 }
 
+function createStoreBackfillResult(inserted = 0, hydratedMedia = 0) {
+    return {
+        inserted: Number(inserted) || 0,
+        hydratedMedia: Number(hydratedMedia) || 0
+    };
+}
+
 async function backfillConversationMessagesFromStore(options = {}) {
     const sessionId = sanitizeSessionId(options.sessionId || options.conversation?.session_id);
     const conversation = options.conversation || null;
@@ -4202,16 +4241,16 @@ async function backfillConversationMessagesFromStore(options = {}) {
     const contactJid = sanitizeSessionId(options.contactJid);
     const limit = Math.max(1, Number(options.limit) || 40);
 
-    if (!sessionId || !conversation?.id) return 0;
+    if (!sessionId || !conversation?.id) return createStoreBackfillResult();
 
     const session = sessions.get(sessionId);
     const store = session?.store;
     if (!store || typeof store.loadMessages !== 'function') {
-        return 0;
+        return createStoreBackfillResult();
     }
 
     const targetJid = resolveConversationJidForBackfill({ lead, contactJid });
-    if (!targetJid) return 0;
+    if (!targetJid) return createStoreBackfillResult();
 
     let storeMessages = [];
     try {
@@ -4219,10 +4258,10 @@ async function backfillConversationMessagesFromStore(options = {}) {
         storeMessages = Array.isArray(loaded) ? loaded : [];
     } catch (error) {
         console.warn(`[${sessionId}] Falha ao carregar mensagens do store para backfill (${targetJid}):`, error.message);
-        return 0;
+        return createStoreBackfillResult();
     }
 
-    if (!storeMessages.length) return 0;
+    if (!storeMessages.length) return createStoreBackfillResult();
 
     const orderedMessages = [...storeMessages].sort((a, b) => {
         const aTs = parseMessageTimestampMs(a?.messageTimestamp);
@@ -4231,6 +4270,7 @@ async function backfillConversationMessagesFromStore(options = {}) {
     });
 
     let inserted = 0;
+    let hydratedMedia = 0;
     let latestSavedMessageId = null;
     let latestSentAt = '';
     let unreadFromLead = 0;
@@ -4241,17 +4281,45 @@ async function backfillConversationMessagesFromStore(options = {}) {
         const messageId = normalizeText(waMsg?.key?.id || '');
         if (!messageId) continue;
 
-        const existingMessage = await Message.findByMessageId(messageId);
-        if (existingMessage) continue;
-
         const content = unwrapMessageContent(waMsg.message);
         let text = extractTextFromMessageContent(content);
         const mediaType = detectMediaTypeFromMessageContent(content);
+        const existingMessage = await Message.findByMessageId(messageId);
+
+        if (existingMessage) {
+            const hasMediaType = String(mediaType || '').trim().toLowerCase() !== 'text';
+            const mediaMissingInDb = !String(existingMessage.media_url || '').trim();
+            if (hasMediaType && mediaMissingInDb) {
+                const persistedMedia = await persistIncomingMedia({
+                    sessionId,
+                    messageId,
+                    content,
+                    mediaType,
+                    sourceMessage: waMsg
+                });
+                if (persistedMedia?.url) {
+                    await run(`
+                        UPDATE messages
+                        SET media_url = ?, media_mime_type = ?, media_filename = ?
+                        WHERE message_id = ?
+                    `, [
+                        persistedMedia.url,
+                        persistedMedia.mimetype || null,
+                        persistedMedia.filename || null,
+                        messageId
+                    ]);
+                    hydratedMedia += 1;
+                }
+            }
+            continue;
+        }
+
         const persistedMedia = await persistIncomingMedia({
             sessionId,
             messageId,
             content,
-            mediaType
+            mediaType,
+            sourceMessage: waMsg
         });
 
         if (!text && mediaType !== 'text') {
@@ -4289,16 +4357,18 @@ async function backfillConversationMessagesFromStore(options = {}) {
         if (!isFromMe) unreadFromLead += 1;
     }
 
-    if (!inserted) return 0;
+    if (!inserted && !hydratedMedia) return createStoreBackfillResult();
 
-    await Conversation.touch(conversation.id, latestSavedMessageId, latestSentAt || null);
+    if (inserted > 0) {
+        await Conversation.touch(conversation.id, latestSavedMessageId, latestSentAt || null);
+    }
 
-    if (lead?.id && latestSentAt) {
+    if (inserted > 0 && lead?.id && latestSentAt) {
         await Lead.update(lead.id, { last_message_at: latestSentAt });
         await Campaign.refreshMetricsByLead(lead.id);
     }
 
-    if (unreadFromLead > 0) {
+    if (inserted > 0 && unreadFromLead > 0) {
         const currentUnread = Math.max(0, Number(conversation.unread_count || 0));
         const nextUnread = Math.max(currentUnread, unreadFromLead);
         if (nextUnread !== currentUnread) {
@@ -4306,8 +4376,8 @@ async function backfillConversationMessagesFromStore(options = {}) {
         }
     }
 
-    console.log(`[${sessionId}] Backfill local recuperou ${inserted} mensagem(ns) para conversa ${conversation.id}`);
-    return inserted;
+    console.log(`[${sessionId}] Backfill local recuperou ${inserted} mensagem(ns) e atualizou ${hydratedMedia} mídia(s) na conversa ${conversation.id}`);
+    return createStoreBackfillResult(inserted, hydratedMedia);
 }
 
 
@@ -4688,7 +4758,8 @@ async function processIncomingMessage(sessionId, msg) {
         sessionId,
         messageId: msg?.key?.id,
         content,
-        mediaType
+        mediaType,
+        sourceMessage: msg
     });
 
     
@@ -5391,15 +5462,20 @@ io.on('connection', (socket) => {
         const backfillSessionId = sanitizeSessionId(
             normalizedSessionId || resolvedConversation?.session_id
         );
-        if (messages.length === 0 && resolvedConversation && backfillSessionId) {
-            const inserted = await backfillConversationMessagesFromStore({
+        const hasMissingMedia = messages.some((item) => {
+            const mediaType = String(item?.media_type || '').trim().toLowerCase();
+            if (!mediaType || mediaType === 'text') return false;
+            return !String(item?.media_url || '').trim();
+        });
+        if ((messages.length === 0 || hasMissingMedia) && resolvedConversation && backfillSessionId) {
+            const backfillResult = await backfillConversationMessagesFromStore({
                 sessionId: backfillSessionId,
                 conversation: resolvedConversation,
                 lead: resolvedLead,
                 contactJid,
-                limit: 50
+                limit: Math.max(100, messages.length || 0, 50)
             });
-            if (inserted > 0) {
+            if ((backfillResult.inserted || 0) > 0 || (backfillResult.hydratedMedia || 0) > 0) {
                 messages = await Message.listByConversation(resolvedConversation.id, { limit: 100 });
             }
         }
@@ -7307,15 +7383,20 @@ app.get('/api/messages/:leadId', authenticate, async (req, res) => {
     const backfillSessionId = sanitizeSessionId(
         sessionId || resolvedConversation?.session_id
     );
-    if (messages.length === 0 && resolvedConversation && backfillSessionId) {
-        const inserted = await backfillConversationMessagesFromStore({
+    const hasMissingMedia = messages.some((item) => {
+        const mediaType = String(item?.media_type || '').trim().toLowerCase();
+        if (!mediaType || mediaType === 'text') return false;
+        return !String(item?.media_url || '').trim();
+    });
+    if ((messages.length === 0 || hasMissingMedia) && resolvedConversation && backfillSessionId) {
+        const backfillResult = await backfillConversationMessagesFromStore({
             sessionId: backfillSessionId,
             conversation: resolvedConversation,
             lead: resolvedLead,
             contactJid,
             limit: Math.max(limit, 50)
         });
-        if (inserted > 0) {
+        if ((backfillResult.inserted || 0) > 0 || (backfillResult.hydratedMedia || 0) > 0) {
             messages = await Message.listByConversation(resolvedConversation.id, { limit });
         }
     }
