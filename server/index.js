@@ -38,7 +38,7 @@ const qrcode = require('qrcode');
 
 // Database
 
-const { getDatabase, close: closeDatabase, query, run } = require('./database/connection');
+const { getDatabase, close: closeDatabase, query, run, generateUUID } = require('./database/connection');
 
 const { migrate } = require('./database/migrate');
 
@@ -1091,6 +1091,34 @@ function parseLeadTagsForMerge(rawTags) {
         .split(',')
         .map((tag) => String(tag || '').trim())
         .filter(Boolean);
+}
+
+function sanitizeLeadNameForInsert(value) {
+    const text = normalizeText(String(value || '').trim());
+    if (!text) return '';
+
+    const lower = text.toLowerCase();
+    if (
+        lower === 'sem nome' ||
+        lower === 'unknown' ||
+        lower === 'undefined' ||
+        lower === 'null'
+    ) {
+        return '';
+    }
+
+    if (text.includes('@s.whatsapp.net') || text.includes('@lid')) return '';
+    if (/^\d+$/.test(text)) return '';
+
+    return text;
+}
+
+function normalizeLeadStatusForImport(value, fallback = 1) {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 5) {
+        return parsed;
+    }
+    return fallback;
 }
 
 function normalizeLeadSource(source) {
@@ -7824,6 +7852,7 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
         let skipped = 0;
         let failed = 0;
         const errors = [];
+        const normalizedRows = [];
 
         for (let index = 0; index < leads.length; index += 1) {
             const input = leads[index];
@@ -7848,90 +7877,243 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                 payload.name = 'Sem nome';
             }
 
-            const assignedTo = Number(payload.assigned_to);
-            if (!Number.isInteger(assignedTo) || assignedTo <= 0) {
-                if (fallbackAssignedTo) {
-                    payload.assigned_to = fallbackAssignedTo;
-                } else {
-                    delete payload.assigned_to;
-                }
+            const requestedAssignedTo = Number(payload.assigned_to);
+            const assignedTo = Number.isInteger(requestedAssignedTo) && requestedAssignedTo > 0
+                ? requestedAssignedTo
+                : fallbackAssignedTo;
+
+            normalizedRows.push({
+                index,
+                phone,
+                uuid: generateUUID(),
+                phone_formatted: String(payload.phone_formatted || payload.phone || phone).trim() || phone,
+                jid: String(payload.jid || `55${phone}@s.whatsapp.net`).trim() || `55${phone}@s.whatsapp.net`,
+                name: String(payload.name || '').trim(),
+                email: String(payload.email || '').trim(),
+                vehicle: String(payload.vehicle || '').trim(),
+                plate: String(payload.plate || '').trim(),
+                status: normalizeLeadStatusForImport(payload.status, 1),
+                tags: parseLeadTagsForMerge(payload.tags),
+                custom_fields: parseLeadCustomFields(payload.custom_fields),
+                source: String(payload.source || 'import').trim() || 'import',
+                assigned_to: Number.isInteger(assignedTo) && assignedTo > 0 ? assignedTo : null
+            });
+        }
+
+        if (normalizedRows.length > 0) {
+            const uniquePhones = Array.from(new Set(normalizedRows.map((row) => row.phone)));
+            const existingRows = await query(
+                'SELECT id, phone, name, email, tags, custom_fields FROM leads WHERE phone = ANY(?::text[])',
+                [uniquePhones]
+            );
+
+            const stateByPhone = new Map();
+            for (const row of existingRows || []) {
+                const phone = String(row?.phone || '').trim();
+                if (!phone) continue;
+                stateByPhone.set(phone, {
+                    existsInDb: true,
+                    id: Number(row.id),
+                    phone,
+                    name: String(row.name || ''),
+                    email: String(row.email || '').trim(),
+                    tags: parseLeadTagsForMerge(row.tags),
+                    custom_fields: parseLeadCustomFields(row.custom_fields)
+                });
             }
 
-            try {
-                await Lead.create(payload);
-                imported += 1;
-            } catch (error) {
-                const rawMessage = String(error?.message || '');
-                const message = rawMessage.toLowerCase();
-                const isDuplicate =
-                    error?.code === '23505'
-                    || message.includes('duplicate key')
-                    || message.includes('unique constraint')
-                    || message.includes('already exists');
+            const stagedInsertsByPhone = new Map();
+            const stagedUpdatesByLeadId = new Map();
+            const pendingInsertUpdateEventsByPhone = new Map();
+            let updatedExistingEvents = 0;
 
-                if (isDuplicate) {
-                    try {
-                        const existingRows = await query(
-                            'SELECT * FROM leads WHERE phone = ? ORDER BY id DESC LIMIT 1',
-                            [phone]
-                        );
-                        const existingLead = Array.isArray(existingRows) ? existingRows[0] : null;
-                        if (!existingLead) {
-                            skipped += 1;
-                            continue;
-                        }
+            for (const row of normalizedRows) {
+                let state = stateByPhone.get(row.phone);
 
-                        const updates = {};
-                        const incomingName = sanitizeAutoName(payload.name);
-                        if (incomingName) {
-                            updates.name = incomingName;
-                        }
-
-                        const incomingEmail = String(payload.email || '').trim();
-                        const existingEmail = String(existingLead.email || '').trim();
-                        if (incomingEmail && (!existingEmail || existingEmail !== incomingEmail)) {
-                            updates.email = incomingEmail;
-                        }
-
-                        const incomingTags = parseLeadTagsForMerge(payload.tags);
-                        if (incomingTags.length > 0) {
-                            const existingTags = parseLeadTagsForMerge(existingLead.tags);
-                            updates.tags = Array.from(new Set([...existingTags, ...incomingTags]));
-                        }
-
-                        const incomingCustomFields = parseLeadCustomFields(payload.custom_fields);
-                        if (Object.keys(incomingCustomFields).length > 0) {
-                            updates.custom_fields = mergeLeadCustomFields(existingLead.custom_fields, incomingCustomFields);
-                        }
-
-                        if (Object.keys(updates).length > 0) {
-                            await Lead.update(existingLead.id, updates);
-                            updated += 1;
-                        } else {
-                            skipped += 1;
-                        }
-                    } catch (duplicateError) {
-                        failed += 1;
-                        if (errors.length < 25) {
-                            errors.push({
-                                index,
-                                phone,
-                                error: String(duplicateError?.message || 'Falha ao atualizar lead duplicado')
-                            });
-                        }
-                    }
+                if (!state) {
+                    state = {
+                        ...row,
+                        existsInDb: false,
+                        name: sanitizeLeadNameForInsert(row.name) || row.phone,
+                        tags: parseLeadTagsForMerge(row.tags),
+                        custom_fields: parseLeadCustomFields(row.custom_fields)
+                    };
+                    stateByPhone.set(row.phone, state);
+                    stagedInsertsByPhone.set(row.phone, state);
                     continue;
                 }
 
-                failed += 1;
-                if (errors.length < 25) {
-                    errors.push({
-                        index,
-                        phone,
-                        error: rawMessage || 'Erro ao importar lead'
-                    });
+                const updates = {};
+                const incomingName = sanitizeAutoName(row.name);
+                if (incomingName) {
+                    updates.name = incomingName;
+                }
+
+                const incomingEmail = String(row.email || '').trim();
+                const existingEmail = String(state.email || '').trim();
+                if (incomingEmail && (!existingEmail || existingEmail !== incomingEmail)) {
+                    updates.email = incomingEmail;
+                }
+
+                const incomingTags = parseLeadTagsForMerge(row.tags);
+                if (incomingTags.length > 0) {
+                    const existingTags = parseLeadTagsForMerge(state.tags);
+                    updates.tags = Array.from(new Set([...existingTags, ...incomingTags]));
+                }
+
+                const incomingCustomFields = parseLeadCustomFields(row.custom_fields);
+                if (Object.keys(incomingCustomFields).length > 0) {
+                    updates.custom_fields = mergeLeadCustomFields(state.custom_fields, incomingCustomFields);
+                }
+
+                if (Object.keys(updates).length === 0) {
+                    skipped += 1;
+                    continue;
+                }
+
+                if (Object.prototype.hasOwnProperty.call(updates, 'name')) {
+                    state.name = updates.name;
+                }
+                if (Object.prototype.hasOwnProperty.call(updates, 'email')) {
+                    state.email = updates.email;
+                }
+                if (Object.prototype.hasOwnProperty.call(updates, 'tags')) {
+                    state.tags = updates.tags;
+                }
+                if (Object.prototype.hasOwnProperty.call(updates, 'custom_fields')) {
+                    state.custom_fields = updates.custom_fields;
+                }
+
+                stateByPhone.set(row.phone, state);
+
+                if (state.existsInDb) {
+                    updatedExistingEvents += 1;
+                    const pending = stagedUpdatesByLeadId.get(state.id) || { id: state.id };
+
+                    if (Object.prototype.hasOwnProperty.call(updates, 'name')) {
+                        pending.name = String(state.name || '');
+                    }
+                    if (Object.prototype.hasOwnProperty.call(updates, 'email')) {
+                        pending.email = String(state.email || '').trim();
+                    }
+                    if (Object.prototype.hasOwnProperty.call(updates, 'tags')) {
+                        pending.tags = JSON.stringify(parseLeadTagsForMerge(state.tags));
+                    }
+                    if (Object.prototype.hasOwnProperty.call(updates, 'custom_fields')) {
+                        pending.custom_fields = JSON.stringify(parseLeadCustomFields(state.custom_fields));
+                    }
+
+                    stagedUpdatesByLeadId.set(state.id, pending);
+                } else {
+                    const eventCount = Number(pendingInsertUpdateEventsByPhone.get(state.phone) || 0);
+                    pendingInsertUpdateEventsByPhone.set(state.phone, eventCount + 1);
+                    stagedInsertsByPhone.set(state.phone, state);
                 }
             }
+
+            let appliedPendingInsertUpdates = 0;
+
+            if (stagedInsertsByPhone.size > 0) {
+                const insertPayload = Array.from(stagedInsertsByPhone.values()).map((item) => ({
+                    uuid: String(item.uuid || '').trim(),
+                    phone: String(item.phone || '').trim(),
+                    phone_formatted: String(item.phone_formatted || item.phone || '').trim(),
+                    jid: String(item.jid || '').trim(),
+                    name: String(item.name || '').trim(),
+                    email: String(item.email || '').trim(),
+                    vehicle: String(item.vehicle || '').trim(),
+                    plate: String(item.plate || '').trim(),
+                    status: normalizeLeadStatusForImport(item.status, 1),
+                    tags: JSON.stringify(parseLeadTagsForMerge(item.tags)),
+                    custom_fields: JSON.stringify(parseLeadCustomFields(item.custom_fields)),
+                    source: String(item.source || 'import').trim() || 'import',
+                    assigned_to: Number.isInteger(Number(item.assigned_to)) && Number(item.assigned_to) > 0
+                        ? Number(item.assigned_to)
+                        : null
+                }));
+
+                const insertedRows = await query(`
+                    INSERT INTO leads (
+                        uuid, phone, phone_formatted, jid, name, email, vehicle, plate,
+                        status, tags, custom_fields, source, assigned_to
+                    )
+                    SELECT
+                        data.uuid,
+                        data.phone,
+                        NULLIF(TRIM(data.phone_formatted), ''),
+                        NULLIF(TRIM(data.jid), ''),
+                        data.name,
+                        NULLIF(TRIM(data.email), ''),
+                        NULLIF(TRIM(data.vehicle), ''),
+                        NULLIF(TRIM(data.plate), ''),
+                        COALESCE(data.status, 1),
+                        data.tags,
+                        data.custom_fields,
+                        COALESCE(NULLIF(TRIM(data.source), ''), 'import'),
+                        data.assigned_to
+                    FROM jsonb_to_recordset(?::jsonb) AS data(
+                        uuid text,
+                        phone text,
+                        phone_formatted text,
+                        jid text,
+                        name text,
+                        email text,
+                        vehicle text,
+                        plate text,
+                        status integer,
+                        tags text,
+                        custom_fields text,
+                        source text,
+                        assigned_to integer
+                    )
+                    ON CONFLICT (phone) DO NOTHING
+                    RETURNING phone
+                `, [JSON.stringify(insertPayload)]);
+
+                const insertedPhones = new Set(
+                    (insertedRows || [])
+                        .map((row) => String(row?.phone || '').trim())
+                        .filter(Boolean)
+                );
+
+                imported += insertedPhones.size;
+                const insertConflicts = Math.max(insertPayload.length - insertedPhones.size, 0);
+                if (insertConflicts > 0) {
+                    skipped += insertConflicts;
+                }
+
+                for (const [phone, count] of pendingInsertUpdateEventsByPhone.entries()) {
+                    if (!insertedPhones.has(phone)) continue;
+                    appliedPendingInsertUpdates += Number(count || 0);
+                }
+            }
+
+            if (stagedUpdatesByLeadId.size > 0) {
+                const updatePayload = Array.from(stagedUpdatesByLeadId.values());
+                await run(`
+                    WITH incoming AS (
+                        SELECT *
+                        FROM jsonb_to_recordset(?::jsonb) AS data(
+                            id integer,
+                            name text,
+                            email text,
+                            tags text,
+                            custom_fields text
+                        )
+                    )
+                    UPDATE leads AS l
+                    SET
+                        name = COALESCE(incoming.name, l.name),
+                        email = COALESCE(incoming.email, l.email),
+                        tags = COALESCE(incoming.tags, l.tags),
+                        custom_fields = COALESCE(incoming.custom_fields, l.custom_fields),
+                        updated_at = CURRENT_TIMESTAMP
+                    FROM incoming
+                    WHERE l.id = incoming.id
+                `, [JSON.stringify(updatePayload)]);
+            }
+
+            updated += appliedPendingInsertUpdates + updatedExistingEvents;
         }
 
         res.json({
