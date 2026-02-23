@@ -1006,6 +1006,7 @@ class FlowService extends EventEmitter {
                             to: execution.lead.phone,
                             jid: execution.lead.jid,
                             sessionId: execution.conversation?.session_id || null,
+                            conversationId: execution.conversation?.id || null,
                             content,
                             mediaType,
                             mediaUrl: node?.data?.mediaUrl
@@ -1049,6 +1050,7 @@ class FlowService extends EventEmitter {
                             to: execution.lead.phone,
                             jid: execution.lead.jid,
                             sessionId: execution.conversation?.session_id || null,
+                            conversationId: execution.conversation?.id || null,
                             content: transferMsg
                         });
                     }

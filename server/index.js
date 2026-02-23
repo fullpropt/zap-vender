@@ -4756,11 +4756,35 @@ async function processIncomingMessage(sessionId, msg) {
 
     const fromRaw = msg.key.remoteJid;
     const fromRawNormalized = normalizeUserJidCandidate(fromRaw) || fromRaw;
-    const isFromMe = msg.key.fromMe;
     const sessionDigits = normalizePhoneDigits(sessionPhone);
 
     let from = resolveMessageJid(msg, sessionPhone);
     const contentForRouting = unwrapMessageContent(msg.message);
+    let isFromMe = Boolean(msg?.key?.fromMe);
+
+    // Alguns eventos podem chegar com fromMe=false mesmo sendo envio proprio
+    // (sincronizacao entre dispositivos). Usa pistas de sender/participant para corrigir.
+    if (!isFromMe && sessionDigits) {
+        const selfHintCandidates = [
+            msg?.key?.senderPn,
+            msg?.key?.participantPn,
+            msg?.key?.participant,
+            msg?.participant,
+            msg?.message?.extendedTextMessage?.contextInfo?.participant,
+            contentForRouting?.extendedTextMessage?.contextInfo?.participant
+        ].filter(Boolean);
+
+        const hintedSelf = selfHintCandidates
+            .map((candidate) => normalizeUserJidCandidate(candidate) || normalizeJid(candidate))
+            .find((candidate) => {
+                const candidateDigits = normalizePhoneDigits(extractNumber(candidate));
+                return Boolean(candidateDigits) && isSelfPhone(candidateDigits, sessionDigits);
+            });
+
+        if (hintedSelf) {
+            isFromMe = true;
+        }
+    }
 
     const fromRawDigits = normalizePhoneDigits(extractNumber(fromRawNormalized));
     const isFromRawUser = isUserJid(fromRawNormalized);
@@ -5478,12 +5502,30 @@ function sessionExists(sessionId) {
         }
     });
 
-    flowService.init(async (options) => {
+    flowService.init(async (options = {}) => {
         const resolvedSessionId = resolveSessionIdOrDefault(options?.sessionId || options?.session_id);
-        return await sendMessageToWhatsApp({
-            ...options,
-            sessionId: resolvedSessionId
-        });
+        const destination = String(options?.to || extractNumber(options?.jid || '') || '').trim();
+        if (!destination) {
+            throw new Error('Destino invalido para envio no fluxo');
+        }
+
+        const mediaType = String(options?.mediaType || options?.media_type || 'text').trim().toLowerCase() || 'text';
+        const content = String(options?.content || '');
+
+        return await sendMessage(
+            resolvedSessionId,
+            destination,
+            content,
+            mediaType,
+            {
+                url: options?.mediaUrl || options?.url || null,
+                mimetype: options?.mimetype,
+                fileName: options?.fileName,
+                ptt: options?.ptt,
+                duration: options?.duration,
+                conversationId: options?.conversationId || options?.conversation_id || null
+            }
+        );
     });
 
     await rehydrateSessions(io);
