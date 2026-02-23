@@ -45,6 +45,12 @@ type SocketMessage = Message & {
     mediaType?: string;
 };
 
+type NotificationPreferences = {
+    notifyNewLead: boolean;
+    notifyNewMessage: boolean;
+    notifySound: boolean;
+};
+
 const DEFAULT_SESSION_ID = 'default_whatsapp_session';
 let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
 let currentContact: Contact | null = null;
@@ -52,6 +58,41 @@ let contacts: Contact[] = [];
 let messages: Record<string, Message[]> = {};
 let typingContacts = new Set<string>();
 let isConnected = false;
+
+const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+    notifyNewLead: true,
+    notifyNewMessage: true,
+    notifySound: true
+};
+
+function parseNotificationFlag(value: unknown, fallback: boolean) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value > 0;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+        if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+    }
+    return fallback;
+}
+
+function getNotificationPreferences(): NotificationPreferences {
+    try {
+        const raw = localStorage.getItem('selfSettings');
+        if (!raw) return { ...DEFAULT_NOTIFICATION_PREFERENCES };
+        const parsed = JSON.parse(raw);
+        const notifications = (parsed && typeof parsed === 'object')
+            ? (parsed.notifications || {})
+            : {};
+        return {
+            notifyNewLead: parseNotificationFlag(notifications.notifyNewLead, DEFAULT_NOTIFICATION_PREFERENCES.notifyNewLead),
+            notifyNewMessage: parseNotificationFlag(notifications.notifyNewMessage, DEFAULT_NOTIFICATION_PREFERENCES.notifyNewMessage),
+            notifySound: parseNotificationFlag(notifications.notifySound, DEFAULT_NOTIFICATION_PREFERENCES.notifySound)
+        };
+    } catch (_) {
+        return { ...DEFAULT_NOTIFICATION_PREFERENCES };
+    }
+}
 
 function getSessionId() {
     const appSessionId = String((window as any).APP?.sessionId || '').trim();
@@ -488,9 +529,19 @@ function handleNewMessage(message: SocketMessage) {
         socket?.emit('mark-read', { sessionId: getSessionId(), contactJid: currentContact.jid });
     }
     
-    // Notificação sonora
+    const notificationPreferences = getNotificationPreferences();
+
+    // Notificacao de novo lead
+    if (!message.isFromMe && contactIndex < 0 && notificationPreferences.notifyNewLead) {
+        const leadLabel = String(message.pushName || message.fromNumber || message.from || 'Contato').trim();
+        showToast('info', 'Novo lead', `${leadLabel} enviou uma mensagem`);
+    }
+
+    // Notificacao sonora
     if (!message.isFromMe) {
-        playNotificationSound();
+        if (notificationPreferences.notifyNewMessage && notificationPreferences.notifySound) {
+            playNotificationSound();
+        }
     }
 }
 

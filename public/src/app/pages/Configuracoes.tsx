@@ -21,7 +21,7 @@ type ConfiguracoesGlobals = {
   removeWhatsAppSession?: (sessionId: string) => Promise<void>;
   saveWhatsAppSettings?: () => void;
   saveBusinessHoursSettings?: () => void;
-  saveNotificationSettings?: () => void;
+  saveNotificationSettings?: () => Promise<void>;
   createContactField?: () => Promise<void>;
   updateContactField?: (key: string) => Promise<void>;
   deleteContactField?: (key: string) => Promise<void>;
@@ -604,21 +604,21 @@ export default function Configuracoes() {
                               <h3 className="settings-section-title"><span className="icon icon-bell icon-sm"></span> Preferências de Notificação</h3>
                               <div className="form-group">
                                   <label className="checkbox-wrapper">
-                                      <input type="checkbox" id="notifyNewLead" checked />
+                                      <input type="checkbox" id="notifyNewLead" defaultChecked />
                                       <span className="checkbox-custom"></span>
                                       Notificar novos leads
                                   </label>
                               </div>
                               <div className="form-group">
                                   <label className="checkbox-wrapper">
-                                      <input type="checkbox" id="notifyNewMessage" checked />
+                                      <input type="checkbox" id="notifyNewMessage" defaultChecked />
                                       <span className="checkbox-custom"></span>
                                       Notificar novas mensagens
                                   </label>
                               </div>
                               <div className="form-group">
                                   <label className="checkbox-wrapper">
-                                      <input type="checkbox" id="notifySound" checked />
+                                      <input type="checkbox" id="notifySound" defaultChecked />
                                       <span className="checkbox-custom"></span>
                                       Som de notificação
                                   </label>
