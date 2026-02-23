@@ -516,6 +516,11 @@ const typingStatus = new Map();
 
 const jidAliasMap = new Map();
 const sessionInitLocks = new Set();
+const pendingCiphertextRecoveries = new Map();
+const recoveredFlowMessageIds = new Map();
+const FLOW_RECOVERY_DELAY_MS = parseInt(process.env.FLOW_RECOVERY_DELAY_MS || '', 10) || 2500;
+const FLOW_RECOVERY_WINDOW_MS = parseInt(process.env.FLOW_RECOVERY_WINDOW_MS || '', 10) || (5 * 60 * 1000);
+const FLOW_RECOVERY_TRACKER_LIMIT = 4000;
 
 senderAllocatorService.setRuntimeSessionsGetter(() => sessions);
 senderAllocatorService.setDefaultSessionId(DEFAULT_WHATSAPP_SESSION_ID);
@@ -2872,8 +2877,21 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                 for (const msg of messages) {
 
                     if (isGroupMessage(msg)) continue;
+                    const hasMessagePayload = Boolean(msg?.message);
+                    const hasCiphertextStub = !hasMessagePayload && Number(msg?.messageStubType || 0) > 0;
+                    if (hasCiphertextStub) {
+                        scheduleCiphertextRecovery(sessionId, msg);
+                        continue;
+                    }
 
-                    await processIncomingMessage(sessionId, msg);
+                    try {
+                        await processIncomingMessage(sessionId, msg);
+                    } catch (error) {
+                        console.error(`[${sessionId}] Erro ao processar messages.upsert (${msg?.key?.id || 'sem-id'}):`, error.message);
+                        if (!hasMessagePayload) {
+                            scheduleCiphertextRecovery(sessionId, msg);
+                        }
+                    }
 
                 }
 
@@ -2888,6 +2906,23 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
         sock.ev.on('messages.update', async (updates) => {
 
             for (const update of updates) {
+                const patchedMessage = update?.update?.message;
+                const hasPatchedPayload = patchedMessage && typeof patchedMessage === 'object';
+                const isPatchedInbound = hasPatchedPayload && !Boolean(update?.key?.fromMe);
+                if (isPatchedInbound && update?.key?.id) {
+                    const syntheticMsg = {
+                        key: update.key,
+                        message: patchedMessage,
+                        messageTimestamp: update?.update?.messageTimestamp || Math.floor(Date.now() / 1000),
+                        pushName: ''
+                    };
+
+                    try {
+                        await processIncomingMessage(sessionId, syntheticMsg);
+                    } catch (error) {
+                        console.error(`[${sessionId}] Erro ao processar patch de messages.update (${update?.key?.id || 'sem-id'}):`, error.message);
+                    }
+                }
 
                 if (update.update.status) {
 
@@ -4378,6 +4413,133 @@ async function backfillConversationMessagesFromStore(options = {}) {
 
     console.log(`[${sessionId}] Backfill local recuperou ${inserted} mensagem(ns) e atualizou ${hydratedMedia} mídia(s) na conversa ${conversation.id}`);
     return createStoreBackfillResult(inserted, hydratedMedia);
+}
+
+function parseJsonSafe(value, fallback = null) {
+    if (value === undefined || value === null || value === '') return fallback;
+    if (typeof value === 'object') return value;
+    try {
+        return JSON.parse(String(value));
+    } catch (_) {
+        return fallback;
+    }
+}
+
+function hasRecoveredFlowMessage(messageId) {
+    const key = String(messageId || '').trim();
+    if (!key) return false;
+    return recoveredFlowMessageIds.has(key);
+}
+
+function rememberRecoveredFlowMessage(messageId) {
+    const key = String(messageId || '').trim();
+    if (!key) return;
+    recoveredFlowMessageIds.set(key, Date.now());
+
+    if (recoveredFlowMessageIds.size > FLOW_RECOVERY_TRACKER_LIMIT) {
+        const now = Date.now();
+        for (const [itemKey, itemTimestamp] of recoveredFlowMessageIds.entries()) {
+            if ((now - Number(itemTimestamp || 0)) > FLOW_RECOVERY_WINDOW_MS) {
+                recoveredFlowMessageIds.delete(itemKey);
+            }
+        }
+    }
+}
+
+function scheduleCiphertextRecovery(sessionId, rawMessage = {}) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    const messageId = String(rawMessage?.key?.id || '').trim();
+    const rawRemoteJid = String(rawMessage?.key?.remoteJid || '').trim();
+    const remoteJid = normalizeUserJidCandidate(rawRemoteJid) || normalizeJid(rawRemoteJid);
+
+    if (!normalizedSessionId || !messageId || !remoteJid || !isUserJid(remoteJid)) {
+        return;
+    }
+
+    const recoveryKey = `${normalizedSessionId}:${messageId}`;
+    if (pendingCiphertextRecoveries.has(recoveryKey)) {
+        return;
+    }
+
+    const timer = setTimeout(async () => {
+        try {
+            await runCiphertextRecovery(normalizedSessionId, rawMessage);
+        } catch (error) {
+            console.warn(`[${normalizedSessionId}] Falha na recuperacao de mensagem cifrada (${messageId}):`, error.message);
+        } finally {
+            pendingCiphertextRecoveries.delete(recoveryKey);
+        }
+    }, FLOW_RECOVERY_DELAY_MS);
+
+    pendingCiphertextRecoveries.set(recoveryKey, timer);
+}
+
+async function runCiphertextRecovery(sessionId, rawMessage = {}) {
+    const rawRemoteJid = String(rawMessage?.key?.remoteJid || '').trim();
+    const remoteJid = normalizeUserJidCandidate(rawRemoteJid) || normalizeJid(rawRemoteJid);
+    if (!remoteJid || !isUserJid(remoteJid)) return;
+
+    const remotePhone = extractNumber(remoteJid);
+    let lead = await Lead.findByJid(remoteJid);
+    if (!lead && remotePhone) {
+        lead = await Lead.findByPhone(remotePhone);
+    }
+    if (!lead?.id) return;
+
+    let conversation = await Conversation.findByLeadId(lead.id, sessionId);
+    if (!conversation?.id) return;
+
+    const backfillResult = await backfillConversationMessagesFromStore({
+        sessionId,
+        conversation,
+        lead,
+        contactJid: remoteJid,
+        limit: 40
+    });
+
+    if ((backfillResult?.inserted || 0) <= 0) return;
+
+    const recentIncoming = await query(`
+        SELECT id, message_id, content, content_encrypted, media_type, metadata, sent_at, created_at, is_from_me
+        FROM messages
+        WHERE conversation_id = ?
+          AND is_from_me = 0
+        ORDER BY COALESCE(sent_at, created_at) DESC, id DESC
+        LIMIT 12
+    `, [conversation.id]);
+    if (!Array.isArray(recentIncoming) || recentIncoming.length === 0) return;
+
+    const now = Date.now();
+    for (const candidate of recentIncoming) {
+        const messageId = String(candidate?.message_id || '').trim();
+        if (!messageId || hasRecoveredFlowMessage(messageId)) continue;
+
+        const metadata = parseJsonSafe(candidate?.metadata, {});
+        if (String(metadata?.source || '').trim() !== 'store_backfill') continue;
+
+        const rawTimestamp = candidate?.sent_at || candidate?.created_at;
+        const sentAtMs = Date.parse(String(rawTimestamp || ''));
+        if (!Number.isFinite(sentAtMs) || (now - sentAtMs) > FLOW_RECOVERY_WINDOW_MS) continue;
+
+        let text = candidate?.content_encrypted
+            ? decryptMessage(candidate.content_encrypted)
+            : candidate?.content;
+        if ((!text || !String(text).trim()) && candidate?.media_type && candidate.media_type !== 'text') {
+            text = previewForMedia(candidate.media_type);
+        }
+        text = normalizeText(text);
+        if (!text) continue;
+
+        conversation = await Conversation.findById(conversation.id) || conversation;
+        await flowService.processIncomingMessage(
+            { text, mediaType: candidate.media_type || 'text' },
+            lead,
+            conversation
+        );
+        rememberRecoveredFlowMessage(messageId);
+        console.log(`[${sessionId}] Recuperacao automatica processou mensagem cifrada (${messageId}) para continuar fluxo`);
+        break;
+    }
 }
 
 
