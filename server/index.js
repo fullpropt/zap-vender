@@ -3816,11 +3816,37 @@ async function processScheduledAutomationsTick() {
             WHERE COALESCE(is_blocked, 0) = 0
             ORDER BY updated_at DESC
         `);
+        const leadConversations = await query(`
+            SELECT c.*
+            FROM conversations c
+            INNER JOIN leads l ON l.id = c.lead_id
+            WHERE COALESCE(l.is_blocked, 0) = 0
+            ORDER BY c.lead_id ASC, COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
+        `);
+        const conversationsByLeadId = new Map();
+        for (const conversation of leadConversations) {
+            const leadId = Number(conversation?.lead_id || 0);
+            if (!Number.isFinite(leadId) || leadId <= 0) continue;
+            if (!conversationsByLeadId.has(leadId)) {
+                conversationsByLeadId.set(leadId, []);
+            }
+            conversationsByLeadId.get(leadId).push(conversation);
+        }
 
         for (const automation of dueAutomations) {
+            const scopedSessionIds = parseAutomationSessionScope(automation?.session_scope);
+            const scopedSessionIdSet = scopedSessionIds.length ? new Set(scopedSessionIds) : null;
+
             for (const lead of leads) {
                 if (!lead?.id || !lead?.phone) continue;
-                const leadConversation = await Conversation.findByLeadId(lead.id);
+                const candidateConversations = conversationsByLeadId.get(Number(lead.id)) || [];
+                const leadConversation = scopedSessionIdSet
+                    ? (candidateConversations.find((conversation) => (
+                        scopedSessionIdSet.has(sanitizeSessionId(conversation?.session_id))
+                    )) || null)
+                    : (candidateConversations[0] || null);
+                if (scopedSessionIdSet && !leadConversation) continue;
+
                 const sessionId = sanitizeSessionId(
                     leadConversation?.session_id,
                     DEFAULT_AUTOMATION_SESSION_ID
@@ -5842,45 +5868,42 @@ io.on('connection', (socket) => {
     socket.on('get-messages', async ({ sessionId, contactJid, leadId, conversationId }) => {
         let messages = [];
         const normalizedSessionId = sanitizeSessionId(sessionId);
+        const normalizedContactJid = normalizeJid(contactJid);
         const normalizedConversationId = Number(conversationId);
         const hasConversationId = Number.isFinite(normalizedConversationId) && normalizedConversationId > 0;
         let resolvedConversation = null;
         let resolvedLead = null;
 
         if (hasConversationId) {
-            resolvedConversation = await Conversation.findById(normalizedConversationId);
+            const conversation = await Conversation.findById(normalizedConversationId);
+            const conversationSessionId = sanitizeSessionId(conversation?.session_id);
+            if (conversation && (!normalizedSessionId || conversationSessionId === normalizedSessionId)) {
+                resolvedConversation = conversation;
+            }
             if (resolvedConversation) {
                 resolvedLead = await Lead.findById(resolvedConversation.lead_id);
+                messages = await Message.listByConversation(resolvedConversation.id, { limit: 100 });
             }
-            messages = await Message.listByConversation(normalizedConversationId, { limit: 100 });
         }
 
-        if (!hasConversationId && leadId) {
+        if (!resolvedConversation && leadId) {
             const normalizedLeadId = Number(leadId);
-            if (Number.isFinite(normalizedLeadId) && normalizedLeadId > 0 && normalizedSessionId) {
+            if (Number.isFinite(normalizedLeadId) && normalizedLeadId > 0) {
                 resolvedLead = await Lead.findById(normalizedLeadId);
-                const conversation = await Conversation.findByLeadId(normalizedLeadId, normalizedSessionId);
+                const conversation = await Conversation.findByLeadId(normalizedLeadId, normalizedSessionId || null);
                 if (conversation) {
                     resolvedConversation = conversation;
                     messages = await Message.listByConversation(conversation.id, { limit: 100 });
                 }
             }
-            if (messages.length === 0 && !normalizedSessionId) {
-                messages = await Message.listByLead(leadId, { limit: 100 });
-            }
-        } else if (contactJid) {
-            const lead = await Lead.findByJid(contactJid);
+        } else if (!resolvedConversation && normalizedContactJid) {
+            const lead = await Lead.findByJid(normalizedContactJid);
             if (lead) {
                 resolvedLead = lead;
-                if (normalizedSessionId) {
-                    const conversation = await Conversation.findByLeadId(lead.id, normalizedSessionId);
-                    if (conversation) {
-                        resolvedConversation = conversation;
-                        messages = await Message.listByConversation(conversation.id, { limit: 100 });
-                    }
-                }
-                if (messages.length === 0 && !normalizedSessionId) {
-                    messages = await Message.listByLead(lead.id, { limit: 100 });
+                const conversation = await Conversation.findByLeadId(lead.id, normalizedSessionId || null);
+                if (conversation) {
+                    resolvedConversation = conversation;
+                    messages = await Message.listByConversation(conversation.id, { limit: 100 });
                 }
             }
         }
@@ -5921,18 +5944,31 @@ io.on('connection', (socket) => {
             };
         });
 
-        socket.emit('messages-list', { sessionId, contactJid, leadId, conversationId, messages });
+        socket.emit('messages-list', {
+            sessionId: normalizedSessionId || sessionId,
+            contactJid: normalizedContactJid || contactJid,
+            leadId,
+            conversationId,
+            messages
+        });
     });
 
     
 
     socket.on('get-contacts', async ({ sessionId }) => {
-        const leads = await Lead.list({ limit: 200 });
-        const sessionPhone = getSessionPhone(sessionId);
-        const sessionDisplayName = normalizeText(getSessionDisplayName(sessionId) || 'Usuário');
+        const normalizedSessionId = sanitizeSessionId(sessionId);
+        const leads = await Lead.list({
+            limit: 200,
+            session_id: normalizedSessionId || undefined
+        });
+        const sessionPhone = getSessionPhone(normalizedSessionId);
+        const sessionDisplayName = normalizeText(getSessionDisplayName(normalizedSessionId) || 'Usuário');
 
         const contacts = (await Promise.all(leads.map(async (lead) => {
-            const lastMsg = await Message.getLastByLead(lead.id);
+            const conversation = await Conversation.findByLeadId(lead.id, normalizedSessionId || null);
+            if (!conversation?.id) return null;
+
+            const lastMsg = await Message.getLastMessage(conversation.id);
             if (!lastMsg) return null;
 
                 const preview = normalizeText(lastMsg.content
@@ -5962,7 +5998,7 @@ io.on('connection', (socket) => {
             .filter(Boolean)
             .sort((a, b) => (b.lastMessageTime || 0) - (a.lastMessageTime || 0));
 
-        socket.emit('contacts-list', { sessionId, contacts });
+        socket.emit('contacts-list', { sessionId: normalizedSessionId || sessionId, contacts });
     });
 
     
@@ -5980,18 +6016,20 @@ io.on('connection', (socket) => {
     
 
     socket.on('mark-read', async ({ sessionId, contactJid, conversationId }) => {
+        const normalizedSessionId = sanitizeSessionId(sessionId);
+        const normalizedContactJid = normalizeJid(contactJid);
 
         if (conversationId) {
 
             await Conversation.markAsRead(conversationId);
 
-        } else if (contactJid) {
+        } else if (normalizedContactJid && normalizedSessionId) {
 
-            const lead = await Lead.findByJid(contactJid);
+            const lead = await Lead.findByJid(normalizedContactJid);
 
             if (lead) {
 
-                const conv = await Conversation.findByLeadId(lead.id, sessionId || null);
+                const conv = await Conversation.findByLeadId(lead.id, normalizedSessionId);
 
                 if (conv) await Conversation.markAsRead(conv.id);
 
@@ -7375,10 +7413,13 @@ app.put('/api/leads/:id', authenticate, async (req, res) => {
             newStatus
         });
 
-        const statusConversation = await Conversation.findByLeadId(updatedLead.id);
+        const statusSessionId = sanitizeSessionId(
+            req.body?.session_id || req.body?.sessionId || req.query?.session_id || req.query?.sessionId
+        );
+        const statusConversation = await Conversation.findByLeadId(updatedLead.id, statusSessionId || null);
         await scheduleAutomations({
             event: AUTOMATION_EVENT_TYPES.STATUS_CHANGE,
-            sessionId: statusConversation?.session_id || DEFAULT_AUTOMATION_SESSION_ID,
+            sessionId: statusConversation?.session_id || statusSessionId || DEFAULT_AUTOMATION_SESSION_ID,
             lead: updatedLead,
             conversation: statusConversation || null,
             oldStatus,
@@ -7801,30 +7842,31 @@ app.get('/api/messages/:leadId', authenticate, async (req, res) => {
     const conversationId = Number(req.query.conversation_id || req.query.conversationId);
     const hasConversationId = Number.isFinite(conversationId) && conversationId > 0;
     const sessionId = sanitizeSessionId(req.query.session_id || req.query.sessionId);
-    const contactJid = sanitizeSessionId(req.query.contact_jid || req.query.contactJid);
+    const contactJid = normalizeJid(req.query.contact_jid || req.query.contactJid);
 
     let messages = [];
     let resolvedConversation = null;
     let resolvedLead = null;
 
     if (hasConversationId) {
-        resolvedConversation = await Conversation.findById(conversationId);
+        const conversation = await Conversation.findById(conversationId);
+        const conversationSessionId = sanitizeSessionId(conversation?.session_id);
+        if (conversation && (!sessionId || conversationSessionId === sessionId)) {
+            resolvedConversation = conversation;
+        }
         if (resolvedConversation) {
             resolvedLead = await Lead.findById(resolvedConversation.lead_id);
+            messages = await Message.listByConversation(resolvedConversation.id, { limit });
         }
-        messages = await Message.listByConversation(conversationId, { limit });
-    } else if (Number.isFinite(leadId) && leadId > 0 && sessionId) {
+    } else if (Number.isFinite(leadId) && leadId > 0) {
         resolvedLead = await Lead.findById(leadId);
-        const conversation = await Conversation.findByLeadId(leadId, sessionId);
+        const conversation = await Conversation.findByLeadId(leadId, sessionId || null);
         if (conversation) {
             resolvedConversation = conversation;
             messages = await Message.listByConversation(conversation.id, { limit });
         } else {
             messages = [];
         }
-    } else if (Number.isFinite(leadId) && leadId > 0) {
-        resolvedLead = await Lead.findById(leadId);
-        messages = await Message.listByLead(leadId, { limit });
     }
 
     const backfillSessionId = sanitizeSessionId(
