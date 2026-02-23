@@ -416,11 +416,27 @@ async function loadTags() {
     try {
         const response: TagsResponse = await api.get('/api/tags');
         tags = response.tags || [];
-        const select = document.getElementById('filterTag') as HTMLSelectElement | null;
-        if (!select) return;
-        tags.forEach(tag => {
-            select.innerHTML += `<option value="${tag.name}">${tag.name}</option>`;
-        });
+        const filterSelect = document.getElementById('filterTag') as HTMLSelectElement | null;
+        const importSelect = document.getElementById('importTag') as HTMLSelectElement | null;
+        const tagOptions = tags
+            .map((tag) => `<option value="${escapeHtml(tag.name)}">${escapeHtml(tag.name)}</option>`)
+            .join('');
+
+        if (filterSelect) {
+            const currentFilterValue = String(filterSelect.value || '').trim();
+            filterSelect.innerHTML = `<option value="">Todas as Tags</option>${tagOptions}`;
+            if (currentFilterValue && tags.some((tag) => tag.name === currentFilterValue)) {
+                filterSelect.value = currentFilterValue;
+            }
+        }
+
+        if (importSelect) {
+            const currentImportValue = String(importSelect.value || '').trim();
+            importSelect.innerHTML = `<option value="">Sem etiqueta</option>${tagOptions}`;
+            if (currentImportValue && tags.some((tag) => tag.name === currentImportValue)) {
+                importSelect.value = currentImportValue;
+            }
+        }
     } catch (e) {}
 }
 
@@ -906,11 +922,8 @@ async function importContacts() {
     const fileInput = document.getElementById('importFile') as HTMLInputElement | null;
     const textInput = (document.getElementById('importText') as HTMLTextAreaElement | null)?.value.trim() || '';
     const status = parseInt((document.getElementById('importStatus') as HTMLSelectElement | null)?.value || '1', 10) as LeadStatus;
-    const importTagRaw = (document.getElementById('importTag') as HTMLInputElement | null)?.value.trim() || '';
-    const importTags = importTagRaw
-        .split(/[,;|]/)
-        .map(t => t.trim())
-        .filter(Boolean);
+    const importTagValue = (document.getElementById('importTag') as HTMLSelectElement | null)?.value.trim() || '';
+    const importTags = importTagValue ? [importTagValue] : [];
 
     let data: Array<Record<string, string>> = [];
     if (fileInput?.files && fileInput.files.length > 0) {
@@ -984,7 +997,7 @@ async function importContacts() {
         }
 
         closeModal('importModal');
-        const importTag = document.getElementById('importTag') as HTMLInputElement | null;
+        const importTag = document.getElementById('importTag') as HTMLSelectElement | null;
         if (importTag) importTag.value = '';
         await loadContacts();
 

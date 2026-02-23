@@ -464,12 +464,9 @@ João Silva,27999999999,joao@email.com`}
             </div>
             <div className="form-group">
               <label className="form-label">Tag para importação (opcional)</label>
-              <input
-                type="text"
-                className="form-input"
-                id="importTag"
-                placeholder="Ex: Prioridade, Premium, Indicação"
-              />
+              <select className="form-select" id="importTag" defaultValue="">
+                <option value="">Sem etiqueta</option>
+              </select>
               <p className="form-help">Aplicada em todos os contatos importados.</p>
             </div>
           </div>
