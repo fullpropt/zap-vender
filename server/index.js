@@ -6116,6 +6116,21 @@ app.post('/api/auth/login', async (req, res) => {
 
         
 
+        // Auto-recuperacao: se nao houver admin ativo, promove o usuario autenticado
+        const allUsers = await User.listAll();
+        const hasActiveAdmin = (allUsers || []).some((item) =>
+            Number(item?.is_active) > 0 && String(item?.role || '').trim().toLowerCase() === 'admin'
+        );
+        if (!hasActiveAdmin && String(user.role || '').trim().toLowerCase() !== 'admin') {
+            await User.update(user.id, { role: 'admin', is_active: 1 });
+            const refreshed = await User.findByIdWithPassword(user.id);
+            if (refreshed) {
+                user = refreshed;
+            } else {
+                user.role = 'admin';
+            }
+        }
+
         await User.updateLastLogin(user.id);
 
         
