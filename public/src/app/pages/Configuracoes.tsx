@@ -25,6 +25,8 @@ type ConfiguracoesGlobals = {
   createContactField?: () => Promise<void>;
   updateContactField?: (key: string) => Promise<void>;
   deleteContactField?: (key: string) => Promise<void>;
+  confirmDeleteContactField?: () => Promise<void>;
+  cancelDeleteContactField?: () => void;
   createSettingsTag?: () => Promise<void>;
   updateSettingsTag?: (id: number) => Promise<void>;
   deleteSettingsTag?: (id: number) => Promise<void>;
@@ -798,6 +800,26 @@ export default function Configuracoes() {
                   <div className="modal-footer">
                       <button className="btn btn-outline" onClick={() => globals.cancelDeleteUser?.()}>Cancelar</button>
                       <button className="btn btn-danger" onClick={() => globals.confirmDeleteUser?.()}><span className="icon icon-delete icon-sm"></span> Excluir usuário</button>
+                  </div>
+              </div>
+          </div>
+
+          <div className="modal-overlay" id="confirmDeleteContactFieldModal">
+              <div className="modal">
+                  <div className="modal-header">
+                      <h3 className="modal-title"><span className="icon icon-delete icon-sm"></span> VocÃª tem certeza?</h3>
+                      <button className="modal-close" onClick={() => globals.cancelDeleteContactField?.()}>{'\u00D7'}</button>
+                  </div>
+                  <div className="modal-body">
+                      <input type="hidden" id="confirmDeleteContactFieldKey" />
+                      <p className="text-muted mb-4">
+                          Esta aÃ§Ã£o removerÃ¡ o campo <strong id="confirmDeleteContactFieldName">campo</strong> dos Campos DinÃ¢micos.
+                      </p>
+                      <p className="text-muted">Essa aÃ§Ã£o nÃ£o pode ser desfeita.</p>
+                  </div>
+                  <div className="modal-footer">
+                      <button className="btn btn-outline" onClick={() => globals.cancelDeleteContactField?.()}>Cancelar</button>
+                      <button className="btn btn-danger" onClick={() => globals.confirmDeleteContactField?.()}><span className="icon icon-delete icon-sm"></span> Excluir campo</button>
                   </div>
               </div>
           </div>
