@@ -47,6 +47,7 @@ class QueueService extends EventEmitter {
         
         // Iniciar processamento
         this.startProcessing();
+        console.log('[QueueDebug][boot] queue instrumentation active');
         
         console.log('Servico de fila de mensagens iniciado');
         console.log(`   - Delay entre mensagens: ${this.defaultDelay}ms`);
