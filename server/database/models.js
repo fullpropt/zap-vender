@@ -2621,8 +2621,24 @@ const User = {
         return await queryOne('SELECT * FROM users WHERE id = ?', [id]);
     },
     
-    async findByEmail(email) {
-        return await queryOne('SELECT * FROM users WHERE email = ?', [email]);
+    async findByEmail(email, options = {}) {
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        if (!normalizedEmail) return null;
+
+        const includeInactive = options?.includeInactive !== false;
+        const whereActive = includeInactive ? '' : ' AND is_active = 1';
+        return await queryOne(
+            `SELECT *
+             FROM users
+             WHERE email = ?${whereActive}
+             ORDER BY is_active DESC, id DESC
+             LIMIT 1`,
+            [normalizedEmail]
+        );
+    },
+
+    async findActiveByEmail(email) {
+        return await this.findByEmail(email, { includeInactive: false });
     },
     
     async updateLastLogin(id) {

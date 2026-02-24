@@ -6662,7 +6662,7 @@ app.post('/api/auth/register', async (req, res) => {
 
         const normalizedEmail = String(email || '').trim().toLowerCase();
 
-        const existing = await User.findByEmail(normalizedEmail);
+        const existing = await User.findActiveByEmail(normalizedEmail);
 
         if (existing) {
 
@@ -6946,7 +6946,7 @@ app.post('/api/users', authenticate, async (req, res) => {
             return res.status(400).json({ success: false, error: 'A senha deve ter pelo menos 6 caracteres' });
         }
 
-        const existing = await User.findByEmail(email);
+        const existing = await User.findActiveByEmail(email);
         if (existing) {
             return res.status(409).json({ success: false, error: 'E-mail já cadastrado' });
         }
@@ -7009,7 +7009,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
                 return res.status(400).json({ success: false, error: 'E-mail é obrigatório' });
             }
             if (email !== String(current.email || '').toLowerCase()) {
-                const existing = await User.findByEmail(email);
+                const existing = await User.findActiveByEmail(email);
                 if (existing && Number(existing.id) !== targetId) {
                     return res.status(409).json({ success: false, error: 'E-mail já cadastrado' });
                 }
