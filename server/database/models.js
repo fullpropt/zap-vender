@@ -2374,10 +2374,20 @@ const MessageQueue = {
 
         if (!nextScheduledAt && isDisconnectedSessionError) {
             const retryAt = new Date(Date.now() + 60 * 1000).toISOString();
+            console.log('[QueueDebug] MODEL_MARKFAILED_FALLBACK_TO_REQUEUE', {
+                messageId: id,
+                retryAt,
+                errorMessage: errorText
+            });
             return await this.requeueTransient(id, errorMessage, retryAt);
         }
 
         if (nextScheduledAt) {
+            console.log('[QueueDebug] MODEL_MARKFAILED_WITH_SCHEDULE', {
+                messageId: id,
+                nextScheduledAt,
+                errorMessage: errorText
+            });
             return await run(`
                 UPDATE message_queue 
                 SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
@@ -2390,6 +2400,10 @@ const MessageQueue = {
             `, [errorMessage, nextScheduledAt, id]);
         }
 
+        console.log('[QueueDebug] MODEL_MARKFAILED_DIRECT', {
+            messageId: id,
+            errorMessage: errorText
+        });
         return await run(`
             UPDATE message_queue 
             SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
@@ -2400,6 +2414,11 @@ const MessageQueue = {
 
     async requeueTransient(id, errorMessage, nextScheduledAt) {
         const scheduledAt = nextScheduledAt || new Date(Date.now() + 60 * 1000).toISOString();
+        console.log('[QueueDebug] MODEL_REQUEUE_TRANSIENT', {
+            messageId: id,
+            scheduledAt,
+            errorMessage: String(errorMessage || '')
+        });
 
         return await run(`
             UPDATE message_queue
