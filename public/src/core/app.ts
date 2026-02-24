@@ -511,18 +511,37 @@ async function apiRequest(endpoint: string, options: ApiRequestOptions = {}) {
     
     try {
         const response = await fetch(url, config);
-        const data = await response.json();
-        
+        const raw = await response.text();
+        let data: any = null;
+
+        if (raw) {
+            try {
+                data = JSON.parse(raw);
+            } catch (_) {
+                data = null;
+            }
+        }
+
         if (response.status === 401 && !isLoginRoute()) {
             logout();
-            throw new Error(data.error || 'Sessão expirada');
+            const unauthorizedMessage =
+                (data && typeof data.error === 'string' && data.error.trim())
+                    ? data.error
+                    : 'Sessão expirada';
+            throw new Error(unauthorizedMessage);
         }
 
         if (!response.ok) {
-            throw new Error(data.error || 'Erro na requisição');
+            const responseMessage =
+                (data && typeof data.error === 'string' && data.error.trim())
+                    ? data.error
+                    : (raw && raw.trim()) ? raw.trim() : 'Erro na requisição';
+            throw new Error(responseMessage);
         }
-        
-        return data;
+
+        if (data !== null) return data;
+        if (!raw) return {};
+        throw new Error('Resposta inválida do servidor');
     } catch (error) {
         console.error('API Error:', error);
         throw error;

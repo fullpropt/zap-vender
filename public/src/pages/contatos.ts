@@ -77,6 +77,11 @@ const CONTACTS_IMPORT_BATCH_SIZE = 200;
 const CONTACTS_BULK_DELETE_BATCH_SIZE = 1000;
 const BASE_CONTACTS_TABLE_COLUMNS = 7;
 
+function isContactsRouteActive() {
+    const hash = String(window.location.hash || '').toLowerCase();
+    return hash.startsWith('#/contatos');
+}
+
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', source: 'name', is_default: true },
     { key: 'telefone', label: 'Telefone', source: 'phone', is_default: true },
@@ -433,8 +438,15 @@ function applyUrlFilters() {
 }
 
 function initContacts() {
+    if (!isContactsRouteActive()) {
+        return;
+    }
     if (!document.getElementById('contactsTableBody')) {
-        setTimeout(initContacts, 50);
+        setTimeout(() => {
+            if (isContactsRouteActive()) {
+                initContacts();
+            }
+        }, 50);
         return;
     }
     loadContactFields();
@@ -483,18 +495,32 @@ async function fetchAllContacts() {
 }
 
 async function loadContacts() {
+    const canRenderContacts = () => isContactsRouteActive() && Boolean(document.getElementById('contactsTableBody'));
+    const shouldHandleUi = canRenderContacts();
+
     try {
-        showLoading('Carregando contatos...');
+        if (shouldHandleUi) {
+            showLoading('Carregando contatos...');
+        }
         allContacts = await fetchAllContacts();
+        if (!canRenderContacts()) {
+            return;
+        }
         pruneSelectedContactsByCurrentDataset();
         filteredContacts = [...allContacts];
         updateStats();
         renderContacts();
         applyUrlFilters();
-        hideLoading();
+        if (shouldHandleUi) {
+            hideLoading();
+        }
     } catch (error) {
-        hideLoading();
-        showToast('error', 'Erro', 'Não foi possível carregar os contatos');
+        if (shouldHandleUi) {
+            hideLoading();
+        }
+        if (canRenderContacts()) {
+            showToast('error', 'Erro', 'Não foi possível carregar os contatos');
+        }
     }
 }
 
