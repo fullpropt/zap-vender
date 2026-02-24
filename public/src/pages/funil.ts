@@ -26,23 +26,56 @@ type SettingsResponse = {
     settings?: Record<string, unknown>;
 };
 
+type FunnelCacheSnapshot = {
+    savedAt: number;
+    leads: Lead[];
+};
+
 const DEFAULT_FUNNEL_STAGES: FunnelStageConfig[] = [
-    { name: 'Novo', description: 'Lead recÃ©m cadastrado' },
-    { name: 'Em Andamento', description: 'Em negociaÃ§Ã£o' },
-    { name: 'ConcluÃ­do', description: 'Venda realizada' },
-    { name: 'Perdido', description: 'NÃ£o converteu' }
+    { name: 'Novo', description: 'Lead rec\u00E9m cadastrado' },
+    { name: 'Em Andamento', description: 'Em negocia\u00E7\u00E3o' },
+    { name: 'Conclu\u00EDdo', description: 'Venda realizada' },
+    { name: 'Perdido', description: 'N\u00E3o converteu' }
 ];
 const FUNNEL_STAGES_STORAGE_KEY = 'zapvender_funnel_stages';
 const FUNNEL_FETCH_BATCH_SIZE = 1000;
 const FUNNEL_FETCH_MAX_PAGES = 1000;
 const FUNNEL_CACHE_TTL_MS = 10 * 60 * 1000;
-const FUNNEL_CACHE_MIN_REVALIDATE_INTERVAL_MS = 45 * 1000;
+const FUNNEL_CACHE_MIN_REVALIDATE_INTERVAL_MS = FUNNEL_CACHE_TTL_MS;
 const FUNNEL_CACHE_PREFIX = 'zapvender_funnel_cache_v1';
+const VALID_LEAD_STATUS = new Set<LeadStatus>([1, 2, 3, 4]);
+const TEXT_MOJIBAKE_REPLACEMENTS: Array<[RegExp, string]> = [
+    [/\u00C3\u0080/g, '\u00C0'],
+    [/\u00C3\u0081/g, '\u00C1'],
+    [/\u00C3\u0082/g, '\u00C2'],
+    [/\u00C3\u0083/g, '\u00C3'],
+    [/\u00C3\u0087/g, '\u00C7'],
+    [/\u00C3\u0089/g, '\u00C9'],
+    [/\u00C3\u008A/g, '\u00CA'],
+    [/\u00C3\u008D/g, '\u00CD'],
+    [/\u00C3\u0093/g, '\u00D3'],
+    [/\u00C3\u0094/g, '\u00D4'],
+    [/\u00C3\u0095/g, '\u00D5'],
+    [/\u00C3\u009A/g, '\u00DA'],
+    [/\u00C3\u00A0/g, '\u00E0'],
+    [/\u00C3\u00A1/g, '\u00E1'],
+    [/\u00C3\u00A2/g, '\u00E2'],
+    [/\u00C3\u00A3/g, '\u00E3'],
+    [/\u00C3\u00A7/g, '\u00E7'],
+    [/\u00C3\u00A9/g, '\u00E9'],
+    [/\u00C3\u00AA/g, '\u00EA'],
+    [/\u00C3\u00AD/g, '\u00ED'],
+    [/\u00C3\u00B3/g, '\u00F3'],
+    [/\u00C3\u00B4/g, '\u00F4'],
+    [/\u00C3\u00B5/g, '\u00F5'],
+    [/\u00C3\u00BA/g, '\u00FA']
+];
 
 let leads: Lead[] = [];
 let currentView: 'kanban' | 'funnel' = 'kanban';
 let currentLead: Lead | null = null;
 let funnelStages: FunnelStageConfig[] = DEFAULT_FUNNEL_STAGES.map((stage) => ({ ...stage }));
+let funnelRuntimeCache: FunnelCacheSnapshot | null = null;
 
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -52,6 +85,46 @@ function onReady(callback: () => void) {
     }
 }
 
+
+function repairMojibakeText(value: string) {
+    let normalized = value;
+    for (const [pattern, replacement] of TEXT_MOJIBAKE_REPLACEMENTS) {
+        normalized = normalized.replace(pattern, replacement);
+    }
+    return normalized;
+}
+
+function normalizeLead(input: unknown): Lead | null {
+    if (!input || typeof input !== 'object') return null;
+
+    const raw = input as Record<string, unknown>;
+    const id = Number(raw.id);
+    const statusNumber = Number(raw.status);
+    const status: LeadStatus = VALID_LEAD_STATUS.has(statusNumber as LeadStatus) ? (statusNumber as LeadStatus) : 1;
+    const createdAtValue = String(raw.created_at || '').trim();
+
+    if (!Number.isFinite(id) || id <= 0) return null;
+
+    return {
+        id,
+        name: typeof raw.name === 'string' ? raw.name : undefined,
+        phone: typeof raw.phone === 'string' ? raw.phone : undefined,
+        vehicle: typeof raw.vehicle === 'string' ? raw.vehicle : undefined,
+        plate: typeof raw.plate === 'string' ? raw.plate : undefined,
+        status,
+        created_at: createdAtValue || new Date().toISOString()
+    };
+}
+
+function normalizeLeadList(input: unknown) {
+    if (!Array.isArray(input)) return [];
+    const normalized: Lead[] = [];
+    for (const item of input) {
+        const lead = normalizeLead(item);
+        if (lead) normalized.push(lead);
+    }
+    return normalized;
+}
 
 function getFunnelTokenSuffix() {
     const token = String(sessionStorage.getItem('selfDashboardToken') || '').trim();
@@ -66,13 +139,13 @@ function readFunnelCache() {
     try {
         const raw = sessionStorage.getItem(getFunnelCacheKey());
         if (!raw) return null;
-        const parsed = JSON.parse(raw) as { savedAt?: number; leads?: Lead[] };
+        const parsed = JSON.parse(raw) as { savedAt?: number; leads?: unknown };
         const savedAt = Number(parsed?.savedAt || 0);
         if (!Number.isFinite(savedAt) || savedAt <= 0) return null;
         if (Date.now() - savedAt > FUNNEL_CACHE_TTL_MS) return null;
         return {
             savedAt,
-            leads: Array.isArray(parsed?.leads) ? parsed.leads : []
+            leads: normalizeLeadList(parsed?.leads)
         };
     } catch (_) {
         return null;
@@ -81,11 +154,12 @@ function readFunnelCache() {
 
 function writeFunnelCache(nextLeads: Lead[]) {
     try {
+        const list = normalizeLeadList(nextLeads);
         sessionStorage.setItem(
             getFunnelCacheKey(),
             JSON.stringify({
                 savedAt: Date.now(),
-                leads: Array.isArray(nextLeads) ? nextLeads : []
+                leads: list
             })
         );
     } catch (_) {
@@ -99,10 +173,11 @@ function clearFunnelCache() {
     } catch (_) {
         // ignore storage failure
     }
+    funnelRuntimeCache = null;
 }
 
 function applyFunnelSnapshot(nextLeads: Lead[]) {
-    leads = Array.isArray(nextLeads) ? nextLeads : [];
+    leads = normalizeLeadList(nextLeads);
     updateFunnelStats();
     renderKanban();
 }
@@ -111,12 +186,12 @@ function getContatosUrl(stage: number | string) {
 }
 
 function normalizeFunnelStageName(value: unknown, fallback: string) {
-    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    const normalized = repairMojibakeText(String(value || '').replace(/\s+/g, ' ').trim());
     return normalized || fallback;
 }
 
 function normalizeFunnelStageDescription(value: unknown, fallback: string) {
-    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    const normalized = repairMojibakeText(String(value || '').replace(/\s+/g, ' ').trim());
     return normalized || fallback;
 }
 
@@ -205,12 +280,19 @@ onReady(initFunil);
 
 async function loadFunnel(options: { forceRefresh?: boolean; silent?: boolean } = {}) {
     const forceRefresh = options.forceRefresh === true;
-    const cached = forceRefresh ? null : readFunnelCache();
+    const runtimeCached = forceRefresh ? null : funnelRuntimeCache;
+    const cached = runtimeCached || (forceRefresh ? null : readFunnelCache());
     const cacheAgeMs = cached ? Math.max(0, Date.now() - cached.savedAt) : Number.POSITIVE_INFINITY;
     const shouldSkipRefresh = !forceRefresh && !!cached && cacheAgeMs <= FUNNEL_CACHE_MIN_REVALIDATE_INTERVAL_MS;
 
     if (cached) {
         applyFunnelSnapshot(cached.leads || []);
+        if (!runtimeCached) {
+            funnelRuntimeCache = {
+                savedAt: cached.savedAt,
+                leads: [...cached.leads]
+            };
+        }
     }
 
     if (shouldSkipRefresh) {
@@ -223,6 +305,10 @@ async function loadFunnel(options: { forceRefresh?: boolean; silent?: boolean } 
         }
 
         const fetchedLeads = await fetchAllFunnelLeads();
+        funnelRuntimeCache = {
+            savedAt: Date.now(),
+            leads: normalizeLeadList(fetchedLeads)
+        };
         writeFunnelCache(fetchedLeads);
         applyFunnelSnapshot(fetchedLeads);
 
@@ -232,7 +318,7 @@ async function loadFunnel(options: { forceRefresh?: boolean; silent?: boolean } 
     } catch (error) {
         if (!cached) {
             hideLoading();
-            showToast('error', 'Erro', 'NÃ£o foi possÃ­vel carregar o funil');
+            showToast('error', 'Erro', 'N\u00E3o foi poss\u00EDvel carregar o funil');
         } else if (!options.silent) {
             console.warn('Falha ao revalidar funil:', error);
         }
@@ -261,7 +347,7 @@ async function fetchAllFunnelLeads() {
             throw error;
         }
 
-        const batch = Array.isArray(response?.leads) ? response.leads : [];
+        const batch = normalizeLeadList(response?.leads);
         const reportedTotal = Number(response?.total);
 
         if (Number.isFinite(reportedTotal) && reportedTotal >= 0) {
@@ -394,13 +480,17 @@ async function updateLeadStage(leadId: number, newStage: LeadStatus) {
     const previousStage = lead?.status;
 
     if (!lead) {
-        showToast('error', 'Erro', 'Lead nÃ£o encontrado');
+        showToast('error', 'Erro', 'Lead n\u00E3o encontrado');
         return;
     }
 
     try {
         await api.put(`/api/leads/${leadId}`, { status: newStage });
         lead.status = newStage;
+        funnelRuntimeCache = {
+            savedAt: Date.now(),
+            leads: [...leads]
+        };
         writeFunnelCache(leads);
         updateFunnelStats();
         renderKanban();
@@ -412,7 +502,7 @@ async function updateLeadStage(leadId: number, newStage: LeadStatus) {
         clearFunnelCache();
         updateFunnelStats();
         renderKanban();
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel mover o lead');
+        showToast('error', 'Erro', 'N\u00E3o foi poss\u00EDvel mover o lead');
     }
 }
 
@@ -437,7 +527,7 @@ function viewLead(id: number) {
         </div>
         <div class="form-row">
             <div class="form-group">
-                <label class="form-label">VeÃ­culo</label>
+                <label class="form-label">Ve\u00EDculo</label>
                 <p>${currentLead.vehicle || '-'}</p>
             </div>
             <div class="form-group">
@@ -450,7 +540,7 @@ function viewLead(id: number) {
             <select class="form-select" id="leadStatus" onchange="changeLeadStatus(${currentLead.id}, this.value)">
                 <option value="1" ${currentLead.status === 1 ? 'selected' : ''}>Novo</option>
                 <option value="2" ${currentLead.status === 2 ? 'selected' : ''}>Em Andamento</option>
-                <option value="3" ${currentLead.status === 3 ? 'selected' : ''}>ConcluÃ­do</option>
+                <option value="3" ${currentLead.status === 3 ? 'selected' : ''}>Conclu\u00EDdo</option>
                 <option value="4" ${currentLead.status === 4 ? 'selected' : ''}>Perdido</option>
             </select>
         </div>
@@ -533,7 +623,7 @@ async function saveStagesConfig() {
 
 const windowAny = window as Window & {
     initFunil?: () => void;
-    loadFunnel?: () => void;
+    loadFunnel?: (options?: { forceRefresh?: boolean; silent?: boolean }) => void;
     viewLead?: (id: number) => void;
     changeLeadStatus?: (id: number, status: string) => Promise<void>;
     openLeadWhatsApp?: () => void;
@@ -553,4 +643,3 @@ windowAny.filterByStage = filterByStage;
 windowAny.saveStagesConfig = saveStagesConfig;
 
 export { initFunil };
-

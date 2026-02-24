@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { brandLogoUrl, brandName } from '../lib/brand';
 type FunilGlobals = {
   initFunil?: () => void;
-  loadFunnel?: () => void;
+  loadFunnel?: (options?: { forceRefresh?: boolean; silent?: boolean }) => void;
   toggleView?: () => void;
   filterByStage?: (stage: number | string) => void;
   openModal?: (id: string) => void;
@@ -281,7 +281,7 @@ export default function Funil() {
                       <p>Visualize e gerencie seu pipeline de vendas</p>
                   </div>
                   <div className="page-actions">
-                      <button className="btn btn-outline" onClick={() => globals.loadFunnel?.()}><span className="icon icon-refresh icon-sm"></span> Atualizar</button>
+                      <button className="btn btn-outline" onClick={() => globals.loadFunnel?.({ forceRefresh: true })}><span className="icon icon-refresh icon-sm"></span> Atualizar</button>
                       <button className="btn btn-outline" onClick={() => globals.toggleView?.()}>
                           <span id="viewIcon"><span className="icon icon-chart-bar icon-sm"></span></span> <span id="viewText">Kanban</span>
                       </button>
