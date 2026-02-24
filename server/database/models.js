@@ -2364,8 +2364,13 @@ const MessageQueue = {
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase();
         const isDisconnectedSessionError =
-            normalizedError.includes('sess') &&
-            (normalizedError.includes('conectad') || normalizedError.includes('not connected'));
+            normalizedError.includes('not connected') ||
+            normalizedError.includes('nao esta conectado') ||
+            normalizedError.includes('não está conectado') ||
+            (
+                normalizedError.includes('conectad') &&
+                (normalizedError.includes('sess') || normalizedError.includes('whatsapp') || normalizedError.includes('conexao'))
+            );
 
         if (!nextScheduledAt && isDisconnectedSessionError) {
             const retryAt = new Date(Date.now() + 60 * 1000).toISOString();

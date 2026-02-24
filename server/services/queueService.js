@@ -641,6 +641,7 @@ class QueueService extends EventEmitter {
                 sendError.messageId = message.id;
                 sendError.leadId = message.lead_id;
                 sendError.conversationId = message.conversation_id;
+                sendError.sessionId = assignedSessionId;
                 throw sendError;
             }
 
@@ -664,6 +665,7 @@ class QueueService extends EventEmitter {
             const messageId = Number(error?.messageId || 0);
             const leadId = Number(error?.leadId || 0);
             const conversationId = Number(error?.conversationId || 0);
+            const failedSessionId = String(error?.sessionId || '').trim();
             console.error('Erro ao processar fila:', error.message);
 
             if (messageId > 0) {
@@ -673,13 +675,24 @@ class QueueService extends EventEmitter {
                     .replace(/[\u0300-\u036f]/g, '')
                     .toLowerCase();
                 const errorCode = String(error?.code || '').trim().toUpperCase();
-                const isDisconnectedSessionError =
+                let isDisconnectedSessionError =
                     errorCode === 'SESSION_DISCONNECTED' ||
                     errorCode === 'SESSION_RECONNECTING' ||
                     errorCode === 'SESSION_WARMING_UP' ||
                     errorCode === 'SESSION_COOLDOWN' ||
                     (normalizedError.includes('sess') &&
                         (normalizedError.includes('conectada') || normalizedError.includes('conectad') || normalizedError.includes('not connected')));
+
+                if (!isDisconnectedSessionError && failedSessionId && this.getSessionDispatchState) {
+                    try {
+                        const runtimeSessionState = this.normalizeSessionDispatchState(
+                            await this.getSessionDispatchState(failedSessionId)
+                        );
+                        isDisconnectedSessionError = runtimeSessionState.available === false;
+                    } catch (_) {
+                        // noop: fallback para classificação por texto/código
+                    }
+                }
 
                 if (isDisconnectedSessionError) {
                     const retryAfterMs = Number(error?.retryAfterMs);

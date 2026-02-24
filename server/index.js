@@ -872,6 +872,36 @@ function buildSessionUnavailableError(sessionState, fallbackMessage = 'Sessao na
     return error;
 }
 
+function scheduleRuntimeSessionReconnect(sessionId, session = null) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId) return;
+
+    const runtimeSession = session || sessions.get(normalizedSessionId);
+    if (!runtimeSession) return;
+    if (runtimeSession.reconnecting) return;
+    if (sessionInitLocks.has(normalizedSessionId)) return;
+    if (reconnectInFlight.has(normalizedSessionId)) return;
+
+    runtimeSession.reconnecting = true;
+
+    setTimeout(() => {
+        const latestSession = sessions.get(normalizedSessionId);
+        if (!latestSession) return;
+        if (sessionInitLocks.has(normalizedSessionId)) return;
+        if (latestSession.isConnected) return;
+
+        const currentAttempt = reconnectAttempts.get(normalizedSessionId) || 0;
+        const clientSocket = latestSession.clientSocket || null;
+        const ownerUserId = Number(latestSession.ownerUserId || 0) > 0 ? Number(latestSession.ownerUserId) : undefined;
+
+        createSession(normalizedSessionId, clientSocket, currentAttempt, {
+            ownerUserId
+        }).catch((error) => {
+            console.error(`[${normalizedSessionId}] Falha ao reconectar apos erro de envio:`, error.message);
+        });
+    }, 50);
+}
+
 
 
 function getSessionUser(sessionId) {
@@ -2646,6 +2676,7 @@ async function sendMessageToWhatsApp(options) {
             session.isConnected = false;
             session.reconnecting = true;
             const blockedUntilMs = setRuntimeSessionDispatchBackoff(session);
+            scheduleRuntimeSessionReconnect(sid, session);
             const connectionError = buildSessionUnavailableError({
                 status: 'disconnected',
                 retryAfterMs: blockedUntilMs > Date.now() ? Math.max(1000, blockedUntilMs - Date.now()) : null,
@@ -6119,6 +6150,7 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
             session.isConnected = false;
             session.reconnecting = true;
             const blockedUntilMs = setRuntimeSessionDispatchBackoff(session);
+            scheduleRuntimeSessionReconnect(sessionId, session);
             const connectionError = new Error('Sessao nao esta conectada');
             connectionError.code = 'SESSION_DISCONNECTED';
             if (blockedUntilMs > Date.now()) {
