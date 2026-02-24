@@ -13,13 +13,19 @@ const fs = require('fs');
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 
+function normalizeDirValue(value) {
+    const normalized = String(value || '').trim();
+    return normalized || '';
+}
+
 function resolveVolumeBase() {
     const envBase = process.env.RAILWAY_VOLUME_MOUNT_PATH
         || process.env.RAILWAY_VOLUME_PATH
         || process.env.RAILWAY_VOLUME
         || process.env.VOLUME_MOUNT_PATH;
-    if (envBase) return envBase;
+    if (envBase) return normalizeDirValue(envBase);
     if (fs.existsSync('/mnt/data')) return '/mnt/data';
+    if (fs.existsSync('/data')) return '/data';
 
     const bindRoot = '/var/lib/containers/railwayapp/bind-mounts';
     if (fs.existsSync(bindRoot)) {
@@ -39,20 +45,30 @@ function resolveVolumeBase() {
 }
 
 const volumeBase = process.env.NODE_ENV === 'production' ? resolveVolumeBase() : null;
+const explicitSessionsDir = normalizeDirValue(process.env.SESSIONS_DIR);
+const explicitUploadDir = normalizeDirValue(process.env.UPLOAD_DIR);
 
-if (volumeBase) {
-    process.env.SESSIONS_DIR = process.env.SESSIONS_DIR || path.join(volumeBase, 'sessions');
-    process.env.UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(volumeBase, 'uploads');
-    console.log(`[Bootstrap] Volume persistente: ${volumeBase}`);
-} else if (process.env.NODE_ENV === 'production') {
-    console.warn('[Bootstrap] Volume persistente nao detectado. Configure UPLOAD_DIR/SESSIONS_DIR em volume para manter arquivos entre reinicios.');
+const sessionsDir = explicitSessionsDir || (volumeBase ? path.join(volumeBase, 'sessions') : path.join(__dirname, '..', 'sessions'));
+const uploadsDir = explicitUploadDir || (volumeBase ? path.join(volumeBase, 'uploads') : path.join(__dirname, '..', 'uploads'));
+
+process.env.SESSIONS_DIR = sessionsDir;
+process.env.UPLOAD_DIR = uploadsDir;
+
+if (process.env.NODE_ENV === 'production') {
+    if (volumeBase) {
+        console.log(`[Bootstrap] Volume persistente detectado: ${volumeBase}`);
+    } else if (explicitSessionsDir || explicitUploadDir) {
+        console.log('[Bootstrap] Diretorios de sessao/upload configurados via variavel de ambiente.');
+    } else {
+        console.warn('[Bootstrap] Volume persistente nao detectado. Configure UPLOAD_DIR/SESSIONS_DIR em volume para manter arquivos entre reinicios.');
+    }
 }
 
 // Criar diretórios necessários
 [
-    process.env.SESSIONS_DIR || path.join(__dirname, '..', 'sessions'),
-    process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads')
-].forEach(dir => {
+    sessionsDir,
+    uploadsDir
+].forEach((dir) => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
