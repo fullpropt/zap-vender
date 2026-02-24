@@ -1,10 +1,10 @@
 /**
- * SELF PROTEÇÃO VEICULAR - Serviço de Fila de Mensagens
+ * SELF PROTECAO VEICULAR - Servico de Fila de Mensagens
  * Gerencia envio de mensagens em massa com delay para evitar bloqueios
  */
 
 const { MessageQueue, Settings, Lead } = require('../database/models');
-const { run } = require('../database/connection');
+const { run, queryOne } = require('../database/connection');
 const EventEmitter = require('events');
 
 class QueueService extends EventEmitter {
@@ -17,14 +17,15 @@ class QueueService extends EventEmitter {
         this.defaultDelay = 3000; // 3 segundos entre mensagens
         this.maxMessagesPerMinute = 30;
         this.messagesSentThisMinute = 0;
-        this.lastMinuteReset = Date.now();
-        this.businessHoursCache = null;
-        this.businessHoursCacheAt = 0;
+        this.rateStateByOwner = new Map();
+        this.queueSettingsCacheByOwner = new Map();
+        this.queueSettingsCacheTtlMs = 30000;
+        this.businessHoursCacheByOwner = new Map();
         this.businessHoursCacheTtlMs = 30000;
     }
     
     /**
-     * Inicializar o serviço de fila
+     * Inicializar o servico de fila
      */
     async init(sendFunction, options = {}) {
         this.sendFunction = sendFunction;
@@ -32,23 +33,21 @@ class QueueService extends EventEmitter {
             ? options.resolveSessionForMessage
             : null;
         
-        // Carregar configurações do banco
-        const delay = await Settings.get('bulk_message_delay');
-        const maxPerMinute = await Settings.get('max_messages_per_minute');
-        
-        if (delay) this.defaultDelay = delay;
-        if (maxPerMinute) this.maxMessagesPerMinute = maxPerMinute;
+        // Carregar configuracoes do banco
+        const defaultSettings = await this.getQueueSettings(null, true);
+        this.defaultDelay = defaultSettings.delay;
+        this.maxMessagesPerMinute = defaultSettings.maxPerMinute;
         
         // Iniciar processamento
         this.startProcessing();
         
-        console.log('📬 Serviço de fila de mensagens iniciado');
+        console.log('Servico de fila de mensagens iniciado');
         console.log(`   - Delay entre mensagens: ${this.defaultDelay}ms`);
-        console.log(`   - Máximo por minuto: ${this.maxMessagesPerMinute}`);
+        console.log(`   - Maximo por minuto: ${this.maxMessagesPerMinute}`);
     }
     
     /**
-     * Adicionar mensagem à fila
+     * Adicionar mensagem a fila
      */
     async add(options) {
         const {
@@ -85,12 +84,15 @@ class QueueService extends EventEmitter {
     }
     
     /**
-     * Adicionar múltiplas mensagens (disparo em massa)
+     * Adicionar multiplas mensagens (disparo em massa)
      */
     async addBulk(leadIds, content, options = {}) {
         if (!Array.isArray(leadIds) || leadIds.length === 0) {
             return [];
         }
+
+        const ownerUserId = this.normalizeOwnerUserId(options.ownerUserId || options.owner_user_id || null) || null;
+        const queueSettings = await this.getQueueSettings(ownerUserId || null);
 
         const results = [];
         const sessionAssignments = (options.sessionAssignments && typeof options.sessionAssignments === 'object')
@@ -108,7 +110,7 @@ class QueueService extends EventEmitter {
         const delayMaxInput = Number(options.delayMaxMs);
         const hasRange = Number.isFinite(delayMinInput) || Number.isFinite(delayMaxInput);
 
-        let delayMin = Number.isFinite(delayMs) && delayMs > 0 ? delayMs : this.defaultDelay;
+        let delayMin = Number.isFinite(delayMs) && delayMs > 0 ? delayMs : queueSettings.delay;
         let delayMax = delayMin;
 
         if (hasRange) {
@@ -170,6 +172,121 @@ class QueueService extends EventEmitter {
         return results;
     }
 
+    normalizeOwnerUserId(value) {
+        const ownerUserId = Number(value || 0);
+        return Number.isInteger(ownerUserId) && ownerUserId > 0 ? ownerUserId : 0;
+    }
+
+    buildScopedSettingsKey(baseKey, ownerUserId = null) {
+        const normalizedKey = String(baseKey || '').trim();
+        if (!normalizedKey) return normalizedKey;
+
+        const normalizedOwnerUserId = this.normalizeOwnerUserId(ownerUserId);
+        if (!normalizedOwnerUserId) return normalizedKey;
+
+        return `user:${normalizedOwnerUserId}:${normalizedKey}`;
+    }
+
+    buildOwnerCacheKey(ownerUserId = null) {
+        const normalizedOwnerUserId = this.normalizeOwnerUserId(ownerUserId);
+        return normalizedOwnerUserId ? `owner:${normalizedOwnerUserId}` : 'owner:0';
+    }
+
+    parsePositiveNumber(value, fallback, min = 1) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return fallback;
+        if (parsed < min) return fallback;
+        return parsed;
+    }
+
+    async resolveOwnerUserIdFromAssignee(assignedTo) {
+        const assigneeId = Number(assignedTo || 0);
+        if (!Number.isInteger(assigneeId) || assigneeId <= 0) {
+            return null;
+        }
+
+        const row = await queryOne(
+            'SELECT owner_user_id FROM users WHERE id = ?',
+            [assigneeId]
+        );
+        const ownerUserId = this.normalizeOwnerUserId(row?.owner_user_id);
+        if (ownerUserId) return ownerUserId;
+
+        return assigneeId;
+    }
+
+    async resolveOwnerUserIdForMessage(message, lead = null) {
+        const leadAssigneeId = Number(lead?.assigned_to || 0);
+        if (Number.isInteger(leadAssigneeId) && leadAssigneeId > 0) {
+            const ownerFromLead = await this.resolveOwnerUserIdFromAssignee(leadAssigneeId);
+            if (ownerFromLead) return ownerFromLead;
+        }
+
+        const conversationId = Number(message?.conversation_id || 0);
+        if (Number.isInteger(conversationId) && conversationId > 0) {
+            const conversationRow = await queryOne(
+                'SELECT assigned_to FROM conversations WHERE id = ?',
+                [conversationId]
+            );
+            const ownerFromConversation = await this.resolveOwnerUserIdFromAssignee(conversationRow?.assigned_to);
+            if (ownerFromConversation) return ownerFromConversation;
+        }
+
+        const sessionId = String(message?.session_id || '').trim();
+        if (sessionId) {
+            const sessionRow = await queryOne(
+                'SELECT created_by FROM whatsapp_sessions WHERE session_id = ?',
+                [sessionId]
+            );
+            const ownerFromSession = this.normalizeOwnerUserId(sessionRow?.created_by);
+            if (ownerFromSession) return ownerFromSession;
+        }
+
+        return null;
+    }
+
+    getOwnerRateState(ownerUserId, maxPerMinute) {
+        const key = this.buildOwnerCacheKey(ownerUserId);
+        const now = Date.now();
+        const existing = this.rateStateByOwner.get(key);
+
+        if (!existing || (now - Number(existing.lastReset || 0)) > 60000) {
+            const fresh = { count: 0, lastReset: now };
+            this.rateStateByOwner.set(key, fresh);
+            return fresh;
+        }
+
+        if (Number(existing.count || 0) > Number(maxPerMinute || 0) * 3) {
+            existing.count = Number(maxPerMinute || 0);
+        }
+
+        return existing;
+    }
+
+    getTotalMessagesSentThisMinute() {
+        const now = Date.now();
+        let total = 0;
+        for (const state of this.rateStateByOwner.values()) {
+            if ((now - Number(state.lastReset || 0)) <= 60000) {
+                total += Number(state.count || 0);
+            }
+        }
+        return total;
+    }
+
+    canSendForOwner(ownerUserId, maxPerMinute) {
+        const safeMaxPerMinute = Math.max(1, Math.floor(Number(maxPerMinute) || this.maxMessagesPerMinute || 1));
+        const state = this.getOwnerRateState(ownerUserId, safeMaxPerMinute);
+        return Number(state.count || 0) < safeMaxPerMinute;
+    }
+
+    registerSentForOwner(ownerUserId, maxPerMinute) {
+        const safeMaxPerMinute = Math.max(1, Math.floor(Number(maxPerMinute) || this.maxMessagesPerMinute || 1));
+        const state = this.getOwnerRateState(ownerUserId, safeMaxPerMinute);
+        state.count = Number(state.count || 0) + 1;
+        state.lastReset = Number(state.lastReset || Date.now());
+    }
+
     normalizeTimeInput(value, fallback) {
         const raw = String(value || '').trim();
         if (!raw) return fallback;
@@ -216,26 +333,71 @@ class QueueService extends EventEmitter {
         };
     }
 
-    async getBusinessHoursSettings(forceRefresh = false) {
+    async getQueueSettings(ownerUserId = null, forceRefresh = false) {
+        const normalizedOwnerUserId = this.normalizeOwnerUserId(ownerUserId);
+        const cacheKey = this.buildOwnerCacheKey(normalizedOwnerUserId);
         const now = Date.now();
-        if (!forceRefresh && this.businessHoursCache && (now - this.businessHoursCacheAt) < this.businessHoursCacheTtlMs) {
-            return this.businessHoursCache;
+        const cached = this.queueSettingsCacheByOwner.get(cacheKey);
+
+        if (!forceRefresh && cached && (now - Number(cached.cachedAt || 0)) < this.queueSettingsCacheTtlMs) {
+            return cached.value;
         }
 
-        const [enabledValue, startValue, endValue] = await Promise.all([
-            Settings.get('business_hours_enabled'),
-            Settings.get('business_hours_start'),
-            Settings.get('business_hours_end')
+        const [scopedDelay, scopedMaxPerMinute, legacyDelay, legacyMaxPerMinute] = await Promise.all([
+            Settings.get(this.buildScopedSettingsKey('bulk_message_delay', normalizedOwnerUserId || null)),
+            Settings.get(this.buildScopedSettingsKey('max_messages_per_minute', normalizedOwnerUserId || null)),
+            normalizedOwnerUserId ? Settings.get('bulk_message_delay') : Promise.resolve(null),
+            normalizedOwnerUserId ? Settings.get('max_messages_per_minute') : Promise.resolve(null)
+        ]);
+
+        const delay = this.parsePositiveNumber(
+            scopedDelay ?? legacyDelay,
+            this.defaultDelay,
+            1
+        );
+        const maxPerMinute = Math.max(1, Math.floor(this.parsePositiveNumber(
+            scopedMaxPerMinute ?? legacyMaxPerMinute,
+            this.maxMessagesPerMinute,
+            1
+        )));
+
+        const value = { delay, maxPerMinute };
+        this.queueSettingsCacheByOwner.set(cacheKey, {
+            value,
+            cachedAt: now
+        });
+
+        return value;
+    }
+
+    async getBusinessHoursSettings(ownerUserId = null, forceRefresh = false) {
+        const normalizedOwnerUserId = this.normalizeOwnerUserId(ownerUserId);
+        const cacheKey = this.buildOwnerCacheKey(normalizedOwnerUserId);
+        const now = Date.now();
+        const cached = this.businessHoursCacheByOwner.get(cacheKey);
+        if (!forceRefresh && cached && (now - Number(cached.cachedAt || 0)) < this.businessHoursCacheTtlMs) {
+            return cached.value;
+        }
+
+        const [scopedEnabledValue, scopedStartValue, scopedEndValue, legacyEnabledValue, legacyStartValue, legacyEndValue] = await Promise.all([
+            Settings.get(this.buildScopedSettingsKey('business_hours_enabled', normalizedOwnerUserId || null)),
+            Settings.get(this.buildScopedSettingsKey('business_hours_start', normalizedOwnerUserId || null)),
+            Settings.get(this.buildScopedSettingsKey('business_hours_end', normalizedOwnerUserId || null)),
+            normalizedOwnerUserId ? Settings.get('business_hours_enabled') : Promise.resolve(null),
+            normalizedOwnerUserId ? Settings.get('business_hours_start') : Promise.resolve(null),
+            normalizedOwnerUserId ? Settings.get('business_hours_end') : Promise.resolve(null)
         ]);
 
         const normalized = this.normalizeBusinessHoursSettings({
-            enabled: enabledValue,
-            start: startValue,
-            end: endValue
+            enabled: scopedEnabledValue ?? legacyEnabledValue,
+            start: scopedStartValue ?? legacyStartValue,
+            end: scopedEndValue ?? legacyEndValue
         });
 
-        this.businessHoursCache = normalized;
-        this.businessHoursCacheAt = now;
+        this.businessHoursCacheByOwner.set(cacheKey, {
+            value: normalized,
+            cachedAt: now
+        });
 
         return normalized;
     }
@@ -257,19 +419,32 @@ class QueueService extends EventEmitter {
         return nowMinutes >= start || nowMinutes < end;
     }
 
-    async canProcessQueueNow() {
+    async canProcessQueueNow(ownerUserId = null) {
         try {
-            const settings = await this.getBusinessHoursSettings();
+            const settings = await this.getBusinessHoursSettings(ownerUserId || null);
             return this.isWithinBusinessHours(settings);
         } catch (error) {
-            console.error('❌ Erro ao validar horário de funcionamento da fila:', error.message);
+            console.error('Erro ao validar horario de funcionamento da fila:', error.message);
             return true;
         }
     }
 
-    invalidateBusinessHoursCache() {
-        this.businessHoursCache = null;
-        this.businessHoursCacheAt = 0;
+    invalidateBusinessHoursCache(ownerUserId = null) {
+        const normalizedOwnerUserId = this.normalizeOwnerUserId(ownerUserId);
+        if (normalizedOwnerUserId) {
+            this.businessHoursCacheByOwner.delete(this.buildOwnerCacheKey(normalizedOwnerUserId));
+            return;
+        }
+        this.businessHoursCacheByOwner.clear();
+    }
+
+    invalidateQueueSettingsCache(ownerUserId = null) {
+        const normalizedOwnerUserId = this.normalizeOwnerUserId(ownerUserId);
+        if (normalizedOwnerUserId) {
+            this.queueSettingsCacheByOwner.delete(this.buildOwnerCacheKey(normalizedOwnerUserId));
+            return;
+        }
+        this.queueSettingsCacheByOwner.clear();
     }
     
     /**
@@ -294,48 +469,59 @@ class QueueService extends EventEmitter {
     }
     
     /**
-     * Processar próxima mensagem da fila
+     * Processar proxima mensagem da fila
      */
     async processNext() {
         if (this.isProcessing) return;
         if (!this.sendFunction) return;
-        
-        // Reset contador de mensagens por minuto
-        if (Date.now() - this.lastMinuteReset > 60000) {
-            this.messagesSentThisMinute = 0;
-            this.lastMinuteReset = Date.now();
-        }
-        
-        // Verificar limite por minuto
-        if (this.messagesSentThisMinute >= this.maxMessagesPerMinute) {
-            return;
-        }
 
-        const canProcessNow = await this.canProcessQueueNow();
-        if (!canProcessNow) {
-            return;
-        }
-        
-        // Buscar próxima mensagem
-        const message = await MessageQueue.getNext();
-        if (!message) return;
-        
         this.isProcessing = true;
-        
+
         try {
-            // Marcar como processando
+            const pendingMessages = await MessageQueue.getPending({ limit: 100 });
+            if (!pendingMessages || pendingMessages.length === 0) return;
+
+            let selected = null;
+            for (const candidate of pendingMessages) {
+                const lead = await Lead.findById(candidate.lead_id);
+                if (!lead) {
+                    await MessageQueue.markProcessing(candidate.id);
+                    await MessageQueue.markFailed(candidate.id, 'Lead nao encontrado');
+                    continue;
+                }
+
+                if (Number(lead.is_blocked || 0) > 0) {
+                    await MessageQueue.markProcessing(candidate.id);
+                    await MessageQueue.markFailed(candidate.id, 'Lead bloqueado');
+                    continue;
+                }
+
+                const ownerUserId = await this.resolveOwnerUserIdForMessage(candidate, lead);
+                const queueSettings = await this.getQueueSettings(ownerUserId || null);
+
+                if (!this.canSendForOwner(ownerUserId || null, queueSettings.maxPerMinute)) {
+                    continue;
+                }
+
+                const canProcessNow = await this.canProcessQueueNow(ownerUserId || null);
+                if (!canProcessNow) {
+                    continue;
+                }
+
+                selected = {
+                    message: candidate,
+                    lead,
+                    ownerUserId: ownerUserId || null,
+                    queueSettings
+                };
+                break;
+            }
+
+            if (!selected) return;
+
+            const { message, lead, ownerUserId, queueSettings } = selected;
             await MessageQueue.markProcessing(message.id);
-            
-            // Buscar lead
-            const lead = await Lead.findById(message.lead_id);
-            if (!lead) {
-                throw new Error('Lead não encontrado');
-            }
-            
-            if (lead.is_blocked) {
-                throw new Error('Lead bloqueado');
-            }
-            
+
             let assignedSessionId = String(message.session_id || '').trim();
             if (!assignedSessionId && this.resolveSessionForMessage) {
                 const allocation = await this.resolveSessionForMessage({
@@ -353,75 +539,104 @@ class QueueService extends EventEmitter {
             }
 
             if (!assignedSessionId) {
-                throw new Error('Nenhuma conta de WhatsApp disponivel para envio');
+                const sendError = new Error('Nenhuma conta de WhatsApp disponivel para envio');
+                sendError.messageId = message.id;
+                sendError.leadId = message.lead_id;
+                sendError.conversationId = message.conversation_id;
+                throw sendError;
             }
 
-            // Enviar mensagem
-            await this.sendFunction({
-                sessionId: assignedSessionId,
-                to: lead.phone,
-                jid: lead.jid,
-                content: message.content,
-                mediaType: message.media_type,
-                mediaUrl: message.media_url,
-                campaignId: message.campaign_id || null,
-                conversationId: message.conversation_id || null
-            });
-            
-            // Marcar como enviada
-            await MessageQueue.markSent(message.id);
-            this.messagesSentThisMinute++;
-            
-            this.emit('message:sent', { 
-                id: message.id, 
-                leadId: message.lead_id,
-                sessionId: assignedSessionId,
-                content: message.content 
-            });
-            
-            // Aguardar delay antes de processar próxima
-            await this.delay(this.defaultDelay);
-            
-        } catch (error) {
-            console.error(`❌ Erro ao processar mensagem ${message.id}:`, error.message);
-            
-            await MessageQueue.markFailed(message.id, error.message);
             try {
-                await run(
-                    `UPDATE messages
-                     SET status = 'failed'
-                     WHERE conversation_id = ? AND lead_id = ? AND status = 'pending'`,
-                    [message.conversation_id, message.lead_id]
-                );
-            } catch (dbError) {
-                console.error(`❌ Erro ao atualizar status da mensagem ${message.id}:`, dbError.message);
+                await this.sendFunction({
+                    sessionId: assignedSessionId,
+                    to: lead.phone,
+                    jid: lead.jid,
+                    ownerUserId: ownerUserId || undefined,
+                    assignedTo: lead.assigned_to || null,
+                    content: message.content,
+                    mediaType: message.media_type,
+                    mediaUrl: message.media_url,
+                    campaignId: message.campaign_id || null,
+                    conversationId: message.conversation_id || null
+                });
+            } catch (sendError) {
+                sendError.messageId = message.id;
+                sendError.leadId = message.lead_id;
+                sendError.conversationId = message.conversation_id;
+                throw sendError;
             }
-            
-            this.emit('message:failed', { 
-                id: message.id, 
+
+            await MessageQueue.markSent(message.id);
+            this.registerSentForOwner(ownerUserId || null, queueSettings.maxPerMinute);
+            this.messagesSentThisMinute = this.getTotalMessagesSentThisMinute();
+            this.defaultDelay = queueSettings.delay;
+            this.maxMessagesPerMinute = queueSettings.maxPerMinute;
+
+            this.emit('message:sent', {
+                id: message.id,
                 leadId: message.lead_id,
-                error: error.message 
+                ownerUserId: ownerUserId || null,
+                sessionId: assignedSessionId,
+                content: message.content
             });
+
+            await this.delay(queueSettings.delay);
+
+        } catch (error) {
+            const messageId = Number(error?.messageId || 0);
+            const leadId = Number(error?.leadId || 0);
+            const conversationId = Number(error?.conversationId || 0);
+            console.error('Erro ao processar fila:', error.message);
+
+            if (messageId > 0) {
+                await MessageQueue.markFailed(messageId, error.message);
+                if (conversationId > 0 && leadId > 0) {
+                    try {
+                        await run(
+                            `UPDATE messages
+                             SET status = 'failed'
+                             WHERE conversation_id = ? AND lead_id = ? AND status = 'pending'`,
+                            [conversationId, leadId]
+                        );
+                    } catch (dbError) {
+                        console.error(`Erro ao atualizar status da mensagem ${messageId}:`, dbError.message);
+                    }
+                }
+
+                this.emit('message:failed', {
+                    id: messageId,
+                    leadId: leadId || null,
+                    error: error.message
+                });
+            }
         } finally {
             this.isProcessing = false;
         }
     }
-    
+
     /**
      * Cancelar mensagem na fila
      */
-    async cancel(messageId) {
-        await MessageQueue.cancel(messageId);
+    async cancel(messageId, options = {}) {
+        const ownerUserId = Number(options.ownerUserId || 0) || null;
+        await MessageQueue.cancel(messageId, {
+            owner_user_id: ownerUserId || undefined
+        });
         this.emit('message:cancelled', { id: messageId });
     }
     
     /**
      * Cancelar todas as mensagens pendentes
      */
-    async cancelAll() {
-        const pending = await MessageQueue.getPending();
+    async cancelAll(options = {}) {
+        const ownerUserId = Number(options.ownerUserId || 0) || null;
+        const pending = await MessageQueue.getPending({
+            owner_user_id: ownerUserId || undefined
+        });
         for (const message of pending) {
-            await MessageQueue.cancel(message.id);
+            await MessageQueue.cancel(message.id, {
+                owner_user_id: ownerUserId || undefined
+            });
         }
         this.emit('queue:cleared', { count: pending.length });
         return pending.length;
@@ -430,49 +645,68 @@ class QueueService extends EventEmitter {
     /**
      * Obter status da fila
      */
-    async getStatus() {
-        const pending = await MessageQueue.getPending();
+    async getStatus(options = {}) {
+        const ownerUserId = Number(options.ownerUserId || 0) || null;
+        const pending = await MessageQueue.getPending({
+            owner_user_id: ownerUserId || undefined
+        });
+        const queueSettings = await this.getQueueSettings(ownerUserId || null);
+        const rateState = this.getOwnerRateState(ownerUserId || null, queueSettings.maxPerMinute);
         
         return {
             isProcessing: this.isProcessing,
             pendingCount: pending.length,
-            messagesSentThisMinute: this.messagesSentThisMinute,
-            maxMessagesPerMinute: this.maxMessagesPerMinute,
-            delay: this.defaultDelay
+            messagesSentThisMinute: Number(rateState.count || 0),
+            maxMessagesPerMinute: queueSettings.maxPerMinute,
+            delay: queueSettings.delay
         };
     }
     
     /**
      * Obter mensagens pendentes
      */
-    async getPending() {
-        return await MessageQueue.getPending();
+    async getPending(options = {}) {
+        const ownerUserId = Number(options.ownerUserId || 0) || null;
+        const limit = Number(options.limit || 0) || null;
+        return await MessageQueue.getPending({
+            owner_user_id: ownerUserId || undefined,
+            limit: limit || undefined
+        });
     }
     
     /**
-     * Utilitário de delay
+     * Utilitario de delay
      */
     delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
     
     /**
-     * Atualizar configurações
+     * Atualizar configuracoes
      */
-    async updateSettings(settings) {
+    async updateSettings(settings, options = {}) {
+        const ownerUserId = this.normalizeOwnerUserId(options.ownerUserId || options.owner_user_id || null) || null;
+        const delayKey = this.buildScopedSettingsKey('bulk_message_delay', ownerUserId);
+        const maxPerMinuteKey = this.buildScopedSettingsKey('max_messages_per_minute', ownerUserId);
+
         if (settings.delay) {
-            this.defaultDelay = settings.delay;
-            await Settings.set('bulk_message_delay', settings.delay, 'number');
+            await Settings.set(delayKey, settings.delay, 'number');
         }
         
         if (settings.maxPerMinute) {
-            this.maxMessagesPerMinute = settings.maxPerMinute;
-            await Settings.set('max_messages_per_minute', settings.maxPerMinute, 'number');
+            await Settings.set(maxPerMinuteKey, settings.maxPerMinute, 'number');
         }
 
-        this.invalidateBusinessHoursCache();
+        this.invalidateQueueSettingsCache(ownerUserId);
+        this.invalidateBusinessHoursCache(ownerUserId);
+        const refreshed = await this.getQueueSettings(ownerUserId, true);
+        if (!ownerUserId) {
+            this.defaultDelay = refreshed.delay;
+            this.maxMessagesPerMinute = refreshed.maxPerMinute;
+        }
     }
 }
 
 module.exports = new QueueService();
 module.exports.QueueService = QueueService;
+

@@ -302,6 +302,31 @@ function normalizeBooleanFlag(value, fallback = 1) {
     return fallback;
 }
 
+function buildCreatedByOwnerFilter(options = {}, params = [], column = 'created_by') {
+    const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+    const createdBy = parsePositiveInteger(options.created_by, null);
+    const normalizedColumn = String(column || 'created_by').trim() || 'created_by';
+
+    if (ownerUserId) {
+        params.push(ownerUserId, ownerUserId);
+        return `
+            AND EXISTS (
+                SELECT 1
+                FROM users owner_scope
+                WHERE owner_scope.id = ${normalizedColumn}
+                  AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+            )
+        `;
+    }
+
+    if (createdBy) {
+        params.push(createdBy);
+        return ` AND ${normalizedColumn} = ?`;
+    }
+
+    return '';
+}
+
 // ============================================
 // LEADS
 // ============================================
@@ -341,28 +366,64 @@ const Lead = {
         return { id: result.lastInsertRowid, uuid };
     },
     
-    async findById(id) {
-        return await queryOne('SELECT * FROM leads WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        if (!ownerUserId) {
+            return await queryOne('SELECT * FROM leads WHERE id = ?', [id]);
+        }
+
+        return await queryOne(
+            `
+            SELECT *
+            FROM leads
+            WHERE id = ?
+              AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = leads.assigned_to
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            `,
+            [id, ownerUserId, ownerUserId]
+        );
     },
     
     async findByUuid(uuid) {
         return await queryOne('SELECT * FROM leads WHERE uuid = ?', [uuid]);
     },
     
-    async findByPhone(phone) {
+    async findByPhone(phone, options = {}) {
         const cleaned = normalizeDigits(phone);
         if (!cleaned) return null;
 
         const suffixLength = Math.min(cleaned.length, 11);
         const suffix = cleaned.slice(-suffixLength);
 
+        let ownerFilter = '';
+        const params = [cleaned, `%${cleaned}`, suffix, suffix, cleaned, `%${cleaned}`, suffix, suffix];
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        if (ownerUserId) {
+            ownerFilter = `
+                AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = leads.assigned_to
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            `;
+            params.push(ownerUserId, ownerUserId);
+        }
+
         return await queryOne(
             `
             SELECT *
             FROM leads
-            WHERE phone = ?
-               OR phone LIKE ?
-               OR (? <> '' AND substr(phone, length(phone) - ${suffixLength} + 1) = ?)
+            WHERE (
+                phone = ?
+                OR phone LIKE ?
+                OR (? <> '' AND substr(phone, length(phone) - ${suffixLength} + 1) = ?)
+            )
+            ${ownerFilter}
             ORDER BY
                 CASE
                     WHEN phone = ? THEN 0
@@ -375,21 +436,45 @@ const Lead = {
                 id DESC
             LIMIT 1
             `,
-            [cleaned, `%${cleaned}`, suffix, suffix, cleaned, `%${cleaned}`, suffix, suffix]
+            params
         );
     },
     
-    async findByJid(jid) {
-        return await queryOne('SELECT * FROM leads WHERE jid = ?', [jid]);
+    async findByJid(jid, options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        if (!ownerUserId) {
+            return await queryOne('SELECT * FROM leads WHERE jid = ?', [jid]);
+        }
+
+        return await queryOne(
+            `
+            SELECT *
+            FROM leads
+            WHERE jid = ?
+              AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = leads.assigned_to
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            `,
+            [jid, ownerUserId, ownerUserId]
+        );
     },
     
-    async findOrCreate(data) {
+    async findOrCreate(data, options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const defaultAssignedTo = parsePositiveInteger(
+            options.default_assigned_to ?? options.assigned_to ?? ownerUserId,
+            null
+        );
+        const scopedOptions = ownerUserId ? { owner_user_id: ownerUserId } : {};
         let lead = null;
         if (data.jid) {
-            lead = await this.findByJid(data.jid);
+            lead = await this.findByJid(data.jid, scopedOptions);
         }
         if (!lead) {
-            lead = await this.findByPhone(data.phone);
+            lead = await this.findByPhone(data.phone, scopedOptions);
         }
         
         if (lead) {
@@ -401,7 +486,7 @@ const Lead = {
                 lead.name = nextName;
             }
 
-            const requestedAssignee = Number(data?.assigned_to);
+            const requestedAssignee = parsePositiveInteger(data?.assigned_to, defaultAssignedTo);
             if (
                 Number.isInteger(requestedAssignee)
                 && requestedAssignee > 0
@@ -412,9 +497,14 @@ const Lead = {
             }
             return { lead, created: false };
         }
-        
-        const result = await this.create(data);
-        return { lead: await this.findById(result.id), created: true };
+
+        const payload = { ...(data || {}) };
+        if (!parsePositiveInteger(payload.assigned_to, null) && defaultAssignedTo) {
+            payload.assigned_to = defaultAssignedTo;
+        }
+
+        const result = await this.create(payload);
+        return { lead: await this.findById(result.id, scopedOptions), created: true };
     },
     
     async update(id, data) {
@@ -589,41 +679,101 @@ const Conversation = {
         return { id: result.lastInsertRowid, uuid };
     },
     
-    async findById(id) {
-        return await queryOne('SELECT * FROM conversations WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        if (!ownerUserId) {
+            return await queryOne('SELECT * FROM conversations WHERE id = ?', [id]);
+        }
+
+        return await queryOne(
+            `
+            SELECT c.*
+            FROM conversations c
+            LEFT JOIN leads l ON l.id = c.lead_id
+            WHERE c.id = ?
+              AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = COALESCE(c.assigned_to, l.assigned_to)
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            `,
+            [id, ownerUserId, ownerUserId]
+        );
     },
     
-    async findByLeadId(leadId, sessionId = null) {
+    async findByLeadId(leadId, sessionId = null, options = {}) {
         const normalizedSessionId = String(sessionId || '').trim();
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+
+        let ownerFilter = '';
+        const ownerParams = [];
+        if (ownerUserId) {
+            ownerFilter = `
+                AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = COALESCE(c.assigned_to, l.assigned_to)
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            `;
+            ownerParams.push(ownerUserId, ownerUserId);
+        }
+
         if (normalizedSessionId) {
             return await queryOne(
-                'SELECT * FROM conversations WHERE lead_id = ? AND session_id = ? ORDER BY updated_at DESC LIMIT 1',
-                [leadId, normalizedSessionId]
+                `
+                SELECT c.*
+                FROM conversations c
+                LEFT JOIN leads l ON l.id = c.lead_id
+                WHERE c.lead_id = ? AND c.session_id = ?
+                ${ownerFilter}
+                ORDER BY c.updated_at DESC
+                LIMIT 1
+                `,
+                [leadId, normalizedSessionId, ...ownerParams]
             );
         }
-        return await queryOne('SELECT * FROM conversations WHERE lead_id = ? ORDER BY updated_at DESC LIMIT 1', [leadId]);
+        return await queryOne(
+            `
+            SELECT c.*
+            FROM conversations c
+            LEFT JOIN leads l ON l.id = c.lead_id
+            WHERE c.lead_id = ?
+            ${ownerFilter}
+            ORDER BY c.updated_at DESC
+            LIMIT 1
+            `,
+            [leadId, ...ownerParams]
+        );
     },
     
-    async findOrCreate(data) {
+    async findOrCreate(data, options = {}) {
         const normalizedSessionId = String(data.session_id || '').trim();
-        let conversation = await this.findByLeadId(data.lead_id, normalizedSessionId || null);
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const defaultAssignedTo = parsePositiveInteger(
+            options.default_assigned_to ?? options.assigned_to ?? ownerUserId,
+            null
+        );
+        const scopedOptions = ownerUserId ? { owner_user_id: ownerUserId } : {};
+        let conversation = await this.findByLeadId(data.lead_id, normalizedSessionId || null, scopedOptions);
         
         if (conversation) {
             return { conversation, created: false };
         }
 
-        let assignedTo = Number(data?.assigned_to);
-        if (!Number.isInteger(assignedTo) || assignedTo <= 0) {
-            const lead = await Lead.findById(data.lead_id);
-            const leadAssignedTo = Number(lead?.assigned_to);
-            assignedTo = Number.isInteger(leadAssignedTo) && leadAssignedTo > 0 ? leadAssignedTo : null;
+        let assignedTo = parsePositiveInteger(data?.assigned_to, defaultAssignedTo);
+        if (!assignedTo) {
+            const lead = await Lead.findById(data.lead_id, scopedOptions);
+            const leadAssignedTo = parsePositiveInteger(lead?.assigned_to, null);
+            assignedTo = leadAssignedTo || defaultAssignedTo || null;
         }
         
         const result = await this.create({
             ...data,
             assigned_to: assignedTo
         });
-        return { conversation: await this.findById(result.id), created: true };
+        return { conversation: await this.findById(result.id, scopedOptions), created: true };
     },
     
     async update(id, data) {
@@ -693,6 +843,21 @@ const Conversation = {
         if (options.assigned_to) {
             sql += ' AND c.assigned_to = ?';
             params.push(options.assigned_to);
+        }
+
+        if (options.owner_user_id) {
+            const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+            if (ownerUserId) {
+                sql += `
+                    AND EXISTS (
+                        SELECT 1
+                        FROM users owner_scope
+                        WHERE owner_scope.id = COALESCE(c.assigned_to, l.assigned_to)
+                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                    )
+                `;
+                params.push(ownerUserId, ownerUserId);
+            }
         }
         
         if (options.session_id) {
@@ -848,8 +1013,10 @@ const Template = {
         return { id: result.lastInsertRowid, uuid };
     },
     
-    async findById(id) {
-        return await queryOne('SELECT * FROM templates WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const params = [id];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
+        return await queryOne(`SELECT * FROM templates WHERE id = ?${ownerFilter}`, params);
     },
     
     async list(options = {}) {
@@ -861,10 +1028,7 @@ const Template = {
             params.push(options.category);
         }
 
-        if (options.created_by) {
-            sql += ' AND created_by = ?';
-            params.push(options.created_by);
-        }
+        sql += buildCreatedByOwnerFilter(options, params, 'created_by');
         
         sql += ' ORDER BY usage_count DESC, name ASC';
         
@@ -936,8 +1100,10 @@ const Campaign = {
         return { id: result.lastInsertRowid, uuid };
     },
 
-    async findById(id) {
-        return await queryOne('SELECT * FROM campaigns WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const params = [id];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
+        return await queryOne(`SELECT * FROM campaigns WHERE id = ?${ownerFilter}`, params);
     },
 
     async list(options = {}) {
@@ -954,10 +1120,7 @@ const Campaign = {
             params.push(options.type);
         }
 
-        if (options.created_by) {
-            sql += ' AND created_by = ?';
-            params.push(options.created_by);
-        }
+        sql += buildCreatedByOwnerFilter(options, params, 'created_by');
 
         if (options.search) {
             sql += ' AND (name LIKE ? OR description LIKE ?)';
@@ -1368,8 +1531,10 @@ const Automation = {
         return { id: result.lastInsertRowid, uuid };
     },
 
-    async findById(id) {
-        return await queryOne('SELECT * FROM automations WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const params = [id];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
+        return await queryOne(`SELECT * FROM automations WHERE id = ?${ownerFilter}`, params);
     },
 
     async list(options = {}) {
@@ -1386,10 +1551,7 @@ const Automation = {
             params.push(options.trigger_type);
         }
 
-        if (options.created_by) {
-            sql += ' AND created_by = ?';
-            params.push(options.created_by);
-        }
+        sql += buildCreatedByOwnerFilter(options, params, 'created_by');
 
         if (options.search) {
             sql += ' AND (name LIKE ? OR description LIKE ?)';
@@ -1471,8 +1633,10 @@ const Flow = {
         return { id: result.lastInsertRowid, uuid };
     },
     
-    async findById(id) {
-        const flow = await queryOne('SELECT * FROM flows WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const params = [id];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
+        const flow = await queryOne(`SELECT * FROM flows WHERE id = ?${ownerFilter}`, params);
         if (flow) {
             flow.nodes = JSON.parse(flow.nodes || '[]');
             flow.edges = JSON.parse(flow.edges || '[]');
@@ -1480,7 +1644,7 @@ const Flow = {
         return flow;
     },
     
-    async findByTrigger(triggerType, triggerValue = null) {
+    async findByTrigger(triggerType, triggerValue = null, options = {}) {
         let sql = 'SELECT * FROM flows WHERE trigger_type = ? AND is_active = 1';
         const params = [triggerType];
         
@@ -1488,6 +1652,8 @@ const Flow = {
             sql += ' AND (trigger_value = ? OR trigger_value IS NULL)';
             params.push(triggerValue);
         }
+
+        sql += buildCreatedByOwnerFilter(options, params, 'created_by');
         
         sql += ' ORDER BY priority DESC LIMIT 1';
         
@@ -1499,12 +1665,15 @@ const Flow = {
         return flow;
     },
 
-    async findActiveKeywordFlows() {
+    async findActiveKeywordFlows(options = {}) {
+        const params = [];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
         const rows = await query(`
             SELECT * FROM flows
             WHERE trigger_type = 'keyword' AND is_active = 1
+            ${ownerFilter}
             ORDER BY priority DESC, id ASC
-        `);
+        `, params);
 
         return rows.map((flow) => ({
             ...flow,
@@ -1513,15 +1682,18 @@ const Flow = {
         }));
     },
     
-    async findKeywordMatches(messageText) {
+    async findKeywordMatches(messageText, options = {}) {
         const normalizedMessage = normalizeFlowKeywordText(messageText);
         if (!normalizedMessage) return [];
 
+        const params = [];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
         const flows = await query(`
             SELECT * FROM flows 
             WHERE trigger_type = 'keyword' AND is_active = 1
+            ${ownerFilter}
             ORDER BY priority DESC, id ASC
-        `);
+        `, params);
 
         const matches = [];
 
@@ -1553,8 +1725,8 @@ const Flow = {
         }));
     },
 
-    async findByKeyword(messageText) {
-        const matches = await this.findKeywordMatches(messageText);
+    async findByKeyword(messageText, options = {}) {
+        const matches = await this.findKeywordMatches(messageText, options);
         if (matches.length === 0) return null;
         return matches[0];
     },
@@ -1568,10 +1740,7 @@ const Flow = {
             params.push(options.is_active);
         }
 
-        if (options.created_by) {
-            sql += ' AND created_by = ?';
-            params.push(options.created_by);
-        }
+        sql += buildCreatedByOwnerFilter(options, params, 'created_by');
         
         sql += ' ORDER BY priority DESC, name ASC';
         
@@ -1652,20 +1821,26 @@ const CustomEvent = {
         }
     },
 
-    async findById(id) {
-        return await queryOne('SELECT * FROM custom_events WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const params = [id];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
+        return await queryOne(`SELECT * FROM custom_events WHERE id = ?${ownerFilter}`, params);
     },
 
-    async findByKey(eventKey) {
+    async findByKey(eventKey, options = {}) {
         const normalizedKey = normalizeCustomEventKey(eventKey);
         if (!normalizedKey) return null;
-        return await queryOne('SELECT * FROM custom_events WHERE event_key = ?', [normalizedKey]);
+        const params = [normalizedKey];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
+        return await queryOne(`SELECT * FROM custom_events WHERE event_key = ?${ownerFilter}`, params);
     },
 
-    async findByName(name) {
+    async findByName(name, options = {}) {
         const normalizedName = normalizeCustomEventName(name);
         if (!normalizedName) return null;
-        return await queryOne('SELECT * FROM custom_events WHERE LOWER(name) = LOWER(?)', [normalizedName]);
+        const params = [normalizedName];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
+        return await queryOne(`SELECT * FROM custom_events WHERE LOWER(name) = LOWER(?)${ownerFilter}`, params);
     },
 
     async list(options = {}) {
@@ -1693,9 +1868,9 @@ const CustomEvent = {
             params.push(normalizeBooleanFlag(options.is_active, 1));
         }
 
-        if (options.created_by) {
-            filters.push('ce.created_by = ?');
-            params.push(options.created_by);
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'ce.created_by');
+        if (ownerFilter) {
+            filters.push(ownerFilter.replace(/^\s*AND\s+/i, '').trim());
         }
 
         const search = normalizeCustomEventName(options.search || '');
@@ -1745,9 +1920,9 @@ const CustomEvent = {
             params.push(normalizeBooleanFlag(options.is_active, 1));
         }
 
-        if (options.created_by) {
-            filters.push('ce.created_by = ?');
-            params.push(options.created_by);
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'ce.created_by');
+        if (ownerFilter) {
+            filters.push(ownerFilter.replace(/^\s*AND\s+/i, '').trim());
         }
 
         if (filters.length > 0) {
@@ -1864,6 +2039,24 @@ const CustomEvent = {
 // MESSAGE QUEUE
 // ============================================
 
+function buildLeadOwnerScopeFilter(options = {}, params = [], leadColumn = 'lead_id') {
+    const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+    if (!ownerUserId) {
+        return '';
+    }
+
+    params.push(ownerUserId, ownerUserId);
+    return `
+        AND EXISTS (
+            SELECT 1
+            FROM leads scope_leads
+            INNER JOIN users owner_scope ON owner_scope.id = scope_leads.assigned_to
+            WHERE scope_leads.id = ${leadColumn}
+              AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+        )
+    `;
+}
+
 const MessageQueue = {
     async add(data) {
         const uuid = generateUUID();
@@ -1936,16 +2129,25 @@ const MessageQueue = {
         `, [sessionId || null, toJsonStringOrNull(assignmentMeta), id]);
     },
     
-    async cancel(id) {
-        return await run(`UPDATE message_queue SET status = 'cancelled' WHERE id = ?`, [id]);
+    async cancel(id, options = {}) {
+        const params = [id];
+        const ownerFilter = buildLeadOwnerScopeFilter(options, params, 'message_queue.lead_id');
+        return await run(`UPDATE message_queue SET status = 'cancelled' WHERE id = ?${ownerFilter}`, params);
     },
     
-    async getPending() {
+    async getPending(options = {}) {
+        const params = [];
+        const ownerFilter = buildLeadOwnerScopeFilter(options, params, 'mq.lead_id');
+        const limit = parsePositiveInteger(options.limit, null);
+        const limitClause = limit ? ` LIMIT ${limit}` : '';
         return await query(`
-            SELECT * FROM message_queue 
-            WHERE status = 'pending' 
-            ORDER BY priority DESC, created_at ASC
-        `);
+            SELECT mq.*
+            FROM message_queue mq
+            WHERE mq.status = 'pending'
+            ${ownerFilter}
+            ORDER BY mq.priority DESC, mq.created_at ASC
+            ${limitClause}
+        `, params);
     },
 
     async hasQueuedOrSentForCampaignLead(campaignId, leadId) {
@@ -1972,8 +2174,21 @@ function normalizeTagOwnerId(value) {
 }
 
 function buildTagOwnerFilter(options = {}, params = []) {
+    const ownerUserId = normalizeTagOwnerId(options.owner_user_id);
     const createdBy = normalizeTagOwnerId(options.created_by);
     const includeAll = options.include_all === true;
+
+    if (ownerUserId) {
+        params.push(ownerUserId, ownerUserId);
+        return `
+            AND EXISTS (
+                SELECT 1
+                FROM users owner_scope
+                WHERE owner_scope.id = tags.created_by
+                  AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+            )
+        `;
+    }
 
     if (createdBy) {
         params.push(createdBy);
@@ -2079,12 +2294,23 @@ const Tag = {
 
     async syncFromLeads(options = {}) {
         const assignedTo = parsePositiveInteger(options.assigned_to, null);
-        const ownerUserId = normalizeTagOwnerId(options.created_by);
+        const ownerUserId = normalizeTagOwnerId(options.created_by ?? options.owner_user_id);
         const params = [];
         let sql = "SELECT tags FROM leads WHERE tags IS NOT NULL AND tags <> ''";
         if (assignedTo) {
             sql += ' AND assigned_to = ?';
             params.push(assignedTo);
+        }
+        if (ownerUserId) {
+            sql += `
+                AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = leads.assigned_to
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            `;
+            params.push(ownerUserId, ownerUserId);
         }
 
         const rows = await query(sql, params);
@@ -2123,11 +2349,23 @@ const Tag = {
         if (!previousKey || !sanitizedNext) return 0;
 
         const assignedTo = parsePositiveInteger(options.assigned_to, null);
+        const ownerUserId = normalizeTagOwnerId(options.owner_user_id ?? options.created_by);
         const params = [];
         let sql = "SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''";
         if (assignedTo) {
             sql += ' AND assigned_to = ?';
             params.push(assignedTo);
+        }
+        if (ownerUserId) {
+            sql += `
+                AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = leads.assigned_to
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            `;
+            params.push(ownerUserId, ownerUserId);
         }
 
         const leads = await query(sql, params);
@@ -2169,11 +2407,23 @@ const Tag = {
         if (!normalized) return 0;
 
         const assignedTo = parsePositiveInteger(options.assigned_to, null);
+        const ownerUserId = normalizeTagOwnerId(options.owner_user_id ?? options.created_by);
         const params = [];
         let sql = "SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''";
         if (assignedTo) {
             sql += ' AND assigned_to = ?';
             params.push(assignedTo);
+        }
+        if (ownerUserId) {
+            sql += `
+                AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = leads.assigned_to
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            `;
+            params.push(ownerUserId, ownerUserId);
         }
 
         const leads = await query(sql, params);
@@ -2226,19 +2476,26 @@ const Webhook = {
         return { id: result.lastInsertRowid, uuid };
     },
     
-    async findById(id) {
-        return await queryOne('SELECT * FROM webhooks WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const params = [id];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
+        return await queryOne(`SELECT * FROM webhooks WHERE id = ?${ownerFilter}`, params);
     },
     
-    async findByEvent(event) {
+    async findByEvent(event, options = {}) {
+        const params = [`%"${event}"%`];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
         return await query(`
             SELECT * FROM webhooks 
             WHERE is_active = 1 AND events LIKE ?
-        `, [`%"${event}"%`]);
+            ${ownerFilter}
+        `, params);
     },
     
-    async list() {
-        return await query('SELECT * FROM webhooks ORDER BY name ASC');
+    async list(options = {}) {
+        const params = [];
+        const ownerFilter = buildCreatedByOwnerFilter(options, params, 'created_by');
+        return await query(`SELECT * FROM webhooks WHERE 1=1 ${ownerFilter} ORDER BY name ASC`, params);
     },
     
     async update(id, data) {

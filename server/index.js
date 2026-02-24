@@ -253,6 +253,74 @@ async function resolveSocketOwnerUserId(socket) {
     return ownerUserId;
 }
 
+async function resolveOwnerUserIdFromUserId(userId) {
+    const normalizedUserId = Number(userId || 0);
+    if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
+        return null;
+    }
+
+    const user = await User.findById(normalizedUserId);
+    if (!user) {
+        return null;
+    }
+
+    return normalizeOwnerUserId(user.owner_user_id) || normalizeOwnerUserId(user.id) || null;
+}
+
+function buildOwnerScopeOptions(ownerUserId) {
+    const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
+    if (!normalizedOwnerUserId) {
+        return {};
+    }
+    return { owner_user_id: normalizedOwnerUserId };
+}
+
+async function resolveContextOwnerUserId(context = {}) {
+    const explicitOwnerUserId = normalizeOwnerUserId(
+        context.ownerUserId ?? context.owner_user_id
+    );
+    if (explicitOwnerUserId) {
+        return explicitOwnerUserId;
+    }
+
+    const assignedTo = Number((context.assignedTo ?? context.assigned_to) || 0);
+    if (Number.isInteger(assignedTo) && assignedTo > 0) {
+        const assignedOwnerUserId = await resolveOwnerUserIdFromUserId(assignedTo);
+        if (assignedOwnerUserId) {
+            return assignedOwnerUserId;
+        }
+    }
+
+    const createdBy = Number((context.createdBy ?? context.created_by) || 0);
+    if (Number.isInteger(createdBy) && createdBy > 0) {
+        const creatorOwnerUserId = await resolveOwnerUserIdFromUserId(createdBy);
+        if (creatorOwnerUserId) {
+            return creatorOwnerUserId;
+        }
+    }
+
+    const sessionId = sanitizeSessionId(context.sessionId ?? context.session_id);
+    if (sessionId) {
+        const sessionOwnerUserId = await resolveSessionOwnerUserId(sessionId);
+        if (sessionOwnerUserId) {
+            return sessionOwnerUserId;
+        }
+    }
+
+    return null;
+}
+
+async function triggerScopedWebhook(event, payload, context = {}) {
+    const ownerUserId = await resolveContextOwnerUserId(context);
+    if (!ownerUserId) {
+        return;
+    }
+
+    await webhookService.trigger(event, payload, {
+        owner_user_id: ownerUserId
+    });
+}
+
 
 
 // Avisar se chaves de segurança não foram configuradas (não bloqueia startup para deploy funcionar)
@@ -684,6 +752,74 @@ function resolveSessionIdOrDefault(sessionId, fallbackSessionId = '') {
     }
 
     return resolvedSessionId;
+}
+
+function resolveRequesterOwnerFromToken(req) {
+    const requesterId = getRequesterUserId(req);
+    const ownerFromToken = Number(req?.user?.owner_user_id || 0);
+    if (Number.isInteger(ownerFromToken) && ownerFromToken > 0) {
+        return ownerFromToken;
+    }
+    return Number.isInteger(requesterId) && requesterId > 0 ? requesterId : 0;
+}
+
+function buildOwnerSocketRoom(ownerUserId) {
+    const ownerId = Number(ownerUserId || 0);
+    if (!Number.isInteger(ownerId) || ownerId <= 0) return '';
+    return `owner:${ownerId}`;
+}
+
+function emitToOwnerSocketRoom(ownerUserId, event, payload) {
+    const room = buildOwnerSocketRoom(ownerUserId);
+    if (!room) return;
+    io.to(room).emit(event, payload);
+}
+
+async function resolveSessionOwnerUserId(sessionId) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId) return null;
+
+    const runtimeSession = sessions.get(normalizedSessionId);
+    const runtimeOwnerId = Number(runtimeSession?.ownerUserId || 0);
+    if (Number.isInteger(runtimeOwnerId) && runtimeOwnerId > 0) {
+        return runtimeOwnerId;
+    }
+
+    const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId);
+    const storedOwnerId = Number(storedSession?.created_by || 0);
+    if (Number.isInteger(storedOwnerId) && storedOwnerId > 0) {
+        if (runtimeSession) {
+            runtimeSession.ownerUserId = storedOwnerId;
+        }
+        return storedOwnerId;
+    }
+
+    return null;
+}
+
+async function emitSessionScoped(sessionId, event, payload) {
+    const ownerUserId = await resolveSessionOwnerUserId(sessionId);
+    if (!ownerUserId) return;
+    emitToOwnerSocketRoom(ownerUserId, event, payload);
+}
+
+async function assertOwnerCanAccessSession(ownerUserId, sessionId) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    const normalizedOwnerId = Number(ownerUserId || 0);
+    if (!normalizedSessionId || !Number.isInteger(normalizedOwnerId) || normalizedOwnerId <= 0) {
+        return false;
+    }
+
+    const runtimeSession = sessions.get(normalizedSessionId);
+    const runtimeOwnerId = Number(runtimeSession?.ownerUserId || 0);
+    if (Number.isInteger(runtimeOwnerId) && runtimeOwnerId > 0) {
+        return runtimeOwnerId === normalizedOwnerId;
+    }
+
+    const ownedSession = await WhatsAppSession.findBySessionId(normalizedSessionId, {
+        owner_user_id: normalizedOwnerId
+    });
+    return !!ownedSession;
 }
 
 function normalizeSenderAccountsPayload(value) {
@@ -1453,7 +1589,7 @@ function normalizeJid(jid) {
 
 
 
-async function registerContactAlias(contact, sessionId = '', sessionPhone = '') {
+async function registerContactAlias(contact, sessionId = '', sessionPhone = '', ownerUserId = null) {
     if (!contact) return;
 
     const candidates = [
@@ -1476,6 +1612,8 @@ async function registerContactAlias(contact, sessionId = '', sessionPhone = '') 
 
     if (candidates.length === 0) return;
 
+    const resolvedOwnerUserId = normalizeOwnerUserId(ownerUserId) || await resolveSessionOwnerUserId(sessionId);
+    const leadScopeOptions = buildOwnerScopeOptions(resolvedOwnerUserId);
     const notifyName = sanitizeAutoName(
         contact?.notify ||
         contact?.name ||
@@ -1518,7 +1656,8 @@ async function registerContactAlias(contact, sessionId = '', sessionPhone = '') 
         for (const candidateJid of userJids) {
             const normalizedCandidateJid = normalizeJid(candidateJid) || candidateJid;
             const candidatePhone = extractNumber(normalizedCandidateJid);
-            const lead = await Lead.findByJid(normalizedCandidateJid) || await Lead.findByPhone(candidatePhone);
+            const lead = await Lead.findByJid(normalizedCandidateJid, leadScopeOptions)
+                || await Lead.findByPhone(candidatePhone, leadScopeOptions);
             if (!lead) continue;
 
             if (shouldAutoUpdateLeadName(lead, lead.phone || candidatePhone, sessionDisplayName)) {
@@ -1537,23 +1676,25 @@ async function registerContactAlias(contact, sessionId = '', sessionPhone = '') 
 
 
 
-        const primary = await Lead.findByJid(mappedUserJid) || await Lead.findByPhone(extractNumber(mappedUserJid));
+        const primary = await Lead.findByJid(mappedUserJid, leadScopeOptions)
+            || await Lead.findByPhone(extractNumber(mappedUserJid), leadScopeOptions);
 
-        const duplicate = await Lead.findByJid(lidJid) || await Lead.findByPhone(extractNumber(lidJid));
+        const duplicate = await Lead.findByJid(lidJid, leadScopeOptions)
+            || await Lead.findByPhone(extractNumber(lidJid), leadScopeOptions);
 
 
 
         if (primary && duplicate && primary.id !== duplicate.id) {
 
-            await mergeLeads(primary, duplicate);
+            await mergeLeads(primary, duplicate, leadScopeOptions);
 
         } else if (!primary && duplicate) {
 
-            await updateLeadIdentity(duplicate, mappedUserJid, extractNumber(mappedUserJid));
+            await updateLeadIdentity(duplicate, mappedUserJid, extractNumber(mappedUserJid), leadScopeOptions);
 
         } else if (primary && primary.jid !== mappedUserJid) {
 
-            await updateLeadIdentity(primary, mappedUserJid, extractNumber(mappedUserJid));
+            await updateLeadIdentity(primary, mappedUserJid, extractNumber(mappedUserJid), leadScopeOptions);
 
         }
 
@@ -1710,9 +1851,17 @@ async function mergeConversationsForLeads(primaryLeadId, duplicateLeadId) {
 
 
 
-async function mergeLeads(primaryLead, duplicateLead) {
+async function mergeLeads(primaryLead, duplicateLead, options = {}) {
 
     if (!primaryLead || !duplicateLead || primaryLead.id === duplicateLead.id) return;
+    const ownerScopeOptions = buildOwnerScopeOptions(options.owner_user_id ?? options.ownerUserId);
+    if (ownerScopeOptions.owner_user_id) {
+        const scopedPrimary = await Lead.findById(primaryLead.id, ownerScopeOptions);
+        const scopedDuplicate = await Lead.findById(duplicateLead.id, ownerScopeOptions);
+        if (!scopedPrimary || !scopedDuplicate || scopedPrimary.id === scopedDuplicate.id) return;
+        primaryLead = scopedPrimary;
+        duplicateLead = scopedDuplicate;
+    }
 
     const mergedTags = Array.from(
         new Set([
@@ -1774,7 +1923,7 @@ async function mergeLeads(primaryLead, duplicateLead) {
 
 
 
-async function updateLeadIdentity(lead, jid, phone) {
+async function updateLeadIdentity(lead, jid, phone, options = {}) {
     if (!lead || !jid) return lead;
 
     const cleanedPhone = phone ? String(phone).replace(/\D/g, '') : '';
@@ -1794,7 +1943,7 @@ async function updateLeadIdentity(lead, jid, phone) {
             "UPDATE leads SET jid = ?, phone = ?, phone_formatted = ?, name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             [jid, cleanedPhone, cleanedPhone, nextName, lead.id]
         );
-        return await Lead.findById(lead.id) || lead;
+        return await Lead.findById(lead.id, buildOwnerScopeOptions(options.owner_user_id ?? options.ownerUserId)) || lead;
     } catch (error) {
         console.warn('Falha ao atualizar identidade do lead:', error.message);
         return lead;
@@ -1894,7 +2043,7 @@ async function cleanupInvalidPhones() {
 
         const candidates = await query(
 
-            "SELECT id, jid, phone FROM leads WHERE jid LIKE '%@s.whatsapp.net%'"
+            "SELECT id, jid, phone, assigned_to FROM leads WHERE jid LIKE '%@s.whatsapp.net%'"
 
         );
 
@@ -1912,15 +2061,17 @@ async function cleanupInvalidPhones() {
 
 
 
-            const existing = await Lead.findByPhone(normalized);
+            const ownerUserId = await resolveOwnerUserIdFromUserId(lead.assigned_to);
+            if (!ownerUserId) continue;
+
+            const leadScopeOptions = buildOwnerScopeOptions(ownerUserId);
+            const existing = await Lead.findByPhone(normalized, leadScopeOptions);
 
             if (existing && existing.id !== lead.id) {
-
-                await mergeLeads(existing, lead);
+                await mergeLeads(existing, lead, leadScopeOptions);
 
             } else {
-
-                await updateLeadIdentity(lead, lead.jid, normalized);
+                await updateLeadIdentity(lead, lead.jid, normalized, leadScopeOptions);
 
             }
 
@@ -1978,13 +2129,14 @@ async function cleanupDuplicatePhoneSuffixLeads() {
 
     try {
 
-        const leads = await query("SELECT id, phone, jid, name, source, custom_fields, last_message_at FROM leads WHERE phone IS NOT NULL");
+        const leads = await query("SELECT id, phone, jid, name, source, custom_fields, last_message_at, assigned_to FROM leads WHERE phone IS NOT NULL");
 
         if (!leads || leads.length === 0) return;
 
 
 
         const groups = new Map();
+        const ownerByAssignee = new Map();
 
         for (const lead of leads) {
 
@@ -1992,11 +2144,24 @@ async function cleanupDuplicatePhoneSuffixLeads() {
 
             if (digits.length < 11) continue;
 
-            const key = digits.slice(-11);
+            const assignedTo = Number(lead.assigned_to || 0);
+            if (!Number.isInteger(assignedTo) || assignedTo <= 0) continue;
+
+            if (!ownerByAssignee.has(assignedTo)) {
+                ownerByAssignee.set(assignedTo, await resolveOwnerUserIdFromUserId(assignedTo));
+            }
+
+            const ownerUserId = Number(ownerByAssignee.get(assignedTo) || 0);
+            if (!Number.isInteger(ownerUserId) || ownerUserId <= 0) continue;
+
+            const key = `${ownerUserId}:${digits.slice(-11)}`;
 
             if (!groups.has(key)) groups.set(key, []);
 
-            groups.get(key).push(lead);
+            groups.get(key).push({
+                ...lead,
+                owner_user_id: ownerUserId
+            });
 
         }
 
@@ -2026,17 +2191,18 @@ async function cleanupDuplicatePhoneSuffixLeads() {
 
 
 
-            const primary = await Lead.findById(group[0].id);
+            const ownerScopeOptions = buildOwnerScopeOptions(group[0].owner_user_id);
+            const primary = await Lead.findById(group[0].id, ownerScopeOptions);
 
             if (!primary) continue;
 
             for (const dup of group.slice(1)) {
 
-                const duplicate = await Lead.findById(dup.id);
+                const duplicate = await Lead.findById(dup.id, ownerScopeOptions);
 
                 if (duplicate && duplicate.id != primary.id) {
 
-                    await mergeLeads(primary, duplicate);
+                    await mergeLeads(primary, duplicate, ownerScopeOptions);
 
                 }
 
@@ -2433,7 +2599,7 @@ async function requestSessionPairingCode(sessionId, clientSocket, phoneNumber, o
                     phoneNumber: normalizedPhone,
                     code: pairingCode
                 });
-                io.emit('whatsapp-pairing-code', {
+                await emitSessionScoped(sessionId, 'whatsapp-pairing-code', {
                     sessionId,
                     phoneNumber: normalizedPhone
                 });
@@ -2695,13 +2861,15 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     clientSocket.emit('qr', { qr: qrDataUrl, sessionId, expiresIn: 30 });
 
-                    io.emit('whatsapp-qr', { qr: qrDataUrl, sessionId });
+                    await emitSessionScoped(sessionId, 'whatsapp-qr', { qr: qrDataUrl, sessionId });
 
                     
 
                     // Webhook
-
-                    webhookService.trigger('whatsapp.qr_generated', { sessionId });
+                    await triggerScopedWebhook('whatsapp.qr_generated', { sessionId }, {
+                        ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || undefined,
+                        sessionId
+                    });
 
                     persistWhatsappSession(sessionId, 'qr_pending', {
                         qr_code: qrDataUrl,
@@ -2789,8 +2957,10 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                 
 
                 // Webhook
-
-                webhookService.trigger('whatsapp.disconnected', { sessionId, statusCode, errorType: errorInfo.type });
+                await triggerScopedWebhook('whatsapp.disconnected', { sessionId, statusCode, errorType: errorInfo.type }, {
+                    ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || undefined,
+                    sessionId
+                });
 
                 
 
@@ -2824,7 +2994,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                         clientSocket.emit('reconnecting', { sessionId, attempt: currentAttempt + 1 });
 
-                        io.emit('whatsapp-status', { sessionId, status: 'reconnecting' });
+                        await emitSessionScoped(sessionId, 'whatsapp-status', { sessionId, status: 'reconnecting' });
 
                         
 
@@ -2875,7 +3045,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                 clientSocket.emit('connecting', { sessionId });
 
-                io.emit('whatsapp-status', { sessionId, status: 'connecting' });
+                await emitSessionScoped(sessionId, 'whatsapp-status', { sessionId, status: 'connecting' });
 
             }
 
@@ -2927,7 +3097,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     clientSocket.emit('connected', { sessionId, user: session.user });
 
-                    io.emit('whatsapp-status', { sessionId, status: 'connected', user: session.user });
+                    await emitSessionScoped(sessionId, 'whatsapp-status', { sessionId, status: 'connected', user: session.user });
 
                     persistWhatsappSession(sessionId, 'connected', {
                         last_connected_at: new Date().toISOString(),
@@ -2937,8 +3107,10 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                     
 
                     // Webhook
-
-                    webhookService.trigger('whatsapp.connected', { sessionId, user: session.user });
+                    await triggerScopedWebhook('whatsapp.connected', { sessionId, user: session.user }, {
+                        ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || undefined,
+                        sessionId
+                    });
 
                     
 
@@ -3019,7 +3191,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     
 
-                    io.emit('message-status', {
+                    await emitSessionScoped(sessionId, 'message-status', {
 
                         sessionId,
 
@@ -3034,15 +3206,14 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                     
 
                     // Webhook
-
                     if (status === 'delivered') {
-
-                        webhookService.trigger('message.delivered', { messageId: update.key.id, status });
-
+                        await triggerScopedWebhook('message.delivered', { messageId: update.key.id, status }, {
+                            sessionId
+                        });
                     } else if (status === 'read') {
-
-                        webhookService.trigger('message.read', { messageId: update.key.id, status });
-
+                        await triggerScopedWebhook('message.read', { messageId: update.key.id, status }, {
+                            sessionId
+                        });
                     }
 
                 }
@@ -3057,10 +3228,12 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
             const contacts = payload?.contacts || [];
             const sessionPhone = getSessionPhone(sessionId);
+            const runtimeSession = sessions.get(sessionId);
+            const sessionOwnerUserId = Number(runtimeSession?.ownerUserId || ownerUserId || 0) || await resolveSessionOwnerUserId(sessionId);
 
             for (const contact of contacts) {
 
-                await registerContactAlias(contact, sessionId, sessionPhone);
+                await registerContactAlias(contact, sessionId, sessionPhone, sessionOwnerUserId || undefined);
 
             }
 
@@ -3072,10 +3245,12 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
             const list = Array.isArray(contacts) ? contacts : [contacts];
             const sessionPhone = getSessionPhone(sessionId);
+            const runtimeSession = sessions.get(sessionId);
+            const sessionOwnerUserId = Number(runtimeSession?.ownerUserId || ownerUserId || 0) || await resolveSessionOwnerUserId(sessionId);
 
             for (const contact of list) {
 
-                await registerContactAlias(contact, sessionId, sessionPhone);
+                await registerContactAlias(contact, sessionId, sessionPhone, sessionOwnerUserId || undefined);
 
             }
 
@@ -3083,6 +3258,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         sock.ev.on('chats.phoneNumberShare', async (payload) => {
             try {
+                const runtimeSession = sessions.get(sessionId);
+                const sessionOwnerUserId = Number(runtimeSession?.ownerUserId || ownerUserId || 0) || await resolveSessionOwnerUserId(sessionId);
+                const leadScopeOptions = buildOwnerScopeOptions(sessionOwnerUserId);
                 const mappedUserJid = registerJidAlias(
                     payload?.lid,
                     payload?.jid,
@@ -3094,15 +3272,16 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                 if (!normalizedLid) return;
 
                 const resolvedPhone = extractNumber(mappedUserJid);
-                const primary = await Lead.findByJid(mappedUserJid) || await Lead.findByPhone(resolvedPhone);
-                const duplicate = await Lead.findByJid(normalizedLid);
+                const primary = await Lead.findByJid(mappedUserJid, leadScopeOptions)
+                    || await Lead.findByPhone(resolvedPhone, leadScopeOptions);
+                const duplicate = await Lead.findByJid(normalizedLid, leadScopeOptions);
 
                 if (primary && duplicate && primary.id !== duplicate.id) {
-                    await mergeLeads(primary, duplicate);
+                    await mergeLeads(primary, duplicate, leadScopeOptions);
                 } else if (!primary && duplicate) {
-                    await updateLeadIdentity(duplicate, mappedUserJid, resolvedPhone);
+                    await updateLeadIdentity(duplicate, mappedUserJid, resolvedPhone, leadScopeOptions);
                 } else if (primary && primary.jid !== mappedUserJid) {
-                    await updateLeadIdentity(primary, mappedUserJid, resolvedPhone);
+                    await updateLeadIdentity(primary, mappedUserJid, resolvedPhone, leadScopeOptions);
                 }
             } catch (error) {
                 console.warn(`[${sessionId}] Falha ao processar chats.phoneNumberShare:`, error.message);
@@ -3163,7 +3342,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         // Presença (digitando)
 
-        sock.ev.on('presence.update', (presence) => {
+        sock.ev.on('presence.update', async (presence) => {
 
             const jid = presence.id;
 
@@ -3175,7 +3354,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
             
 
-            io.emit('typing-status', {
+            await emitSessionScoped(sessionId, 'typing-status', {
 
                 sessionId,
 
@@ -3629,8 +3808,9 @@ function shouldAutomationRunForSession(automation, sessionId) {
     return scopedSessionIds.includes(normalizedSessionId);
 }
 
-async function resolveAutomationConversation(lead, baseConversation = null, sessionId = DEFAULT_AUTOMATION_SESSION_ID) {
+async function resolveAutomationConversation(lead, baseConversation = null, sessionId = DEFAULT_AUTOMATION_SESSION_ID, options = {}) {
     const normalizedSessionId = sanitizeSessionId(sessionId);
+    const ownerScopeOptions = buildOwnerScopeOptions(options.owner_user_id ?? options.ownerUserId);
     if (
         baseConversation
         && Number(baseConversation.lead_id) === Number(lead?.id)
@@ -3639,12 +3819,16 @@ async function resolveAutomationConversation(lead, baseConversation = null, sess
         return baseConversation;
     }
 
-    const existingConversation = await Conversation.findByLeadId(lead.id, normalizedSessionId || null);
+    const existingConversation = await Conversation.findByLeadId(lead.id, normalizedSessionId || null, ownerScopeOptions);
     if (existingConversation) return existingConversation;
 
     const result = await Conversation.findOrCreate({
         lead_id: lead.id,
-        session_id: sessionId
+        session_id: sessionId,
+        assigned_to: lead?.assigned_to || ownerScopeOptions.owner_user_id || undefined
+    }, {
+        ...ownerScopeOptions,
+        default_assigned_to: lead?.assigned_to || ownerScopeOptions.owner_user_id || undefined
     });
 
     return result?.conversation || null;
@@ -3741,12 +3925,19 @@ async function armInactivityAutomation(automation, context) {
         : Date.now();
     const conversationId = Number(context?.conversation?.id) || null;
     const sessionId = String(context?.sessionId || DEFAULT_AUTOMATION_SESSION_ID);
+    const scopedOwnerUserId = await resolveContextOwnerUserId({
+        ownerUserId: context?.ownerUserId,
+        assigned_to: context?.lead?.assigned_to,
+        created_by: automation?.created_by,
+        sessionId
+    });
+    const ownerScopeOptions = buildOwnerScopeOptions(scopedOwnerUserId);
 
     const timeoutId = setTimeout(async () => {
         inactivityAutomationTimers.delete(key);
 
         try {
-            const activeAutomation = await Automation.findById(automation.id);
+            const activeAutomation = await Automation.findById(automation.id, ownerScopeOptions);
             const isActive = Number(activeAutomation?.is_active || 0) === 1;
             const isStillInactivity = String(activeAutomation?.trigger_type || '').trim().toLowerCase() === 'inactivity';
             if (!activeAutomation || !isActive || !isStillInactivity) return;
@@ -3755,15 +3946,15 @@ async function armInactivityAutomation(automation, context) {
             if (latestInboundTimestampMs === null) return;
             if (latestInboundTimestampMs > safeReferenceTimestampMs) return;
 
-            const lead = await Lead.findById(leadId);
+            const lead = await Lead.findById(leadId, ownerScopeOptions);
             if (!lead || Number(lead.is_blocked || 0) === 1) return;
 
             let conversation = null;
             if (conversationId) {
-                conversation = await Conversation.findById(conversationId);
+                conversation = await Conversation.findById(conversationId, ownerScopeOptions);
             }
             if (!conversation) {
-                conversation = await Conversation.findByLeadId(leadId, sessionId || null);
+                conversation = await Conversation.findByLeadId(leadId, sessionId || null, ownerScopeOptions);
             }
 
             const executionContext = normalizeAutomationContext({
@@ -3771,6 +3962,7 @@ async function armInactivityAutomation(automation, context) {
                 lead,
                 conversation,
                 sessionId: sessionId || conversation?.session_id || DEFAULT_AUTOMATION_SESSION_ID,
+                ownerUserId: scopedOwnerUserId || undefined,
                 text: ''
             });
 
@@ -3813,18 +4005,29 @@ async function processScheduledAutomationsTick() {
         }
 
         if (dueAutomations.length === 0) return;
-
-        const leads = await query(`
-            SELECT *
-            FROM leads
-            WHERE COALESCE(is_blocked, 0) = 0
-            ORDER BY updated_at DESC
-        `);
+        const leadsByOwner = new Map();
 
         for (const automation of dueAutomations) {
+            const ownerUserId = await resolveContextOwnerUserId({
+                created_by: automation.created_by
+            });
+            if (!ownerUserId) continue;
+
+            if (!leadsByOwner.has(ownerUserId)) {
+                const ownerLeads = await Lead.list({
+                    owner_user_id: ownerUserId,
+                    is_blocked: 0,
+                    limit: 5000
+                });
+                leadsByOwner.set(ownerUserId, ownerLeads || []);
+            }
+
+            const leads = leadsByOwner.get(ownerUserId) || [];
             for (const lead of leads) {
                 if (!lead?.id || !lead?.phone) continue;
-                const leadConversation = await Conversation.findByLeadId(lead.id);
+                const leadConversation = await Conversation.findByLeadId(lead.id, null, {
+                    owner_user_id: ownerUserId
+                });
                 const sessionId = sanitizeSessionId(
                     leadConversation?.session_id,
                     DEFAULT_AUTOMATION_SESSION_ID
@@ -3835,6 +4038,7 @@ async function processScheduledAutomationsTick() {
                     lead,
                     conversation: leadConversation || null,
                     sessionId,
+                    ownerUserId,
                     text: ''
                 });
 
@@ -3869,6 +4073,14 @@ async function executeAutomationAction(automation, context) {
 
     if (!automation || !lead) return;
 
+    const ownerUserId = await resolveContextOwnerUserId({
+        ownerUserId: normalizedContext?.ownerUserId,
+        assigned_to: lead?.assigned_to || conversation?.assigned_to,
+        created_by: automation?.created_by,
+        sessionId
+    });
+    const ownerScopeOptions = buildOwnerScopeOptions(ownerUserId);
+
     const variables = buildAutomationVariables(lead, text);
     const actionType = automation.action_type;
     const actionValue = automation.action_value || '';
@@ -3892,7 +4104,9 @@ async function executeAutomationAction(automation, context) {
             }
 
             try {
-                await sendMessage(sessionId, lead.phone, content, 'text');
+                await sendMessage(sessionId, lead.phone, content, 'text', {
+                    assigned_to: lead?.assigned_to || null
+                });
             } catch (error) {
                 if (shouldTrackOnce && reservationCreated) {
                     await releaseAutomationLeadRun(automationId, leadId);
@@ -3908,10 +4122,10 @@ async function executeAutomationAction(automation, context) {
             if (nextStatus === null || oldStatus === null || nextStatus === oldStatus) return;
 
             await Lead.update(lead.id, { status: nextStatus });
-            const updatedLead = await Lead.findById(lead.id);
+            const updatedLead = await Lead.findById(lead.id, ownerScopeOptions);
             if (!updatedLead) return;
 
-            const statusConversation = await resolveAutomationConversation(updatedLead, conversation, sessionId);
+            const statusConversation = await resolveAutomationConversation(updatedLead, conversation, sessionId, ownerScopeOptions);
             await scheduleAutomations({
                 event: AUTOMATION_EVENT_TYPES.STATUS_CHANGE,
                 sessionId: statusConversation?.session_id || sessionId,
@@ -3919,6 +4133,7 @@ async function executeAutomationAction(automation, context) {
                 conversation: statusConversation,
                 oldStatus,
                 newStatus: nextStatus,
+                ownerUserId: ownerUserId || undefined,
                 text: ''
             });
             break;
@@ -3946,10 +4161,10 @@ async function executeAutomationAction(automation, context) {
             const flowId = parseInt(actionValue, 10);
             if (!Number.isFinite(flowId)) return;
 
-            const flow = await Flow.findById(flowId);
+            const flow = await Flow.findById(flowId, ownerScopeOptions);
             if (!flow) return;
 
-            const targetConversation = await resolveAutomationConversation(lead, conversation, sessionId);
+            const targetConversation = await resolveAutomationConversation(lead, conversation, sessionId, ownerScopeOptions);
             if (targetConversation && Number(targetConversation.is_bot_active || 0) === 1) {
                 await flowService.startFlow(flow, lead, targetConversation, { text });
             }
@@ -3958,10 +4173,14 @@ async function executeAutomationAction(automation, context) {
 
         case 'notify': {
             const message = applyAutomationTemplate(actionValue, variables).trim();
-            webhookService.trigger('automation.notify', {
+            await triggerScopedWebhook('automation.notify', {
                 automationId: automation.id,
                 message,
                 lead: { id: lead.id, name: lead.name, phone: lead.phone }
+            }, {
+                ownerUserId: ownerUserId || undefined,
+                assigned_to: lead?.assigned_to || undefined,
+                sessionId
             });
             break;
         }
@@ -3978,24 +4197,38 @@ async function executeAutomationAction(automation, context) {
 
 async function scheduleAutomations(context) {
     const normalizedContext = normalizeAutomationContext(context);
-    const automations = await Automation.list({ is_active: 1 });
+    const ownerUserId = await resolveContextOwnerUserId({
+        ownerUserId: normalizedContext?.ownerUserId,
+        assigned_to: normalizedContext?.lead?.assigned_to || normalizedContext?.conversation?.assigned_to,
+        sessionId: normalizedContext?.sessionId
+    });
+    if (!ownerUserId) return;
+
+    const automations = await Automation.list({
+        is_active: 1,
+        owner_user_id: ownerUserId
+    });
     if (!automations || automations.length === 0) return;
 
+    const scopedContext = {
+        ...normalizedContext,
+        ownerUserId
+    };
     const normalizedText = normalizeAutomationText(normalizedContext?.text || '');
 
-    if (normalizedContext.event === AUTOMATION_EVENT_TYPES.MESSAGE_RECEIVED && normalizedContext?.lead?.id) {
+    if (scopedContext.event === AUTOMATION_EVENT_TYPES.MESSAGE_RECEIVED && scopedContext?.lead?.id) {
         for (const automation of automations) {
             if (String(automation?.trigger_type || '').trim().toLowerCase() !== 'inactivity') continue;
-            if (!shouldAutomationRunForSession(automation, normalizedContext.sessionId)) continue;
-            armInactivityAutomation(automation, normalizedContext).catch((error) => {
+            if (!shouldAutomationRunForSession(automation, scopedContext.sessionId)) continue;
+            armInactivityAutomation(automation, scopedContext).catch((error) => {
                 console.error(`Erro ao armar automacao de inatividade ${automation.id}:`, error.message);
             });
         }
     }
 
     for (const automation of automations) {
-        if (!shouldTriggerAutomation(automation, normalizedContext, normalizedText)) continue;
-        runAutomationWithDelay(automation, normalizedContext);
+        if (!shouldTriggerAutomation(automation, scopedContext, normalizedText)) continue;
+        runAutomationWithDelay(automation, scopedContext);
     }
 }
 
@@ -4060,6 +4293,10 @@ async function syncChatsToDatabase(sessionId, payload) {
     const sessionDisplayName = getSessionDisplayName(sessionId);
 
     const sessionPhone = getSessionPhone(sessionId);
+    const sessionOwnerUserId = await resolveSessionOwnerUserId(sessionId);
+    const leadScopeOptions = {
+        owner_user_id: sessionOwnerUserId || undefined
+    };
 
 
 
@@ -4097,26 +4334,26 @@ async function syncChatsToDatabase(sessionId, payload) {
 
 
 
-        let lead = await Lead.findByJid(jid) || await Lead.findByPhone(phone);
+        let lead = await Lead.findByJid(jid, leadScopeOptions) || await Lead.findByPhone(phone, leadScopeOptions);
 
         const rawPhoneDigits = normalizePhoneDigits(extractNumber(rawJid));
         const isRawSelfChat = isSelfPhone(rawPhoneDigits, sessionDigits);
 
         if (rawJid && rawJid !== jid && !isSelfChat && !isRawSelfChat) {
 
-            const aliasLead = await Lead.findByJid(rawJid) || await Lead.findByPhone(extractNumber(rawJid));
+            const aliasLead = await Lead.findByJid(rawJid, leadScopeOptions) || await Lead.findByPhone(extractNumber(rawJid), leadScopeOptions);
 
             if (aliasLead && lead && aliasLead.id !== lead.id) {
 
-                await mergeLeads(lead, aliasLead);
+                await mergeLeads(lead, aliasLead, leadScopeOptions);
 
             } else if (aliasLead && !lead) {
 
-                lead = await updateLeadIdentity(aliasLead, jid, phone);
+                lead = await updateLeadIdentity(aliasLead, jid, phone, leadScopeOptions);
 
             } else if (aliasLead && lead && aliasLead.id === lead.id) {
 
-                lead = await updateLeadIdentity(lead, jid, phone);
+                lead = await updateLeadIdentity(lead, jid, phone, leadScopeOptions);
 
             }
 
@@ -4124,7 +4361,7 @@ async function syncChatsToDatabase(sessionId, payload) {
 
         if (lead && lead.jid !== jid) {
 
-            lead = await updateLeadIdentity(lead, jid, phone);
+            lead = await updateLeadIdentity(lead, jid, phone, leadScopeOptions);
 
         }
 
@@ -4138,8 +4375,12 @@ async function syncChatsToDatabase(sessionId, payload) {
 
                 name: displayName,
 
-                source: 'whatsapp'
+                source: 'whatsapp',
+                assigned_to: sessionOwnerUserId || undefined
 
+            }, {
+                owner_user_id: sessionOwnerUserId || undefined,
+                default_assigned_to: sessionOwnerUserId || undefined
             });
             lead = leadResult.lead;
 
@@ -4148,7 +4389,7 @@ async function syncChatsToDatabase(sessionId, payload) {
 
             if (sanitizedDisplayName && shouldAutoUpdateLeadName(lead, lead.phone || phone, sessionDisplayName)) {
                 await Lead.update(lead.id, { name: sanitizedDisplayName });
-                lead = await Lead.findById(lead.id);
+                lead = await Lead.findById(lead.id, leadScopeOptions);
             }
         }
 
@@ -4158,8 +4399,12 @@ async function syncChatsToDatabase(sessionId, payload) {
 
             lead_id: lead.id,
 
-            session_id: sessionId
+            session_id: sessionId,
+            assigned_to: sessionOwnerUserId || undefined
 
+        }, {
+            owner_user_id: sessionOwnerUserId || undefined,
+            default_assigned_to: sessionOwnerUserId || undefined
         });
 
         const conversation = convResult.conversation;
@@ -4493,8 +4738,7 @@ async function backfillConversationMessagesFromStore(options = {}) {
 
 
 
-let cachedBusinessHoursSettings = null;
-let cachedBusinessHoursSettingsAt = 0;
+const businessHoursSettingsCache = new Map();
 const outsideHoursAutoReplyTracker = new Map();
 
 function normalizeBusinessHoursTime(value, fallback) {
@@ -4587,22 +4831,35 @@ function markOutsideHoursAutoReplySent(conversationId) {
     }
 }
 
-function invalidateBusinessHoursSettingsCache() {
-    cachedBusinessHoursSettings = null;
-    cachedBusinessHoursSettingsAt = 0;
+function buildBusinessHoursCacheKey(ownerUserId) {
+    const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
+    return normalizedOwnerUserId ? `owner:${normalizedOwnerUserId}` : 'owner:0';
 }
 
-async function getBusinessHoursSettings(forceRefresh = false) {
+function invalidateBusinessHoursSettingsCache(ownerUserId = null) {
+    const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
+    if (normalizedOwnerUserId) {
+        businessHoursSettingsCache.delete(buildBusinessHoursCacheKey(normalizedOwnerUserId));
+        return;
+    }
+    businessHoursSettingsCache.clear();
+}
+
+async function getBusinessHoursSettings(ownerUserId = null, forceRefresh = false) {
     const now = Date.now();
-    if (!forceRefresh && cachedBusinessHoursSettings && (now - cachedBusinessHoursSettingsAt) < BUSINESS_HOURS_CACHE_TTL_MS) {
-        return cachedBusinessHoursSettings;
+    const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
+    const cacheKey = buildBusinessHoursCacheKey(normalizedOwnerUserId);
+    const cachedEntry = businessHoursSettingsCache.get(cacheKey);
+
+    if (!forceRefresh && cachedEntry && (now - cachedEntry.cachedAt) < BUSINESS_HOURS_CACHE_TTL_MS) {
+        return cachedEntry.value;
     }
 
     const [enabledValue, startValue, endValue, autoReplyMessageValue] = await Promise.all([
-        Settings.get('business_hours_enabled'),
-        Settings.get('business_hours_start'),
-        Settings.get('business_hours_end'),
-        Settings.get('business_hours_auto_reply_message')
+        Settings.get(buildScopedSettingsKey('business_hours_enabled', normalizedOwnerUserId || null)),
+        Settings.get(buildScopedSettingsKey('business_hours_start', normalizedOwnerUserId || null)),
+        Settings.get(buildScopedSettingsKey('business_hours_end', normalizedOwnerUserId || null)),
+        Settings.get(buildScopedSettingsKey('business_hours_auto_reply_message', normalizedOwnerUserId || null))
     ]);
 
     const normalized = normalizeBusinessHoursSettings({
@@ -4612,8 +4869,10 @@ async function getBusinessHoursSettings(forceRefresh = false) {
         autoReplyMessage: autoReplyMessageValue
     });
 
-    cachedBusinessHoursSettings = normalized;
-    cachedBusinessHoursSettingsAt = now;
+    businessHoursSettingsCache.set(cacheKey, {
+        value: normalized,
+        cachedAt: now
+    });
 
     return normalized;
 }
@@ -4632,6 +4891,10 @@ async function processIncomingMessage(sessionId, msg) {
     if (!msg?.message) return;
     const sessionDisplayName = getSessionDisplayName(sessionId);
     const sessionPhone = getSessionPhone(sessionId);
+    const sessionOwnerUserId = await resolveSessionOwnerUserId(sessionId);
+    const leadScopeOptions = {
+        owner_user_id: sessionOwnerUserId || undefined
+    };
     registerMessageJidAliases(msg, sessionPhone);
 
     const fromRaw = msg.key.remoteJid;
@@ -4748,21 +5011,23 @@ async function processIncomingMessage(sessionId, msg) {
 
         const resolvedPhone = isUserJid(from) ? extractNumber(from) : null;
 
-        const primary = await Lead.findByJid(from) || (resolvedPhone ? await Lead.findByPhone(resolvedPhone) : null);
+        const primary = await Lead.findByJid(from, leadScopeOptions)
+            || (resolvedPhone ? await Lead.findByPhone(resolvedPhone, leadScopeOptions) : null);
 
-        const duplicate = await Lead.findByJid(fromRaw) || await Lead.findByPhone(extractNumber(fromRaw));
+        const duplicate = await Lead.findByJid(fromRaw, leadScopeOptions)
+            || await Lead.findByPhone(extractNumber(fromRaw), leadScopeOptions);
 
         if (primary && duplicate && primary.id !== duplicate.id) {
 
-            await mergeLeads(primary, duplicate);
+            await mergeLeads(primary, duplicate, leadScopeOptions);
 
         } else if (!primary && duplicate && resolvedPhone) {
 
-            await updateLeadIdentity(duplicate, from, resolvedPhone);
+            await updateLeadIdentity(duplicate, from, resolvedPhone, leadScopeOptions);
 
         } else if (primary && !duplicate && resolvedPhone) {
 
-            await updateLeadIdentity(primary, from, resolvedPhone);
+            await updateLeadIdentity(primary, from, resolvedPhone, leadScopeOptions);
 
         }
 
@@ -4800,8 +5065,12 @@ async function processIncomingMessage(sessionId, msg) {
 
         name: isSelfChat ? selfName : (!isFromMe ? (pushName || phone) : undefined),
 
-        source: 'whatsapp'
+        source: 'whatsapp',
+        assigned_to: sessionOwnerUserId || undefined
 
+    }, {
+        owner_user_id: sessionOwnerUserId || undefined,
+        default_assigned_to: sessionOwnerUserId || undefined
     });
     let lead = leadResult.lead;
     const leadCreated = leadResult.created;
@@ -4813,7 +5082,7 @@ async function processIncomingMessage(sessionId, msg) {
             (lead.jid !== from || !leadDigits || leadDigits !== phoneDigits);
 
         if (shouldSyncIdentity) {
-            lead = await updateLeadIdentity(lead, from, phone);
+            lead = await updateLeadIdentity(lead, from, phone, leadScopeOptions);
         }
     }
 
@@ -4851,8 +5120,12 @@ async function processIncomingMessage(sessionId, msg) {
 
         lead_id: lead.id,
 
-        session_id: sessionId
+        session_id: sessionId,
+        assigned_to: sessionOwnerUserId || undefined
 
+    }, {
+        owner_user_id: sessionOwnerUserId || undefined,
+        default_assigned_to: sessionOwnerUserId || undefined
     });
 
 
@@ -4981,7 +5254,7 @@ async function processIncomingMessage(sessionId, msg) {
 
     
 
-    io.emit('new-message', messageForClient);
+    await emitSessionScoped(sessionId, 'new-message', messageForClient);
 
     
 
@@ -4989,12 +5262,13 @@ async function processIncomingMessage(sessionId, msg) {
 
     if (!isFromMe) {
 
-        webhookService.trigger('message.received', {
-
+        await triggerScopedWebhook('message.received', {
             message: messageForClient,
-
             lead: { id: lead.id, name: lead.name, phone: lead.phone }
-
+        }, {
+            ownerUserId: sessionOwnerUserId || undefined,
+            assigned_to: lead?.assigned_to || undefined,
+            sessionId
         });
 
         
@@ -5003,7 +5277,7 @@ async function processIncomingMessage(sessionId, msg) {
 
         
 
-        const businessHoursSettings = await getBusinessHoursSettings();
+        const businessHoursSettings = await getBusinessHoursSettings(sessionOwnerUserId || undefined);
         const isOutsideBusinessHours = businessHoursSettings.enabled && !isWithinBusinessHours(businessHoursSettings);
 
         if (isOutsideBusinessHours && !isSelfChat) {
@@ -5012,7 +5286,8 @@ async function processIncomingMessage(sessionId, msg) {
             if (autoReplyText && shouldSendOutsideHoursAutoReply(conversation.id)) {
                 try {
                     await sendMessage(sessionId, phone, autoReplyText, 'text', {
-                        conversationId: conversation.id
+                        conversationId: conversation.id,
+                        assigned_to: lead?.assigned_to || null
                     });
                     markOutsideHoursAutoReplySent(conversation.id);
                 } catch (autoReplyError) {
@@ -5048,6 +5323,7 @@ async function processIncomingMessage(sessionId, msg) {
             event: AUTOMATION_EVENT_TYPES.MESSAGE_RECEIVED,
 
             sessionId,
+            ownerUserId: sessionOwnerUserId || undefined,
 
             text,
 
@@ -5098,6 +5374,17 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
     const assignedTo = Number.isInteger(requestedAssignee) && requestedAssignee > 0
         ? requestedAssignee
         : null;
+    const requestedOwnerUserId = Number(options?.owner_user_id);
+    let ownerUserId = Number.isInteger(requestedOwnerUserId) && requestedOwnerUserId > 0
+        ? requestedOwnerUserId
+        : null;
+    if (!ownerUserId && assignedTo) {
+        ownerUserId = await resolveOwnerUserIdFromUserId(assignedTo);
+    }
+    if (!ownerUserId) {
+        ownerUserId = normalizeOwnerUserId(session?.ownerUserId) || await resolveSessionOwnerUserId(sessionId);
+    }
+    const defaultAssignee = assignedTo || ownerUserId || null;
 
     
 
@@ -5110,8 +5397,11 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
         jid,
 
         source: 'manual',
-        assigned_to: assignedTo
+        assigned_to: defaultAssignee
 
+    }, {
+        owner_user_id: ownerUserId || undefined,
+        default_assigned_to: defaultAssignee || undefined
     });
 
     
@@ -5120,7 +5410,9 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
     let conversation = null;
 
     if (options.conversationId) {
-        const existingConversation = await Conversation.findById(options.conversationId);
+        const existingConversation = await Conversation.findById(options.conversationId, {
+            owner_user_id: ownerUserId || undefined
+        });
         if (existingConversation && Number(existingConversation.lead_id) === Number(lead.id)) {
             if (assignedTo && existingConversation.assigned_to && Number(existingConversation.assigned_to) !== assignedTo) {
                 throw new Error('Sem permissao para enviar nesta conversa');
@@ -5133,14 +5425,19 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
         const conversationResult = await Conversation.findOrCreate({
             lead_id: lead.id,
             session_id: sessionId,
-            assigned_to: assignedTo
+            assigned_to: defaultAssignee
+        }, {
+            owner_user_id: ownerUserId || undefined,
+            default_assigned_to: defaultAssignee || undefined
         });
         conversation = conversationResult.conversation;
     }
 
     if (conversation && assignedTo && !conversation.assigned_to) {
         await Conversation.update(conversation.id, { assigned_to: assignedTo });
-        conversation = await Conversation.findById(conversation.id);
+        conversation = await Conversation.findById(conversation.id, {
+            owner_user_id: ownerUserId || undefined
+        });
     }
 
     
@@ -5283,16 +5580,15 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
     // Webhook
 
-    webhookService.trigger('message.sent', {
-
+    await triggerScopedWebhook('message.sent', {
         messageId,
-
         to,
-
         content: message,
-
         type
-
+    }, {
+        ownerUserId: ownerUserId || undefined,
+        assigned_to: lead?.assigned_to || undefined,
+        sessionId
     });
 
     
@@ -5353,18 +5649,21 @@ function sessionExists(sessionId) {
                 fileName: options.fileName,
                 ptt: options.ptt,
                 duration: options.duration,
+                assigned_to: options.assignedTo || null,
+                owner_user_id: options.ownerUserId || null,
                 campaignId: options.campaignId || null,
                 conversationId: options.conversationId || null
             }
         );
     }, {
         resolveSessionForMessage: async ({ message, lead }) => {
+            const leadOwnerUserId = await resolveOwnerUserIdFromUserId(lead?.assigned_to);
             const allocation = await senderAllocatorService.allocateForSingleLead({
                 leadId: lead?.id,
                 campaignId: message?.campaign_id || null,
                 sessionId: message?.session_id || null,
                 strategy: 'round_robin',
-                ownerUserId: Number(lead?.assigned_to || 0) > 0 ? Number(lead?.assigned_to) : undefined
+                ownerUserId: leadOwnerUserId || undefined
             });
             return {
                 sessionId: allocation?.sessionId || null,
@@ -5401,6 +5700,29 @@ io.on('connection', (socket) => {
 
     console.log('?? Cliente conectado:', socket.id);
 
+    const ensureSocketOwnerRoom = async () => {
+        const ownerScopeUserId = await resolveSocketOwnerUserId(socket);
+        if (!ownerScopeUserId) return null;
+        const ownerRoom = buildOwnerSocketRoom(ownerScopeUserId);
+        if (ownerRoom) {
+            socket.join(ownerRoom);
+        }
+        return ownerScopeUserId;
+    };
+
+    const getSocketScopedUserId = () => {
+        const role = String(socket?.user?.role || '').trim().toLowerCase();
+        const requesterId = Number(socket?.user?.id || 0);
+        if ((role === 'agent' || role === 'user') && Number.isInteger(requesterId) && requesterId > 0) {
+            return requesterId;
+        }
+        return null;
+    };
+
+    ensureSocketOwnerRoom().catch((error) => {
+        console.warn('Falha ao associar socket ao owner room:', error.message);
+    });
+
     
 
     socket.on('check-session', async ({ sessionId }) => {
@@ -5411,7 +5733,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const ownerScopeUserId = await resolveSocketOwnerUserId(socket);
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
         if (ownerScopeUserId) {
             const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId, {
                 owner_user_id: ownerScopeUserId
@@ -5458,7 +5780,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const ownerScopeUserId = await resolveSocketOwnerUserId(socket);
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
         const storedSession = await WhatsAppSession.findBySessionId(sessionId);
         if (ownerScopeUserId && storedSession) {
             const ownedSession = await WhatsAppSession.findBySessionId(sessionId, {
@@ -5519,7 +5841,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const ownerScopeUserId = await resolveSocketOwnerUserId(socket);
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
         const storedSession = await WhatsAppSession.findBySessionId(sessionId);
         if (ownerScopeUserId && storedSession) {
             const ownedSession = await WhatsAppSession.findBySessionId(sessionId, {
@@ -5563,12 +5885,26 @@ io.on('connection', (socket) => {
     socket.on('send-message', async ({ sessionId, to, message, type, options }) => {
 
         try {
+            const ownerScopeUserId = await ensureSocketOwnerRoom();
+            const scopedSocketUserId = getSocketScopedUserId();
+            const normalizedSessionId = sanitizeSessionId(sessionId);
+            const canAccessSession = await assertOwnerCanAccessSession(ownerScopeUserId, normalizedSessionId);
+            if (!canAccessSession) {
+                socket.emit('error', { message: 'Sem permissao para usar esta conta', code: 'SESSION_FORBIDDEN' });
+                return;
+            }
+            const defaultAssignee = scopedSocketUserId || ownerScopeUserId || null;
+            const sendOptions = {
+                ...(options || {}),
+                ...(defaultAssignee ? { assigned_to: defaultAssignee } : {}),
+                owner_user_id: ownerScopeUserId || undefined
+            };
 
-            const result = await sendMessage(sessionId, to, message, type, options);
+            const result = await sendMessage(normalizedSessionId, to, message, type, sendOptions);
 
             socket.emit('message-sent', {
 
-                sessionId,
+                sessionId: normalizedSessionId,
 
                 to,
 
@@ -5595,36 +5931,43 @@ io.on('connection', (socket) => {
         const normalizedSessionId = sanitizeSessionId(sessionId);
         const normalizedConversationId = Number(conversationId);
         const hasConversationId = Number.isFinite(normalizedConversationId) && normalizedConversationId > 0;
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
+        const scopedSocketUserId = getSocketScopedUserId();
+        const scopedOptions = {
+            owner_user_id: ownerScopeUserId || undefined
+        };
         let resolvedConversation = null;
         let resolvedLead = null;
 
         if (hasConversationId) {
-            resolvedConversation = await Conversation.findById(normalizedConversationId);
+            resolvedConversation = await Conversation.findById(normalizedConversationId, scopedOptions);
             if (resolvedConversation) {
-                resolvedLead = await Lead.findById(resolvedConversation.lead_id);
+                resolvedLead = await Lead.findById(resolvedConversation.lead_id, scopedOptions);
             }
-            messages = await Message.listByConversation(normalizedConversationId, { limit: 100 });
+            if (resolvedConversation) {
+                messages = await Message.listByConversation(normalizedConversationId, { limit: 100 });
+            }
         }
 
         if (!hasConversationId && leadId) {
             const normalizedLeadId = Number(leadId);
             if (Number.isFinite(normalizedLeadId) && normalizedLeadId > 0 && normalizedSessionId) {
-                resolvedLead = await Lead.findById(normalizedLeadId);
-                const conversation = await Conversation.findByLeadId(normalizedLeadId, normalizedSessionId);
+                resolvedLead = await Lead.findById(normalizedLeadId, scopedOptions);
+                const conversation = await Conversation.findByLeadId(normalizedLeadId, normalizedSessionId, scopedOptions);
                 if (conversation) {
                     resolvedConversation = conversation;
                     messages = await Message.listByConversation(conversation.id, { limit: 100 });
                 }
             }
-            if (messages.length === 0 && !normalizedSessionId) {
+            if (messages.length === 0 && !normalizedSessionId && resolvedLead) {
                 messages = await Message.listByLead(leadId, { limit: 100 });
             }
         } else if (contactJid) {
-            const lead = await Lead.findByJid(contactJid);
+            const lead = await Lead.findByJid(contactJid, scopedOptions);
             if (lead) {
                 resolvedLead = lead;
                 if (normalizedSessionId) {
-                    const conversation = await Conversation.findByLeadId(lead.id, normalizedSessionId);
+                    const conversation = await Conversation.findByLeadId(lead.id, normalizedSessionId, scopedOptions);
                     if (conversation) {
                         resolvedConversation = conversation;
                         messages = await Message.listByConversation(conversation.id, { limit: 100 });
@@ -5634,6 +5977,15 @@ io.on('connection', (socket) => {
                     messages = await Message.listByLead(lead.id, { limit: 100 });
                 }
             }
+        }
+
+        if (resolvedLead && scopedSocketUserId && Number(resolvedLead.assigned_to) !== Number(scopedSocketUserId)) {
+            socket.emit('messages-list', { sessionId, contactJid, leadId, conversationId, messages: [] });
+            return;
+        }
+        if (!resolvedLead && resolvedConversation && scopedSocketUserId && Number(resolvedConversation.assigned_to) !== Number(scopedSocketUserId)) {
+            socket.emit('messages-list', { sessionId, contactJid, leadId, conversationId, messages: [] });
+            return;
         }
 
         const backfillSessionId = sanitizeSessionId(
@@ -5678,7 +6030,13 @@ io.on('connection', (socket) => {
     
 
     socket.on('get-contacts', async ({ sessionId }) => {
-        const leads = await Lead.list({ limit: 200 });
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
+        const scopedSocketUserId = getSocketScopedUserId();
+        const leads = await Lead.list({
+            limit: 200,
+            owner_user_id: ownerScopeUserId || undefined,
+            assigned_to: scopedSocketUserId || undefined
+        });
         const sessionPhone = getSessionPhone(sessionId);
         const sessionDisplayName = normalizeText(getSessionDisplayName(sessionId) || 'Usuário');
 
@@ -5719,10 +6077,17 @@ io.on('connection', (socket) => {
     
 
     socket.on('get-leads', async (options = {}) => {
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
+        const scopedSocketUserId = getSocketScopedUserId();
+        const scopedOptions = {
+            ...(options || {}),
+            owner_user_id: ownerScopeUserId || undefined,
+            assigned_to: scopedSocketUserId || options?.assigned_to || undefined
+        };
 
-        const leads = await Lead.list(options);
+        const leads = await Lead.list(scopedOptions);
 
-        const total = await Lead.count(options);
+        const total = await Lead.count(scopedOptions);
 
         socket.emit('leads-list', { leads, total });
 
@@ -5731,18 +6096,27 @@ io.on('connection', (socket) => {
     
 
     socket.on('mark-read', async ({ sessionId, contactJid, conversationId }) => {
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
+        const scopedSocketUserId = getSocketScopedUserId();
+        const scopedOptions = {
+            owner_user_id: ownerScopeUserId || undefined
+        };
 
         if (conversationId) {
-
-            await Conversation.markAsRead(conversationId);
+            const conversation = await Conversation.findById(conversationId, scopedOptions);
+            if (conversation && (!scopedSocketUserId || Number(conversation.assigned_to) === Number(scopedSocketUserId))) {
+                await Conversation.markAsRead(conversationId);
+            }
 
         } else if (contactJid) {
 
-            const lead = await Lead.findByJid(contactJid);
+            const lead = await Lead.findByJid(contactJid, scopedOptions);
 
             if (lead) {
-
-                const conv = await Conversation.findByLeadId(lead.id, sessionId || null);
+                if (scopedSocketUserId && Number(lead.assigned_to) !== Number(scopedSocketUserId)) {
+                    return;
+                }
+                const conv = await Conversation.findByLeadId(lead.id, sessionId || null, scopedOptions);
 
                 if (conv) await Conversation.markAsRead(conv.id);
 
@@ -5755,8 +6129,12 @@ io.on('connection', (socket) => {
     
 
     socket.on('get-templates', async () => {
-
-        const templates = await Template.list();
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
+        const scopedSocketUserId = getSocketScopedUserId();
+        const templates = await Template.list({
+            owner_user_id: ownerScopeUserId || undefined,
+            created_by: scopedSocketUserId || undefined
+        });
 
         socket.emit('templates-list', { templates });
 
@@ -5765,8 +6143,12 @@ io.on('connection', (socket) => {
     
 
     socket.on('get-flows', async () => {
-
-        const flows = await Flow.list();
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
+        const scopedSocketUserId = getSocketScopedUserId();
+        const flows = await Flow.list({
+            owner_user_id: ownerScopeUserId || undefined,
+            created_by: scopedSocketUserId || undefined
+        });
 
         socket.emit('flows-list', { flows });
 
@@ -5775,6 +6157,19 @@ io.on('connection', (socket) => {
     
 
     socket.on('toggle-bot', async ({ conversationId, active }) => {
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
+        const scopedSocketUserId = getSocketScopedUserId();
+        const conversation = await Conversation.findById(conversationId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
+        if (!conversation) {
+            socket.emit('error', { message: 'Conversa nao encontrada', code: 'CONVERSATION_NOT_FOUND' });
+            return;
+        }
+        if (scopedSocketUserId && Number(conversation.assigned_to) !== Number(scopedSocketUserId)) {
+            socket.emit('error', { message: 'Sem permissao para esta conversa', code: 'CONVERSATION_FORBIDDEN' });
+            return;
+        }
 
         await Conversation.update(conversationId, { is_bot_active: active ? 1 : 0 });
 
@@ -5785,6 +6180,19 @@ io.on('connection', (socket) => {
     
 
     socket.on('assign-conversation', async ({ conversationId, userId }) => {
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
+        const conversation = await Conversation.findById(conversationId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
+        if (!conversation) {
+            socket.emit('error', { message: 'Conversa nao encontrada', code: 'CONVERSATION_NOT_FOUND' });
+            return;
+        }
+        const targetUser = await User.findById(userId);
+        if (!targetUser || !isSameUserOwner(targetUser, ownerScopeUserId)) {
+            socket.emit('error', { message: 'Usuario invalido para esta conta', code: 'USER_FORBIDDEN' });
+            return;
+        }
 
         await Conversation.update(conversationId, { assigned_to: userId });
 
@@ -5792,7 +6200,10 @@ io.on('connection', (socket) => {
 
         
 
-        webhookService.trigger('conversation.assigned', { conversationId, userId });
+        await triggerScopedWebhook('conversation.assigned', { conversationId, userId }, {
+            ownerUserId: ownerScopeUserId || undefined,
+            assigned_to: userId || undefined
+        });
 
     });
 
@@ -5806,7 +6217,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const ownerScopeUserId = await resolveSocketOwnerUserId(socket);
+        const ownerScopeUserId = await ensureSocketOwnerRoom();
         if (ownerScopeUserId) {
             const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId, {
                 owner_user_id: ownerScopeUserId
@@ -5860,8 +6271,7 @@ io.on('connection', (socket) => {
         
 
         socket.emit('disconnected', { sessionId: normalizedSessionId });
-
-        io.emit('whatsapp-status', { sessionId: normalizedSessionId, status: 'disconnected' });
+        await emitSessionScoped(normalizedSessionId, 'whatsapp-status', { sessionId: normalizedSessionId, status: 'disconnected' });
 
     });
 
@@ -5887,26 +6297,30 @@ io.on('connection', (socket) => {
 
 // Status do WhatsApp (para Configurações > Conexão)
 
-app.get('/api/whatsapp/status', optionalAuth, (req, res) => {
+app.get('/api/whatsapp/status', optionalAuth, async (req, res) => {
+    try {
+        const sessionId = resolveSessionIdOrDefault(req.query?.sessionId);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        if (ownerScopeUserId) {
+            const canAccess = await assertOwnerCanAccessSession(ownerScopeUserId, sessionId);
+            if (!canAccess) {
+                return res.status(404).json({ connected: false, phone: null });
+            }
+        }
 
-    const sessionId = resolveSessionIdOrDefault(req.query?.sessionId);
+        const session = sessions.get(sessionId);
+        const connected = !!(session && session.isConnected);
 
-    const session = sessions.get(sessionId);
+        let phone = null;
+        if (session && session.user && session.user.id) {
+            const jid = String(session.user.id);
+            phone = '+' + jid.replace(/@s\.whatsapp\.net|@c\.us/g, '').trim();
+        }
 
-    const connected = !!(session && session.isConnected);
-
-    let phone = null;
-
-    if (session && session.user && session.user.id) {
-
-        const jid = String(session.user.id);
-
-        phone = '+' + jid.replace(/@s\.whatsapp\.net|@c\.us/g, '').trim();
-
+        res.json({ connected, phone });
+    } catch (error) {
+        res.status(500).json({ connected: false, phone: null });
     }
-
-    res.json({ connected, phone });
-
 });
 
 app.get('/api/whatsapp/sessions', authenticate, async (req, res) => {
@@ -5983,7 +6397,7 @@ app.delete('/api/whatsapp/sessions/:sessionId', authenticate, async (req, res) =
             created_by: ownerScopeUserId || undefined
         });
 
-        io.emit('whatsapp-status', { sessionId, status: 'disconnected' });
+        await emitSessionScoped(sessionId, 'whatsapp-status', { sessionId, status: 'disconnected' });
         res.json({ success: true, session_id: sessionId });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -6009,7 +6423,7 @@ app.post('/api/whatsapp/disconnect', authenticate, async (req, res) => {
 
         await whatsappService.logoutSession(sessionId, SESSIONS_DIR);
 
-        io.emit('whatsapp-status', { sessionId, status: 'disconnected' });
+        await emitSessionScoped(sessionId, 'whatsapp-status', { sessionId, status: 'disconnected' });
 
         res.json({ success: true });
 
@@ -6025,36 +6439,44 @@ app.post('/api/whatsapp/disconnect', authenticate, async (req, res) => {
 
 // Status do servidor
 
-app.get('/api/status', async (req, res) => {
+app.get('/api/status', optionalAuth, async (req, res) => {
+    const requesterId = Number(req?.user?.id || 0);
+    const isAuthenticated = Number.isInteger(requesterId) && requesterId > 0;
+    if (!isAuthenticated) {
+        return res.json({
+            status: 'online',
+            version: '4.0.0',
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString()
+        });
+    }
 
-    const activeSessions = Array.from(sessions.entries()).map(([id, session]) => ({
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const activeSessions = [];
 
-        id,
+    for (const [id, session] of Array.from(sessions.entries())) {
+        if (ownerScopeUserId) {
+            const canAccess = await assertOwnerCanAccessSession(ownerScopeUserId, id);
+            if (!canAccess) continue;
+        }
 
-        connected: session.isConnected,
-
-        user: session.user?.name || null
-
-    }));
-
-    
+        activeSessions.push({
+            id,
+            connected: session.isConnected,
+            user: session.user?.name || null
+        });
+    }
 
     res.json({
-
         status: 'online',
-
         version: '4.0.0',
-
-        sessions: sessions.size,
-
+        sessions: activeSessions.length,
         activeSessions,
-
-        queue: await queueService.getStatus(),
-
+        queue: await queueService.getStatus({
+            ownerUserId: ownerScopeUserId || undefined
+        }),
         uptime: process.uptime(),
-
         timestamp: new Date().toISOString()
-
     });
 
 });
@@ -7104,9 +7526,11 @@ app.get('/api/custom-events/stats', optionalAuth, async (req, res) => {
             false
         );
         const scopedUserId = getScopedUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
         const events = await CustomEvent.listWithPeriodTotals(periodRange.startAt, periodRange.endAt, {
             is_active: onlyActive ? 1 : undefined,
+            owner_user_id: ownerScopeUserId || undefined,
             created_by: scopedUserId || undefined
         });
 
@@ -7146,10 +7570,12 @@ app.get('/api/custom-events', optionalAuth, async (req, res) => {
         const activeFilter = hasActiveFilter ? (parseBooleanInput(activeRaw, true) ? 1 : 0) : undefined;
         const search = String(req.query.search || '').trim();
         const scopedUserId = getScopedUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
         const events = await CustomEvent.list({
             is_active: activeFilter,
             search,
+            owner_user_id: ownerScopeUserId || undefined,
             created_by: scopedUserId || undefined
         });
 
@@ -7175,7 +7601,10 @@ app.post('/api/custom-events', authenticate, async (req, res) => {
             created_by: req.user?.id || null
         });
 
-        const event = await CustomEvent.findById(created.id);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const event = await CustomEvent.findById(created.id, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
         res.status(201).json({ success: true, event });
     } catch (error) {
         const message = String(error?.message || '').trim();
@@ -7194,7 +7623,10 @@ app.put('/api/custom-events/:id', authenticate, async (req, res) => {
             return res.status(400).json({ success: false, error: 'ID do evento invalido' });
         }
 
-        const existing = await CustomEvent.findById(eventId);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const existing = await CustomEvent.findById(eventId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
         if (!existing) {
             return res.status(404).json({ success: false, error: 'Evento nao encontrado' });
         }
@@ -7235,7 +7667,10 @@ app.delete('/api/custom-events/:id', authenticate, async (req, res) => {
             return res.status(400).json({ success: false, error: 'ID do evento invalido' });
         }
 
-        const existing = await CustomEvent.findById(eventId);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const existing = await CustomEvent.findById(eventId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
         if (!existing) {
             return res.status(404).json({ success: false, error: 'Evento nao encontrado' });
         }
@@ -7295,7 +7730,10 @@ app.get('/api/leads', optionalAuth, async (req, res) => {
 
 app.get('/api/leads/:id', optionalAuth, async (req, res) => {
 
-    const lead = await Lead.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const lead = await Lead.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     if (!lead) {
 
@@ -7317,20 +7755,26 @@ app.post('/api/leads', authenticate, async (req, res) => {
 
     try {
         const scopedUserId = getScopedUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
         const payload = {
             ...req.body
         };
-        if (scopedUserId) {
-            payload.assigned_to = scopedUserId;
+        if (scopedUserId || ownerScopeUserId) {
+            payload.assigned_to = scopedUserId || ownerScopeUserId;
         }
 
         const result = await Lead.create(payload);
 
-        const lead = await Lead.findById(result.id);
+        const lead = await Lead.findById(result.id, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
 
         
 
-        webhookService.trigger('lead.created', { lead });
+        await triggerScopedWebhook('lead.created', { lead }, {
+            assigned_to: lead?.assigned_to || undefined,
+            ownerUserId: ownerScopeUserId || undefined
+        });
 
         
 
@@ -7348,7 +7792,10 @@ app.post('/api/leads', authenticate, async (req, res) => {
 
 app.put('/api/leads/:id', authenticate, async (req, res) => {
 
-    const lead = await Lead.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const lead = await Lead.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     if (!lead) {
 
@@ -7376,11 +7823,16 @@ app.put('/api/leads/:id', authenticate, async (req, res) => {
 
     await Lead.update(req.params.id, updateData);
 
-    const updatedLead = await Lead.findById(req.params.id);
+    const updatedLead = await Lead.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     
 
-    webhookService.trigger('lead.updated', { lead: updatedLead });
+    await triggerScopedWebhook('lead.updated', { lead: updatedLead }, {
+        assigned_to: updatedLead?.assigned_to || undefined,
+        ownerUserId: ownerScopeUserId || undefined
+    });
 
     
 
@@ -7391,13 +7843,18 @@ app.put('/api/leads/:id', authenticate, async (req, res) => {
     const statusChanged = oldStatus !== null && newStatus !== null && oldStatus !== newStatus;
 
     if (statusChanged) {
-        webhookService.trigger('lead.status_changed', {
+        await triggerScopedWebhook('lead.status_changed', {
             lead: updatedLead,
             oldStatus,
             newStatus
+        }, {
+            assigned_to: updatedLead?.assigned_to || undefined,
+            ownerUserId: ownerScopeUserId || undefined
         });
 
-        const statusConversation = await Conversation.findByLeadId(updatedLead.id);
+        const statusConversation = await Conversation.findByLeadId(updatedLead.id, null, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
         await scheduleAutomations({
             event: AUTOMATION_EVENT_TYPES.STATUS_CHANGE,
             sessionId: statusConversation?.session_id || DEFAULT_AUTOMATION_SESSION_ID,
@@ -7405,6 +7862,7 @@ app.put('/api/leads/:id', authenticate, async (req, res) => {
             conversation: statusConversation || null,
             oldStatus,
             newStatus,
+            ownerUserId: ownerScopeUserId || undefined,
             text: ''
         });
     }
@@ -7427,7 +7885,10 @@ app.delete('/api/leads/:id', authenticate, async (req, res) => {
             });
         }
 
-        const lead = await Lead.findById(leadId);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const lead = await Lead.findById(leadId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
         if (!lead) {
             return res.status(404).json({
                 success: false,
@@ -7465,12 +7926,16 @@ app.delete('/api/leads/:id', authenticate, async (req, res) => {
 app.get('/api/tags', optionalAuth, async (req, res) => {
     try {
         const scopedUserId = getScopedUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const tagScopeUserId = scopedUserId || ownerScopeUserId || undefined;
         await Tag.syncFromLeads({
             assigned_to: scopedUserId || undefined,
-            created_by: scopedUserId || undefined
+            created_by: tagScopeUserId,
+            owner_user_id: ownerScopeUserId || undefined
         });
         const tags = await Tag.list({
-            created_by: scopedUserId || undefined
+            created_by: tagScopeUserId,
+            owner_user_id: ownerScopeUserId || undefined
         });
         res.json({ success: true, tags });
     } catch (error) {
@@ -7482,6 +7947,8 @@ app.get('/api/tags', optionalAuth, async (req, res) => {
 app.post('/api/tags', authenticate, async (req, res) => {
     try {
         const scopedUserId = getScopedUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const tagScopeUserId = scopedUserId || ownerScopeUserId || undefined;
         const name = normalizeTagNameInput(req.body?.name);
         const color = normalizeTagColorInput(req.body?.color);
         const description = normalizeTagDescriptionInput(req.body?.description);
@@ -7491,7 +7958,8 @@ app.post('/api/tags', authenticate, async (req, res) => {
         }
 
         const existing = await Tag.findByName(name, {
-            created_by: scopedUserId || undefined
+            created_by: tagScopeUserId,
+            owner_user_id: ownerScopeUserId || undefined
         });
         if (existing) {
             return res.status(409).json({ success: false, error: 'Já existe uma tag com este nome' });
@@ -7501,7 +7969,7 @@ app.post('/api/tags', authenticate, async (req, res) => {
             name,
             color,
             description,
-            created_by: scopedUserId || undefined
+            created_by: tagScopeUserId
         });
         res.status(201).json({ success: true, tag });
     } catch (error) {
@@ -7513,13 +7981,16 @@ app.post('/api/tags', authenticate, async (req, res) => {
 app.put('/api/tags/:id', authenticate, async (req, res) => {
     try {
         const scopedUserId = getScopedUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const tagScopeUserId = scopedUserId || ownerScopeUserId || undefined;
         const tagId = parseInt(req.params.id, 10);
         if (!Number.isInteger(tagId) || tagId <= 0) {
             return res.status(400).json({ success: false, error: 'ID de tag inválido' });
         }
 
         const currentTag = await Tag.findById(tagId, {
-            created_by: scopedUserId || undefined
+            created_by: tagScopeUserId,
+            owner_user_id: ownerScopeUserId || undefined
         });
         if (!currentTag) {
             return res.status(404).json({ success: false, error: 'Tag não encontrada' });
@@ -7533,7 +8004,8 @@ app.put('/api/tags/:id', authenticate, async (req, res) => {
             }
 
             const duplicate = await Tag.findByName(nextName, {
-                created_by: scopedUserId || undefined
+                created_by: tagScopeUserId,
+                owner_user_id: ownerScopeUserId || undefined
             });
             if (duplicate && Number(duplicate.id) !== tagId) {
                 return res.status(409).json({ success: false, error: 'Já existe uma tag com este nome' });
@@ -7548,7 +8020,8 @@ app.put('/api/tags/:id', authenticate, async (req, res) => {
         }
 
         const updatedTag = await Tag.update(tagId, payload, {
-            created_by: scopedUserId || undefined
+            created_by: tagScopeUserId,
+            owner_user_id: ownerScopeUserId || undefined
         });
         if (!updatedTag) {
             return res.status(404).json({ success: false, error: 'Tag não encontrada' });
@@ -7559,17 +8032,26 @@ app.put('/api/tags/:id', authenticate, async (req, res) => {
             normalizeTagNameInput(currentTag.name).toLowerCase() !== normalizeTagNameInput(updatedTag.name).toLowerCase()
         ) {
             await Tag.renameInLeads(currentTag.name, updatedTag.name, {
-                assigned_to: scopedUserId || undefined
+                assigned_to: scopedUserId || undefined,
+                owner_user_id: ownerScopeUserId || undefined
             });
             if (scopedUserId) {
                 await run(
                     'UPDATE campaigns SET tag_filter = ? WHERE created_by = ? AND LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
                     [updatedTag.name, scopedUserId, currentTag.name]
                 );
-            } else {
+            } else if (ownerScopeUserId) {
                 await run(
-                    'UPDATE campaigns SET tag_filter = ? WHERE LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
-                    [updatedTag.name, currentTag.name]
+                    `UPDATE campaigns
+                     SET tag_filter = ?
+                     WHERE LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))
+                       AND EXISTS (
+                            SELECT 1
+                            FROM users owner_scope
+                            WHERE owner_scope.id = campaigns.created_by
+                              AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                       )`,
+                    [updatedTag.name, currentTag.name, ownerScopeUserId, ownerScopeUserId]
                 );
             }
         }
@@ -7584,33 +8066,46 @@ app.put('/api/tags/:id', authenticate, async (req, res) => {
 app.delete('/api/tags/:id', authenticate, async (req, res) => {
     try {
         const scopedUserId = getScopedUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const tagScopeUserId = scopedUserId || ownerScopeUserId || undefined;
         const tagId = parseInt(req.params.id, 10);
         if (!Number.isInteger(tagId) || tagId <= 0) {
             return res.status(400).json({ success: false, error: 'ID de tag inválido' });
         }
 
         const currentTag = await Tag.findById(tagId, {
-            created_by: scopedUserId || undefined
+            created_by: tagScopeUserId,
+            owner_user_id: ownerScopeUserId || undefined
         });
         if (!currentTag) {
             return res.status(404).json({ success: false, error: 'Tag não encontrada' });
         }
 
         await Tag.delete(tagId, {
-            created_by: scopedUserId || undefined
+            created_by: tagScopeUserId,
+            owner_user_id: ownerScopeUserId || undefined
         });
         await Tag.removeFromLeads(currentTag.name, {
-            assigned_to: scopedUserId || undefined
+            assigned_to: scopedUserId || undefined,
+            owner_user_id: ownerScopeUserId || undefined
         });
         if (scopedUserId) {
             await run(
                 'UPDATE campaigns SET tag_filter = NULL WHERE created_by = ? AND LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
                 [scopedUserId, currentTag.name]
             );
-        } else {
+        } else if (ownerScopeUserId) {
             await run(
-                'UPDATE campaigns SET tag_filter = NULL WHERE LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))',
-                [currentTag.name]
+                `UPDATE campaigns
+                 SET tag_filter = NULL
+                 WHERE LOWER(TRIM(tag_filter)) = LOWER(TRIM(?))
+                   AND EXISTS (
+                        SELECT 1
+                        FROM users owner_scope
+                        WHERE owner_scope.id = campaigns.created_by
+                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                   )`,
+                [currentTag.name, ownerScopeUserId, ownerScopeUserId]
             );
         }
 
@@ -7634,11 +8129,13 @@ app.delete('/api/tags/:id', authenticate, async (req, res) => {
 app.get('/api/conversations', optionalAuth, async (req, res) => {
     const { status, assigned_to, session_id, limit, offset } = req.query;
     const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
     const requestedAssignedTo = assigned_to ? parseInt(assigned_to) : undefined;
     const resolvedAssignedTo = scopedUserId || requestedAssignedTo;
     const conversations = await Conversation.list({
         status,
         assigned_to: resolvedAssignedTo,
+        owner_user_id: ownerScopeUserId || undefined,
         session_id,
         limit: limit ? parseInt(limit) : 100,
         offset: offset ? parseInt(offset) : 0
@@ -7769,7 +8266,10 @@ app.post('/api/conversations/:id/read', authenticate, async (req, res) => {
     }
 
     try {
-        const conversation = await Conversation.findById(conversationId);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const conversation = await Conversation.findById(conversationId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
         if (!conversation || !canAccessAssignedRecord(req, conversation.assigned_to)) {
             return res.status(404).json({ error: 'Conversa nao encontrada' });
         }
@@ -7790,6 +8290,8 @@ app.post('/api/send', authenticate, async (req, res) => {
 
     const { sessionId, to, message, type, options } = req.body;
     const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const defaultAssignee = scopedUserId || ownerScopeUserId || null;
 
     
 
@@ -7802,10 +8304,15 @@ app.post('/api/send', authenticate, async (req, res) => {
     
 
     try {
+        const canAccessSession = await assertOwnerCanAccessSession(ownerScopeUserId, sessionId);
+        if (!canAccessSession) {
+            return res.status(403).json({ error: 'Sem permissao para usar esta conta WhatsApp' });
+        }
 
         const sendOptions = {
             ...(options || {}),
-            ...(scopedUserId ? { assigned_to: scopedUserId } : {})
+            ...(defaultAssignee ? { assigned_to: defaultAssignee } : {}),
+            owner_user_id: ownerScopeUserId || undefined
         };
 
         const result = await sendMessage(sessionId, to, message, type || 'text', sendOptions);
@@ -7834,6 +8341,8 @@ app.post('/api/messages/send', authenticate, async (req, res) => {
 
     const { leadId, phone, content, type, options, sessionId } = req.body;
     const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const defaultAssignee = scopedUserId || ownerScopeUserId || null;
 
 
 
@@ -7841,7 +8350,9 @@ app.post('/api/messages/send', authenticate, async (req, res) => {
 
     if (!to && leadId) {
 
-        const lead = await Lead.findById(leadId);
+        const lead = await Lead.findById(leadId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
         if (!lead || !canAccessAssignedRecord(req, lead.assigned_to)) {
             return res.status(404).json({ error: 'Lead nao encontrado' });
         }
@@ -7863,9 +8374,14 @@ app.post('/api/messages/send', authenticate, async (req, res) => {
     try {
 
         const resolvedSessionId = resolveSessionIdOrDefault(sessionId);
+        const canAccessSession = await assertOwnerCanAccessSession(ownerScopeUserId, resolvedSessionId);
+        if (!canAccessSession) {
+            return res.status(403).json({ error: 'Sem permissao para usar esta conta WhatsApp' });
+        }
         const sendOptions = {
             ...(options || {}),
-            ...(scopedUserId ? { assigned_to: scopedUserId } : {})
+            ...(defaultAssignee ? { assigned_to: defaultAssignee } : {}),
+            owner_user_id: ownerScopeUserId || undefined
         };
         const result = await sendMessage(resolvedSessionId, to, content, type || 'text', sendOptions);
 
@@ -7896,20 +8412,31 @@ app.get('/api/messages/:leadId', authenticate, async (req, res) => {
     const hasConversationId = Number.isFinite(conversationId) && conversationId > 0;
     const sessionId = sanitizeSessionId(req.query.session_id || req.query.sessionId);
     const contactJid = sanitizeSessionId(req.query.contact_jid || req.query.contactJid);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
     let messages = [];
     let resolvedConversation = null;
     let resolvedLead = null;
 
     if (hasConversationId) {
-        resolvedConversation = await Conversation.findById(conversationId);
+        resolvedConversation = await Conversation.findById(conversationId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
         if (resolvedConversation) {
-            resolvedLead = await Lead.findById(resolvedConversation.lead_id);
+            resolvedLead = await Lead.findById(resolvedConversation.lead_id, {
+                owner_user_id: ownerScopeUserId || undefined
+            });
         }
-        messages = await Message.listByConversation(conversationId, { limit });
+        if (resolvedConversation) {
+            messages = await Message.listByConversation(conversationId, { limit });
+        }
     } else if (Number.isFinite(leadId) && leadId > 0 && sessionId) {
-        resolvedLead = await Lead.findById(leadId);
-        const conversation = await Conversation.findByLeadId(leadId, sessionId);
+        resolvedLead = await Lead.findById(leadId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
+        const conversation = await Conversation.findByLeadId(leadId, sessionId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
         if (conversation) {
             resolvedConversation = conversation;
             messages = await Message.listByConversation(conversation.id, { limit });
@@ -7917,8 +8444,12 @@ app.get('/api/messages/:leadId', authenticate, async (req, res) => {
             messages = [];
         }
     } else if (Number.isFinite(leadId) && leadId > 0) {
-        resolvedLead = await Lead.findById(leadId);
-        messages = await Message.listByLead(leadId, { limit });
+        resolvedLead = await Lead.findById(leadId, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
+        if (resolvedLead) {
+            messages = await Message.listByLead(leadId, { limit });
+        }
     }
 
     if (resolvedLead && !canAccessAssignedRecord(req, resolvedLead.assigned_to)) {
@@ -7976,8 +8507,13 @@ app.get('/api/messages/:leadId', authenticate, async (req, res) => {
 
 
 app.get('/api/queue/status', authenticate, async (req, res) => {
-
-    res.json({ success: true, ...(await queueService.getStatus()) });
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    res.json({
+        success: true,
+        ...(await queueService.getStatus({
+            ownerUserId: ownerScopeUserId || undefined
+        }))
+    });
 
 });
 
@@ -8001,16 +8537,29 @@ app.post('/api/queue/add', authenticate, async (req, res) => {
 
     
 
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const lead = await Lead.findById(leadId, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
+    if (!lead || !canAccessAssignedRecord(req, lead.assigned_to)) {
+        return res.status(404).json({ success: false, error: 'Lead nao encontrado' });
+    }
+
     let resolvedSessionId = sanitizeSessionId(sessionId);
     if (!resolvedSessionId) {
-        const scopedUserId = getScopedUserId(req);
         const allocation = await senderAllocatorService.allocateForSingleLead({
             leadId,
             campaignId,
             strategy: 'round_robin',
-            ownerUserId: scopedUserId || undefined
+            ownerUserId: ownerScopeUserId || undefined
         });
         resolvedSessionId = sanitizeSessionId(allocation?.sessionId);
+    }
+    if (resolvedSessionId) {
+        const canAccessSession = await assertOwnerCanAccessSession(ownerScopeUserId, resolvedSessionId);
+        if (!canAccessSession) {
+            return res.status(403).json({ success: false, error: 'Sem permissao para usar esta conta WhatsApp' });
+        }
     }
 
     const result = await queueService.add({
@@ -8073,11 +8622,44 @@ app.post('/api/queue/bulk', authenticate, async (req, res) => {
         options.delayMaxMs = legacyDelayMax;
     }
 
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    options.ownerUserId = ownerScopeUserId || undefined;
     const hasSessionAssignments = options.sessionAssignments && typeof options.sessionAssignments === 'object';
     const normalizedLeadIds = Array.isArray(leadIds) ? leadIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0) : [];
+    if (ownerScopeUserId && normalizedLeadIds.length > 0) {
+        const placeholders = normalizedLeadIds.map(() => '?').join(',');
+        const scopedRows = await query(
+            `
+            SELECT leads.id
+            FROM leads
+            WHERE leads.id IN (${placeholders})
+              AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = leads.assigned_to
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            `,
+            [...normalizedLeadIds, ownerScopeUserId, ownerScopeUserId]
+        );
+        const scopedIds = new Set((scopedRows || []).map((row) => Number(row.id)));
+        const invalidCount = normalizedLeadIds.filter((id) => !scopedIds.has(Number(id))).length;
+        if (invalidCount > 0) {
+            return res.status(403).json({
+                success: false,
+                error: 'Um ou mais leads nao pertencem a esta conta'
+            });
+        }
+    }
     const fixedSessionId = sanitizeSessionId(
         options.sessionId || options.session_id || req.body?.sessionId || req.body?.session_id
     );
+    if (fixedSessionId) {
+        const canAccessSession = await assertOwnerCanAccessSession(ownerScopeUserId, fixedSessionId);
+        if (!canAccessSession) {
+            return res.status(403).json({ success: false, error: 'Sem permissao para usar esta conta WhatsApp' });
+        }
+    }
     const senderAccounts = normalizeSenderAccountsPayload(
         options.senderAccounts || options.sender_accounts || req.body?.sender_accounts || req.body?.senderAccounts
     );
@@ -8088,14 +8670,13 @@ app.post('/api/queue/bulk', authenticate, async (req, res) => {
 
     let distribution = { strategyUsed: fixedSessionId ? 'single' : distributionStrategy, summary: {} };
     if (!hasSessionAssignments) {
-        const scopedUserId = getScopedUserId(req);
         const allocationPlan = await senderAllocatorService.buildDistributionPlan({
             leadIds: normalizedLeadIds,
             campaignId: options.campaignId || req.body?.campaignId || null,
             senderAccounts,
             strategy: distributionStrategy,
             sessionId: fixedSessionId || null,
-            ownerUserId: scopedUserId || undefined
+            ownerUserId: ownerScopeUserId || undefined
         });
         options.sessionAssignments = allocationPlan.assignmentsByLead;
         options.assignmentMetaByLead = allocationPlan.assignmentMetaByLead;
@@ -8106,8 +8687,7 @@ app.post('/api/queue/bulk', authenticate, async (req, res) => {
     }
 
     
-
-    const results = await queueService.addBulk(leadIds, content, options);
+    const results = await queueService.addBulk(normalizedLeadIds, content, options);
 
     
 
@@ -8125,8 +8705,10 @@ app.post('/api/queue/bulk', authenticate, async (req, res) => {
 
 
 app.delete('/api/queue/:id', authenticate, async (req, res) => {
-
-    await queueService.cancel(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    await queueService.cancel(req.params.id, {
+        ownerUserId: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true });
 
@@ -8135,8 +8717,10 @@ app.delete('/api/queue/:id', authenticate, async (req, res) => {
 
 
 app.delete('/api/queue', authenticate, async (req, res) => {
-
-    const count = await queueService.cancelAll();
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const count = await queueService.cancelAll({
+        ownerUserId: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, cancelled: count });
 
@@ -8155,8 +8739,10 @@ app.delete('/api/queue', authenticate, async (req, res) => {
 app.get('/api/templates', optionalAuth, async (req, res) => {
 
     const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
     const templates = await Template.list({
         ...req.query,
+        owner_user_id: ownerScopeUserId || undefined,
         created_by: scopedUserId || undefined
     });
 
@@ -8168,13 +8754,16 @@ app.get('/api/templates', optionalAuth, async (req, res) => {
 
 app.post('/api/templates', authenticate, async (req, res) => {
 
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
     const payload = {
         ...req.body,
-        created_by: req.user?.id
+        created_by: req.user?.id || ownerScopeUserId || null
     };
     const result = await Template.create(payload);
 
-    const template = await Template.findById(result.id);
+    const template = await Template.findById(result.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, template });
 
@@ -8184,7 +8773,10 @@ app.post('/api/templates', authenticate, async (req, res) => {
 
 app.put('/api/templates/:id', authenticate, async (req, res) => {
 
-    const existing = await Template.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const existing = await Template.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
     if (!existing) {
         return res.status(404).json({ error: 'Template nao encontrado' });
     }
@@ -8194,7 +8786,9 @@ app.put('/api/templates/:id', authenticate, async (req, res) => {
 
     await Template.update(req.params.id, req.body);
 
-    const template = await Template.findById(req.params.id);
+    const template = await Template.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, template });
 
@@ -8204,7 +8798,10 @@ app.put('/api/templates/:id', authenticate, async (req, res) => {
 
 app.delete('/api/templates/:id', authenticate, async (req, res) => {
 
-    const existing = await Template.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const existing = await Template.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
     if (!existing) {
         return res.status(404).json({ error: 'Template nao encontrado' });
     }
@@ -8473,6 +9070,7 @@ async function resolveCampaignLeadIds(options = {}) {
     const segment = typeof options === 'string' ? options : options.segment;
     const tagFilter = typeof options === 'string' ? '' : options.tagFilter;
     const assignedTo = Number(typeof options === 'string' ? 0 : options.assignedTo);
+    const ownerUserId = Number(typeof options === 'string' ? 0 : options.ownerUserId);
     const segmentStatus = resolveCampaignSegmentStatus(segment);
 
     let sql = 'SELECT id, tags FROM leads WHERE is_blocked = 0';
@@ -8488,6 +9086,18 @@ async function resolveCampaignLeadIds(options = {}) {
     if (Number.isInteger(assignedTo) && assignedTo > 0) {
         sql += ' AND assigned_to = ?';
         params.push(assignedTo);
+    }
+
+    if (Number.isInteger(ownerUserId) && ownerUserId > 0) {
+        sql += `
+            AND EXISTS (
+                SELECT 1
+                FROM users owner_scope
+                WHERE owner_scope.id = leads.assigned_to
+                  AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+            )
+        `;
+        params.push(ownerUserId, ownerUserId);
     }
 
 
@@ -8679,7 +9289,8 @@ async function queueCampaignMessages(campaign, options = {}) {
     const leadIds = await resolveCampaignLeadIds({
         segment: campaign.segment || 'all',
         tagFilter: campaign.tag_filter || '',
-        assignedTo: options.assignedTo
+        assignedTo: options.assignedTo,
+        ownerUserId: options.ownerUserId
     });
 
     if (!leadIds.length) {
@@ -8770,6 +9381,7 @@ async function queueCampaignMessages(campaign, options = {}) {
             delayMaxMs,
 
             campaignId: campaign.id,
+            ownerUserId: options.ownerUserId,
 
             sessionAssignments,
 
@@ -8808,6 +9420,7 @@ app.get('/api/campaigns', optionalAuth, async (req, res) => {
 
     const { status, type, limit, offset, search } = req.query;
     const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
     const campaigns = await Campaign.list({
 
@@ -8816,6 +9429,8 @@ app.get('/api/campaigns', optionalAuth, async (req, res) => {
         type,
 
         search,
+
+        owner_user_id: ownerScopeUserId || undefined,
 
         created_by: scopedUserId || undefined,
 
@@ -8835,7 +9450,10 @@ app.get('/api/campaigns', optionalAuth, async (req, res) => {
 
 app.get('/api/campaigns/:id', optionalAuth, async (req, res) => {
 
-    const campaign = await Campaign.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const campaign = await Campaign.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     if (!campaign) {
 
@@ -8853,7 +9471,10 @@ app.get('/api/campaigns/:id', optionalAuth, async (req, res) => {
 
 app.get('/api/campaigns/:id/recipients', optionalAuth, async (req, res) => {
 
-    const campaign = await Campaign.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const campaign = await Campaign.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     if (!campaign) {
 
@@ -8873,7 +9494,8 @@ app.get('/api/campaigns/:id/recipients', optionalAuth, async (req, res) => {
     const leadIds = await resolveCampaignLeadIds({
         segment: campaign.segment || 'all',
         tagFilter: campaign.tag_filter || '',
-        assignedTo: getScopedUserId(req) || undefined
+        assignedTo: getScopedUserId(req) || undefined,
+        ownerUserId: ownerScopeUserId || undefined
     });
 
     if (!leadIds.length) {
@@ -8911,6 +9533,7 @@ app.get('/api/campaigns/:id/recipients', optionalAuth, async (req, res) => {
 app.post('/api/campaigns', authenticate, async (req, res) => {
 
     try {
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
         const senderAccountsPayload = normalizeSenderAccountsPayload(
             req.body?.sender_accounts ?? req.body?.senderAccounts
@@ -8933,7 +9556,7 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
             const scopedUserId = getScopedUserId(req);
             queueResult = await queueCampaignMessages(campaign, {
                 assignedTo: scopedUserId || undefined,
-                ownerUserId: scopedUserId || undefined
+                ownerUserId: ownerScopeUserId || undefined
             });
             campaign = await attachCampaignSenderAccounts(await Campaign.findById(result.id));
         }
@@ -8953,8 +9576,11 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
 app.put('/api/campaigns/:id', authenticate, async (req, res) => {
 
     try {
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
-        const campaign = await Campaign.findById(req.params.id);
+        const campaign = await Campaign.findById(req.params.id, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
 
         if (!campaign) {
 
@@ -8987,7 +9613,7 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
             const scopedUserId = getScopedUserId(req);
             queueResult = await queueCampaignMessages(updatedCampaign, {
                 assignedTo: scopedUserId || undefined,
-                ownerUserId: scopedUserId || undefined
+                ownerUserId: ownerScopeUserId || undefined
             });
             updatedCampaign = await attachCampaignSenderAccounts(await Campaign.findById(req.params.id));
         }
@@ -9006,7 +9632,10 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
 
 app.delete('/api/campaigns/:id', authenticate, async (req, res) => {
 
-    const campaign = await Campaign.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const campaign = await Campaign.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
     if (!campaign) {
         return res.status(404).json({ error: 'Campanha nao encontrada' });
     }
@@ -9034,6 +9663,7 @@ app.get('/api/automations', optionalAuth, async (req, res) => {
 
     const { is_active, trigger_type, limit, offset, search } = req.query;
     const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
     const automations = await Automation.list({
 
@@ -9042,6 +9672,8 @@ app.get('/api/automations', optionalAuth, async (req, res) => {
         trigger_type,
 
         search,
+
+        owner_user_id: ownerScopeUserId || undefined,
 
         created_by: scopedUserId || undefined,
 
@@ -9061,7 +9693,10 @@ app.get('/api/automations', optionalAuth, async (req, res) => {
 
 app.get('/api/automations/:id', optionalAuth, async (req, res) => {
 
-    const automation = await Automation.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const automation = await Automation.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     if (!automation) {
 
@@ -9108,7 +9743,10 @@ app.post('/api/automations', authenticate, async (req, res) => {
 
         const result = await Automation.create(payload);
 
-        const automation = await Automation.findById(result.id);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const automation = await Automation.findById(result.id, {
+            owner_user_id: ownerScopeUserId || undefined
+        });
 
         res.json({ success: true, automation: enrichAutomationForResponse(automation) });
 
@@ -9124,7 +9762,10 @@ app.post('/api/automations', authenticate, async (req, res) => {
 
 app.put('/api/automations/:id', authenticate, async (req, res) => {
 
-    const automation = await Automation.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const automation = await Automation.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     if (!automation) {
 
@@ -9160,7 +9801,9 @@ app.put('/api/automations/:id', authenticate, async (req, res) => {
 
     await Automation.update(req.params.id, payload);
 
-    const updatedAutomation = await Automation.findById(req.params.id);
+    const updatedAutomation = await Automation.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, automation: enrichAutomationForResponse(updatedAutomation) });
 
@@ -9170,7 +9813,10 @@ app.put('/api/automations/:id', authenticate, async (req, res) => {
 
 app.delete('/api/automations/:id', authenticate, async (req, res) => {
 
-    const automation = await Automation.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const automation = await Automation.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
     if (!automation) {
         return res.status(404).json({ error: 'Automacao nao encontrada' });
     }
@@ -9197,8 +9843,10 @@ app.delete('/api/automations/:id', authenticate, async (req, res) => {
 app.get('/api/flows', optionalAuth, async (req, res) => {
 
     const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
     const flows = await Flow.list({
         ...req.query,
+        owner_user_id: ownerScopeUserId || undefined,
         created_by: scopedUserId || undefined
     });
 
@@ -9210,7 +9858,10 @@ app.get('/api/flows', optionalAuth, async (req, res) => {
 
 app.get('/api/flows/:id', optionalAuth, async (req, res) => {
 
-    const flow = await Flow.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const flow = await Flow.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     if (!flow) {
 
@@ -9236,7 +9887,10 @@ app.post('/api/flows', authenticate, async (req, res) => {
     };
     const result = await Flow.create(payload);
 
-    const flow = await Flow.findById(result.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const flow = await Flow.findById(result.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, flow });
 
@@ -9246,7 +9900,10 @@ app.post('/api/flows', authenticate, async (req, res) => {
 
 app.put('/api/flows/:id', authenticate, async (req, res) => {
 
-    const existing = await Flow.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const existing = await Flow.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
     if (!existing) {
         return res.status(404).json({ error: 'Fluxo nao encontrado' });
     }
@@ -9256,7 +9913,9 @@ app.put('/api/flows/:id', authenticate, async (req, res) => {
 
     await Flow.update(req.params.id, req.body);
 
-    const flow = await Flow.findById(req.params.id);
+    const flow = await Flow.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, flow });
 
@@ -9266,7 +9925,10 @@ app.put('/api/flows/:id', authenticate, async (req, res) => {
 
 app.delete('/api/flows/:id', authenticate, async (req, res) => {
 
-    const existing = await Flow.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const existing = await Flow.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
     if (!existing) {
         return res.status(404).json({ error: 'Fluxo nao encontrado' });
     }
@@ -9294,7 +9956,10 @@ app.get('/api/webhooks', authenticate, async (req, res) => {
 
     const { Webhook } = require('./database/models');
 
-    const webhooks = await Webhook.list();
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const webhooks = await Webhook.list({
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, webhooks });
 
@@ -9306,9 +9971,16 @@ app.post('/api/webhooks', authenticate, async (req, res) => {
 
     const { Webhook } = require('./database/models');
 
-    const result = await Webhook.create(req.body);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const payload = {
+        ...(req.body || {}),
+        created_by: ownerScopeUserId || req.user?.id || null
+    };
+    const result = await Webhook.create(payload);
 
-    const webhook = await Webhook.findById(result.id);
+    const webhook = await Webhook.findById(result.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, webhook });
 
@@ -9319,10 +9991,19 @@ app.post('/api/webhooks', authenticate, async (req, res) => {
 app.put('/api/webhooks/:id', authenticate, async (req, res) => {
 
     const { Webhook } = require('./database/models');
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const existing = await Webhook.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
+    if (!existing) {
+        return res.status(404).json({ success: false, error: 'Webhook nao encontrado' });
+    }
 
     await Webhook.update(req.params.id, req.body);
 
-    const webhook = await Webhook.findById(req.params.id);
+    const webhook = await Webhook.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, webhook });
 
@@ -9333,6 +10014,13 @@ app.put('/api/webhooks/:id', authenticate, async (req, res) => {
 app.delete('/api/webhooks/:id', authenticate, async (req, res) => {
 
     const { Webhook } = require('./database/models');
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const existing = await Webhook.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
+    if (!existing) {
+        return res.status(404).json({ success: false, error: 'Webhook nao encontrado' });
+    }
 
     await Webhook.delete(req.params.id);
 
@@ -9437,7 +10125,7 @@ app.put('/api/settings', authenticate, async (req, res) => {
         Object.prototype.hasOwnProperty.call(incomingSettings, 'bulk_message_delay') ||
         Object.prototype.hasOwnProperty.call(incomingSettings, 'max_messages_per_minute');
 
-    if (hasQueueSettings && !ownerScopeUserId) {
+    if (hasQueueSettings) {
 
         await queueService.updateSettings({
 
@@ -9445,15 +10133,17 @@ app.put('/api/settings', authenticate, async (req, res) => {
 
             maxPerMinute: incomingSettings.max_messages_per_minute
 
+        }, {
+            ownerUserId: ownerScopeUserId || undefined
         });
 
     }
 
     const touchedBusinessHours = changedKeys.some((key) => String(key || '').startsWith('business_hours_'));
-    if (touchedBusinessHours && !ownerScopeUserId) {
-        invalidateBusinessHoursSettingsCache();
+    if (touchedBusinessHours) {
+        invalidateBusinessHoursSettingsCache(ownerScopeUserId || null);
         if (typeof queueService.invalidateBusinessHoursCache === 'function') {
-            queueService.invalidateBusinessHoursCache();
+            queueService.invalidateBusinessHoursCache(ownerScopeUserId || null);
         }
     }
 

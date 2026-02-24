@@ -35,6 +35,23 @@ const INTENT_DIRECTION_CONFLICT_PAIRS = [
     ['buy', 'sell']
 ];
 
+async function resolveOwnerScopeUserIdFromAssignee(...assignees) {
+    for (const value of assignees) {
+        const userId = Number(value || 0);
+        if (!Number.isInteger(userId) || userId <= 0) continue;
+
+        const user = await queryOne(
+            'SELECT id, owner_user_id FROM users WHERE id = ?',
+            [userId]
+        );
+        const ownerUserId = Number(user?.owner_user_id || user?.id || 0);
+        if (Number.isInteger(ownerUserId) && ownerUserId > 0) {
+            return ownerUserId;
+        }
+    }
+    return null;
+}
+
 function isStrictFlowIntentRoutingEnabled() {
     const value = String(process.env.FLOW_INTENT_CLASSIFIER_STRICT || '').trim().toLowerCase();
     return value === '1' || value === 'true' || value === 'on';
@@ -795,11 +812,18 @@ class FlowService extends EventEmitter {
         const text = message.text?.trim() || '';
         let flow = null;
         let suppressKeywordFallback = false;
+        const ownerScopeUserId = await resolveOwnerScopeUserIdFromAssignee(
+            conversation?.assigned_to,
+            lead?.assigned_to
+        );
+        const flowScopeOptions = ownerScopeUserId
+            ? { owner_user_id: ownerScopeUserId }
+            : {};
 
         if (text) {
             const strictIntentRouting = isStrictFlowIntentRoutingEnabled() && isFlowIntentClassifierConfigured();
-            const keywordMatches = await Flow.findKeywordMatches(text);
-            const semanticCandidates = await Flow.findActiveKeywordFlows();
+            const keywordMatches = await Flow.findKeywordMatches(text, flowScopeOptions);
+            const semanticCandidates = await Flow.findActiveKeywordFlows(flowScopeOptions);
             if (semanticCandidates.length > 0) {
                 const intentDecision = await classifyKeywordFlowIntent(text, semanticCandidates);
                 if (intentDecision?.status === 'selected' && intentDecision.flowId) {
@@ -828,7 +852,7 @@ class FlowService extends EventEmitter {
         
         // Se não encontrou por keyword, verificar se é novo contato
         if (!flow && conversation?.created) {
-            flow = await Flow.findByTrigger('new_contact');
+            flow = await Flow.findByTrigger('new_contact', null, flowScopeOptions);
         }
         
         if (flow) {

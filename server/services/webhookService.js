@@ -27,10 +27,13 @@ class WebhookService {
     /**
      * Disparar webhook para um evento
      */
-    async trigger(event, data) {
+    async trigger(event, data, options = {}) {
         let webhooks = [];
         try {
-            webhooks = await Webhook.findByEvent(event);
+            webhooks = await Webhook.findByEvent(event, {
+                owner_user_id: Number(options.ownerUserId || 0) || undefined,
+                created_by: Number(options.createdBy || 0) || undefined
+            });
         } catch (error) {
             console.error(`[WebhookService] Falha ao buscar webhooks do evento "${event}":`, error.message);
             return { triggered: 0, results: [] };
