@@ -2584,6 +2584,9 @@ async function sendMessageToWhatsApp(options) {
 
     const dispatchState = getSessionDispatchState(sid);
     if (!session || !dispatchState.available) {
+        if (session && !session.isConnected && !session.reconnecting) {
+            scheduleRuntimeSessionReconnect(sid, session);
+        }
         throw buildSessionUnavailableError(dispatchState, 'WhatsApp nao esta conectado');
     }
 
@@ -6027,6 +6030,9 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
     const dispatchState = getSessionDispatchState(sessionId);
     if (!session || !dispatchState.available) {
+        if (session && !session.isConnected && !session.reconnecting) {
+            scheduleRuntimeSessionReconnect(sessionId, session);
+        }
         throw buildSessionUnavailableError(dispatchState, 'Sessao nao esta conectada');
     }
 

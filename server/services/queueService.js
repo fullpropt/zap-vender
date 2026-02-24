@@ -688,8 +688,27 @@ class QueueService extends EventEmitter {
                     errorCode === 'SESSION_RECONNECTING' ||
                     errorCode === 'SESSION_WARMING_UP' ||
                     errorCode === 'SESSION_COOLDOWN' ||
-                    (normalizedError.includes('sess') &&
-                        (normalizedError.includes('conectada') || normalizedError.includes('conectad') || normalizedError.includes('not connected')));
+                    normalizedError.includes('not connected') ||
+                    normalizedError.includes('nao esta conectado') ||
+                    normalizedError.includes('nao esta conectada') ||
+                    normalizedError.includes('whatsapp nao esta conectado') ||
+                    normalizedError.includes('whatsapp nao esta conectada') ||
+                    normalizedError.includes('connection closed') ||
+                    normalizedError.includes('connection lost') ||
+                    normalizedError.includes('socket closed') ||
+                    normalizedError.includes('stream error') ||
+                    normalizedError.includes('stream errored') ||
+                    (
+                        normalizedError.includes('conect') &&
+                        (
+                            normalizedError.includes('sess') ||
+                            normalizedError.includes('whatsapp') ||
+                            normalizedError.includes('socket') ||
+                            normalizedError.includes('conexao') ||
+                            normalizedError.includes('desconect') ||
+                            normalizedError.includes('nao esta')
+                        )
+                    );
 
                 if (!isDisconnectedSessionError && failedSessionId && this.getSessionDispatchState) {
                     try {
