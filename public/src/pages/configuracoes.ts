@@ -751,7 +751,6 @@ async function updateContactField(key: string) {
 async function deleteContactField(key: string) {
     const normalizedKey = normalizeContactFieldKey(key);
     if (!normalizedKey) return;
-    if (!confirm('Deseja remover este campo personalizado?')) return;
 
     customContactFieldsCache = customContactFieldsCache.filter((field) => field.key !== normalizedKey);
 
