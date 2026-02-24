@@ -98,6 +98,11 @@ const connectionFixer = require('./utils/connectionFixer');
 // WhatsApp Service (engine Baileys modular)
 
 const whatsappService = require('./services/whatsapp');
+const {
+    createBaileysAuthState,
+    hasPersistedBaileysAuthState,
+    clearPersistedBaileysAuthState
+} = require('./services/whatsapp/baileysAuthStateStore');
 
 
 
@@ -151,6 +156,83 @@ const DEFAULT_BUSINESS_HOURS_AUTO_REPLY = 'Ol\u00E1! Nosso atendimento est\u00E1
 const LEAD_AVATAR_SYNC_TTL_MS = parseInt(process.env.LEAD_AVATAR_SYNC_TTL_MS || '', 10) || (6 * 60 * 60 * 1000);
 const LEAD_AVATAR_SYNC_TIMEOUT_MS = parseInt(process.env.LEAD_AVATAR_SYNC_TIMEOUT_MS || '', 10) || 2500;
 const LEAD_AVATAR_CUSTOM_FIELD_KEY = 'avatar_url';
+const WHATSAPP_SYNC_FULL_HISTORY = parseBooleanEnv(process.env.WHATSAPP_SYNC_FULL_HISTORY, false);
+const WHATSAPP_USE_LATEST_BAILEYS_VERSION = parseBooleanEnv(process.env.WHATSAPP_USE_LATEST_BAILEYS_VERSION, false);
+const WHATSAPP_BAILEYS_VERSION_PIN = parseBaileysVersionFromEnv(process.env.WHATSAPP_BAILEYS_VERSION);
+const WHATSAPP_KEEPALIVE_INTERVAL_MS = parsePositiveIntEnv(process.env.WHATSAPP_KEEPALIVE_INTERVAL_MS, 15000);
+const WHATSAPP_CONNECT_TIMEOUT_MS = parsePositiveIntEnv(process.env.WHATSAPP_CONNECT_TIMEOUT_MS, 60000);
+const WHATSAPP_DEFAULT_QUERY_TIMEOUT_MS = parsePositiveIntEnv(process.env.WHATSAPP_DEFAULT_QUERY_TIMEOUT_MS, 60000);
+const WHATSAPP_RETRY_REQUEST_DELAY_MS = parsePositiveIntEnv(process.env.WHATSAPP_RETRY_REQUEST_DELAY_MS, 500);
+const WHATSAPP_SESSION_SEND_WARMUP_MS = parsePositiveIntEnv(process.env.WHATSAPP_SESSION_SEND_WARMUP_MS, 12000);
+const WHATSAPP_SESSION_DISPATCH_BACKOFF_MS = parsePositiveIntEnv(process.env.WHATSAPP_SESSION_DISPATCH_BACKOFF_MS, 60000);
+const WHATSAPP_AUTH_STATE_DRIVER = String(process.env.WHATSAPP_AUTH_STATE_DRIVER || 'multi_file').trim().toLowerCase();
+const WHATSAPP_AUTH_STATE_DB_FALLBACK_MULTI_FILE = parseBooleanEnv(process.env.WHATSAPP_AUTH_STATE_DB_FALLBACK_MULTI_FILE, true);
+let cachedBaileysSocketVersion = null;
+let cachedBaileysSocketVersionSource = null;
+
+function parseBooleanEnv(value, fallback = false) {
+    if (value === undefined || value === null || value === '') return fallback;
+    const normalized = String(value).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'nao', 'não', 'off'].includes(normalized)) return false;
+    return fallback;
+}
+
+function parsePositiveIntEnv(value, fallback) {
+    const parsed = parseInt(String(value ?? ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseBaileysVersionFromEnv(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return null;
+    const parts = normalized
+        .split(/[.,]/)
+        .map((part) => parseInt(String(part).trim(), 10))
+        .filter((part) => Number.isFinite(part) && part >= 0);
+    if (parts.length < 3) return null;
+    return parts.slice(0, 3);
+}
+
+async function resolveBaileysSocketVersion(fetchLatestBaileysVersion, sessionId = '') {
+    if (WHATSAPP_BAILEYS_VERSION_PIN) {
+        cachedBaileysSocketVersion = [...WHATSAPP_BAILEYS_VERSION_PIN];
+        cachedBaileysSocketVersionSource = 'env-pin';
+        return [...cachedBaileysSocketVersion];
+    }
+
+    if (!WHATSAPP_USE_LATEST_BAILEYS_VERSION) {
+        cachedBaileysSocketVersion = null;
+        cachedBaileysSocketVersionSource = 'library-default';
+        return null;
+    }
+
+    if (cachedBaileysSocketVersion && Array.isArray(cachedBaileysSocketVersion)) {
+        return [...cachedBaileysSocketVersion];
+    }
+
+    if (typeof fetchLatestBaileysVersion !== 'function') {
+        cachedBaileysSocketVersion = null;
+        cachedBaileysSocketVersionSource = 'library-default';
+        return null;
+    }
+
+    try {
+        const latest = await fetchLatestBaileysVersion();
+        const version = Array.isArray(latest?.version) ? latest.version : null;
+        if (version && version.length >= 3) {
+            cachedBaileysSocketVersion = version.slice(0, 3);
+            cachedBaileysSocketVersionSource = 'latest';
+            return [...cachedBaileysSocketVersion];
+        }
+    } catch (error) {
+        console.warn(`[${sessionId || 'whatsapp'}] Falha ao resolver versao latest do Baileys, usando versao interna:`, error.message);
+    }
+
+    cachedBaileysSocketVersion = null;
+    cachedBaileysSocketVersionSource = 'library-default';
+    return null;
+}
 
 function buildWhatsAppBrowserName(companyName) {
     const cleanedCompany = String(companyName || '').replace(/\s+/g, ' ').trim();
@@ -660,6 +742,134 @@ function stopSessionHealthMonitor(session) {
 function isActiveSessionSocket(sessionId, sock) {
     const session = sessions.get(sessionId);
     return Boolean(session && session.socket === sock);
+}
+
+function normalizeSessionErrorText(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+}
+
+function isDisconnectedSessionRuntimeError(error) {
+    const code = String(error?.code || '').trim().toUpperCase();
+    if (code === 'SESSION_DISCONNECTED' || code === 'SESSION_RECONNECTING' || code === 'SESSION_COOLDOWN') {
+        return true;
+    }
+
+    const message = normalizeSessionErrorText(error?.message || error);
+    if (!message) return false;
+
+    return (
+        message.includes('not connected') ||
+        message.includes('connection closed') ||
+        message.includes('connection lost') ||
+        message.includes('stream errored') ||
+        message.includes('stream error') ||
+        message.includes('socket closed') ||
+        (message.includes('sess') && message.includes('conect'))
+    );
+}
+
+function setRuntimeSessionDispatchBackoff(session, backoffMs = WHATSAPP_SESSION_DISPATCH_BACKOFF_MS) {
+    if (!session) return 0;
+    const durationMs = Number(backoffMs);
+    const normalizedBackoffMs = Number.isFinite(durationMs) && durationMs > 0
+        ? Math.floor(durationMs)
+        : WHATSAPP_SESSION_DISPATCH_BACKOFF_MS;
+    const nextBlockedUntilMs = Date.now() + normalizedBackoffMs;
+    session.dispatchBlockedUntilMs = Math.max(Number(session.dispatchBlockedUntilMs || 0), nextBlockedUntilMs);
+    return session.dispatchBlockedUntilMs;
+}
+
+function clearRuntimeSessionDispatchBackoff(session) {
+    if (!session) return;
+    session.dispatchBlockedUntilMs = 0;
+}
+
+function getSessionDispatchState(sessionId) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    const session = sessions.get(normalizedSessionId);
+    if (!session) {
+        const hasStoredSession = normalizedSessionId ? sessionExists(normalizedSessionId) : false;
+        return {
+            available: false,
+            status: hasStoredSession ? 'reconnecting' : 'disconnected',
+            retryAfterMs: hasStoredSession
+                ? Math.min(20000, Math.max(RECONNECT_DELAY, 3000))
+                : WHATSAPP_SESSION_DISPATCH_BACKOFF_MS,
+            reason: hasStoredSession
+                ? 'Sessao reidratando/reconectando no servidor'
+                : 'Sessao nao inicializada no runtime'
+        };
+    }
+
+    const nowMs = Date.now();
+    const blockedUntilMs = Number(session.dispatchBlockedUntilMs || 0);
+    if (blockedUntilMs > nowMs) {
+        const retryAfterMs = Math.max(1000, blockedUntilMs - nowMs);
+        return {
+            available: false,
+            status: session.isConnected ? 'warming_up' : (session.reconnecting ? 'reconnecting' : 'disconnected'),
+            retryAfterMs,
+            reason: session.isConnected
+                ? 'Sessao em aquecimento apos reconexao'
+                : (session.reconnecting ? 'Sessao reconectando' : 'Sessao temporariamente indisponivel')
+        };
+    }
+
+    if (!session.isConnected) {
+        return {
+            available: false,
+            status: session.reconnecting ? 'reconnecting' : 'disconnected',
+            retryAfterMs: session.reconnecting ? Math.min(20000, Math.max(RECONNECT_DELAY, 3000)) : WHATSAPP_SESSION_DISPATCH_BACKOFF_MS,
+            reason: session.reconnecting ? 'Sessao reconectando' : 'Sessao nao conectada'
+        };
+    }
+
+    const sendReadyAtMs = Number(session.sendReadyAtMs || 0);
+    if (sendReadyAtMs > nowMs) {
+        return {
+            available: false,
+            status: 'warming_up',
+            retryAfterMs: Math.max(1000, sendReadyAtMs - nowMs),
+            reason: 'Sessao em aquecimento apos reconexao'
+        };
+    }
+
+    return {
+        available: true,
+        status: 'connected',
+        retryAfterMs: null,
+        reason: ''
+    };
+}
+
+function buildSessionUnavailableError(sessionState, fallbackMessage = 'Sessao nao conectada') {
+    const status = String(sessionState?.status || '').trim().toLowerCase();
+    const retryAfterMs = Number(sessionState?.retryAfterMs);
+    let message = String(sessionState?.reason || '').trim();
+    let code = 'SESSION_DISCONNECTED';
+
+    if (status === 'warming_up') {
+        code = 'SESSION_WARMING_UP';
+        if (!message) message = 'Sessao em aquecimento apos reconexao';
+    } else if (status === 'reconnecting') {
+        code = 'SESSION_RECONNECTING';
+        if (!message) message = 'Sessao reconectando';
+    } else if (status === 'cooldown') {
+        code = 'SESSION_COOLDOWN';
+        if (!message) message = 'Sessao em cooldown temporario';
+    }
+
+    if (!message) message = fallbackMessage;
+
+    const error = new Error(message);
+    error.code = code;
+    if (Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
+        error.retryAfterMs = Math.floor(retryAfterMs);
+    }
+    return error;
 }
 
 
@@ -2259,8 +2469,12 @@ async function rehydrateSessions(ioInstance) {
         for (const row of stored) {
 
             const sessionId = row.session_id;
+            const hasLocalSession = sessionExists(sessionId);
+            const hasDbAuthState = !hasLocalSession && WHATSAPP_AUTH_STATE_DRIVER !== 'multi_file'
+                ? await hasPersistedBaileysAuthState(sessionId)
+                : false;
 
-            if (sessionExists(sessionId)) {
+            if (hasLocalSession || hasDbAuthState) {
 
                 console.log(`[${sessionId}] Reidratando sessão armazenada...`);
 
@@ -2268,7 +2482,7 @@ async function rehydrateSessions(ioInstance) {
 
             } else {
 
-                console.log(`[${sessionId}] Sessão no banco sem arquivos locais, ignorando.`);
+                console.log(`[${sessionId}] Sessão no banco sem auth state local/DB, ignorando.`);
 
             }
 
@@ -2338,10 +2552,9 @@ async function sendMessageToWhatsApp(options) {
 
     
 
-    if (!session || !session.isConnected) {
-
-        throw new Error('WhatsApp não está conectado');
-
+    const dispatchState = getSessionDispatchState(sid);
+    if (!session || !dispatchState.available) {
+        throw buildSessionUnavailableError(dispatchState, 'WhatsApp nao esta conectado');
     }
 
     
@@ -2352,80 +2565,95 @@ async function sendMessageToWhatsApp(options) {
 
     
 
-    if (mediaType === 'image' && mediaUrl) {
-
-        result = await session.socket.sendMessage(targetJid, {
-
-            image: { url: mediaUrl },
-
-            caption: content || ''
-
-        });
-
-    } else if (mediaType === 'video' && mediaUrl) {
-
-        result = await session.socket.sendMessage(targetJid, {
-
-            video: { url: mediaUrl },
-
-            caption: content || ''
-
-        });
-
-    } else if (mediaType === 'document' && mediaUrl) {
-
-        result = await session.socket.sendMessage(targetJid, {
-
-            document: { url: mediaUrl },
-
-            mimetype: options.mimetype || 'application/pdf',
-
-            fileName: options.fileName || 'documento'
-
-        });
-
-    } else if (mediaType === 'audio' && mediaUrl) {
-
-        try {
-
-            const audioOptions = await audioFixer.prepareAudioForSend(mediaUrl, {
-
-                mimetype: options.mimetype || 'audio/ogg; codecs=opus',
-
-                ptt: options.ptt !== undefined ? options.ptt : true,
-
-                duration: options.duration || null
-
-            });
+    try {
+        if (mediaType === 'image' && mediaUrl) {
 
             result = await session.socket.sendMessage(targetJid, {
 
-                audio: { url: audioOptions.path || mediaUrl },
+                image: { url: mediaUrl },
 
-                ...audioOptions.options
+                caption: content || ''
 
             });
 
-        } catch (error) {
-
-            console.error('[SendMessage] Erro ao preparar áudio, usando método padrão:', error.message);
+        } else if (mediaType === 'video' && mediaUrl) {
 
             result = await session.socket.sendMessage(targetJid, {
 
-                audio: { url: mediaUrl },
+                video: { url: mediaUrl },
 
-                mimetype: options.mimetype || 'audio/ogg; codecs=opus',
-
-                ptt: options.ptt !== undefined ? options.ptt : true
+                caption: content || ''
 
             });
+
+        } else if (mediaType === 'document' && mediaUrl) {
+
+            result = await session.socket.sendMessage(targetJid, {
+
+                document: { url: mediaUrl },
+
+                mimetype: options.mimetype || 'application/pdf',
+
+                fileName: options.fileName || 'documento'
+
+            });
+
+        } else if (mediaType === 'audio' && mediaUrl) {
+
+            try {
+
+                const audioOptions = await audioFixer.prepareAudioForSend(mediaUrl, {
+
+                    mimetype: options.mimetype || 'audio/ogg; codecs=opus',
+
+                    ptt: options.ptt !== undefined ? options.ptt : true,
+
+                    duration: options.duration || null
+
+                });
+
+                result = await session.socket.sendMessage(targetJid, {
+
+                    audio: { url: audioOptions.path || mediaUrl },
+
+                    ...audioOptions.options
+
+                });
+
+            } catch (error) {
+
+                console.error('[SendMessage] Erro ao preparar áudio, usando método padrão:', error.message);
+
+                result = await session.socket.sendMessage(targetJid, {
+
+                    audio: { url: mediaUrl },
+
+                    mimetype: options.mimetype || 'audio/ogg; codecs=opus',
+
+                    ptt: options.ptt !== undefined ? options.ptt : true
+
+                });
+
+            }
+
+        } else {
+
+            result = await session.socket.sendMessage(targetJid, { text: content });
 
         }
-
-    } else {
-
-        result = await session.socket.sendMessage(targetJid, { text: content });
-
+    } catch (sendError) {
+        if (isDisconnectedSessionRuntimeError(sendError)) {
+            session.isConnected = false;
+            session.reconnecting = true;
+            const blockedUntilMs = setRuntimeSessionDispatchBackoff(session);
+            const connectionError = buildSessionUnavailableError({
+                status: 'disconnected',
+                retryAfterMs: blockedUntilMs > Date.now() ? Math.max(1000, blockedUntilMs - Date.now()) : null,
+                reason: 'WhatsApp nao esta conectado'
+            });
+            throw connectionError;
+        }
+        throw sendError;
     }
 
     
@@ -2665,8 +2893,6 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
             DisconnectReason,
 
-            useMultiFileAuthState,
-
             fetchLatestBaileysVersion,
 
             makeCacheableSignalKeyStore,
@@ -2687,31 +2913,41 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         
 
-        // Validar e corrigir sessão se necessário
+        // Validar e corrigir sessÃ£o local somente quando o auth state principal for por arquivos.
+        if (WHATSAPP_AUTH_STATE_DRIVER === 'multi_file') {
 
-        const sessionValidation = await connectionFixer.validateSession(sessionPath);
+            const sessionValidation = await connectionFixer.validateSession(sessionPath);
 
-        if (!sessionValidation.valid && attempt === 0) {
+            if (!sessionValidation.valid && attempt === 0) {
 
-            console.log(`[${sessionId}] Problemas na sessão detectados, corrigindo...`);
+                console.log(`[${sessionId}] Problemas na sessão detectados, corrigindo...`);
 
-            await connectionFixer.fixSession(sessionPath);
+                await connectionFixer.fixSession(sessionPath);
 
+            }
         }
 
         
 
-        const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+        const { state, saveCreds, driver: authStateDriver } = await createBaileysAuthState({
+            sessionId,
+            sessionPath,
+            baileys,
+            preferredDriver: WHATSAPP_AUTH_STATE_DRIVER,
+            fallbackToMultiFile: WHATSAPP_AUTH_STATE_DB_FALLBACK_MULTI_FILE,
+            logPrefix: `[${sessionId}]`
+        });
+        console.log(`[${sessionId}] Auth state driver: ${authStateDriver}`);
 
-        const { version } = await fetchLatestBaileysVersion();
+        const socketVersion = await resolveBaileysSocketVersion(fetchLatestBaileysVersion, sessionId);
 
-        
+        if (socketVersion) {
+            console.log(`[${sessionId}] Usando Baileys versao (${cachedBaileysSocketVersionSource || 'custom'}): ${socketVersion.join('.')}`);
+        } else {
+            console.log(`[${sessionId}] Usando versao interna do pacote Baileys (sem latest no boot)`);
+        }
 
-        console.log(`[${sessionId}] Usando Baileys versão: ${version.join('.')}`);
-
-        
-
-        const syncFullHistory = process.env.WHATSAPP_SYNC_FULL_HISTORY !== 'false';
+        const syncFullHistory = WHATSAPP_SYNC_FULL_HISTORY;
         const browserName = await resolveWhatsAppBrowserName();
 
         const store = typeof makeInMemoryStore === 'function' ? makeInMemoryStore({ logger }) : null;
@@ -2720,7 +2956,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         const sock = makeWASocket({
 
-            version,
+            ...(Array.isArray(socketVersion) ? { version: socketVersion } : {}),
 
             logger,
 
@@ -2739,6 +2975,14 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
             generateHighQualityLinkPreview: true,
 
             syncFullHistory,
+
+            connectTimeoutMs: WHATSAPP_CONNECT_TIMEOUT_MS,
+
+            keepAliveIntervalMs: WHATSAPP_KEEPALIVE_INTERVAL_MS,
+
+            defaultQueryTimeoutMs: WHATSAPP_DEFAULT_QUERY_TIMEOUT_MS,
+
+            retryRequestDelayMs: WHATSAPP_RETRY_REQUEST_DELAY_MS,
 
             markOnlineOnConnect: true,
 
@@ -2797,7 +3041,11 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
             pairingPhone: null,
 
             pairingRequestedAt: null,
-            ownerUserId
+            ownerUserId,
+            sendReadyAtMs: 0,
+            dispatchBlockedUntilMs: 0,
+            lastDisconnectReason: null,
+            lastDisconnectAt: null
 
         });
 
@@ -2908,6 +3156,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 session.isConnected = false;
+                session.sendReadyAtMs = 0;
                 stopSessionHealthMonitor(session);
 
                 
@@ -2923,6 +3172,14 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                 // Detectar tipo de erro e aplicar correção
 
                 const errorInfo = connectionFixer.detectDisconnectReason(lastDisconnect?.error);
+                session.lastDisconnectAt = Date.now();
+                session.lastDisconnectReason = {
+                    statusCode: Number.isFinite(Number(statusCode)) ? Number(statusCode) : null,
+                    errorType: errorInfo.type || 'unknown',
+                    message: String(lastDisconnect?.error?.message || '').slice(0, 300) || null,
+                    at: new Date().toISOString()
+                };
+                setRuntimeSessionDispatchBackoff(session);
 
                 console.log(`[${sessionId}] Tipo de erro: ${errorInfo.type}, Ação: ${errorInfo.action}`);
 
@@ -2996,6 +3253,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                         if (fs.existsSync(sessionPath)) {
                             fs.rmSync(sessionPath, { recursive: true, force: true });
                         }
+                        await clearPersistedBaileysAuthState(sessionId);
                     }
                 } finally {
                     reconnectInFlight.delete(sessionId);
@@ -3006,6 +3264,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
             
 
             if (connection === 'connecting') {
+                if (session) {
+                    session.reconnecting = true;
+                }
 
                 activeClientSocket.emit('connecting', { sessionId });
 
@@ -3032,6 +3293,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                     session.isConnected = true;
 
                     session.reconnecting = false;
+                    session.lastDisconnectReason = null;
 
                     session.pairingMode = false;
 
@@ -3056,6 +3318,12 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                     
 
                     reconnectAttempts.set(sessionId, 0);
+                    clearRuntimeSessionDispatchBackoff(session);
+                    session.sendReadyAtMs = Date.now() + WHATSAPP_SESSION_SEND_WARMUP_MS;
+                    session.dispatchBlockedUntilMs = Math.max(
+                        Number(session.dispatchBlockedUntilMs || 0),
+                        session.sendReadyAtMs
+                    );
 
                     
 
@@ -3077,6 +3345,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                     
 
                     console.log(`[${sessionId}] ? WhatsApp conectado: ${session.user.name}`);
+                    if (WHATSAPP_SESSION_SEND_WARMUP_MS > 0) {
+                        console.log(`[${sessionId}] Aguardando ${WHATSAPP_SESSION_SEND_WARMUP_MS}ms de aquecimento antes de liberar disparos`);
+                    }
 
 
 
@@ -5723,12 +5994,9 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
     
 
-    if (!session || !session.isConnected) {
-
-        const connectionError = new Error('Sess?o n?o est? conectada');
-        connectionError.code = 'SESSION_DISCONNECTED';
-        throw connectionError;
-
+    const dispatchState = getSessionDispatchState(sessionId);
+    if (!session || !dispatchState.available) {
+        throw buildSessionUnavailableError(dispatchState, 'Sessao nao esta conectada');
     }
 
     
@@ -5796,56 +6064,69 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
     let result;
 
-    
+    try {
+        if (type === 'text') {
 
-    if (type === 'text') {
+            result = await session.socket.sendMessage(jid, { text: renderedTextMessage });
 
-        result = await session.socket.sendMessage(jid, { text: renderedTextMessage });
+        } else if (type === 'image') {
 
-    } else if (type === 'image') {
+            result = await session.socket.sendMessage(jid, {
 
-        result = await session.socket.sendMessage(jid, {
+                image: { url: options.url || message },
 
-            image: { url: options.url || message },
+                caption: renderedCaption || ''
 
-            caption: renderedCaption || ''
+            });
 
-        });
+        } else if (type === 'video') {
 
-    } else if (type === 'video') {
+            result = await session.socket.sendMessage(jid, {
 
-        result = await session.socket.sendMessage(jid, {
+                video: { url: options.url || message },
 
-            video: { url: options.url || message },
+                caption: renderedCaption || ''
 
-            caption: renderedCaption || ''
+            });
 
-        });
+        } else if (type === 'document') {
 
-    } else if (type === 'document') {
+            result = await session.socket.sendMessage(jid, {
 
-        result = await session.socket.sendMessage(jid, {
+                document: { url: options.url || message },
 
-            document: { url: options.url || message },
+                mimetype: options.mimetype || 'application/pdf',
 
-            mimetype: options.mimetype || 'application/pdf',
+                fileName: options.fileName || 'documento'
 
-            fileName: options.fileName || 'documento'
+            });
 
-        });
+        } else if (type === 'audio') {
 
-    } else if (type === 'audio') {
+            result = await session.socket.sendMessage(jid, {
 
-        result = await session.socket.sendMessage(jid, {
+                audio: { url: options.url || message },
 
-            audio: { url: options.url || message },
+                mimetype: options.mimetype || 'audio/ogg; codecs=opus',
 
-            mimetype: options.mimetype || 'audio/ogg; codecs=opus',
+                ptt: options.ptt === true
 
-            ptt: options.ptt === true
+            });
 
-        });
-
+        }
+    } catch (sendError) {
+        if (isDisconnectedSessionRuntimeError(sendError)) {
+            session.isConnected = false;
+            session.reconnecting = true;
+            const blockedUntilMs = setRuntimeSessionDispatchBackoff(session);
+            const connectionError = new Error('Sessao nao esta conectada');
+            connectionError.code = 'SESSION_DISCONNECTED';
+            if (blockedUntilMs > Date.now()) {
+                connectionError.retryAfterMs = Math.max(1000, blockedUntilMs - Date.now());
+            }
+            throw connectionError;
+        }
+        throw sendError;
     }
 
     
@@ -6019,7 +6300,8 @@ function sessionExists(sessionId) {
                 sessionId: allocation?.sessionId || null,
                 assignmentMeta: allocation?.assignmentMeta || null
             };
-        }
+        },
+        getSessionDispatchState
     });
 
     flowService.init(async (options = {}) => {
@@ -6102,7 +6384,12 @@ io.on('connection', (socket) => {
             return;
         }
 
-        if (sessionExists(normalizedSessionId)) {
+        const hasLocalSession = sessionExists(normalizedSessionId);
+        const hasDbAuthState = !hasLocalSession && WHATSAPP_AUTH_STATE_DRIVER !== 'multi_file'
+            ? await hasPersistedBaileysAuthState(normalizedSessionId)
+            : false;
+
+        if (hasLocalSession || hasDbAuthState) {
             socket.emit('session-status', { status: 'reconnecting', sessionId: normalizedSessionId });
             await createSession(normalizedSessionId, socket, 0, {
                 ownerUserId: ownerScopeUserId || undefined
@@ -6539,8 +6826,9 @@ io.on('connection', (socket) => {
                 fs.rmSync(sessionPath, { recursive: true, force: true });
 
             }
-
         }
+
+        await clearPersistedBaileysAuthState(normalizedSessionId);
 
         
 
@@ -6579,6 +6867,7 @@ app.get('/api/whatsapp/status', optionalAuth, (req, res) => {
     const session = sessions.get(sessionId);
 
     const connected = !!(session && session.isConnected);
+    const dispatchState = getSessionDispatchState(sessionId);
 
     let phone = null;
 
@@ -6590,7 +6879,17 @@ app.get('/api/whatsapp/status', optionalAuth, (req, res) => {
 
     }
 
-    res.json({ connected, phone });
+    res.json({
+        connected,
+        phone,
+        status: dispatchState.status || (connected ? 'connected' : 'disconnected'),
+        reconnecting: Boolean(session?.reconnecting),
+        sendReadyAt: Number(session?.sendReadyAtMs || 0) > 0 ? new Date(Number(session.sendReadyAtMs)).toISOString() : null,
+        dispatchBlockedUntil: Number(session?.dispatchBlockedUntilMs || 0) > Date.now()
+            ? new Date(Number(session.dispatchBlockedUntilMs)).toISOString()
+            : null,
+        lastDisconnectReason: session?.lastDisconnectReason || null
+    });
 
 });
 
@@ -6663,6 +6962,7 @@ app.delete('/api/whatsapp/sessions/:sessionId', authenticate, async (req, res) =
         }
 
         await whatsappService.logoutSession(sessionId, SESSIONS_DIR);
+        await clearPersistedBaileysAuthState(sessionId);
         await WhatsAppSession.deleteBySessionId(sessionId, {
             owner_user_id: ownerScopeUserId || undefined,
             created_by: ownerScopeUserId || undefined
@@ -6693,6 +6993,7 @@ app.post('/api/whatsapp/disconnect', authenticate, async (req, res) => {
         }
 
         await whatsappService.logoutSession(sessionId, SESSIONS_DIR);
+        await clearPersistedBaileysAuthState(sessionId);
 
         io.emit('whatsapp-status', { sessionId, status: 'disconnected' });
 

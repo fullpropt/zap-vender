@@ -149,16 +149,38 @@ class SenderAllocatorService {
 
             const runtime = runtimeSessions.get(sessionId);
             const connected = Boolean(runtime?.isConnected);
+            const reconnecting = Boolean(runtime?.reconnecting);
+            const nowMs = Date.now();
+            const sendReadyAtMs = Number(runtime?.sendReadyAtMs || 0);
+            const dispatchBlockedUntilMs = Number(runtime?.dispatchBlockedUntilMs || 0);
+            const runtimeStatus = connected
+                ? (sendReadyAtMs > nowMs ? 'warming_up' : 'connected')
+                : (reconnecting ? 'reconnecting' : (runtime ? 'disconnected' : String(row.status || 'disconnected')));
+            const runtimeCooldownUntil = dispatchBlockedUntilMs > nowMs
+                ? new Date(dispatchBlockedUntilMs).toISOString()
+                : null;
+            const storedCooldownMs = Date.parse(String(row?.cooldown_until || ''));
+            const effectiveCooldownUntil = runtimeCooldownUntil && (
+                !Number.isFinite(storedCooldownMs) || dispatchBlockedUntilMs > storedCooldownMs
+            )
+                ? runtimeCooldownUntil
+                : (row?.cooldown_until || null);
 
             merged.push({
                 ...row,
                 session_id: sessionId,
                 connected,
-                status: connected ? 'connected' : String(row.status || 'disconnected'),
+                reconnecting,
+                status: runtimeStatus,
+                runtime_status: runtimeStatus,
+                send_ready_at: sendReadyAtMs > 0 ? new Date(sendReadyAtMs).toISOString() : null,
+                dispatch_blocked_until: runtimeCooldownUntil,
+                last_disconnect_reason: runtime?.lastDisconnectReason || null,
                 campaign_enabled: this.toBoolean(row.campaign_enabled, true),
                 daily_limit: this.toNonNegativeInt(row.daily_limit, 0),
                 dispatch_weight: Math.max(1, this.toNonNegativeInt(row.dispatch_weight, 1)),
-                hourly_limit: this.toNonNegativeInt(row.hourly_limit, 0)
+                hourly_limit: this.toNonNegativeInt(row.hourly_limit, 0),
+                cooldown_until: effectiveCooldownUntil
             });
         }
 
@@ -166,18 +188,31 @@ class SenderAllocatorService {
             const normalizedSessionId = this.sanitizeSessionId(sessionId);
             if (!normalizedSessionId || seen.has(normalizedSessionId)) continue;
             if (hasOwnerScope) continue;
+            const connected = Boolean(runtime?.isConnected);
+            const reconnecting = Boolean(runtime?.reconnecting);
+            const nowMs = Date.now();
+            const sendReadyAtMs = Number(runtime?.sendReadyAtMs || 0);
+            const dispatchBlockedUntilMs = Number(runtime?.dispatchBlockedUntilMs || 0);
+            const runtimeStatus = connected
+                ? (sendReadyAtMs > nowMs ? 'warming_up' : 'connected')
+                : (reconnecting ? 'reconnecting' : 'disconnected');
             merged.push({
                 id: null,
                 session_id: normalizedSessionId,
                 phone: runtime?.user?.phone || null,
                 name: runtime?.user?.name || runtime?.user?.pushName || null,
-                status: runtime?.isConnected ? 'connected' : 'disconnected',
-                connected: Boolean(runtime?.isConnected),
+                status: runtimeStatus,
+                runtime_status: runtimeStatus,
+                connected,
+                reconnecting,
                 campaign_enabled: true,
                 daily_limit: 0,
                 dispatch_weight: 1,
                 hourly_limit: 0,
-                cooldown_until: null,
+                cooldown_until: dispatchBlockedUntilMs > nowMs ? new Date(dispatchBlockedUntilMs).toISOString() : null,
+                dispatch_blocked_until: dispatchBlockedUntilMs > nowMs ? new Date(dispatchBlockedUntilMs).toISOString() : null,
+                send_ready_at: sendReadyAtMs > 0 ? new Date(sendReadyAtMs).toISOString() : null,
+                last_disconnect_reason: runtime?.lastDisconnectReason || null,
                 qr_code: null,
                 last_connected_at: null,
                 created_by: null,

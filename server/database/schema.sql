@@ -311,6 +311,17 @@ CREATE TABLE IF NOT EXISTS whatsapp_sessions (
     updated_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
+CREATE TABLE IF NOT EXISTS whatsapp_auth_state (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    state_type TEXT NOT NULL,
+    state_key TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE (session_id, state_type, state_key)
+);
+
 -- Tabela de Configurações
 CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -379,6 +390,8 @@ CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
 CREATE INDEX IF NOT EXISTS idx_leads_assigned ON leads(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_email_confirmation_token_hash ON users(email_confirmation_token_hash);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_auth_state_session ON whatsapp_auth_state(session_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_auth_state_lookup ON whatsapp_auth_state(session_id, state_type);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_active_unique ON users(email) WHERE is_active = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS leads_phone_unique ON leads(phone);
 

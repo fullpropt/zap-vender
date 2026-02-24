@@ -14,6 +14,7 @@ class QueueService extends EventEmitter {
         this.intervalId = null;
         this.sendFunction = null;
         this.resolveSessionForMessage = null;
+        this.getSessionDispatchState = null;
         this.defaultDelay = 3000; // 3 segundos entre mensagens
         this.maxMessagesPerMinute = 30;
         this.messagesSentThisMinute = 0;
@@ -22,6 +23,9 @@ class QueueService extends EventEmitter {
         this.queueSettingsCacheTtlMs = 30000;
         this.businessHoursCacheByOwner = new Map();
         this.businessHoursCacheTtlMs = 30000;
+        this.sessionDisconnectedRetryMs = this.parsePositiveNumber(process.env.WHATSAPP_SESSION_DISCONNECTED_RETRY_MS, 60000);
+        this.sessionReconnectingRetryMs = this.parsePositiveNumber(process.env.WHATSAPP_SESSION_RECONNECTING_RETRY_MS, 20000);
+        this.sessionWarmingRetryMs = this.parsePositiveNumber(process.env.WHATSAPP_SESSION_WARMING_UP_RETRY_MS, 10000);
     }
     
     /**
@@ -31,6 +35,9 @@ class QueueService extends EventEmitter {
         this.sendFunction = sendFunction;
         this.resolveSessionForMessage = typeof options.resolveSessionForMessage === 'function'
             ? options.resolveSessionForMessage
+            : null;
+        this.getSessionDispatchState = typeof options.getSessionDispatchState === 'function'
+            ? options.getSessionDispatchState
             : null;
         
         // Carregar configuracoes do banco
@@ -203,6 +210,44 @@ class QueueService extends EventEmitter {
         if (!Number.isFinite(parsed)) return fallback;
         if (parsed < min) return fallback;
         return parsed;
+    }
+
+    normalizeSessionDispatchState(rawState = null) {
+        if (!rawState || typeof rawState !== 'object') {
+            return {
+                available: true,
+                status: 'connected',
+                retryAfterMs: null,
+                reason: ''
+            };
+        }
+
+        const available = rawState.available !== false;
+        const status = String(rawState.status || '').trim().toLowerCase() || (available ? 'connected' : 'disconnected');
+        const retryAfterMs = Number(rawState.retryAfterMs);
+        const reason = String(rawState.reason || '').trim();
+
+        return {
+            available,
+            status,
+            retryAfterMs: Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? Math.floor(retryAfterMs) : null,
+            reason
+        };
+    }
+
+    computeUnavailableSessionRetryMs(sessionState = null) {
+        const normalized = this.normalizeSessionDispatchState(sessionState);
+        if (normalized.retryAfterMs) return normalized.retryAfterMs;
+
+        if (normalized.status === 'warming_up') {
+            return this.sessionWarmingRetryMs;
+        }
+
+        if (normalized.status === 'reconnecting') {
+            return this.sessionReconnectingRetryMs;
+        }
+
+        return this.sessionDisconnectedRetryMs;
     }
 
     async resolveOwnerUserIdFromAssignee(assignedTo) {
@@ -526,7 +571,6 @@ class QueueService extends EventEmitter {
             if (!selected) return;
 
             const { message, lead, ownerUserId, queueSettings } = selected;
-            await MessageQueue.markProcessing(message.id);
 
             let assignedSessionId = String(message.session_id || '').trim();
             if (!assignedSessionId && this.resolveSessionForMessage) {
@@ -551,6 +595,34 @@ class QueueService extends EventEmitter {
                 sendError.conversationId = message.conversation_id;
                 throw sendError;
             }
+
+            if (this.getSessionDispatchState) {
+                const runtimeSessionState = this.normalizeSessionDispatchState(
+                    await this.getSessionDispatchState(assignedSessionId)
+                );
+                if (!runtimeSessionState.available) {
+                    const retryDelayMs = this.computeUnavailableSessionRetryMs(runtimeSessionState);
+                    const retryAt = new Date(Date.now() + retryDelayMs).toISOString();
+                    const reason = runtimeSessionState.reason || (
+                        runtimeSessionState.status === 'warming_up'
+                            ? 'Sessao em aquecimento apos reconexao'
+                            : runtimeSessionState.status === 'reconnecting'
+                                ? 'Sessao reconectando'
+                                : 'Sessao nao conectada'
+                    );
+                    await MessageQueue.requeueTransient(message.id, reason, retryAt);
+                    this.emit('message:deferred', {
+                        id: message.id,
+                        leadId: message.lead_id,
+                        sessionId: assignedSessionId,
+                        reason,
+                        retryAt
+                    });
+                    return;
+                }
+            }
+
+            await MessageQueue.markProcessing(message.id);
 
             try {
                 await this.sendFunction({
@@ -603,11 +675,24 @@ class QueueService extends EventEmitter {
                 const errorCode = String(error?.code || '').trim().toUpperCase();
                 const isDisconnectedSessionError =
                     errorCode === 'SESSION_DISCONNECTED' ||
+                    errorCode === 'SESSION_RECONNECTING' ||
+                    errorCode === 'SESSION_WARMING_UP' ||
+                    errorCode === 'SESSION_COOLDOWN' ||
                     (normalizedError.includes('sess') &&
                         (normalizedError.includes('conectada') || normalizedError.includes('conectad') || normalizedError.includes('not connected')));
 
                 if (isDisconnectedSessionError) {
-                    const retryAt = new Date(Date.now() + 60 * 1000).toISOString();
+                    const retryAfterMs = Number(error?.retryAfterMs);
+                    const retryDelayMs = Number.isFinite(retryAfterMs) && retryAfterMs > 0
+                        ? Math.floor(retryAfterMs)
+                        : this.computeUnavailableSessionRetryMs({
+                            status: errorCode === 'SESSION_WARMING_UP'
+                                ? 'warming_up'
+                                : errorCode === 'SESSION_RECONNECTING'
+                                    ? 'reconnecting'
+                                    : 'disconnected'
+                        });
+                    const retryAt = new Date(Date.now() + retryDelayMs).toISOString();
                     await MessageQueue.requeueTransient(messageId, error.message, retryAt);
                 } else {
                     await MessageQueue.markFailed(messageId, error.message);
