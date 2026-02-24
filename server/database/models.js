@@ -1472,8 +1472,36 @@ const Automation = {
         return { id: result.lastInsertRowid, uuid };
     },
 
-    async findById(id) {
-        return await queryOne('SELECT * FROM automations WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
+        const createdBy = parsePositiveInteger(options.created_by);
+        const params = [id];
+        let ownerFilter = '';
+
+        if (ownerUserId) {
+            ownerFilter = `
+                AND (
+                    automations.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = automations.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
+            ownerFilter = ' AND automations.created_by = ?';
+            params.push(createdBy);
+        }
+
+        return await queryOne(`
+            SELECT automations.*
+            FROM automations
+            WHERE automations.id = ?
+            ${ownerFilter}
+        `, params);
     },
 
     async list(options = {}) {
@@ -1490,9 +1518,25 @@ const Automation = {
             params.push(options.trigger_type);
         }
 
-        if (options.created_by) {
-            sql += ' AND created_by = ?';
-            params.push(options.created_by);
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
+        const createdBy = parsePositiveInteger(options.created_by);
+
+        if (ownerUserId) {
+            sql += `
+                AND (
+                    automations.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = automations.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
+            sql += ' AND automations.created_by = ?';
+            params.push(createdBy);
         }
 
         if (options.search) {
@@ -1575,8 +1619,35 @@ const Flow = {
         return { id: result.lastInsertRowid, uuid };
     },
     
-    async findById(id) {
-        const flow = await queryOne('SELECT * FROM flows WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
+        const createdBy = parsePositiveInteger(options.created_by);
+        const params = [id];
+        let ownerFilter = '';
+        if (ownerUserId) {
+            ownerFilter = `
+                AND (
+                    flows.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = flows.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
+            ownerFilter = ' AND flows.created_by = ?';
+            params.push(createdBy);
+        }
+
+        const flow = await queryOne(`
+            SELECT flows.*
+            FROM flows
+            WHERE flows.id = ?
+            ${ownerFilter}
+        `, params);
         if (flow) {
             flow.nodes = JSON.parse(flow.nodes || '[]');
             flow.edges = JSON.parse(flow.edges || '[]');
@@ -1584,13 +1655,34 @@ const Flow = {
         return flow;
     },
     
-    async findByTrigger(triggerType, triggerValue = null) {
+    async findByTrigger(triggerType, triggerValue = null, options = {}) {
         let sql = 'SELECT * FROM flows WHERE trigger_type = ? AND is_active = 1';
         const params = [triggerType];
         
         if (triggerValue) {
             sql += ' AND (trigger_value = ? OR trigger_value IS NULL)';
             params.push(triggerValue);
+        }
+
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
+        const createdBy = parsePositiveInteger(options.created_by);
+
+        if (ownerUserId) {
+            sql += `
+                AND (
+                    flows.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = flows.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
+            sql += ' AND flows.created_by = ?';
+            params.push(createdBy);
         }
         
         sql += ' ORDER BY priority DESC LIMIT 1';
@@ -1603,12 +1695,35 @@ const Flow = {
         return flow;
     },
 
-    async findActiveKeywordFlows() {
+    async findActiveKeywordFlows(options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
+        const createdBy = parsePositiveInteger(options.created_by);
+        const params = [];
+        let ownerFilter = '';
+        if (ownerUserId) {
+            ownerFilter = `
+                AND (
+                    flows.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = flows.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
+            ownerFilter = ' AND flows.created_by = ?';
+            params.push(createdBy);
+        }
+
         const rows = await query(`
             SELECT * FROM flows
             WHERE trigger_type = 'keyword' AND is_active = 1
+            ${ownerFilter}
             ORDER BY priority DESC, id ASC
-        `);
+        `, params);
 
         return rows.map((flow) => ({
             ...flow,
@@ -1617,15 +1732,38 @@ const Flow = {
         }));
     },
     
-    async findKeywordMatches(messageText) {
+    async findKeywordMatches(messageText, options = {}) {
         const normalizedMessage = normalizeFlowKeywordText(messageText);
         if (!normalizedMessage) return [];
+
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
+        const createdBy = parsePositiveInteger(options.created_by);
+        const params = [];
+        let ownerFilter = '';
+        if (ownerUserId) {
+            ownerFilter = `
+                AND (
+                    flows.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = flows.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
+            ownerFilter = ' AND flows.created_by = ?';
+            params.push(createdBy);
+        }
 
         const flows = await query(`
             SELECT * FROM flows 
             WHERE trigger_type = 'keyword' AND is_active = 1
+            ${ownerFilter}
             ORDER BY priority DESC, id ASC
-        `);
+        `, params);
 
         const matches = [];
 
@@ -1657,8 +1795,8 @@ const Flow = {
         }));
     },
 
-    async findByKeyword(messageText) {
-        const matches = await this.findKeywordMatches(messageText);
+    async findByKeyword(messageText, options = {}) {
+        const matches = await this.findKeywordMatches(messageText, options);
         if (matches.length === 0) return null;
         return matches[0];
     },
@@ -1672,9 +1810,25 @@ const Flow = {
             params.push(options.is_active);
         }
 
-        if (options.created_by) {
-            sql += ' AND created_by = ?';
-            params.push(options.created_by);
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
+        const createdBy = parsePositiveInteger(options.created_by);
+
+        if (ownerUserId) {
+            sql += `
+                AND (
+                    flows.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = flows.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
+            sql += ' AND flows.created_by = ?';
+            params.push(createdBy);
         }
         
         sql += ' ORDER BY priority DESC, name ASC';

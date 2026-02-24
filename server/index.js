@@ -6318,7 +6318,10 @@ io.on('connection', (socket) => {
 
     socket.on('get-flows', async () => {
 
-        const flows = await Flow.list();
+        const ownerScopeUserId = await resolveSocketOwnerUserId(socket);
+        const flows = ownerScopeUserId
+            ? await Flow.list({ owner_user_id: ownerScopeUserId })
+            : [];
 
         socket.emit('flows-list', { flows });
 
@@ -9941,10 +9944,10 @@ app.delete('/api/campaigns/:id', authenticate, async (req, res) => {
 
 
 
-app.get('/api/automations', optionalAuth, async (req, res) => {
+app.get('/api/automations', authenticate, async (req, res) => {
 
     const { is_active, trigger_type, limit, offset, search } = req.query;
-    const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
     const automations = await Automation.list({
 
@@ -9954,7 +9957,7 @@ app.get('/api/automations', optionalAuth, async (req, res) => {
 
         search,
 
-        created_by: scopedUserId || undefined,
+        owner_user_id: ownerScopeUserId || undefined,
 
         limit: limit ? parseInt(limit) : 50,
 
@@ -9970,9 +9973,12 @@ app.get('/api/automations', optionalAuth, async (req, res) => {
 
 
 
-app.get('/api/automations/:id', optionalAuth, async (req, res) => {
+app.get('/api/automations/:id', authenticate, async (req, res) => {
 
-    const automation = await Automation.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const automation = await Automation.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     if (!automation) {
 
@@ -10035,7 +10041,10 @@ app.post('/api/automations', authenticate, async (req, res) => {
 
 app.put('/api/automations/:id', authenticate, async (req, res) => {
 
-    const automation = await Automation.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const automation = await Automation.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     if (!automation) {
 
@@ -10071,7 +10080,9 @@ app.put('/api/automations/:id', authenticate, async (req, res) => {
 
     await Automation.update(req.params.id, payload);
 
-    const updatedAutomation = await Automation.findById(req.params.id);
+    const updatedAutomation = await Automation.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, automation: enrichAutomationForResponse(updatedAutomation) });
 
@@ -10081,7 +10092,10 @@ app.put('/api/automations/:id', authenticate, async (req, res) => {
 
 app.delete('/api/automations/:id', authenticate, async (req, res) => {
 
-    const automation = await Automation.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const automation = await Automation.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
     if (!automation) {
         return res.status(404).json({ error: 'Automacao nao encontrada' });
     }
@@ -10105,12 +10119,12 @@ app.delete('/api/automations/:id', authenticate, async (req, res) => {
 
 
 
-app.get('/api/flows', optionalAuth, async (req, res) => {
+app.get('/api/flows', authenticate, async (req, res) => {
 
-    const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
     const flows = await Flow.list({
         ...req.query,
-        created_by: scopedUserId || undefined
+        owner_user_id: ownerScopeUserId || undefined
     });
 
     res.json({ success: true, flows });
@@ -10119,9 +10133,12 @@ app.get('/api/flows', optionalAuth, async (req, res) => {
 
 
 
-app.get('/api/flows/:id', optionalAuth, async (req, res) => {
+app.get('/api/flows/:id', authenticate, async (req, res) => {
 
-    const flow = await Flow.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const flow = await Flow.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     if (!flow) {
 
@@ -10157,7 +10174,10 @@ app.post('/api/flows', authenticate, async (req, res) => {
 
 app.put('/api/flows/:id', authenticate, async (req, res) => {
 
-    const existing = await Flow.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const existing = await Flow.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
     if (!existing) {
         return res.status(404).json({ error: 'Fluxo nao encontrado' });
     }
@@ -10167,7 +10187,9 @@ app.put('/api/flows/:id', authenticate, async (req, res) => {
 
     await Flow.update(req.params.id, req.body);
 
-    const flow = await Flow.findById(req.params.id);
+    const flow = await Flow.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
 
     res.json({ success: true, flow });
 
@@ -10177,7 +10199,10 @@ app.put('/api/flows/:id', authenticate, async (req, res) => {
 
 app.delete('/api/flows/:id', authenticate, async (req, res) => {
 
-    const existing = await Flow.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const existing = await Flow.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined
+    });
     if (!existing) {
         return res.status(404).json({ error: 'Fluxo nao encontrado' });
     }
