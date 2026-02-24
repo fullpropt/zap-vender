@@ -7,6 +7,14 @@ const { MessageQueue, Settings, Lead } = require('../database/models');
 const { run, queryOne } = require('../database/connection');
 const EventEmitter = require('events');
 
+function parseBooleanEnv(value, fallback = false) {
+    if (value === undefined || value === null || value === '') return fallback;
+    const normalized = String(value).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'nao', 'não', 'off'].includes(normalized)) return false;
+    return fallback;
+}
+
 class QueueService extends EventEmitter {
     constructor() {
         super();
@@ -14,6 +22,7 @@ class QueueService extends EventEmitter {
         this.intervalId = null;
         this.sendFunction = null;
         this.resolveSessionForMessage = null;
+        this.workerEnabled = parseBooleanEnv(process.env.QUEUE_WORKER_ENABLED, true);
         this.defaultDelay = 3000; // 3 segundos entre mensagens
         this.maxMessagesPerMinute = 30;
         this.messagesSentThisMinute = 0;
@@ -39,7 +48,11 @@ class QueueService extends EventEmitter {
         this.maxMessagesPerMinute = defaultSettings.maxPerMinute;
         
         // Iniciar processamento
-        this.startProcessing();
+        if (this.workerEnabled) {
+            this.startProcessing();
+        } else {
+            console.log('[QueueWorker] desabilitado por QUEUE_WORKER_ENABLED=false');
+        }
         
         console.log('Servico de fila de mensagens iniciado');
         console.log(`   - Delay entre mensagens: ${this.defaultDelay}ms`);
@@ -480,6 +493,7 @@ class QueueService extends EventEmitter {
     async processNext() {
         if (this.isProcessing) return;
         if (!this.sendFunction) return;
+        if (!this.workerEnabled) return;
 
         this.isProcessing = true;
 

@@ -140,6 +140,8 @@ const MAX_RECONNECT_ATTEMPTS = parseInt(process.env.MAX_RECONNECT_ATTEMPTS) || 5
 const RECONNECT_DELAY = parseInt(process.env.RECONNECT_DELAY) || 3000;
 
 const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT) || 60000;
+const QUEUE_WORKER_ENABLED = !['0', 'false', 'no', 'nao', 'não', 'off'].includes(String(process.env.QUEUE_WORKER_ENABLED || 'true').trim().toLowerCase());
+const SCHEDULED_AUTOMATIONS_WORKER_ENABLED = !['0', 'false', 'no', 'nao', 'não', 'off'].includes(String(process.env.SCHEDULED_AUTOMATIONS_WORKER_ENABLED || 'true').trim().toLowerCase());
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'self-protecao-veicular-key-2024';
 const APP_BRAND_NAME = 'ZapVender';
@@ -4103,6 +4105,10 @@ async function processScheduledAutomationsTick() {
 
 function startScheduledAutomationsWorker() {
     if (scheduleAutomationIntervalId) return;
+    if (!SCHEDULED_AUTOMATIONS_WORKER_ENABLED) {
+        console.log('[ScheduledAutomationsWorker] desabilitado por SCHEDULED_AUTOMATIONS_WORKER_ENABLED=false');
+        return;
+    }
 
     scheduleAutomationIntervalId = setInterval(() => {
         processScheduledAutomationsTick().catch((error) => {
