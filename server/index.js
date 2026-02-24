@@ -9784,6 +9784,7 @@ async function resolveCampaignLeadIds(options = {}) {
     const segment = typeof options === 'string' ? options : options.segment;
     const tagFilter = typeof options === 'string' ? '' : options.tagFilter;
     const assignedTo = Number(typeof options === 'string' ? 0 : options.assignedTo);
+    const ownerUserId = normalizeOwnerUserId(typeof options === 'string' ? null : (options.ownerUserId ?? options.owner_user_id));
     const segmentStatus = resolveCampaignSegmentStatus(segment);
 
     let sql = 'SELECT id, tags FROM leads WHERE is_blocked = 0';
@@ -9799,6 +9800,18 @@ async function resolveCampaignLeadIds(options = {}) {
     if (Number.isInteger(assignedTo) && assignedTo > 0) {
         sql += ' AND assigned_to = ?';
         params.push(assignedTo);
+    }
+
+    if (ownerUserId) {
+        sql += `
+            AND EXISTS (
+                SELECT 1
+                FROM users owner_scope
+                WHERE owner_scope.id = leads.assigned_to
+                  AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+            )
+        `;
+        params.push(ownerUserId, ownerUserId);
     }
 
 
@@ -9990,7 +10003,8 @@ async function queueCampaignMessages(campaign, options = {}) {
     const leadIds = await resolveCampaignLeadIds({
         segment: campaign.segment || 'all',
         tagFilter: campaign.tag_filter || '',
-        assignedTo: options.assignedTo
+        assignedTo: options.assignedTo,
+        ownerUserId: options.ownerUserId
     });
 
     if (!leadIds.length) {
@@ -10147,6 +10161,7 @@ app.get('/api/campaigns', optionalAuth, async (req, res) => {
 
     const { status, type, limit, offset, search } = req.query;
     const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
     const campaigns = await Campaign.list({
 
@@ -10157,6 +10172,7 @@ app.get('/api/campaigns', optionalAuth, async (req, res) => {
         search,
 
         created_by: scopedUserId || undefined,
+        owner_user_id: ownerScopeUserId || undefined,
 
         limit: limit ? parseInt(limit) : 50,
 
@@ -10174,7 +10190,11 @@ app.get('/api/campaigns', optionalAuth, async (req, res) => {
 
 app.get('/api/campaigns/:id', optionalAuth, async (req, res) => {
 
-    const campaign = await Campaign.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const campaign = await Campaign.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined,
+        created_by: getScopedUserId(req) || undefined
+    });
 
     if (!campaign) {
 
@@ -10192,7 +10212,11 @@ app.get('/api/campaigns/:id', optionalAuth, async (req, res) => {
 
 app.get('/api/campaigns/:id/recipients', optionalAuth, async (req, res) => {
 
-    const campaign = await Campaign.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const campaign = await Campaign.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined,
+        created_by: getScopedUserId(req) || undefined
+    });
 
     if (!campaign) {
 
@@ -10212,7 +10236,8 @@ app.get('/api/campaigns/:id/recipients', optionalAuth, async (req, res) => {
     const leadIds = await resolveCampaignLeadIds({
         segment: campaign.segment || 'all',
         tagFilter: campaign.tag_filter || '',
-        assignedTo: getScopedUserId(req) || undefined
+        assignedTo: getScopedUserId(req) || undefined,
+        ownerUserId: ownerScopeUserId || undefined
     });
 
     if (!leadIds.length) {
@@ -10277,9 +10302,10 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
 
         if (requestedStatus === 'active' && campaign) {
             const scopedUserId = getScopedUserId(req);
+            const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
             queueResult = await queueCampaignMessages(campaign, {
                 assignedTo: scopedUserId || undefined,
-                ownerUserId: scopedUserId || undefined
+                ownerUserId: ownerScopeUserId || undefined
             });
             campaign = await attachCampaignSenderAccounts(await Campaign.findById(result.id));
         }
@@ -10300,7 +10326,11 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
 
     try {
 
-        const campaign = await Campaign.findById(req.params.id);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const campaign = await Campaign.findById(req.params.id, {
+            owner_user_id: ownerScopeUserId || undefined,
+            created_by: getScopedUserId(req) || undefined
+        });
 
         if (!campaign) {
 
@@ -10337,9 +10367,10 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
 
         if (shouldQueue && updatedCampaign) {
             const scopedUserId = getScopedUserId(req);
+            const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
             queueResult = await queueCampaignMessages(updatedCampaign, {
                 assignedTo: scopedUserId || undefined,
-                ownerUserId: scopedUserId || undefined
+                ownerUserId: ownerScopeUserId || undefined
             });
             updatedCampaign = await attachCampaignSenderAccounts(await Campaign.findById(req.params.id));
         }
@@ -10358,7 +10389,11 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
 
 app.delete('/api/campaigns/:id', authenticate, async (req, res) => {
 
-    const campaign = await Campaign.findById(req.params.id);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+    const campaign = await Campaign.findById(req.params.id, {
+        owner_user_id: ownerScopeUserId || undefined,
+        created_by: getScopedUserId(req) || undefined
+    });
     if (!campaign) {
         return res.status(404).json({ error: 'Campanha nao encontrada' });
     }

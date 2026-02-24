@@ -1097,12 +1097,42 @@ const Campaign = {
         return { id: result.lastInsertRowid, uuid };
     },
 
-    async findById(id) {
-        return await queryOne('SELECT * FROM campaigns WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const createdBy = parsePositiveInteger(options.created_by, null);
+        const params = [id];
+        let filters = '';
+
+        if (ownerUserId) {
+            filters += `
+                AND (
+                    campaigns.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = campaigns.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        }
+
+        if (createdBy) {
+            filters += ' AND campaigns.created_by = ?';
+            params.push(createdBy);
+        }
+
+        return await queryOne(`
+            SELECT campaigns.*
+            FROM campaigns
+            WHERE campaigns.id = ?
+            ${filters}
+        `, params);
     },
 
     async list(options = {}) {
-        let sql = 'SELECT * FROM campaigns WHERE 1=1';
+        let sql = 'SELECT campaigns.* FROM campaigns WHERE 1=1';
         const params = [];
 
         if (options.status) {
@@ -1115,9 +1145,27 @@ const Campaign = {
             params.push(options.type);
         }
 
-        if (options.created_by) {
-            sql += ' AND created_by = ?';
-            params.push(options.created_by);
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const createdBy = parsePositiveInteger(options.created_by, null);
+
+        if (ownerUserId) {
+            sql += `
+                AND (
+                    campaigns.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = campaigns.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        }
+
+        if (createdBy) {
+            sql += ' AND campaigns.created_by = ?';
+            params.push(createdBy);
         }
 
         if (options.search) {
