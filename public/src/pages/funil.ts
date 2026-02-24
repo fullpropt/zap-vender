@@ -521,12 +521,22 @@ function renderKanban() {
     }
 }
 
+function clearKanbanDropActiveState() {
+    document.querySelectorAll('.kanban-column.drop-active').forEach((column) => {
+        column.classList.remove('drop-active');
+    });
+}
+
 function initDragAndDrop() {
     document.addEventListener('dragstart', (e) => {
         const target = e.target as HTMLElement | null;
         if (target?.classList.contains('kanban-card')) {
             target.classList.add('dragging');
-            e.dataTransfer?.setData('text/plain', target.dataset.id || '');
+            if (e.dataTransfer) {
+                e.dataTransfer.setData('text/plain', target.dataset.id || '');
+                e.dataTransfer.dropEffect = 'move';
+            }
+            clearKanbanDropActiveState();
         }
     });
 
@@ -535,25 +545,34 @@ function initDragAndDrop() {
         if (target?.classList.contains('kanban-card')) {
             target.classList.remove('dragging');
         }
+        clearKanbanDropActiveState();
     });
 
-    document.querySelectorAll('.kanban-body').forEach(body => {
-        body.addEventListener('dragover', (e) => {
+    document.querySelectorAll('.kanban-column').forEach((column) => {
+        const columnElement = column as HTMLElement;
+        columnElement.addEventListener('dragover', (e) => {
             e.preventDefault();
-            (body as HTMLElement).style.background = 'rgba(var(--primary-rgb), 0.1)';
+            if (e.dataTransfer) {
+                e.dataTransfer.dropEffect = 'move';
+            }
+            if (!columnElement.classList.contains('drop-active')) {
+                clearKanbanDropActiveState();
+                columnElement.classList.add('drop-active');
+            }
         });
 
-        body.addEventListener('dragleave', () => {
-            (body as HTMLElement).style.background = '';
+        columnElement.addEventListener('dragleave', (e) => {
+            const relatedTarget = e.relatedTarget as Node | null;
+            if (relatedTarget && columnElement.contains(relatedTarget)) return;
+            columnElement.classList.remove('drop-active');
         });
 
-        body.addEventListener('drop', (e) => {
+        columnElement.addEventListener('drop', (e) => {
             e.preventDefault();
-            (body as HTMLElement).style.background = '';
+            clearKanbanDropActiveState();
             
             const leadId = parseInt(e.dataTransfer?.getData('text/plain') || '0', 10);
-            const parent = (body as HTMLElement).parentElement as HTMLElement | null;
-            const newStage = parseInt(parent?.dataset.stage || '0', 10);
+            const newStage = parseInt(columnElement.dataset.stage || '0', 10);
             
             if (leadId && newStage) {
                 void updateLeadStage(leadId, newStage as LeadStatus);

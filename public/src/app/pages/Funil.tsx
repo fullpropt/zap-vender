@@ -154,6 +154,17 @@ export default function Funil() {
             border: 1px solid var(--border-color);
             border-radius: var(--border-radius-lg);
             min-height: 400px;
+            display: flex;
+            flex-direction: column;
+            transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+        }
+        .kanban-column.drop-active {
+            border-color: rgba(var(--primary-rgb), 0.7);
+            box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.22);
+            background: rgba(var(--primary-rgb), 0.06);
+        }
+        .kanban-column.drop-active .kanban-header {
+            background: rgba(var(--primary-rgb), 0.15);
         }
         .kanban-header {
             padding: 15px 20px;
@@ -177,8 +188,14 @@ export default function Funil() {
         }
         .kanban-body {
             padding: 15px;
-            max-height: 500px;
+            max-height: 560px;
+            min-height: 340px;
+            flex: 1;
             overflow-y: auto;
+            transition: background-color 0.16s ease;
+        }
+        .kanban-column.drop-active .kanban-body {
+            background: rgba(var(--primary-rgb), 0.09);
         }
         .kanban-card {
             background: var(--surface-muted);
