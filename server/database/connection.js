@@ -9,6 +9,29 @@ let PostgresPool = null;
 const USE_POSTGRES = true;
 const DB_PATH = null;
 
+function sanitizeAppNamePart(value, fallback = 'na') {
+    const normalized = String(value || '').trim();
+    if (!normalized) return fallback;
+    return normalized.replace(/[^a-zA-Z0-9._:-]/g, '-').slice(0, 48) || fallback;
+}
+
+function resolvePostgresApplicationName() {
+    const explicit = String(process.env.DATABASE_APPLICATION_NAME || process.env.PGAPPNAME || '').trim();
+    if (explicit) return explicit.slice(0, 63);
+
+    const service = sanitizeAppNamePart(process.env.RAILWAY_SERVICE_NAME || 'zapvender', 'zapvender');
+    const commit = sanitizeAppNamePart(
+        (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GITHUB_SHA || process.env.COMMIT_SHA || '').slice(0, 8),
+        'local'
+    );
+    const deploy = sanitizeAppNamePart(
+        (process.env.RAILWAY_DEPLOYMENT_ID || process.env.RAILWAY_DEPLOYMENT_TRIGGER_ID || process.env.HOSTNAME || '').slice(0, 10),
+        'proc'
+    );
+
+    return `${service}:${commit}:${deploy}`.slice(0, 63);
+}
+
 function getPostgresPool() {
     if (PostgresPool) return PostgresPool;
     try {
@@ -30,14 +53,17 @@ function getDatabase() {
     }
 
     const Pool = getPostgresPool();
+    const applicationName = resolvePostgresApplicationName();
     pool = new Pool({
         connectionString: process.env.DATABASE_URL,
+        application_name: applicationName,
         ssl: process.env.NODE_ENV == 'production'
             ? { rejectUnauthorized: false }
             : false
     });
 
     console.log('?? Banco de dados conectado: Postgres');
+    console.log(`[DB] application_name=${applicationName}`);
     return pool;
 }
 
