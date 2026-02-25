@@ -423,6 +423,7 @@ async function loadSettings() {
 
 function normalizePlanStatus(status: unknown) {
     const normalized = String(status || '').trim().toLowerCase();
+    if (!normalized) return 'active';
     const allowed = new Set(['active', 'trialing', 'past_due', 'canceled', 'suspended', 'expired']);
     return allowed.has(normalized) ? normalized : 'unknown';
 }
@@ -482,9 +483,9 @@ function buildFallbackPlanStatus(): PlanStatusViewModel {
     return {
         ownerName: owner.name,
         ownerEmail: owner.email,
-        planName: 'Plano nao configurado',
-        status: 'unknown',
-        statusLabel: 'Nao configurado',
+        planName: 'Plano de teste',
+        status: 'active',
+        statusLabel: 'Ativo',
         renewalDate: null,
         lastVerifiedAt: null,
         provider: 'API nao configurada',
@@ -499,7 +500,7 @@ function normalizePlanStatusPayload(payload: PlanStatusApiPayload | null | undef
     const ownerName = String(payload?.owner_admin?.name || '').trim() || fallback.ownerName;
     const ownerEmail = String(payload?.owner_admin?.email || '').trim() || fallback.ownerEmail;
     const status = normalizePlanStatus(payload?.plan?.status);
-    const statusLabel = String(payload?.plan?.status_label || '').trim() || getPlanStatusLabel(status, fallback.statusLabel);
+    const statusLabel = String(payload?.plan?.status_label || '').trim() || getPlanStatusLabel(status);
 
     return {
         ownerName,

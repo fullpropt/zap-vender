@@ -7082,10 +7082,10 @@ const WHATSAPP_ACTIVE_PLAN_STATUSES = new Set(['active', 'trialing']);
 
 async function resolveOwnerPlanStatus(ownerScopeUserId) {
     const normalizedOwnerUserId = normalizeOwnerUserId(ownerScopeUserId);
-    if (!normalizedOwnerUserId) return 'unknown';
+    if (!normalizedOwnerUserId) return 'active';
     const rawStatus = await Settings.get(buildScopedSettingsKey('plan_status', normalizedOwnerUserId));
     const normalizedStatus = String(rawStatus || '').trim().toLowerCase();
-    return normalizedStatus || 'unknown';
+    return normalizedStatus || 'active';
 }
 
 async function hasOwnerActiveWhatsAppPlan(ownerScopeUserId) {
@@ -12625,12 +12625,14 @@ async function buildOwnerPlanStatus(ownerScopeUserId) {
         Settings.get(keys.planMessage)
     ]);
 
-    const status = normalizePlanStatusForApi(planStatusRaw);
+    const status = planStatusRaw === null || typeof planStatusRaw === 'undefined' || String(planStatusRaw).trim() === ''
+        ? 'active'
+        : normalizePlanStatusForApi(planStatusRaw);
     const provider = String(planProvider || '').trim() || 'API nao configurada';
     const apiConfigured = provider.toLowerCase() !== 'api nao configurada';
 
     return {
-        name: String(planName || 'Plano nao configurado'),
+        name: String(planName || 'Plano de teste'),
         code: String(planCode || ''),
         status,
         status_label: getPlanStatusLabel(status),
