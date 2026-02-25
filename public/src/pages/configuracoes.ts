@@ -59,6 +59,40 @@ type ManagedUser = {
     created_at?: string | null;
 };
 
+type PlanStatusApiPayload = {
+    owner_admin?: {
+        id?: number;
+        name?: string;
+        email?: string;
+    };
+    plan?: {
+        name?: string;
+        code?: string;
+        status?: string;
+        status_label?: string;
+        renewal_date?: string | null;
+        last_verified_at?: string | null;
+        provider?: string;
+        source?: string;
+        api_configured?: boolean;
+        message?: string;
+    };
+};
+
+type PlanStatusViewModel = {
+    ownerName: string;
+    ownerEmail: string;
+    planName: string;
+    status: string;
+    statusLabel: string;
+    renewalDate: string | null;
+    lastVerifiedAt: string | null;
+    provider: string;
+    source: string;
+    apiConfigured: boolean;
+    message: string;
+};
+
 let templatesCache: TemplateItem[] = [];
 let settingsTagsCache: SettingsTag[] = [];
 let contactFieldsCache: ContactField[] = [];
@@ -66,6 +100,8 @@ let customContactFieldsCache: ContactField[] = [];
 let whatsappSessionsCache: WhatsAppSessionRecord[] = [];
 let usersCache: ManagedUser[] = [];
 let usersPresencePollingTimer: number | null = null;
+let planStatusCache: PlanStatusViewModel | null = null;
+let planStatusLoading = false;
 
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', source: 'name', is_default: true, required: true, placeholder: 'Nome completo' },
@@ -116,6 +152,7 @@ function initConfiguracoes() {
     loadTemplates();
     loadSettingsTags();
     loadUsers();
+    loadPlanStatus({ silent: true });
     refreshWhatsAppAccounts();
     updateNewTemplateForm();
     const typeSelect = document.getElementById('newTemplateType') as HTMLSelectElement | null;
@@ -149,6 +186,8 @@ function showPanel(panelId: string) {
         refreshWhatsAppAccounts();
     } else if (panelId === 'users') {
         loadUsers();
+    } else if (panelId === 'plan') {
+        loadPlanStatus();
     } else if (panelId === 'hours') {
         clearBusinessHoursMessageField();
         setTimeout(clearBusinessHoursMessageField, 150);
@@ -379,6 +418,202 @@ async function loadSettings() {
         });
     } catch (error) {
         // Mantem fallback local sem interromper a pagina
+    }
+}
+
+function normalizePlanStatus(status: unknown) {
+    const normalized = String(status || '').trim().toLowerCase();
+    const allowed = new Set(['active', 'trialing', 'past_due', 'canceled', 'suspended', 'expired']);
+    return allowed.has(normalized) ? normalized : 'unknown';
+}
+
+function getPlanStatusLabel(status: string, fallback = 'Nao configurado') {
+    const normalized = normalizePlanStatus(status);
+    const labels: Record<string, string> = {
+        active: 'Ativo',
+        trialing: 'Em teste',
+        past_due: 'Pagamento pendente',
+        canceled: 'Cancelado',
+        suspended: 'Suspenso',
+        expired: 'Expirado',
+        unknown: fallback
+    };
+    return labels[normalized] || fallback;
+}
+
+function getPlanStatusBadgeClass(status: string) {
+    const normalized = normalizePlanStatus(status);
+    if (normalized === 'active' || normalized === 'trialing') return 'badge-success';
+    if (normalized === 'past_due') return 'badge-warning';
+    if (normalized === 'canceled' || normalized === 'suspended' || normalized === 'expired') return 'badge-danger';
+    return 'badge-secondary';
+}
+
+function formatPlanDateTime(value: unknown) {
+    const raw = String(value || '').trim();
+    if (!raw) return '-';
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw;
+    return new Intl.DateTimeFormat('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    }).format(parsed);
+}
+
+function getCurrentOwnerFromUsersCache() {
+    const ownerUser = usersCache.find((user) => isManagedUserPrimaryAdmin(user));
+    if (ownerUser) {
+        return {
+            name: String(ownerUser.name || 'Admin principal'),
+            email: String(ownerUser.email || '-')
+        };
+    }
+    return {
+        name: 'Admin principal',
+        email: '-'
+    };
+}
+
+function buildFallbackPlanStatus(): PlanStatusViewModel {
+    const owner = getCurrentOwnerFromUsersCache();
+    return {
+        ownerName: owner.name,
+        ownerEmail: owner.email,
+        planName: 'Plano nao configurado',
+        status: 'unknown',
+        statusLabel: 'Nao configurado',
+        renewalDate: null,
+        lastVerifiedAt: null,
+        provider: 'API nao configurada',
+        source: 'local',
+        apiConfigured: false,
+        message: 'A confirmacao automatica do plano via API sera habilitada apos configurar a integracao.'
+    };
+}
+
+function normalizePlanStatusPayload(payload: PlanStatusApiPayload | null | undefined): PlanStatusViewModel {
+    const fallback = buildFallbackPlanStatus();
+    const ownerName = String(payload?.owner_admin?.name || '').trim() || fallback.ownerName;
+    const ownerEmail = String(payload?.owner_admin?.email || '').trim() || fallback.ownerEmail;
+    const status = normalizePlanStatus(payload?.plan?.status);
+    const statusLabel = String(payload?.plan?.status_label || '').trim() || getPlanStatusLabel(status, fallback.statusLabel);
+
+    return {
+        ownerName,
+        ownerEmail,
+        planName: String(payload?.plan?.name || '').trim() || fallback.planName,
+        status,
+        statusLabel,
+        renewalDate: payload?.plan?.renewal_date || null,
+        lastVerifiedAt: payload?.plan?.last_verified_at || null,
+        provider: String(payload?.plan?.provider || '').trim() || fallback.provider,
+        source: String(payload?.plan?.source || '').trim() || fallback.source,
+        apiConfigured: Boolean(payload?.plan?.api_configured),
+        message: String(payload?.plan?.message || '').trim() || fallback.message
+    };
+}
+
+function renderPlanStatus() {
+    const container = document.getElementById('planStatusCard') as HTMLElement | null;
+    if (!container) return;
+
+    if (planStatusLoading && !planStatusCache) {
+        container.innerHTML = '<p style="color: var(--gray-500); margin: 0;">Carregando situacao do plano...</p>';
+        return;
+    }
+
+    const data = planStatusCache || buildFallbackPlanStatus();
+    const statusBadgeClass = getPlanStatusBadgeClass(data.status);
+    const apiBadgeClass = data.apiConfigured ? 'badge-success' : 'badge-secondary';
+    const apiBadgeLabel = data.apiConfigured ? 'API configurada' : 'API pendente';
+
+    container.innerHTML = `
+        <div class="copy-card" style="margin-bottom: 0;">
+            <div class="copy-card-header" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <span class="copy-card-title">Situacao do Plano</span>
+                <span class="badge ${statusBadgeClass}">${escapeHtml(data.statusLabel)}</span>
+                <span class="badge ${apiBadgeClass}">${apiBadgeLabel}</span>
+            </div>
+            <p class="text-muted mb-3">${escapeHtml(data.message)}</p>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Admin principal</label>
+                    <input type="text" class="form-input" value="${escapeHtml(data.ownerName)}" readonly />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">E-mail do admin principal</label>
+                    <input type="text" class="form-input" value="${escapeHtml(data.ownerEmail)}" readonly />
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Plano</label>
+                    <input type="text" class="form-input" value="${escapeHtml(data.planName)}" readonly />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Fornecedor</label>
+                    <input type="text" class="form-input" value="${escapeHtml(data.provider)}" readonly />
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Renovacao</label>
+                    <input type="text" class="form-input" value="${escapeHtml(formatPlanDateTime(data.renewalDate))}" readonly />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Ultima confirmacao</label>
+                    <input type="text" class="form-input" value="${escapeHtml(formatPlanDateTime(data.lastVerifiedAt))}" readonly />
+                </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <small class="text-muted">Fonte: ${escapeHtml(data.source)}</small>
+                <button class="btn btn-outline" onclick="refreshPlanStatus()">
+                    <span class="icon icon-refresh icon-sm"></span> Atualizar via API
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+async function loadPlanStatus(options: { silent?: boolean } = {}) {
+    const shouldShowLoading = !options.silent;
+    if (shouldShowLoading) {
+        planStatusLoading = true;
+        renderPlanStatus();
+    }
+
+    try {
+        const response = await api.get('/api/plan/status');
+        planStatusCache = normalizePlanStatusPayload(response as PlanStatusApiPayload);
+    } catch (error) {
+        if (!planStatusCache) {
+            planStatusCache = buildFallbackPlanStatus();
+        }
+        if (shouldShowLoading) {
+            showToast('warning', 'Aviso', 'Nao foi possivel carregar o status do plano');
+        }
+    } finally {
+        planStatusLoading = false;
+        renderPlanStatus();
+    }
+}
+
+async function refreshPlanStatus() {
+    planStatusLoading = true;
+    renderPlanStatus();
+    try {
+        const response = await api.post('/api/plan/status/refresh');
+        planStatusCache = normalizePlanStatusPayload(response as PlanStatusApiPayload);
+        showToast('success', 'Sucesso', 'Situacao do plano atualizada');
+    } catch (error) {
+        await loadPlanStatus({ silent: true });
+        showToast('warning', 'Aviso', 'Nao foi possivel confirmar o plano via API');
+    } finally {
+        planStatusLoading = false;
+        renderPlanStatus();
     }
 }
 
@@ -1806,6 +2041,8 @@ const windowAny = window as Window & {
     regenerateApiKey?: () => void;
     testWebhook?: () => void;
     saveApiSettings?: () => void;
+    loadPlanStatus?: (options?: { silent?: boolean }) => Promise<void>;
+    refreshPlanStatus?: () => Promise<void>;
 };
 windowAny.initConfiguracoes = initConfiguracoes;
 windowAny.showPanel = showPanel;
@@ -1849,5 +2086,7 @@ windowAny.copyApiKey = copyApiKey;
 windowAny.regenerateApiKey = regenerateApiKey;
 windowAny.testWebhook = testWebhook;
 windowAny.saveApiSettings = saveApiSettings;
+windowAny.loadPlanStatus = loadPlanStatus;
+windowAny.refreshPlanStatus = refreshPlanStatus;
 
 export { initConfiguracoes };

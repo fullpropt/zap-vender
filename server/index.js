@@ -12504,6 +12504,137 @@ app.post('/api/webhook/incoming', async (req, res) => {
 
 
 
+const PLAN_STATUS_ALLOWED = new Set(['active', 'trialing', 'past_due', 'canceled', 'suspended', 'expired']);
+
+function normalizePlanStatusForApi(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return PLAN_STATUS_ALLOWED.has(normalized) ? normalized : 'unknown';
+}
+
+function getPlanStatusLabel(status) {
+    const normalized = normalizePlanStatusForApi(status);
+    const labels = {
+        active: 'Ativo',
+        trialing: 'Em teste',
+        past_due: 'Pagamento pendente',
+        canceled: 'Cancelado',
+        suspended: 'Suspenso',
+        expired: 'Expirado',
+        unknown: 'Nao configurado'
+    };
+    return labels[normalized] || labels.unknown;
+}
+
+function normalizeOptionalIsoDate(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+}
+
+async function buildOwnerPlanStatus(ownerScopeUserId) {
+    const normalizedOwnerUserId = normalizeOwnerUserId(ownerScopeUserId);
+    const keys = {
+        planName: buildScopedSettingsKey('plan_name', normalizedOwnerUserId),
+        planCode: buildScopedSettingsKey('plan_code', normalizedOwnerUserId),
+        planStatus: buildScopedSettingsKey('plan_status', normalizedOwnerUserId),
+        planProvider: buildScopedSettingsKey('plan_provider', normalizedOwnerUserId),
+        planRenewalDate: buildScopedSettingsKey('plan_renewal_date', normalizedOwnerUserId),
+        planLastVerifiedAt: buildScopedSettingsKey('plan_last_verified_at', normalizedOwnerUserId),
+        planExternalReference: buildScopedSettingsKey('plan_external_reference', normalizedOwnerUserId),
+        planMessage: buildScopedSettingsKey('plan_message', normalizedOwnerUserId)
+    };
+
+    const [
+        planName,
+        planCode,
+        planStatusRaw,
+        planProvider,
+        planRenewalDate,
+        planLastVerifiedAt,
+        planExternalReference,
+        planMessage
+    ] = await Promise.all([
+        Settings.get(keys.planName),
+        Settings.get(keys.planCode),
+        Settings.get(keys.planStatus),
+        Settings.get(keys.planProvider),
+        Settings.get(keys.planRenewalDate),
+        Settings.get(keys.planLastVerifiedAt),
+        Settings.get(keys.planExternalReference),
+        Settings.get(keys.planMessage)
+    ]);
+
+    const status = normalizePlanStatusForApi(planStatusRaw);
+    const provider = String(planProvider || '').trim() || 'API nao configurada';
+    const apiConfigured = provider.toLowerCase() !== 'api nao configurada';
+
+    return {
+        name: String(planName || 'Plano nao configurado'),
+        code: String(planCode || ''),
+        status,
+        status_label: getPlanStatusLabel(status),
+        renewal_date: normalizeOptionalIsoDate(planRenewalDate),
+        last_verified_at: normalizeOptionalIsoDate(planLastVerifiedAt),
+        provider,
+        source: 'settings',
+        api_configured: apiConfigured,
+        external_reference: String(planExternalReference || ''),
+        message: String(planMessage || 'A confirmacao automatica do plano via API sera habilitada apos configurar a integracao.')
+    };
+}
+
+app.get('/api/plan/status', authenticate, async (req, res) => {
+    try {
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const ownerAdmin = await User.findById(ownerScopeUserId || req.user?.id);
+        const plan = await buildOwnerPlanStatus(ownerScopeUserId);
+
+        res.json({
+            success: true,
+            owner_admin: ownerAdmin ? {
+                id: ownerAdmin.id,
+                name: ownerAdmin.name,
+                email: ownerAdmin.email
+            } : null,
+            plan
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Erro ao carregar status do plano' });
+    }
+});
+
+app.post('/api/plan/status/refresh', authenticate, async (req, res) => {
+    try {
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+        const nowIso = new Date().toISOString();
+
+        await Settings.set(
+            buildScopedSettingsKey('plan_last_verified_at', ownerScopeUserId),
+            nowIso,
+            'string'
+        );
+
+        // Placeholder para integração externa de validação do plano.
+        // Aqui entra a chamada da API de assinatura no próximo passo.
+        const ownerAdmin = await User.findById(ownerScopeUserId || req.user?.id);
+        const plan = await buildOwnerPlanStatus(ownerScopeUserId);
+
+        res.json({
+            success: true,
+            owner_admin: ownerAdmin ? {
+                id: ownerAdmin.id,
+                name: ownerAdmin.name,
+                email: ownerAdmin.email
+            } : null,
+            plan
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Erro ao atualizar status do plano' });
+    }
+});
+
 app.get('/api/settings', authenticate, async (req, res) => {
 
     const ownerScopeUserId = await resolveRequesterOwnerUserId(req);

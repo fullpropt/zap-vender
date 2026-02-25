@@ -44,6 +44,8 @@ type ConfiguracoesGlobals = {
   regenerateApiKey?: () => void;
   testWebhook?: () => void;
   saveApiSettings?: () => void;
+  loadPlanStatus?: (options?: { silent?: boolean }) => Promise<void>;
+  refreshPlanStatus?: () => Promise<void>;
   openModal?: (id: string) => void;
   closeModal?: (id: string) => void;
   logout?: () => void;
@@ -310,6 +312,7 @@ export default function Configuracoes() {
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('funnel')}><span className="icon icon-funnel icon-sm"></span> Funil de Vendas</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('notifications')}><span className="icon icon-bell icon-sm"></span> Notificações</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('users')}><span className="icon icon-user icon-sm"></span> Usuários</div>
+                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('plan')}><span className="icon icon-dashboard icon-sm"></span> Plano</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('api')}><span className="icon icon-plug icon-sm"></span> API e Webhooks</div>
                   </nav>
       
@@ -675,6 +678,18 @@ export default function Configuracoes() {
                                   <input type="password" className="form-input" id="confirmPassword" />
                               </div>
                               <button className="btn btn-primary" onClick={() => globals.changePassword?.()}><span className="icon icon-lock icon-sm"></span> Alterar Senha</button>
+                          </div>
+                      </div>
+
+                      <div className="settings-panel" id="panel-plan">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-dashboard icon-sm"></span> Plano da Conta</h3>
+                              <p className="text-muted mb-4">
+                                  A situação do plano do admin principal será atualizada e confirmada via API.
+                              </p>
+                              <div id="planStatusCard">
+                                  <p style={{ color: 'var(--gray-500)', margin: 0 }}>Carregando situação do plano...</p>
+                              </div>
                           </div>
                       </div>
       
