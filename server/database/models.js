@@ -1097,13 +1097,42 @@ const Campaign = {
         return { id: result.lastInsertRowid, uuid };
     },
 
-    async findById(id) {
-        return await queryOne('SELECT * FROM campaigns WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
+        const createdBy = parsePositiveInteger(options.created_by);
+        const params = [id];
+        let ownerFilter = '';
+
+        if (ownerUserId) {
+            ownerFilter = `
+                AND (
+                    campaigns.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = campaigns.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
+            ownerFilter = ' AND campaigns.created_by = ?';
+            params.push(createdBy);
+        }
+
+        return await queryOne(`
+            SELECT campaigns.*
+            FROM campaigns
+            WHERE campaigns.id = ?
+            ${ownerFilter}
+        `, params);
     },
 
     async list(options = {}) {
-        let sql = 'SELECT * FROM campaigns WHERE 1=1';
+        let sql = 'SELECT campaigns.* FROM campaigns WHERE 1=1';
         const params = [];
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
 
         if (options.status) {
             sql += ' AND status = ?';
@@ -1115,17 +1144,30 @@ const Campaign = {
             params.push(options.type);
         }
 
-        if (options.created_by) {
-            sql += ' AND created_by = ?';
+        if (ownerUserId) {
+            sql += `
+                AND (
+                    campaigns.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = campaigns.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (options.created_by) {
+            sql += ' AND campaigns.created_by = ?';
             params.push(options.created_by);
         }
 
         if (options.search) {
-            sql += ' AND (name LIKE ? OR description LIKE ?)';
+            sql += ' AND (campaigns.name LIKE ? OR campaigns.description LIKE ?)';
             params.push(`%${options.search}%`, `%${options.search}%`);
         }
 
-        sql += ' ORDER BY created_at DESC';
+        sql += ' ORDER BY campaigns.created_at DESC';
 
         if (options.limit) {
             sql += ' LIMIT ?';
