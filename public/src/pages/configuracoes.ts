@@ -1404,6 +1404,7 @@ function renderUsersTable() {
     const tbody = document.getElementById('usersTableBody') as HTMLElement | null;
     if (!tbody) return;
     const isAdmin = isCurrentUserAdmin();
+    const isOwnerAdmin = isCurrentUserOwnerAdmin();
     const currentUserId = getCurrentUserIdFromToken();
 
     if (!usersCache.length) {
@@ -1422,6 +1423,7 @@ function renderUsersTable() {
         const active = isManagedUserActive(user);
         const userId = Number(user.id) || 0;
         const isPrimaryAdmin = isManagedUserPrimaryAdmin(user);
+        const canEdit = !isPrimaryAdmin || isOwnerAdmin;
         const canDelete = isAdmin && userId > 0 && userId !== currentUserId && !isPrimaryAdmin;
         return `
             <tr data-user-id="${userId}">
@@ -1433,9 +1435,11 @@ function renderUsersTable() {
                 </td>
                 <td><span class="badge ${active ? 'badge-success' : 'badge-secondary'}">${active ? 'Ativo' : 'Inativo'}</span></td>
                 <td>
+                    ${canEdit ? `
                     <button class="btn btn-sm btn-outline" onclick="openEditUserModal(${userId})" title="Editar usuário">
                         <span class="icon icon-edit icon-sm"></span>
                     </button>
+                    ` : ''}
                     ${canDelete ? `
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${userId})" title="Remover usuario">
                         <span class="icon icon-delete icon-sm"></span>
@@ -1495,6 +1499,11 @@ function openEditUserModal(id: number) {
         showToast('warning', 'Aviso', 'Usuário não encontrado');
         return;
     }
+    const isPrimaryAdmin = isManagedUserPrimaryAdmin(user);
+    if (isPrimaryAdmin && !isCurrentUserOwnerAdmin()) {
+        showToast('warning', 'Aviso', 'Somente o admin principal pode editar os próprios dados');
+        return;
+    }
 
     const editUserId = document.getElementById('editUserId') as HTMLInputElement | null;
     const editUserName = document.getElementById('editUserName') as HTMLInputElement | null;
@@ -1509,7 +1518,12 @@ function openEditUserModal(id: number) {
     if (editUserActive) editUserActive.value = isManagedUserActive(user) ? '1' : '0';
 
     const isAdmin = isCurrentUserAdmin();
-    const isPrimaryAdmin = isManagedUserPrimaryAdmin(user);
+    const lockPrimaryForCurrent = isPrimaryAdmin && !isCurrentUserOwnerAdmin();
+    if (editUserName) editUserName.disabled = lockPrimaryForCurrent;
+    if (editUserEmail) {
+        editUserEmail.disabled = false;
+        editUserEmail.readOnly = true;
+    }
     if (editUserRole) editUserRole.disabled = !isAdmin || isPrimaryAdmin;
     if (editUserActive) editUserActive.disabled = !isAdmin || isPrimaryAdmin;
 
@@ -1519,22 +1533,24 @@ function openEditUserModal(id: number) {
 async function updateUser() {
     const editUserId = document.getElementById('editUserId') as HTMLInputElement | null;
     const editUserName = document.getElementById('editUserName') as HTMLInputElement | null;
-    const editUserEmail = document.getElementById('editUserEmail') as HTMLInputElement | null;
     const editUserRole = document.getElementById('editUserRole') as HTMLSelectElement | null;
     const editUserActive = document.getElementById('editUserActive') as HTMLSelectElement | null;
 
     const id = parseInt(editUserId?.value || '0', 10);
     const name = String(editUserName?.value || '').trim();
-    const email = String(editUserEmail?.value || '').trim();
 
-    if (!id || !name || !email) {
-        showToast('error', 'Erro', 'Nome e e-mail são obrigatórios');
+    if (!id || !name) {
+        showToast('error', 'Erro', 'Nome é obrigatório');
         return;
     }
 
     const editedUser = usersCache.find((item) => Number(item.id) === id);
     const isPrimaryAdmin = isManagedUserPrimaryAdmin(editedUser);
-    const payload: Record<string, unknown> = { name, email };
+    if (isPrimaryAdmin && !isCurrentUserOwnerAdmin()) {
+        showToast('warning', 'Aviso', 'Somente o admin principal pode editar os próprios dados');
+        return;
+    }
+    const payload: Record<string, unknown> = { name };
     const isAdmin = isCurrentUserAdmin();
     if (isAdmin) {
         payload.role = isPrimaryAdmin ? 'admin' : normalizeUserRole(editUserRole?.value || 'agent');

@@ -8536,6 +8536,10 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
         const isPrimaryOwnerAdmin = isPrimaryOwnerAdminUser(current, requesterOwnerUserId);
         const payload = {};
 
+        if (isPrimaryOwnerAdmin && requesterId !== targetId) {
+            return res.status(403).json({ success: false, error: 'Somente o admin principal pode editar os proprios dados' });
+        }
+
         if (Object.prototype.hasOwnProperty.call(req.body || {}, 'name')) {
             const name = String(req.body?.name || '').trim();
             if (!name) {
@@ -8546,16 +8550,10 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
 
         if (Object.prototype.hasOwnProperty.call(req.body || {}, 'email')) {
             const email = String(req.body?.email || '').trim().toLowerCase();
-            if (!email) {
-                return res.status(400).json({ success: false, error: 'E-mail é obrigatório' });
+            const currentEmail = String(current.email || '').trim().toLowerCase();
+            if (email && email !== currentEmail) {
+                return res.status(400).json({ success: false, error: 'Nao e permitido alterar o e-mail neste cadastro' });
             }
-            if (email !== String(current.email || '').toLowerCase()) {
-                const existing = await User.findActiveByEmail(email);
-                if (existing && Number(existing.id) !== targetId) {
-                    return res.status(409).json({ success: false, error: 'E-mail já cadastrado' });
-                }
-            }
-            payload.email = email;
         }
 
         if (isAdmin && Object.prototype.hasOwnProperty.call(req.body || {}, 'role')) {

@@ -757,8 +757,8 @@ export default function Configuracoes() {
                           <input type="text" className="form-input" id="editUserName" required />
                       </div>
                       <div className="form-group">
-                          <label className="form-label required">E-mail</label>
-                          <input type="email" className="form-input" id="editUserEmail" required />
+                          <label className="form-label">E-mail</label>
+                          <input type="email" className="form-input" id="editUserEmail" readOnly />
                       </div>
                       <div className="form-row">
                           <div className="form-group">
