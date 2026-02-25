@@ -217,6 +217,40 @@ const TENANT_INTEGRITY_AUDIT_ALLOW_GLOBAL_MANUAL = parseBooleanEnv(
     process.env.TENANT_INTEGRITY_AUDIT_ALLOW_GLOBAL_MANUAL,
     false
 );
+const USER_PRESENCE_TTL_MS = parsePositiveIntEnv(
+    process.env.USER_PRESENCE_TTL_MS,
+    90 * 1000
+);
+const userPresenceByUserId = new Map();
+
+function normalizePresenceUserId(value) {
+    const userId = Number(value || 0);
+    return Number.isInteger(userId) && userId > 0 ? userId : 0;
+}
+
+function markUserPresenceOnline(userId) {
+    const normalizedUserId = normalizePresenceUserId(userId);
+    if (!normalizedUserId) return;
+    userPresenceByUserId.set(normalizedUserId, Date.now());
+}
+
+function markUserPresenceOffline(userId) {
+    const normalizedUserId = normalizePresenceUserId(userId);
+    if (!normalizedUserId) return;
+    userPresenceByUserId.delete(normalizedUserId);
+}
+
+function isUserPresenceOnline(userId) {
+    const normalizedUserId = normalizePresenceUserId(userId);
+    if (!normalizedUserId) return false;
+    const lastSeenAt = Number(userPresenceByUserId.get(normalizedUserId) || 0);
+    if (!lastSeenAt) return false;
+    if ((Date.now() - lastSeenAt) > USER_PRESENCE_TTL_MS) {
+        userPresenceByUserId.delete(normalizedUserId);
+        return false;
+    }
+    return true;
+}
 
 const queueWorkerLeaderLock = new PostgresAdvisoryLock({
     name: 'queue-worker',
@@ -8020,6 +8054,7 @@ app.post('/api/auth/login', async (req, res) => {
         
 
         await User.updateLastLogin(user.id);
+        markUserPresenceOnline(user.id);
 
         
 
@@ -8328,6 +8363,7 @@ app.post('/api/auth/refresh', async (req, res) => {
             return res.status(401).json({ error: 'Usuário não encontrado ou inativo' });
 
         }
+        markUserPresenceOnline(user.id);
 
         
 
@@ -8346,6 +8382,36 @@ app.post('/api/auth/refresh', async (req, res) => {
 });
 
 
+
+app.post('/api/auth/presence', authenticate, async (req, res) => {
+
+    try {
+        const userId = normalizePresenceUserId(req.user?.id);
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Usuario nao autenticado' });
+        }
+
+        markUserPresenceOnline(userId);
+        res.json({ success: true, is_online: true, ttl_ms: USER_PRESENCE_TTL_MS });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Erro ao atualizar presenca do usuario' });
+    }
+});
+
+app.post('/api/auth/logout', authenticate, async (req, res) => {
+
+    try {
+        const userId = normalizePresenceUserId(req.user?.id);
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Usuario nao autenticado' });
+        }
+
+        markUserPresenceOffline(userId);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Erro ao finalizar sessao do usuario' });
+    }
+});
 
 const ALLOWED_USER_ROLES = new Set(['admin', 'supervisor', 'agent']);
 
@@ -8425,6 +8491,7 @@ function sanitizeUserPayload(user, ownerUserId = 0) {
         email: user.email,
         role: user.role,
         is_active: Number(user.is_active) > 0 ? 1 : 0,
+        is_online: isUserPresenceOnline(user.id),
         owner_user_id: resolvedOwnerUserId,
         is_primary_admin: isPrimaryOwnerAdminUser(user, resolvedOwnerUserId),
         last_login_at: user.last_login_at,
@@ -8590,6 +8657,9 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
             }
         }
         await User.update(targetId, payload);
+        if (Object.prototype.hasOwnProperty.call(payload, 'is_active') && Number(payload.is_active) === 0) {
+            markUserPresenceOffline(targetId);
+        }
         const updated = await User.findById(targetId);
         res.json({ success: true, user: sanitizeUserPayload(updated, requesterOwnerUserId) });
     } catch (error) {
@@ -8635,6 +8705,7 @@ app.delete('/api/users/:id', authenticate, async (req, res) => {
         }
 
         await User.update(targetId, { is_active: 0 });
+        markUserPresenceOffline(targetId);
         const updated = await User.findById(targetId);
         res.json({ success: true, user: sanitizeUserPayload(updated, requesterOwnerUserId) });
     } catch (error) {

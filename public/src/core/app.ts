@@ -58,6 +58,8 @@ const APP_LOCAL_STORAGE_EXACT_KEYS = [
     'zapvender_last_open_flow_id'
 ];
 const APP_LOCAL_STORAGE_PREFIXES = ['self_', 'zapvender_', 'whatsapp_'];
+const USER_PRESENCE_HEARTBEAT_INTERVAL_MS = 30000;
+let userPresenceHeartbeatTimer: number | null = null;
 
 function sanitizeSessionId(value: unknown, fallback = '') {
     const normalized = String(value || '').trim();
@@ -171,10 +173,31 @@ onReady(() => {
     void initApp();
 });
 
+window.addEventListener('beforeunload', () => {
+    stopUserPresenceHeartbeat();
+    const token = sessionStorage.getItem('selfDashboardToken');
+    if (!token) return;
+    try {
+        fetch(`${APP.socketUrl}/api/auth/logout`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            keepalive: true,
+            body: '{}'
+        });
+    } catch (_) {
+        // best-effort
+    }
+});
+
 async function initApp() {
     // Verificar autenticação
     const isAuthenticated = await checkAuth();
     if (!isAuthenticated) return;
+
+    startUserPresenceHeartbeat();
     
     // Inicializar Socket.IO
     initSocket();
@@ -226,7 +249,61 @@ function updateUserInfo() {
     });
 }
 
-function logout() {
+function stopUserPresenceHeartbeat() {
+    if (userPresenceHeartbeatTimer !== null) {
+        window.clearInterval(userPresenceHeartbeatTimer);
+        userPresenceHeartbeatTimer = null;
+    }
+}
+
+async function sendUserPresenceHeartbeat() {
+    const token = sessionStorage.getItem('selfDashboardToken');
+    if (!token || isLoginRoute()) return;
+
+    try {
+        await fetch(`${APP.socketUrl}/api/auth/presence`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            body: '{}'
+        });
+    } catch (_) {
+        // Heartbeat é best-effort
+    }
+}
+
+function startUserPresenceHeartbeat() {
+    stopUserPresenceHeartbeat();
+    void sendUserPresenceHeartbeat();
+    userPresenceHeartbeatTimer = window.setInterval(() => {
+        void sendUserPresenceHeartbeat();
+    }, USER_PRESENCE_HEARTBEAT_INTERVAL_MS);
+}
+
+async function notifyUserLogoutPresence() {
+    const token = sessionStorage.getItem('selfDashboardToken');
+    if (!token) return;
+
+    try {
+        await fetch(`${APP.socketUrl}/api/auth/logout`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            keepalive: true,
+            body: '{}'
+        });
+    } catch (_) {
+        // Logout de presença é best-effort
+    }
+}
+
+async function logout() {
+    stopUserPresenceHeartbeat();
+    await notifyUserLogoutPresence();
     window.dispatchEvent(new CustomEvent('app:logout'));
     clearSessionAuthStorage();
     clearPersistedAuthSession();

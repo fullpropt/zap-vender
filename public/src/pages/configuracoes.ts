@@ -53,6 +53,7 @@ type ManagedUser = {
     role?: string;
     owner_user_id?: number | string | null;
     is_primary_admin?: boolean | number;
+    is_online?: boolean | number;
     is_active?: number | boolean;
     last_login_at?: string | null;
     created_at?: string | null;
@@ -64,6 +65,7 @@ let contactFieldsCache: ContactField[] = [];
 let customContactFieldsCache: ContactField[] = [];
 let whatsappSessionsCache: WhatsAppSessionRecord[] = [];
 let usersCache: ManagedUser[] = [];
+let usersPresencePollingTimer: number | null = null;
 
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', source: 'name', is_default: true, required: true, placeholder: 'Nome completo' },
@@ -132,6 +134,7 @@ function initConfiguracoes() {
     }
     clearBusinessHoursMessageField();
     setTimeout(clearBusinessHoursMessageField, 250);
+    startUsersPresencePolling();
 }
 
 onReady(initConfiguracoes);
@@ -1331,6 +1334,8 @@ function getUserRoleBadgeClass(role: unknown) {
 }
 
 function isManagedUserActive(user: ManagedUser) {
+    if (typeof user.is_online === 'boolean') return user.is_online;
+    if (typeof user.is_online === 'number') return user.is_online > 0;
     if (typeof user.is_active === 'boolean') return user.is_active;
     return Number(user.is_active) > 0;
 }
@@ -1400,6 +1405,23 @@ function updateUsersPanelPermissions() {
     if (deleteAccountButton) deleteAccountButton.style.display = isCurrentUserOwnerAdmin() ? '' : 'none';
 }
 
+function isUsersPanelActive() {
+    const panel = document.getElementById('panel-users');
+    return Boolean(panel?.classList.contains('active'));
+}
+
+function startUsersPresencePolling() {
+    if (usersPresencePollingTimer !== null) {
+        window.clearInterval(usersPresencePollingTimer);
+        usersPresencePollingTimer = null;
+    }
+
+    usersPresencePollingTimer = window.setInterval(() => {
+        if (!isUsersPanelActive()) return;
+        void loadUsers({ silent: true });
+    }, 15000);
+}
+
 function renderUsersTable() {
     const tbody = document.getElementById('usersTableBody') as HTMLElement | null;
     if (!tbody) return;
@@ -1451,10 +1473,10 @@ function renderUsersTable() {
     }).join('');
 }
 
-async function loadUsers() {
+async function loadUsers(options: { silent?: boolean } = {}) {
     updateUsersPanelPermissions();
     const tbody = document.getElementById('usersTableBody') as HTMLElement | null;
-    if (tbody) {
+    if (tbody && !options.silent) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="5" class="table-empty">
