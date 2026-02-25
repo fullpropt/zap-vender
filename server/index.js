@@ -335,6 +335,68 @@ async function canAccessAssignedRecordInOwnerScope(req, assignedTo, ownerScopeUs
     return assignedOwnerUserId === effectiveOwnerUserId || Number(assignedUser.id || 0) === effectiveOwnerUserId;
 }
 
+async function canAccessLeadRecordInOwnerScope(req, lead, ownerScopeUserId = null) {
+    if (!lead) return false;
+    if (!canAccessAssignedRecord(req, lead.assigned_to)) return false;
+
+    const effectiveOwnerUserId = normalizeOwnerUserId(ownerScopeUserId) || await resolveRequesterOwnerUserId(req);
+    if (!effectiveOwnerUserId) return true;
+
+    const leadOwnerUserId = normalizeOwnerUserId(lead.owner_user_id);
+    if (leadOwnerUserId) {
+        return leadOwnerUserId === effectiveOwnerUserId;
+    }
+
+    return await canAccessAssignedRecordInOwnerScope(req, lead.assigned_to, effectiveOwnerUserId);
+}
+
+async function resolveOwnerScopeUserIdFromAssignees(...assignees) {
+    for (const assignee of assignees) {
+        const userId = Number(assignee || 0);
+        if (!Number.isInteger(userId) || userId <= 0) continue;
+        const user = await User.findById(userId);
+        if (!user) continue;
+        return normalizeOwnerUserId(user.owner_user_id) || Number(user.id || 0) || null;
+    }
+    return null;
+}
+
+async function resolveSessionOwnerUserId(sessionId) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId) return null;
+
+    const runtimeOwnerUserId = normalizeOwnerUserId(sessions.get(normalizedSessionId)?.ownerUserId);
+    if (runtimeOwnerUserId) return runtimeOwnerUserId;
+
+    const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId);
+    return normalizeOwnerUserId(storedSession?.created_by) || null;
+}
+
+async function canAccessSessionRecordInOwnerScope(req, sessionId, ownerScopeUserId = null) {
+    if (isScopedAgent(req)) return false;
+
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId) return false;
+
+    const effectiveOwnerUserId = normalizeOwnerUserId(ownerScopeUserId) || await resolveRequesterOwnerUserId(req);
+    if (!effectiveOwnerUserId) return true;
+
+    const session = await WhatsAppSession.findBySessionId(normalizedSessionId, {
+        owner_user_id: effectiveOwnerUserId
+    });
+    return !!session;
+}
+
+async function canAccessConversationInOwnerScope(req, conversation, ownerScopeUserId = null) {
+    if (!conversation) return false;
+
+    if (await canAccessAssignedRecordInOwnerScope(req, conversation.assigned_to, ownerScopeUserId)) {
+        return true;
+    }
+
+    return await canAccessSessionRecordInOwnerScope(req, conversation.session_id, ownerScopeUserId);
+}
+
 function getScopedSettingsPrefix(userId) {
     const normalizedUserId = Number(userId);
     if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
@@ -1856,6 +1918,7 @@ function normalizeJid(jid) {
 
 async function registerContactAlias(contact, sessionId = '', sessionPhone = '') {
     if (!contact) return;
+    const sessionOwnerUserId = await resolveSessionOwnerUserId(sessionId);
 
     const candidates = [
 
@@ -1919,7 +1982,8 @@ async function registerContactAlias(contact, sessionId = '', sessionPhone = '') 
         for (const candidateJid of userJids) {
             const normalizedCandidateJid = normalizeJid(candidateJid) || candidateJid;
             const candidatePhone = extractNumber(normalizedCandidateJid);
-            const lead = await Lead.findByJid(normalizedCandidateJid) || await Lead.findByPhone(candidatePhone);
+            const lead = await Lead.findByJid(normalizedCandidateJid, { owner_user_id: sessionOwnerUserId || undefined })
+                || await Lead.findByPhone(candidatePhone, { owner_user_id: sessionOwnerUserId || undefined });
             if (!lead) continue;
 
             if (shouldAutoUpdateLeadName(lead, lead.phone || candidatePhone, sessionDisplayName)) {
@@ -1938,9 +2002,11 @@ async function registerContactAlias(contact, sessionId = '', sessionPhone = '') 
 
 
 
-        const primary = await Lead.findByJid(mappedUserJid) || await Lead.findByPhone(extractNumber(mappedUserJid));
+        const primary = await Lead.findByJid(mappedUserJid, { owner_user_id: sessionOwnerUserId || undefined })
+            || await Lead.findByPhone(extractNumber(mappedUserJid), { owner_user_id: sessionOwnerUserId || undefined });
 
-        const duplicate = await Lead.findByJid(lidJid) || await Lead.findByPhone(extractNumber(lidJid));
+        const duplicate = await Lead.findByJid(lidJid, { owner_user_id: sessionOwnerUserId || undefined })
+            || await Lead.findByPhone(extractNumber(lidJid), { owner_user_id: sessionOwnerUserId || undefined });
 
 
 
@@ -2114,6 +2180,18 @@ async function mergeConversationsForLeads(primaryLeadId, duplicateLeadId) {
 async function mergeLeads(primaryLead, duplicateLead) {
 
     if (!primaryLead || !duplicateLead || primaryLead.id === duplicateLead.id) return;
+    const primaryOwnerUserId = Number(primaryLead.owner_user_id || 0);
+    const duplicateOwnerUserId = Number(duplicateLead.owner_user_id || 0);
+    if (
+        Number.isInteger(primaryOwnerUserId) && primaryOwnerUserId > 0
+        && Number.isInteger(duplicateOwnerUserId) && duplicateOwnerUserId > 0
+        && primaryOwnerUserId !== duplicateOwnerUserId
+    ) {
+        console.warn(
+            `Ignorando merge entre leads de owners diferentes (${primaryLead.id}:${primaryOwnerUserId} vs ${duplicateLead.id}:${duplicateOwnerUserId})`
+        );
+        return;
+    }
 
     const mergedTags = Array.from(
         new Set([
@@ -2295,7 +2373,7 @@ async function cleanupInvalidPhones() {
 
         const candidates = await query(
 
-            "SELECT id, jid, phone FROM leads WHERE jid LIKE '%@s.whatsapp.net%'"
+            "SELECT id, jid, phone, owner_user_id FROM leads WHERE jid LIKE '%@s.whatsapp.net%'"
 
         );
 
@@ -2312,8 +2390,10 @@ async function cleanupInvalidPhones() {
             if (normalized === String(lead.phone || '')) continue;
 
 
-
-            const existing = await Lead.findByPhone(normalized);
+            const leadOwnerUserId = Number(lead?.owner_user_id || 0);
+            const existing = (Number.isInteger(leadOwnerUserId) && leadOwnerUserId > 0)
+                ? await Lead.findByPhone(normalized, { owner_user_id: leadOwnerUserId })
+                : null;
 
             if (existing && existing.id !== lead.id) {
 
@@ -2379,7 +2459,7 @@ async function cleanupDuplicatePhoneSuffixLeads() {
 
     try {
 
-        const leads = await query("SELECT id, phone, jid, name, source, custom_fields, last_message_at FROM leads WHERE phone IS NOT NULL");
+        const leads = await query("SELECT id, phone, jid, name, source, custom_fields, last_message_at, owner_user_id FROM leads WHERE phone IS NOT NULL");
 
         if (!leads || leads.length === 0) return;
 
@@ -2393,7 +2473,11 @@ async function cleanupDuplicatePhoneSuffixLeads() {
 
             if (digits.length < 11) continue;
 
-            const key = digits.slice(-11);
+            const ownerUserId = Number(lead?.owner_user_id || 0);
+            const ownerScopeKey = Number.isInteger(ownerUserId) && ownerUserId > 0
+                ? `owner:${ownerUserId}`
+                : `legacy:${lead.id}`;
+            const key = `${ownerScopeKey}:${digits.slice(-11)}`;
 
             if (!groups.has(key)) groups.set(key, []);
 
@@ -3620,8 +3704,10 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                 if (!normalizedLid) return;
 
                 const resolvedPhone = extractNumber(mappedUserJid);
-                const primary = await Lead.findByJid(mappedUserJid) || await Lead.findByPhone(resolvedPhone);
-                const duplicate = await Lead.findByJid(normalizedLid);
+                const sessionOwnerUserId = await resolveSessionOwnerUserId(sessionId);
+                const primary = await Lead.findByJid(mappedUserJid, { owner_user_id: sessionOwnerUserId || undefined })
+                    || await Lead.findByPhone(resolvedPhone, { owner_user_id: sessionOwnerUserId || undefined });
+                const duplicate = await Lead.findByJid(normalizedLid, { owner_user_id: sessionOwnerUserId || undefined });
 
                 if (primary && duplicate && primary.id !== duplicate.id) {
                     await mergeLeads(primary, duplicate);
@@ -4230,6 +4316,21 @@ function normalizeAutomationContext(context = {}) {
     };
 }
 
+async function resolveAutomationOwnerScopeUserId(context = {}) {
+    const normalizedContext = normalizeAutomationContext(context);
+
+    const rawSessionId = String(context?.sessionId || context?.session_id || '').trim();
+    if (rawSessionId) {
+        const sessionOwnerUserId = await resolveSessionOwnerUserId(normalizedContext.sessionId);
+        if (sessionOwnerUserId) return sessionOwnerUserId;
+    }
+
+    return await resolveOwnerScopeUserIdFromAssignees(
+        normalizedContext?.conversation?.assigned_to,
+        normalizedContext?.lead?.assigned_to
+    );
+}
+
 function parseAutomationSessionScope(value) {
     if (value === undefined || value === null || value === '') return [];
 
@@ -4470,10 +4571,13 @@ async function processScheduledAutomationsTick() {
         if (dueAutomations.length === 0) return;
 
         const leads = await query(`
-            SELECT *
+            SELECT
+                l.*,
+                COALESCE(owner_scope.owner_user_id, owner_scope.id) AS owner_scope_user_id
             FROM leads
-            WHERE COALESCE(is_blocked, 0) = 0
-            ORDER BY updated_at DESC
+            LEFT JOIN users owner_scope ON owner_scope.id = l.assigned_to
+            WHERE COALESCE(l.is_blocked, 0) = 0
+            ORDER BY l.updated_at DESC
         `);
         const leadConversations = await query(`
             SELECT c.*
@@ -4493,11 +4597,19 @@ async function processScheduledAutomationsTick() {
         }
 
         for (const automation of dueAutomations) {
+            const automationOwnerScopeUserId = await resolveOwnerScopeUserIdFromAssignees(automation?.created_by);
+            if (!automationOwnerScopeUserId) {
+                continue;
+            }
             const scopedSessionIds = parseAutomationSessionScope(automation?.session_scope);
             const scopedSessionIdSet = scopedSessionIds.length ? new Set(scopedSessionIds) : null;
 
             for (const lead of leads) {
                 if (!lead?.id || !lead?.phone) continue;
+                const leadOwnerScopeUserId = normalizeOwnerUserId(lead?.owner_scope_user_id);
+                if (!leadOwnerScopeUserId || leadOwnerScopeUserId !== automationOwnerScopeUserId) {
+                    continue;
+                }
                 const candidateConversations = conversationsByLeadId.get(Number(lead.id)) || [];
                 const leadConversation = scopedSessionIdSet
                     ? (candidateConversations.find((conversation) => (
@@ -4667,7 +4779,18 @@ async function executeAutomationAction(automation, context) {
 
 async function scheduleAutomations(context) {
     const normalizedContext = normalizeAutomationContext(context);
-    const automations = await Automation.list({ is_active: 1 });
+    const ownerScopeUserId = await resolveAutomationOwnerScopeUserId(normalizedContext);
+    if (!ownerScopeUserId) {
+        if (normalizedContext.event === AUTOMATION_EVENT_TYPES.MESSAGE_RECEIVED) {
+            console.warn(`[Automation] Ignorando automacoes sem owner resolvido para sessao ${normalizedContext.sessionId || 'n/a'}`);
+        }
+        return;
+    }
+
+    const automations = await Automation.list({
+        is_active: 1,
+        owner_user_id: ownerScopeUserId
+    });
     if (!automations || automations.length === 0) return;
 
     const normalizedText = normalizeAutomationText(normalizedContext?.text || '');
@@ -4749,6 +4872,7 @@ async function syncChatsToDatabase(sessionId, payload) {
     const sessionDisplayName = getSessionDisplayName(sessionId);
 
     const sessionPhone = getSessionPhone(sessionId);
+    const sessionOwnerUserId = await resolveSessionOwnerUserId(sessionId);
 
 
 
@@ -4786,14 +4910,16 @@ async function syncChatsToDatabase(sessionId, payload) {
 
 
 
-        let lead = await Lead.findByJid(jid) || await Lead.findByPhone(phone);
+        let lead = await Lead.findByJid(jid, { owner_user_id: sessionOwnerUserId || undefined })
+            || await Lead.findByPhone(phone, { owner_user_id: sessionOwnerUserId || undefined });
 
         const rawPhoneDigits = normalizePhoneDigits(extractNumber(rawJid));
         const isRawSelfChat = isSelfPhone(rawPhoneDigits, sessionDigits);
 
         if (rawJid && rawJid !== jid && !isSelfChat && !isRawSelfChat) {
 
-            const aliasLead = await Lead.findByJid(rawJid) || await Lead.findByPhone(extractNumber(rawJid));
+            const aliasLead = await Lead.findByJid(rawJid, { owner_user_id: sessionOwnerUserId || undefined })
+                || await Lead.findByPhone(extractNumber(rawJid), { owner_user_id: sessionOwnerUserId || undefined });
 
             if (aliasLead && lead && aliasLead.id !== lead.id) {
 
@@ -4827,7 +4953,9 @@ async function syncChatsToDatabase(sessionId, payload) {
 
                 name: displayName,
 
-                source: 'whatsapp'
+                source: 'whatsapp',
+                assigned_to: sessionOwnerUserId || undefined,
+                owner_user_id: sessionOwnerUserId || undefined
 
             });
             lead = leadResult.lead;
@@ -4847,7 +4975,8 @@ async function syncChatsToDatabase(sessionId, payload) {
 
             lead_id: lead.id,
 
-            session_id: sessionId
+            session_id: sessionId,
+            assigned_to: sessionOwnerUserId || undefined
 
         });
 
@@ -5381,9 +5510,10 @@ async function runCiphertextRecovery(sessionId, rawMessage = {}, attempt = 1) {
     }
 
     const remotePhone = extractNumber(remoteJid);
-    let lead = await Lead.findByJid(remoteJid);
+    const sessionOwnerUserId = await resolveSessionOwnerUserId(sessionId);
+    let lead = await Lead.findByJid(remoteJid, { owner_user_id: sessionOwnerUserId || undefined });
     if (!lead && remotePhone) {
-        lead = await Lead.findByPhone(remotePhone);
+        lead = await Lead.findByPhone(remotePhone, { owner_user_id: sessionOwnerUserId || undefined });
     }
     if (!lead?.id) return false;
 
@@ -5588,6 +5718,7 @@ async function processIncomingMessage(sessionId, msg) {
     if (!msg?.message) return;
     const sessionDisplayName = getSessionDisplayName(sessionId);
     const sessionPhone = getSessionPhone(sessionId);
+    const sessionOwnerUserId = await resolveSessionOwnerUserId(sessionId);
     registerMessageJidAliases(msg, sessionPhone);
 
     const fromRaw = msg.key.remoteJid;
@@ -5738,9 +5869,11 @@ async function processIncomingMessage(sessionId, msg) {
 
         const resolvedPhone = isUserJid(from) ? extractNumber(from) : null;
 
-        const primary = await Lead.findByJid(from) || (resolvedPhone ? await Lead.findByPhone(resolvedPhone) : null);
+        const primary = await Lead.findByJid(from, { owner_user_id: sessionOwnerUserId || undefined })
+            || (resolvedPhone ? await Lead.findByPhone(resolvedPhone, { owner_user_id: sessionOwnerUserId || undefined }) : null);
 
-        const duplicate = await Lead.findByJid(fromRaw) || await Lead.findByPhone(extractNumber(fromRaw));
+        const duplicate = await Lead.findByJid(fromRaw, { owner_user_id: sessionOwnerUserId || undefined })
+            || await Lead.findByPhone(extractNumber(fromRaw), { owner_user_id: sessionOwnerUserId || undefined });
 
         if (primary && duplicate && primary.id !== duplicate.id) {
 
@@ -5790,7 +5923,9 @@ async function processIncomingMessage(sessionId, msg) {
 
         name: isSelfChat ? selfName : (!isFromMe ? (pushName || phone) : undefined),
 
-        source: 'whatsapp'
+        source: 'whatsapp',
+        assigned_to: sessionOwnerUserId || undefined,
+        owner_user_id: sessionOwnerUserId || undefined
 
     });
     let lead = leadResult.lead;
@@ -5841,7 +5976,8 @@ async function processIncomingMessage(sessionId, msg) {
 
         lead_id: lead.id,
 
-        session_id: sessionId
+        session_id: sessionId,
+        assigned_to: sessionOwnerUserId || undefined
 
     });
 
@@ -6087,9 +6223,10 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
     const normalizedPhone = extractNumber(jid);
     const requestedAssignee = Number(options?.assigned_to);
+    const sessionOwnerUserId = await resolveSessionOwnerUserId(sessionId);
     const assignedTo = Number.isInteger(requestedAssignee) && requestedAssignee > 0
         ? requestedAssignee
-        : null;
+        : (sessionOwnerUserId || null);
 
     
 
@@ -6102,7 +6239,8 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
         jid,
 
         source: 'manual',
-        assigned_to: assignedTo
+        assigned_to: assignedTo,
+        owner_user_id: sessionOwnerUserId || undefined
 
     });
 
@@ -6661,7 +6799,8 @@ io.on('connection', (socket) => {
                 }
             }
         } else if (!resolvedConversation && normalizedContactJid) {
-            const lead = await Lead.findByJid(normalizedContactJid);
+            const sessionOwnerUserId = await resolveSessionOwnerUserId(normalizedSessionId);
+            const lead = await Lead.findByJid(normalizedContactJid, { owner_user_id: sessionOwnerUserId || undefined });
             if (lead) {
                 resolvedLead = lead;
                 const conversation = await Conversation.findByLeadId(lead.id, normalizedSessionId || null);
@@ -6789,7 +6928,8 @@ io.on('connection', (socket) => {
 
         } else if (normalizedContactJid && normalizedSessionId) {
 
-            const lead = await Lead.findByJid(normalizedContactJid);
+            const sessionOwnerUserId = await resolveSessionOwnerUserId(normalizedSessionId);
+            const lead = await Lead.findByJid(normalizedContactJid, { owner_user_id: sessionOwnerUserId || undefined });
 
             if (lead) {
 
@@ -8511,7 +8651,7 @@ app.get('/api/leads/:id', optionalAuth, async (req, res) => {
 
     }
 
-    if (!canAccessAssignedRecord(req, lead.assigned_to)) {
+    if (!await canAccessLeadRecordInOwnerScope(req, lead)) {
         return res.status(404).json({ error: 'Lead não encontrado' });
     }
 
@@ -8525,11 +8665,15 @@ app.post('/api/leads', authenticate, async (req, res) => {
 
     try {
         const scopedUserId = getScopedUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
         const payload = {
             ...req.body
         };
         if (scopedUserId) {
             payload.assigned_to = scopedUserId;
+        }
+        if (ownerScopeUserId) {
+            payload.owner_user_id = ownerScopeUserId;
         }
 
         const result = await Lead.create(payload);
@@ -8572,6 +8716,7 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
 
         const scopedUserId = getScopedUserId(req);
         const requesterUserId = getRequesterUserId(req);
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
         const fallbackAssignedTo = scopedUserId || requesterUserId || null;
 
         let imported = 0;
@@ -8621,16 +8766,35 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                 tags: parseLeadTagsForMerge(payload.tags),
                 custom_fields: parseLeadCustomFields(payload.custom_fields),
                 source: String(payload.source || 'import').trim() || 'import',
-                assigned_to: Number.isInteger(assignedTo) && assignedTo > 0 ? assignedTo : null
+                assigned_to: Number.isInteger(assignedTo) && assignedTo > 0 ? assignedTo : null,
+                owner_user_id: ownerScopeUserId || null
             });
         }
 
         if (normalizedRows.length > 0) {
             const uniquePhones = Array.from(new Set(normalizedRows.map((row) => row.phone)));
-            const existingRows = await query(
-                'SELECT id, phone, name, email, tags, custom_fields FROM leads WHERE phone = ANY(?::text[])',
-                [uniquePhones]
-            );
+            const existingRows = ownerScopeUserId
+                ? await query(`
+                    SELECT id, phone, name, email, tags, custom_fields
+                    FROM leads
+                    WHERE phone = ANY(?::text[])
+                      AND (
+                          owner_user_id = ?
+                          OR (
+                              owner_user_id IS NULL
+                              AND EXISTS (
+                                  SELECT 1
+                                  FROM users owner_scope
+                                  WHERE owner_scope.id = leads.assigned_to
+                                    AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                              )
+                          )
+                      )
+                `, [uniquePhones, ownerScopeUserId, ownerScopeUserId, ownerScopeUserId])
+                : await query(
+                    'SELECT id, phone, name, email, tags, custom_fields FROM leads WHERE phone = ANY(?::text[])',
+                    [uniquePhones]
+                );
 
             const stateByPhone = new Map();
             for (const row of existingRows || []) {
@@ -8754,13 +8918,16 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                     source: String(item.source || 'import').trim() || 'import',
                     assigned_to: Number.isInteger(Number(item.assigned_to)) && Number(item.assigned_to) > 0
                         ? Number(item.assigned_to)
+                        : null,
+                    owner_user_id: Number.isInteger(Number(item.owner_user_id)) && Number(item.owner_user_id) > 0
+                        ? Number(item.owner_user_id)
                         : null
                 }));
 
                 const insertedRows = await query(`
                     INSERT INTO leads (
                         uuid, phone, phone_formatted, jid, name, email, vehicle, plate,
-                        status, tags, custom_fields, source, assigned_to
+                        status, tags, custom_fields, source, assigned_to, owner_user_id
                     )
                     SELECT
                         data.uuid,
@@ -8775,7 +8942,8 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                         data.tags,
                         data.custom_fields,
                         COALESCE(NULLIF(TRIM(data.source), ''), 'import'),
-                        data.assigned_to
+                        data.assigned_to,
+                        data.owner_user_id
                     FROM jsonb_to_recordset(?::jsonb) AS data(
                         uuid text,
                         phone text,
@@ -8789,9 +8957,10 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                         tags text,
                         custom_fields text,
                         source text,
-                        assigned_to integer
+                        assigned_to integer,
+                        owner_user_id integer
                     )
-                    ON CONFLICT (phone) DO NOTHING
+                    ON CONFLICT (owner_user_id, phone) WHERE owner_user_id IS NOT NULL DO NOTHING
                     RETURNING phone
                 `, [JSON.stringify(insertPayload)]);
 
@@ -8891,9 +9060,10 @@ app.post('/api/leads/bulk-delete', authenticate, async (req, res) => {
         let skipped = 0;
         let failed = 0;
         const errors = [];
+        const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
         const existingLeads = await query(
-            'SELECT id, assigned_to FROM leads WHERE id = ANY(?::int[])',
+            'SELECT id, assigned_to, owner_user_id FROM leads WHERE id = ANY(?::int[])',
             [leadIds]
         );
         const leadById = new Map(
@@ -8908,7 +9078,7 @@ app.post('/api/leads/bulk-delete', authenticate, async (req, res) => {
                 continue;
             }
 
-            if (!canAccessAssignedRecord(req, lead.assigned_to)) {
+            if (!await canAccessLeadRecordInOwnerScope(req, lead, ownerScopeUserId || null)) {
                 skipped += 1;
                 continue;
             }
@@ -9001,22 +9171,22 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
 
         const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
         const existingLeads = await query(
-            'SELECT id, assigned_to, status, tags FROM leads WHERE id = ANY(?::int[])',
+            'SELECT id, assigned_to, owner_user_id, status, tags FROM leads WHERE id = ANY(?::int[])',
             [leadIds]
         );
         const leadById = new Map(
             (existingLeads || []).map((lead) => [Number(lead.id), lead])
         );
 
-        const canAccessAssignedCache = new Map();
-        const canAccessLeadAssignedTo = async (assignedTo) => {
-            const cacheKey = String(Number(assignedTo || 0));
-            if (canAccessAssignedCache.has(cacheKey)) {
-                return canAccessAssignedCache.get(cacheKey) === true;
+        const canAccessLeadCache = new Map();
+        const canAccessLeadScoped = async (leadRecord) => {
+            const cacheKey = `${Number(leadRecord?.owner_user_id || 0)}:${Number(leadRecord?.assigned_to || 0)}`;
+            if (canAccessLeadCache.has(cacheKey)) {
+                return canAccessLeadCache.get(cacheKey) === true;
             }
 
-            const allowed = await canAccessAssignedRecordInOwnerScope(req, assignedTo, ownerScopeUserId || null);
-            canAccessAssignedCache.set(cacheKey, allowed === true);
+            const allowed = await canAccessLeadRecordInOwnerScope(req, leadRecord, ownerScopeUserId || null);
+            canAccessLeadCache.set(cacheKey, allowed === true);
             return allowed === true;
         };
 
@@ -9034,7 +9204,7 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
                 continue;
             }
 
-            if (!await canAccessLeadAssignedTo(lead.assigned_to)) {
+            if (!await canAccessLeadScoped(lead)) {
                 skipped += 1;
                 continue;
             }
@@ -9155,7 +9325,7 @@ app.put('/api/leads/:id', authenticate, async (req, res) => {
 
     }
 
-    if (!canAccessAssignedRecord(req, lead.assigned_to)) {
+    if (!await canAccessLeadRecordInOwnerScope(req, lead)) {
         return res.status(404).json({ error: 'Lead não encontrado' });
     }
 
@@ -9237,7 +9407,7 @@ app.delete('/api/leads/:id', authenticate, async (req, res) => {
             });
         }
 
-        if (!canAccessAssignedRecord(req, lead.assigned_to)) {
+        if (!await canAccessLeadRecordInOwnerScope(req, lead)) {
             return res.status(404).json({
                 success: false,
                 error: 'Lead nao encontrado'
@@ -9532,7 +9702,7 @@ app.post('/api/conversations/:id/read', authenticate, async (req, res) => {
     try {
         const conversation = await Conversation.findById(conversationId);
         const hasAccess = conversation
-            ? await canAccessAssignedRecordInOwnerScope(req, conversation.assigned_to, ownerScopeUserId)
+            ? await canAccessConversationInOwnerScope(req, conversation, ownerScopeUserId)
             : false;
         if (!conversation || !hasAccess) {
             return res.status(404).json({ error: 'Conversa nao encontrada' });
@@ -9554,6 +9724,7 @@ app.post('/api/send', authenticate, async (req, res) => {
 
     const { sessionId, to, message, type, options } = req.body;
     const scopedUserId = getScopedUserId(req);
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
     
 
@@ -9566,6 +9737,15 @@ app.post('/api/send', authenticate, async (req, res) => {
     
 
     try {
+        const normalizedSessionId = sanitizeSessionId(sessionId);
+        if (ownerScopeUserId && normalizedSessionId) {
+            const allowedSession = await WhatsAppSession.findBySessionId(normalizedSessionId, {
+                owner_user_id: ownerScopeUserId
+            });
+            if (!allowedSession) {
+                return res.status(403).json({ error: 'Sem permissao para usar esta conta WhatsApp' });
+            }
+        }
 
         const sendOptions = {
             ...(options || {}),
@@ -9631,6 +9811,14 @@ app.post('/api/messages/send', authenticate, async (req, res) => {
     try {
 
         const resolvedSessionId = resolveSessionIdOrDefault(sessionId);
+        if (ownerScopeUserId && resolvedSessionId) {
+            const allowedSession = await WhatsAppSession.findBySessionId(resolvedSessionId, {
+                owner_user_id: ownerScopeUserId
+            });
+            if (!allowedSession) {
+                return res.status(403).json({ error: 'Sem permissao para usar esta conta WhatsApp' });
+            }
+        }
         const sendOptions = {
             ...(options || {}),
             ...(scopedUserId ? { assigned_to: scopedUserId } : {})
@@ -9691,10 +9879,14 @@ app.get('/api/messages/:leadId', authenticate, async (req, res) => {
         }
     }
 
-    if (resolvedLead && !(await canAccessAssignedRecordInOwnerScope(req, resolvedLead.assigned_to, ownerScopeUserId))) {
+    const hasConversationAccess = resolvedConversation
+        ? await canAccessConversationInOwnerScope(req, resolvedConversation, ownerScopeUserId)
+        : false;
+
+    if (resolvedLead && !hasConversationAccess && !(await canAccessAssignedRecordInOwnerScope(req, resolvedLead.assigned_to, ownerScopeUserId))) {
         return res.status(404).json({ success: false, error: 'Lead nao encontrado' });
     }
-    if (!resolvedLead && resolvedConversation && !(await canAccessAssignedRecordInOwnerScope(req, resolvedConversation.assigned_to, ownerScopeUserId))) {
+    if (!resolvedLead && resolvedConversation && !hasConversationAccess) {
         return res.status(404).json({ success: false, error: 'Conversa nao encontrada' });
     }
 
@@ -10742,12 +10934,63 @@ app.get('/api/campaigns/:id/recipients', optionalAuth, async (req, res) => {
         limitedIds
     );
 
+    const messageStatusRows = await query(
+        `SELECT
+            lead_id,
+            MAX(CASE WHEN status IN ('sent', 'delivered', 'read') THEN 1 ELSE 0 END) AS campaign_sent,
+            MAX(CASE WHEN status IN ('delivered', 'read') THEN 1 ELSE 0 END) AS campaign_delivered,
+            MAX(CASE WHEN status = 'read' THEN 1 ELSE 0 END) AS campaign_read,
+            MAX(COALESCE(sent_at, created_at)) AS campaign_sent_at
+         FROM messages
+         WHERE campaign_id = ?
+           AND is_from_me = 1
+           AND lead_id IN (${placeholders})
+         GROUP BY lead_id`,
+        [campaign.id, ...limitedIds]
+    );
+
+    const latestQueueRows = await query(
+        `SELECT q.lead_id, q.status AS campaign_queue_status, q.error_message AS campaign_queue_error
+         FROM message_queue q
+         INNER JOIN (
+             SELECT lead_id, MAX(id) AS latest_id
+             FROM message_queue
+             WHERE campaign_id = ?
+               AND lead_id IN (${placeholders})
+             GROUP BY lead_id
+         ) latest ON latest.latest_id = q.id`,
+        [campaign.id, ...limitedIds]
+    );
+
+    const messageStatusByLeadId = new Map(
+        (messageStatusRows || []).map((row) => [Number(row.lead_id || 0), row])
+    );
+    const queueStatusByLeadId = new Map(
+        (latestQueueRows || []).map((row) => [Number(row.lead_id || 0), row])
+    );
+
+    const recipientsWithCampaignStatus = (recipients || []).map((lead) => {
+        const leadId = Number(lead?.id || 0);
+        const messageStatus = messageStatusByLeadId.get(leadId) || null;
+        const queueStatus = queueStatusByLeadId.get(leadId) || null;
+
+        return {
+            ...lead,
+            campaign_sent: Number(messageStatus?.campaign_sent || 0) > 0,
+            campaign_delivered: Number(messageStatus?.campaign_delivered || 0) > 0,
+            campaign_read: Number(messageStatus?.campaign_read || 0) > 0,
+            campaign_sent_at: messageStatus?.campaign_sent_at || null,
+            campaign_queue_status: queueStatus?.campaign_queue_status || null,
+            campaign_queue_error: queueStatus?.campaign_queue_error || null
+        };
+    });
+
     res.json({
         success: true,
         total: leadIds.length,
         segment: campaign.segment || 'all',
         tag_filter: campaign.tag_filter || null,
-        recipients
+        recipients: recipientsWithCampaignStatus
     });
 
 });

@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS leads (
     uuid TEXT UNIQUE NOT NULL,
     phone TEXT NOT NULL,
     phone_formatted TEXT,
-    jid TEXT UNIQUE,
+    jid TEXT,
     name TEXT,
     email TEXT,
     vehicle TEXT,
@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS leads (
     custom_fields TEXT,
     source TEXT DEFAULT 'manual',
     assigned_to INTEGER REFERENCES users(id),
+    owner_user_id INTEGER REFERENCES users(id),
     is_blocked INTEGER DEFAULT 0,
     last_message_at TEXT,
     created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
@@ -378,22 +379,48 @@ ALTER TABLE campaigns ADD COLUMN tag_filter TEXT;
 ALTER TABLE campaigns ADD COLUMN distribution_strategy TEXT DEFAULT 'single';
 ALTER TABLE campaigns ADD COLUMN distribution_config TEXT;
 ALTER TABLE automations ADD COLUMN session_scope TEXT;
+ALTER TABLE leads ADD COLUMN owner_user_id INTEGER REFERENCES users(id);
 ALTER TABLE whatsapp_sessions ADD COLUMN campaign_enabled INTEGER DEFAULT 1;
 ALTER TABLE whatsapp_sessions ADD COLUMN daily_limit INTEGER DEFAULT 0;
 ALTER TABLE whatsapp_sessions ADD COLUMN dispatch_weight INTEGER DEFAULT 1;
 ALTER TABLE whatsapp_sessions ADD COLUMN hourly_limit INTEGER DEFAULT 0;
 ALTER TABLE whatsapp_sessions ADD COLUMN cooldown_until TEXT;
 
+UPDATE leads
+SET owner_user_id = (
+    SELECT COALESCE(u.owner_user_id, u.id)
+    FROM users u
+    WHERE u.id = leads.assigned_to
+)
+WHERE owner_user_id IS NULL
+  AND assigned_to IS NOT NULL;
+
+UPDATE leads
+SET owner_user_id = (
+    SELECT COALESCE(u.owner_user_id, u.id)
+    FROM conversations c
+    JOIN whatsapp_sessions ws ON ws.session_id = c.session_id
+    JOIN users u ON u.id = ws.created_by
+    WHERE c.lead_id = leads.id
+      AND ws.created_by IS NOT NULL
+    ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
+    LIMIT 1
+)
+WHERE owner_user_id IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone);
 CREATE INDEX IF NOT EXISTS idx_leads_jid ON leads(jid);
 CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
 CREATE INDEX IF NOT EXISTS idx_leads_assigned ON leads(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_leads_owner ON leads(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_email_confirmation_token_hash ON users(email_confirmation_token_hash);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_auth_state_session ON whatsapp_auth_state(session_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_auth_state_lookup ON whatsapp_auth_state(session_id, state_type);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_active_unique ON users(email) WHERE is_active = 1;
-CREATE UNIQUE INDEX IF NOT EXISTS leads_phone_unique ON leads(phone);
+DROP INDEX IF EXISTS leads_phone_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS leads_owner_phone_unique ON leads(owner_user_id, phone) WHERE owner_user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS leads_owner_jid_unique ON leads(owner_user_id, jid) WHERE owner_user_id IS NOT NULL AND jid IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_conversations_lead ON conversations(lead_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);

@@ -67,6 +67,12 @@ type CampaignRecipient = {
     tags?: string;
     vehicle?: string;
     plate?: string;
+    campaign_sent?: boolean;
+    campaign_delivered?: boolean;
+    campaign_read?: boolean;
+    campaign_sent_at?: string | null;
+    campaign_queue_status?: 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled' | null;
+    campaign_queue_error?: string | null;
 };
 
 type CampaignRecipientsResponse = {
@@ -98,9 +104,16 @@ let senderSessions: WhatsappSenderSession[] = [];
 let campaignTagsCache: SettingsTag[] = [];
 let campaignContactFieldsCache: ContactFieldDefinition[] = [];
 let campaignMessageVariableGlobalEventsBound = false;
+let campaignsRealtimeBindingsBound = false;
+let campaignsRealtimeIntervalId: number | null = null;
+let campaignsRealtimeRefreshInFlight = false;
+let activeCampaignDetailsId: number | null = null;
+let activeCampaignDetailsTab: 'overview' | 'messages' | 'recipients' = 'overview';
+let campaignRecipientsRefreshInFlight = false;
 const DEFAULT_DELAY_MIN_SECONDS = 5;
 const DEFAULT_DELAY_MAX_SECONDS = 15;
 const CAMPAIGNS_CACHE_TTL_MS = 60 * 1000;
+const CAMPAIGNS_LIVE_REFRESH_MS = 4000;
 const FIXED_CAMPAIGN_MESSAGE_VARIABLES: ReadonlyArray<CampaignMessageVariable> = Object.freeze([
     { key: 'nome', label: 'Nome do contato' },
     { key: 'telefone', label: 'Telefone' },
@@ -647,6 +660,181 @@ function renderCampaignSenderAccountsSummary(campaign: Campaign) {
     }).join(' | ');
 }
 
+function isCampaignDetailsModalOpen() {
+    const modal = document.getElementById('campaignDetailsModal');
+    return Boolean(modal && modal.classList.contains('active'));
+}
+
+function renderCampaignOverviewContent(campaign: Campaign) {
+    const campaignOverview = document.getElementById('campaignOverview') as HTMLElement | null;
+    if (!campaignOverview) return;
+
+    campaignOverview.innerHTML = `
+        <div class="stats-grid" style="margin-bottom: 20px;">
+            <div class="stat-card">
+                <div class="stat-content">
+                    <div class="stat-value">${formatNumber(campaign.sent || 0)}</div>
+                    <div class="stat-label">Enviadas</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-content">
+                    <div class="stat-value">${formatNumber(campaign.delivered || 0)}</div>
+                    <div class="stat-label">Entregues</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-content">
+                    <div class="stat-value">${formatNumber(campaign.read || 0)}</div>
+                    <div class="stat-label">Lidas</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-content">
+                    <div class="stat-value">${formatNumber(campaign.replied || 0)}</div>
+                    <div class="stat-label">Respostas</div>
+                </div>
+            </div>
+        </div>
+        <p><strong>Descrição:</strong> ${campaign.description || 'Sem descrição'}</p>
+        <p><strong>Tipo:</strong> ${getCampaignTypeLabel(campaign.type)}</p>
+        <p><strong>Status:</strong> ${getCampaignStatusLabel(campaign.status)}</p>
+        <p><strong>Distribuição:</strong> ${escapeCampaignText(getDistributionStrategyLabel(campaign.distribution_strategy || 'single'))}</p>
+        <p><strong>Contas de envio:</strong> ${escapeCampaignText(renderCampaignSenderAccountsSummary(campaign))}</p>
+        <p><strong>Tag:</strong> ${campaign.tag_filter || 'Todas'}</p>
+        <p><strong>Criada em:</strong> ${formatDate(campaign.created_at, 'datetime')}</p>
+    `;
+}
+
+function updateCampaignDetailsActionButton(campaign: Campaign) {
+    const actionBtn = document.getElementById('campaignActionBtn') as HTMLButtonElement | null;
+    if (!actionBtn) return;
+
+    actionBtn.onclick = null;
+
+    if (campaign.status === 'active') {
+        actionBtn.disabled = false;
+        actionBtn.innerHTML = '<span class="icon icon-pause icon-sm"></span> Pausar';
+        actionBtn.classList.remove('btn-success');
+        actionBtn.classList.add('btn-warning');
+        actionBtn.onclick = () => { void pauseCampaign(campaign.id); };
+        return;
+    }
+
+    if (campaign.status === 'paused' || campaign.status === 'draft') {
+        actionBtn.disabled = false;
+        actionBtn.innerHTML = '<span class="icon icon-play icon-sm"></span> Iniciar';
+        actionBtn.classList.remove('btn-warning');
+        actionBtn.classList.add('btn-success');
+        actionBtn.onclick = () => { void startCampaign(campaign.id); };
+        return;
+    }
+
+    actionBtn.innerHTML = '<span class="icon icon-check icon-sm"></span> Concluída';
+    actionBtn.classList.remove('btn-warning');
+    actionBtn.classList.add('btn-outline');
+    actionBtn.disabled = true;
+}
+
+function getRecipientDeliveryBadge(lead: CampaignRecipient) {
+    if (lead.campaign_read) {
+        return '<span class="badge badge-success" title="Mensagem lida">✓ Lida</span>';
+    }
+    if (lead.campaign_delivered) {
+        return '<span class="badge badge-success" title="Mensagem entregue">✓ Entregue</span>';
+    }
+    if (lead.campaign_sent) {
+        return '<span class="badge badge-info" title="Mensagem enviada">✓ Enviada</span>';
+    }
+
+    const queueStatus = String(lead.campaign_queue_status || '').trim().toLowerCase();
+    if (queueStatus === 'pending' || queueStatus === 'processing') {
+        return '<span class="badge badge-warning" title="Mensagem ainda em fila">⏳ Pendente</span>';
+    }
+    if (queueStatus === 'failed') {
+        const title = escapeCampaignText(String(lead.campaign_queue_error || 'Falha no envio'));
+        return `<span class="badge badge-danger" title="${title}">✕ Falhou</span>`;
+    }
+    if (queueStatus === 'cancelled') {
+        return '<span class="badge badge-secondary" title="Envio cancelado">Cancelado</span>';
+    }
+
+    return '<span class="badge badge-secondary">-</span>';
+}
+
+function syncCampaignDetailsModal(campaign: Campaign, options: { refreshRecipients?: boolean } = {}) {
+    if (!isCampaignDetailsModalOpen()) return;
+    if (activeCampaignDetailsId !== campaign.id) return;
+
+    const detailsTitle = document.getElementById('detailsTitle') as HTMLElement | null;
+    if (detailsTitle) {
+        detailsTitle.innerHTML = `<span class="icon icon-campaigns icon-sm"></span> ${campaign.name}`;
+    }
+
+    renderCampaignOverviewContent(campaign);
+    renderCampaignMessages(campaign);
+    updateCampaignDetailsActionButton(campaign);
+
+    if (options.refreshRecipients && !campaignRecipientsRefreshInFlight) {
+        campaignRecipientsRefreshInFlight = true;
+        void loadCampaignRecipients(campaign).finally(() => {
+            campaignRecipientsRefreshInFlight = false;
+        });
+    }
+}
+
+function shouldRefreshCampaignRecipientsInRealtime(campaign: Campaign | undefined) {
+    if (!campaign || !isCampaignDetailsModalOpen()) return false;
+    if (activeCampaignDetailsId !== campaign.id) return false;
+    if (activeCampaignDetailsTab === 'recipients') return true;
+    return campaign.status === 'active';
+}
+
+function scheduleCampaignsRealtimeRefresh(delayMs = 0) {
+    const run = async () => {
+        if (campaignsRealtimeRefreshInFlight) return;
+        if (document.visibilityState === 'hidden') return;
+        campaignsRealtimeRefreshInFlight = true;
+        try {
+            await loadCampaigns({ silent: true, skipLoading: true, source: 'realtime' });
+        } finally {
+            campaignsRealtimeRefreshInFlight = false;
+        }
+    };
+
+    if (delayMs > 0) {
+        window.setTimeout(() => { void run(); }, delayMs);
+        return;
+    }
+    void run();
+}
+
+function bindCampaignsRealtimeUpdates() {
+    if (campaignsRealtimeBindingsBound) return;
+    campaignsRealtimeBindingsBound = true;
+
+    const win = window as Window & { APP?: { socket?: { on?: (event: string, cb: (...args: any[]) => void) => void } } };
+    const socket = win.APP?.socket;
+    if (socket && typeof socket.on === 'function') {
+        const triggerRefresh = () => scheduleCampaignsRealtimeRefresh(250);
+        socket.on('message-sent', triggerRefresh);
+        socket.on('message-status', triggerRefresh);
+        socket.on('new-message', triggerRefresh);
+    }
+
+    if (campaignsRealtimeIntervalId == null) {
+        campaignsRealtimeIntervalId = window.setInterval(() => {
+            scheduleCampaignsRealtimeRefresh();
+        }, CAMPAIGNS_LIVE_REFRESH_MS);
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            scheduleCampaignsRealtimeRefresh(200);
+        }
+    });
+}
+
 async function loadCampaignRecipients(campaign: Campaign) {
     const campaignRecipients = document.getElementById('campaignRecipients') as HTMLElement | null;
     if (!campaignRecipients) return;
@@ -671,11 +859,13 @@ async function loadCampaignRecipients(campaign: Campaign) {
 
         const rows = recipients.map((lead) => {
             const tags = parseTagsForDisplay(lead.tags).join(', ') || '-';
+            const deliveryBadge = getRecipientDeliveryBadge(lead);
             return `
                 <tr>
                     <td>${escapeCampaignText(lead.name || 'Sem nome')}</td>
                     <td>${escapeCampaignText(formatCampaignPhone(lead.phone))}</td>
                     <td>${escapeCampaignText(getLeadStatusLabel(Number(lead.status || 0)))}</td>
+                    <td>${deliveryBadge}</td>
                     <td>${escapeCampaignText(tags)}</td>
                 </tr>
             `;
@@ -692,6 +882,7 @@ async function loadCampaignRecipients(campaign: Campaign) {
                             <th>Nome</th>
                             <th>WhatsApp</th>
                             <th>Status</th>
+                            <th>Recebeu</th>
                             <th>Tags</th>
                         </tr>
                     </thead>
@@ -811,6 +1002,7 @@ function openBroadcastModal() {
 async function initCampanhas() {
     syncCampaignSegmentOptions();
     bindCampaignMessageVariablePicker();
+    bindCampaignsRealtimeUpdates();
     await Promise.all([
         loadCampaigns(),
         loadSenderSessions(),
@@ -834,15 +1026,23 @@ function shouldUseLocalCampaignFallback(error: unknown) {
     );
 }
 
-async function loadCampaigns() {
+async function loadCampaigns(options: { silent?: boolean; skipLoading?: boolean; source?: string } = {}) {
     const cachedCampaigns = readCampaignsCache();
     if (Array.isArray(cachedCampaigns) && cachedCampaigns.length > 0) {
         campaigns = cachedCampaigns;
         updateStats();
         renderCampaigns();
+        const cachedViewedCampaign = activeCampaignDetailsId != null
+            ? campaigns.find((campaign) => campaign.id === activeCampaignDetailsId)
+            : undefined;
+        if (cachedViewedCampaign) {
+            syncCampaignDetailsModal(cachedViewedCampaign, {
+                refreshRecipients: shouldRefreshCampaignRecipientsInRealtime(cachedViewedCampaign)
+            });
+        }
     }
 
-    const shouldShowLoading = !cachedCampaigns || cachedCampaigns.length === 0;
+    const shouldShowLoading = !options.skipLoading && (!cachedCampaigns || cachedCampaigns.length === 0);
     try {
         if (shouldShowLoading) {
             showLoading('Carregando campanhas...');
@@ -852,6 +1052,14 @@ async function loadCampaigns() {
         writeCampaignsCache(campaigns);
         updateStats();
         renderCampaigns();
+        const viewedCampaign = activeCampaignDetailsId != null
+            ? campaigns.find((campaign) => campaign.id === activeCampaignDetailsId)
+            : undefined;
+        if (viewedCampaign) {
+            syncCampaignDetailsModal(viewedCampaign, {
+                refreshRecipients: shouldRefreshCampaignRecipientsInRealtime(viewedCampaign)
+            });
+        }
         if (shouldShowLoading) {
             hideLoading();
         }
@@ -860,7 +1068,7 @@ async function loadCampaigns() {
             hideLoading();
         }
         if (Array.isArray(cachedCampaigns) && cachedCampaigns.length > 0) {
-            if (!shouldUseLocalCampaignFallback(error)) {
+            if (!options.silent && !shouldUseLocalCampaignFallback(error)) {
                 showToast('warning', 'Aviso', 'Falha ao atualizar campanhas em segundo plano');
             }
             return;
@@ -1089,52 +1297,16 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
 function viewCampaign(id: number) {
     const campaign = campaigns.find(c => c.id === id);
     if (!campaign) return;
+    activeCampaignDetailsId = campaign.id;
+    activeCampaignDetailsTab = 'overview';
 
     const detailsTitle = document.getElementById('detailsTitle') as HTMLElement | null;
-    const campaignOverview = document.getElementById('campaignOverview') as HTMLElement | null;
     if (detailsTitle) {
         detailsTitle.innerHTML = `<span class="icon icon-campaigns icon-sm"></span> ${campaign.name}`;
     }
-    
-    if (campaignOverview) {
-        campaignOverview.innerHTML = `
-        <div class="stats-grid" style="margin-bottom: 20px;">
-            <div class="stat-card">
-                <div class="stat-content">
-                    <div class="stat-value">${formatNumber(campaign.sent || 0)}</div>
-                    <div class="stat-label">Enviadas</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-content">
-                    <div class="stat-value">${formatNumber(campaign.delivered || 0)}</div>
-                    <div class="stat-label">Entregues</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-content">
-                    <div class="stat-value">${formatNumber(campaign.read || 0)}</div>
-                    <div class="stat-label">Lidas</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-content">
-                    <div class="stat-value">${formatNumber(campaign.replied || 0)}</div>
-                    <div class="stat-label">Respostas</div>
-                </div>
-            </div>
-        </div>
-        <p><strong>Descrição:</strong> ${campaign.description || 'Sem descrição'}</p>
-        <p><strong>Tipo:</strong> ${getCampaignTypeLabel(campaign.type)}</p>
-        <p><strong>Status:</strong> ${getCampaignStatusLabel(campaign.status)}</p>
-        <p><strong>Distribuição:</strong> ${escapeCampaignText(getDistributionStrategyLabel(campaign.distribution_strategy || 'single'))}</p>
-        <p><strong>Contas de envio:</strong> ${escapeCampaignText(renderCampaignSenderAccountsSummary(campaign))}</p>
-        <p><strong>Tag:</strong> ${campaign.tag_filter || 'Todas'}</p>
-        <p><strong>Criada em:</strong> ${formatDate(campaign.created_at, 'datetime')}</p>
-    `;
-    }
-
+    renderCampaignOverviewContent(campaign);
     renderCampaignMessages(campaign);
+    updateCampaignDetailsActionButton(campaign);
     void loadCampaignRecipients(campaign);
 
     openModal('campaignDetailsModal');
@@ -1198,6 +1370,11 @@ async function startCampaign(id: number) {
     if (campaign) campaign.status = 'active';
     renderCampaigns();
     updateStats();
+    const activeViewedCampaign = activeCampaignDetailsId != null ? campaigns.find(c => c.id === activeCampaignDetailsId) : undefined;
+    if (activeViewedCampaign) {
+        syncCampaignDetailsModal(activeViewedCampaign, { refreshRecipients: shouldRefreshCampaignRecipientsInRealtime(activeViewedCampaign) });
+    }
+    scheduleCampaignsRealtimeRefresh(300);
     showToast('success', 'Sucesso', 'Campanha iniciada!');
 }
 
@@ -1215,6 +1392,11 @@ async function pauseCampaign(id: number) {
     if (campaign) campaign.status = 'paused';
     renderCampaigns();
     updateStats();
+    const activeViewedCampaign = activeCampaignDetailsId != null ? campaigns.find(c => c.id === activeCampaignDetailsId) : undefined;
+    if (activeViewedCampaign) {
+        syncCampaignDetailsModal(activeViewedCampaign, { refreshRecipients: shouldRefreshCampaignRecipientsInRealtime(activeViewedCampaign) });
+    }
+    scheduleCampaignsRealtimeRefresh(300);
     showToast('success', 'Sucesso', 'Campanha pausada!');
 }
 
@@ -1229,6 +1411,9 @@ async function deleteCampaign(id: number) {
         }
     }
     campaigns = campaigns.filter(c => c.id !== id);
+    if (activeCampaignDetailsId === id) {
+        activeCampaignDetailsId = null;
+    }
     renderCampaigns();
     updateStats();
     showToast('success', 'Sucesso', 'Campanha excluída!');
@@ -1237,6 +1422,7 @@ async function deleteCampaign(id: number) {
 function switchCampaignTab(tab: string) {
     const tabOrder = ['overview', 'messages', 'recipients'];
     const resolvedTab = tabOrder.includes(tab) ? tab : 'overview';
+    activeCampaignDetailsTab = resolvedTab as typeof activeCampaignDetailsTab;
     const activeIndex = tabOrder.indexOf(resolvedTab);
 
     const tabs = Array.from(document.querySelectorAll('#campaignDetailsModal .tab'));
@@ -1254,6 +1440,16 @@ function switchCampaignTab(tab: string) {
     activeContent?.classList.add('active');
     if (!activeContent) {
         fallbackContent?.classList.add('active');
+    }
+
+    if (resolvedTab === 'recipients' && activeCampaignDetailsId != null) {
+        const campaign = campaigns.find((item) => item.id === activeCampaignDetailsId);
+        if (campaign && !campaignRecipientsRefreshInFlight) {
+            campaignRecipientsRefreshInFlight = true;
+            void loadCampaignRecipients(campaign).finally(() => {
+                campaignRecipientsRefreshInFlight = false;
+            });
+        }
     }
 }
 

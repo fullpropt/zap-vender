@@ -309,6 +309,57 @@ function parsePositiveInteger(value, fallback = null) {
     return normalized > 0 ? normalized : fallback;
 }
 
+function parseLeadOwnerScopeOption(options) {
+    if (typeof options === 'number') {
+        return parsePositiveInteger(options, null);
+    }
+    if (!options || typeof options !== 'object') return null;
+    return parsePositiveInteger(
+        options.owner_user_id !== undefined ? options.owner_user_id : options.ownerUserId,
+        null
+    );
+}
+
+async function resolveLeadOwnerUserIdInput(data = {}) {
+    const explicitOwnerUserId = parsePositiveInteger(data?.owner_user_id, null);
+    if (explicitOwnerUserId) return explicitOwnerUserId;
+
+    const assignedUserId = parsePositiveInteger(data?.assigned_to, null);
+    if (!assignedUserId) return null;
+
+    const assignedUser = await queryOne(
+        'SELECT id, owner_user_id FROM users WHERE id = ?',
+        [assignedUserId]
+    );
+    if (!assignedUser) return null;
+
+    return parsePositiveInteger(assignedUser.owner_user_id, null)
+        || parsePositiveInteger(assignedUser.id, null)
+        || null;
+}
+
+function appendLeadOwnerScopeFilter(sql, params, ownerUserId, tableAlias = 'leads') {
+    const normalizedOwnerUserId = parsePositiveInteger(ownerUserId, null);
+    if (!normalizedOwnerUserId) return sql;
+
+    sql += `
+        AND (
+            ${tableAlias}.owner_user_id = ?
+            OR (
+                ${tableAlias}.owner_user_id IS NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = ${tableAlias}.assigned_to
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            )
+        )
+    `;
+    params.push(normalizedOwnerUserId, normalizedOwnerUserId, normalizedOwnerUserId);
+    return sql;
+}
+
 function normalizeBooleanFlag(value, fallback = 1) {
     if (typeof value === 'boolean') return value ? 1 : 0;
     if (typeof value === 'number') return value > 0 ? 1 : 0;
@@ -350,10 +401,11 @@ const Lead = {
         const customFields = normalizedSource !== 'whatsapp' && sanitizedName
             ? lockLeadNameAsManual(initialCustomFields)
             : initialCustomFields;
+        const ownerUserId = await resolveLeadOwnerUserIdInput(data);
         
         const result = await run(`
-            INSERT INTO leads (uuid, phone, phone_formatted, jid, name, email, vehicle, plate, status, tags, custom_fields, source, assigned_to)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO leads (uuid, phone, phone_formatted, jid, name, email, vehicle, plate, status, tags, custom_fields, source, assigned_to, owner_user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             normalizedPhone,
@@ -367,7 +419,8 @@ const Lead = {
             JSON.stringify(data.tags || []),
             JSON.stringify(customFields),
             source,
-            data.assigned_to
+            data.assigned_to,
+            ownerUserId
         ]);
         
         return { id: result.lastInsertRowid, uuid };
@@ -381,20 +434,26 @@ const Lead = {
         return await queryOne('SELECT * FROM leads WHERE uuid = ?', [uuid]);
     },
     
-    async findByPhone(phone) {
+    async findByPhone(phone, options = {}) {
         const cleaned = normalizeDigits(phone);
         if (!cleaned) return null;
+        const ownerUserId = parseLeadOwnerScopeOption(options);
 
         const suffixLength = Math.min(cleaned.length, 11);
         const suffix = cleaned.slice(-suffixLength);
 
-        return await queryOne(
-            `
+        let sql = `
             SELECT *
             FROM leads
-            WHERE phone = ?
-               OR phone LIKE ?
-               OR (? <> '' AND substr(phone, length(phone) - ${suffixLength} + 1) = ?)
+            WHERE (
+                phone = ?
+                OR phone LIKE ?
+                OR (? <> '' AND substr(phone, length(phone) - ${suffixLength} + 1) = ?)
+            )
+        `;
+        const params = [cleaned, `%${cleaned}`, suffix, suffix];
+        sql = appendLeadOwnerScopeFilter(sql, params, ownerUserId, 'leads');
+        sql += `
             ORDER BY
                 CASE
                     WHEN phone = ? THEN 0
@@ -406,22 +465,35 @@ const Lead = {
                 COALESCE(last_message_at, updated_at, created_at) DESC,
                 id DESC
             LIMIT 1
-            `,
-            [cleaned, `%${cleaned}`, suffix, suffix, cleaned, `%${cleaned}`, suffix, suffix]
-        );
+        `;
+        params.push(cleaned, `%${cleaned}`, suffix, suffix);
+
+        return await queryOne(sql, params);
     },
     
-    async findByJid(jid) {
-        return await queryOne('SELECT * FROM leads WHERE jid = ?', [jid]);
+    async findByJid(jid, options = {}) {
+        const normalizedJid = String(jid || '').trim();
+        if (!normalizedJid) return null;
+
+        const ownerUserId = parseLeadOwnerScopeOption(options);
+        let sql = 'SELECT * FROM leads WHERE jid = ?';
+        const params = [normalizedJid];
+        sql = appendLeadOwnerScopeFilter(sql, params, ownerUserId, 'leads');
+        sql += ' ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC, id DESC LIMIT 1';
+        return await queryOne(sql, params);
     },
     
-    async findOrCreate(data) {
+    async findOrCreate(data, options = {}) {
+        const ownerUserId = await resolveLeadOwnerUserIdInput({
+            ...data,
+            owner_user_id: data?.owner_user_id ?? options?.owner_user_id
+        });
         let lead = null;
         if (data.jid) {
-            lead = await this.findByJid(data.jid);
+            lead = await this.findByJid(data.jid, { owner_user_id: ownerUserId });
         }
         if (!lead) {
-            lead = await this.findByPhone(data.phone);
+            lead = await this.findByPhone(data.phone, { owner_user_id: ownerUserId });
         }
         
         if (lead) {
@@ -442,10 +514,20 @@ const Lead = {
                 await this.update(lead.id, { assigned_to: requestedAssignee });
                 lead.assigned_to = requestedAssignee;
             }
+            if (ownerUserId && !parsePositiveInteger(lead.owner_user_id, null)) {
+                await run(
+                    'UPDATE leads SET owner_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_user_id IS NULL',
+                    [ownerUserId, lead.id]
+                );
+                lead.owner_user_id = ownerUserId;
+            }
             return { lead, created: false };
         }
         
-        const result = await this.create(data);
+        const result = await this.create({
+            ...data,
+            owner_user_id: ownerUserId || data?.owner_user_id
+        });
         return { lead: await this.findById(result.id), created: true };
     },
     
@@ -568,20 +650,7 @@ const Lead = {
             params.push(options.assigned_to);
         }
 
-        if (options.owner_user_id) {
-            const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
-            if (ownerUserId) {
-                sql += `
-                    AND EXISTS (
-                        SELECT 1
-                        FROM users owner_scope
-                        WHERE owner_scope.id = leads.assigned_to
-                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
-                    )
-                `;
-                params.push(ownerUserId, ownerUserId);
-            }
-        }
+        sql = appendLeadOwnerScopeFilter(sql, params, parsePositiveInteger(options.owner_user_id, null), 'leads');
         
         if (options.search) {
             sql += ' AND (name LIKE ? OR phone LIKE ?)';
@@ -622,20 +691,7 @@ const Lead = {
             params.push(options.assigned_to);
         }
 
-        if (options.owner_user_id) {
-            const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
-            if (ownerUserId) {
-                sql += `
-                    AND EXISTS (
-                        SELECT 1
-                        FROM users owner_scope
-                        WHERE owner_scope.id = leads.assigned_to
-                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
-                    )
-                `;
-                params.push(ownerUserId, ownerUserId);
-            }
-        }
+        sql = appendLeadOwnerScopeFilter(sql, params, parsePositiveInteger(options.owner_user_id, null), 'leads');
 
         if (options.session_id) {
             sql += ' AND EXISTS (SELECT 1 FROM conversations c WHERE c.lead_id = leads.id AND c.session_id = ?)';
@@ -660,20 +716,7 @@ const Lead = {
             params.push(options.assigned_to);
         }
 
-        if (options.owner_user_id) {
-            const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
-            if (ownerUserId) {
-                sql += `
-                    AND EXISTS (
-                        SELECT 1
-                        FROM users owner_scope
-                        WHERE owner_scope.id = leads.assigned_to
-                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
-                    )
-                `;
-                params.push(ownerUserId, ownerUserId);
-            }
-        }
+        sql = appendLeadOwnerScopeFilter(sql, params, parsePositiveInteger(options.owner_user_id, null), 'leads');
 
         if (options.session_id) {
             sql += ' AND EXISTS (SELECT 1 FROM conversations c WHERE c.lead_id = leads.id AND c.session_id = ?)';
@@ -840,14 +883,32 @@ const Conversation = {
             const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
             if (ownerUserId) {
                 sql += `
-                    AND EXISTS (
-                        SELECT 1
-                        FROM users owner_scope
-                        WHERE owner_scope.id = COALESCE(c.assigned_to, l.assigned_to)
-                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                    AND (
+                        l.owner_user_id = ?
+                        OR
+                        EXISTS (
+                            SELECT 1
+                            FROM users owner_scope
+                            WHERE owner_scope.id = COALESCE(c.assigned_to, l.assigned_to)
+                              AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM whatsapp_sessions ws
+                            WHERE ws.session_id = c.session_id
+                              AND (
+                                  ws.created_by = ?
+                                  OR EXISTS (
+                                      SELECT 1
+                                      FROM users ws_owner
+                                      WHERE ws_owner.id = ws.created_by
+                                        AND (ws_owner.owner_user_id = ? OR ws_owner.id = ?)
+                                  )
+                              )
+                        )
                     )
                 `;
-                params.push(ownerUserId, ownerUserId);
+                params.push(ownerUserId, ownerUserId, ownerUserId, ownerUserId, ownerUserId, ownerUserId);
             }
         }
         
@@ -931,33 +992,72 @@ const Message = {
     },
     
     async listByConversation(conversationId, options = {}) {
+        const limit = Number(options.limit || 0);
+        const offset = Number(options.offset || 0);
+
+        if (Number.isFinite(limit) && limit > 0 && (!Number.isFinite(offset) || offset <= 0)) {
+            return await query(`
+                SELECT *
+                FROM (
+                    SELECT *
+                    FROM messages
+                    WHERE conversation_id = ?
+                    ORDER BY COALESCE(sent_at, created_at) DESC, id DESC
+                    LIMIT ?
+                ) recent_messages
+                ORDER BY COALESCE(sent_at, created_at) ASC, id ASC
+            `, [conversationId, Math.floor(limit)]);
+        }
+
         let sql = 'SELECT * FROM messages WHERE conversation_id = ?';
         const params = [conversationId];
         
         sql += " ORDER BY COALESCE(sent_at, created_at) ASC, id ASC";
         
-        if (options.limit) {
+        if (Number.isFinite(limit) && limit > 0) {
             sql += ' LIMIT ?';
-            params.push(options.limit);
+            params.push(Math.floor(limit));
         }
         
-        if (options.offset) {
+        if (Number.isFinite(offset) && offset > 0) {
             sql += ' OFFSET ?';
-            params.push(options.offset);
+            params.push(Math.floor(offset));
         }
         
         return await query(sql, params);
     },
     
     async listByLead(leadId, options = {}) {
+        const limit = Number(options.limit || 0);
+        const offset = Number(options.offset || 0);
+
+        if (Number.isFinite(limit) && limit > 0 && (!Number.isFinite(offset) || offset <= 0)) {
+            return await query(`
+                SELECT *
+                FROM (
+                    SELECT *
+                    FROM messages
+                    WHERE lead_id = ?
+                    ORDER BY COALESCE(sent_at, created_at) DESC, id DESC
+                    LIMIT ?
+                ) recent_messages
+                ORDER BY COALESCE(sent_at, created_at) ASC, id ASC
+            `, [leadId, Math.floor(limit)]);
+        }
+
         let sql = 'SELECT * FROM messages WHERE lead_id = ?';
         const params = [leadId];
         
         sql += " ORDER BY COALESCE(sent_at, created_at) ASC, id ASC";
         
-        if (options.limit) {
+        if (Number.isFinite(limit) && limit > 0) {
             sql += ' LIMIT ?';
-            params.push(options.limit);
+            params.push(Math.floor(limit));
+        }
+
+        if (Number.isFinite(offset) && offset > 0) {
+            sql += ' OFFSET ?';
+            params.push(Math.floor(offset));
         }
         
         return await query(sql, params);
@@ -2465,6 +2565,29 @@ const MessageQueue = {
             LIMIT 1
         `, [campaignId, leadId]);
         return !!row;
+    },
+
+    async getCampaignProgress(campaignId) {
+        const row = await queryOne(`
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
+                SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled
+            FROM message_queue
+            WHERE campaign_id = ?
+        `, [campaignId]);
+
+        return {
+            total: Number(row?.total || 0),
+            pending: Number(row?.pending || 0),
+            processing: Number(row?.processing || 0),
+            sent: Number(row?.sent || 0),
+            failed: Number(row?.failed || 0),
+            cancelled: Number(row?.cancelled || 0)
+        };
     }
 };
 

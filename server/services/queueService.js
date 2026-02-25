@@ -3,7 +3,7 @@
  * Gerencia envio de mensagens em massa com delay para evitar bloqueios
  */
 
-const { MessageQueue, Settings, Lead } = require('../database/models');
+const { MessageQueue, Settings, Lead, Campaign } = require('../database/models');
 const { run, queryOne } = require('../database/connection');
 const EventEmitter = require('events');
 
@@ -554,12 +554,14 @@ class QueueService extends EventEmitter {
                 if (!lead) {
                     await MessageQueue.markProcessing(candidate.id);
                     await MessageQueue.markFailed(candidate.id, 'Lead nao encontrado');
+                    await this.maybeCompleteBroadcastCampaign(candidate.campaign_id || null);
                     continue;
                 }
 
                 if (Number(lead.is_blocked || 0) > 0) {
                     await MessageQueue.markProcessing(candidate.id);
                     await MessageQueue.markFailed(candidate.id, 'Lead bloqueado');
+                    await this.maybeCompleteBroadcastCampaign(candidate.campaign_id || null);
                     continue;
                 }
 
@@ -609,6 +611,7 @@ class QueueService extends EventEmitter {
                 sendError.messageId = message.id;
                 sendError.leadId = message.lead_id;
                 sendError.conversationId = message.conversation_id;
+                sendError.campaignId = message.campaign_id || null;
                 throw sendError;
             }
 
@@ -659,10 +662,12 @@ class QueueService extends EventEmitter {
                 sendError.leadId = message.lead_id;
                 sendError.conversationId = message.conversation_id;
                 sendError.sessionId = assignedSessionId;
+                sendError.campaignId = message.campaign_id || null;
                 throw sendError;
             }
 
             await MessageQueue.markSent(message.id);
+            await this.maybeCompleteBroadcastCampaign(message.campaign_id || null);
             this.registerSentForOwner(ownerUserId || null, queueSettings.maxPerMinute);
             this.messagesSentThisMinute = this.getTotalMessagesSentThisMinute();
             this.defaultDelay = queueSettings.delay;
@@ -682,6 +687,7 @@ class QueueService extends EventEmitter {
             const messageId = Number(error?.messageId || 0);
             const leadId = Number(error?.leadId || 0);
             const conversationId = Number(error?.conversationId || 0);
+            const campaignId = Number(error?.campaignId || 0);
             const failedSessionId = String(error?.sessionId || '').trim();
             console.error(`[QueueDebug][${failedSessionId || 'unknown'}] Erro ao processar fila: ${error.message}`);
 
@@ -749,6 +755,7 @@ class QueueService extends EventEmitter {
                     console.log(`[QueueDebug][${failedSessionId || 'unknown'}] QUEUE_FINAL_FAIL send-error messageId=${messageId} leadId=${leadId || ''} code=${errorCode || ''} error=${error.message}`);
                     await MessageQueue.markFailed(messageId, `[Q_FAIL] ${error.message}`);
                 }
+                await this.maybeCompleteBroadcastCampaign(campaignId || null);
                 if (conversationId > 0 && leadId > 0) {
                     try {
                         await run(
@@ -862,6 +869,39 @@ class QueueService extends EventEmitter {
         if (!ownerUserId) {
             this.defaultDelay = refreshed.delay;
             this.maxMessagesPerMinute = refreshed.maxPerMinute;
+        }
+    }
+
+    async maybeCompleteBroadcastCampaign(campaignId) {
+        const normalizedCampaignId = Number(campaignId || 0);
+        if (!Number.isInteger(normalizedCampaignId) || normalizedCampaignId <= 0) return;
+
+        try {
+            const campaign = await Campaign.findById(normalizedCampaignId);
+            if (!campaign) return;
+
+            const campaignType = String(campaign.type || '').trim().toLowerCase();
+            const campaignStatus = String(campaign.status || '').trim().toLowerCase();
+            if (campaignType !== 'broadcast' || campaignStatus !== 'active') {
+                return;
+            }
+
+            const progress = await MessageQueue.getCampaignProgress(normalizedCampaignId);
+            if (!progress.total) return;
+            if (progress.pending > 0 || progress.processing > 0) return;
+
+            await Campaign.refreshMetrics(normalizedCampaignId);
+            await Campaign.update(normalizedCampaignId, {
+                status: 'completed'
+            });
+
+            this.emit('campaign:completed', {
+                campaignId: normalizedCampaignId,
+                progress
+            });
+            console.log(`[QueueDebug][campaign:${normalizedCampaignId}] AUTO_COMPLETE broadcast total=${progress.total} sent=${progress.sent} failed=${progress.failed} cancelled=${progress.cancelled}`);
+        } catch (error) {
+            console.error(`[QueueDebug][campaign:${campaignId || 'unknown'}] Falha ao auto-concluir campanha: ${error.message}`);
         }
     }
 }

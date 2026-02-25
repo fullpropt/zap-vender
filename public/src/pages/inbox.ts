@@ -725,9 +725,20 @@ function initSocket() {
         socketBound = true;
         
         socket.on('new-message', (data) => {
+            const incomingConversationId = Number(data?.conversationId || 0);
+            const incomingLeadId = Number(data?.leadId || 0);
+            const incomingSessionId = sanitizeSessionId(data?.sessionId || data?.session_id || '');
             const isCurrent =
                 currentConversation &&
-                (data.conversationId === currentConversation.id || data.leadId === currentConversation.leadId);
+                (
+                    (incomingConversationId > 0 && incomingConversationId === Number(currentConversation.id))
+                    || (
+                        incomingLeadId > 0
+                        && incomingLeadId === Number(currentConversation.leadId)
+                        && incomingSessionId
+                        && incomingSessionId === resolveConversationSessionId(currentConversation)
+                    )
+                );
             if (isCurrent) {
                 const mediaType = String(data.mediaType || data.media_type || 'text');
                 const mediaUrl = data.mediaUrl || data.media_url || null;
