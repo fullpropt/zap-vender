@@ -52,6 +52,7 @@ type ManagedUser = {
     email?: string;
     role?: string;
     owner_user_id?: number | string | null;
+    is_primary_admin?: boolean | number;
     is_active?: number | boolean;
     last_login_at?: string | null;
     created_at?: string | null;
@@ -1334,6 +1335,15 @@ function isManagedUserActive(user: ManagedUser) {
     return Number(user.is_active) > 0;
 }
 
+function isManagedUserPrimaryAdmin(user?: ManagedUser | null) {
+    if (!user) return false;
+    if (typeof user.is_primary_admin === 'boolean') return user.is_primary_admin;
+    if (Number(user.is_primary_admin) > 0) return true;
+    const userId = Number(user.id || 0);
+    const ownerUserId = Number(user.owner_user_id || 0);
+    return userId > 0 && ownerUserId > 0 && userId === ownerUserId;
+}
+
 function getCurrentUserTokenPayload() {
     const token = sessionStorage.getItem('selfDashboardToken');
     if (!token) return null;
@@ -1411,12 +1421,16 @@ function renderUsersTable() {
     tbody.innerHTML = usersCache.map((user) => {
         const active = isManagedUserActive(user);
         const userId = Number(user.id) || 0;
-        const canDelete = isAdmin && userId > 0 && userId !== currentUserId;
+        const isPrimaryAdmin = isManagedUserPrimaryAdmin(user);
+        const canDelete = isAdmin && userId > 0 && userId !== currentUserId && !isPrimaryAdmin;
         return `
             <tr data-user-id="${userId}">
                 <td>${escapeHtml(String(user.name || 'Sem nome'))}</td>
                 <td>${escapeHtml(String(user.email || '-'))}</td>
-                <td><span class="badge ${getUserRoleBadgeClass(user.role)}">${getUserRoleLabel(user.role)}</span></td>
+                <td>
+                    <span class="badge ${getUserRoleBadgeClass(user.role)}">${getUserRoleLabel(user.role)}</span>
+                    ${isPrimaryAdmin ? '<span class="badge badge-success ml-2">Principal</span>' : ''}
+                </td>
                 <td><span class="badge ${active ? 'badge-success' : 'badge-secondary'}">${active ? 'Ativo' : 'Inativo'}</span></td>
                 <td>
                     <button class="btn btn-sm btn-outline" onclick="openEditUserModal(${userId})" title="Editar usuário">
@@ -1495,8 +1509,9 @@ function openEditUserModal(id: number) {
     if (editUserActive) editUserActive.value = isManagedUserActive(user) ? '1' : '0';
 
     const isAdmin = isCurrentUserAdmin();
-    if (editUserRole) editUserRole.disabled = !isAdmin;
-    if (editUserActive) editUserActive.disabled = !isAdmin;
+    const isPrimaryAdmin = isManagedUserPrimaryAdmin(user);
+    if (editUserRole) editUserRole.disabled = !isAdmin || isPrimaryAdmin;
+    if (editUserActive) editUserActive.disabled = !isAdmin || isPrimaryAdmin;
 
     openModal('editUserModal');
 }
@@ -1517,11 +1532,13 @@ async function updateUser() {
         return;
     }
 
+    const editedUser = usersCache.find((item) => Number(item.id) === id);
+    const isPrimaryAdmin = isManagedUserPrimaryAdmin(editedUser);
     const payload: Record<string, unknown> = { name, email };
     const isAdmin = isCurrentUserAdmin();
     if (isAdmin) {
-        payload.role = normalizeUserRole(editUserRole?.value || 'agent');
-        payload.is_active = editUserActive?.value === '0' ? 0 : 1;
+        payload.role = isPrimaryAdmin ? 'admin' : normalizeUserRole(editUserRole?.value || 'agent');
+        payload.is_active = isPrimaryAdmin ? 1 : (editUserActive?.value === '0' ? 0 : 1);
     }
 
     try {
@@ -1586,6 +1603,10 @@ async function deleteUser(id: number) {
     }
 
     const user = usersCache.find((item) => Number(item.id) === userId);
+    if (isManagedUserPrimaryAdmin(user)) {
+        showToast('warning', 'Aviso', 'Nao e permitido remover o admin principal da conta');
+        return;
+    }
     const name = String(user?.name || 'este usuario');
     const confirmDeleteUserId = document.getElementById('confirmDeleteUserId') as HTMLInputElement | null;
     const confirmDeleteUserName = document.getElementById('confirmDeleteUserName') as HTMLElement | null;
@@ -1604,6 +1625,13 @@ async function confirmDeleteUser() {
     const userId = Number(confirmDeleteUserId?.value || 0);
     if (!Number.isFinite(userId) || userId <= 0) {
         showToast('error', 'Erro', 'Usuario invalido');
+        return;
+    }
+    const user = usersCache.find((item) => Number(item.id) === userId);
+    if (isManagedUserPrimaryAdmin(user)) {
+        closeModal('confirmDeleteUserModal');
+        if (confirmDeleteUserId) confirmDeleteUserId.value = '';
+        showToast('warning', 'Aviso', 'Nao e permitido remover o admin principal da conta');
         return;
     }
 

@@ -8368,6 +8368,13 @@ function normalizeOwnerUserId(value) {
     return Number.isInteger(ownerUserId) && ownerUserId > 0 ? ownerUserId : 0;
 }
 
+function isPrimaryOwnerAdminUser(user, ownerUserId = 0) {
+    const userId = Number(user?.id || 0);
+    if (!Number.isInteger(userId) || userId <= 0) return false;
+    const resolvedOwnerUserId = normalizeOwnerUserId(ownerUserId) || normalizeOwnerUserId(user?.owner_user_id);
+    return resolvedOwnerUserId > 0 && userId === resolvedOwnerUserId;
+}
+
 function isSameUserOwner(user, ownerUserId) {
     return normalizeOwnerUserId(user?.owner_user_id) === normalizeOwnerUserId(ownerUserId);
 }
@@ -8408,8 +8415,9 @@ function normalizeUserActiveInput(value, fallback = 1) {
     return fallback;
 }
 
-function sanitizeUserPayload(user) {
+function sanitizeUserPayload(user, ownerUserId = 0) {
     if (!user) return null;
+    const resolvedOwnerUserId = normalizeOwnerUserId(ownerUserId) || normalizeOwnerUserId(user.owner_user_id) || null;
     return {
         id: user.id,
         uuid: user.uuid,
@@ -8417,7 +8425,8 @@ function sanitizeUserPayload(user) {
         email: user.email,
         role: user.role,
         is_active: Number(user.is_active) > 0 ? 1 : 0,
-        owner_user_id: normalizeOwnerUserId(user.owner_user_id) || null,
+        owner_user_id: resolvedOwnerUserId,
+        is_primary_admin: isPrimaryOwnerAdminUser(user, resolvedOwnerUserId),
         last_login_at: user.last_login_at,
         created_at: user.created_at
     };
@@ -8442,7 +8451,9 @@ app.get('/api/users', authenticate, async (req, res) => {
 
         res.json({
             success: true,
-            users: (users || []).map(sanitizeUserPayload).filter(Boolean)
+            users: (users || [])
+                .map((user) => sanitizeUserPayload(user, requesterOwnerUserId))
+                .filter(Boolean)
         });
     } catch (error) {
         res.status(500).json({ success: false, error: 'Erro ao carregar usuários' });
@@ -8489,7 +8500,7 @@ app.post('/api/users', authenticate, async (req, res) => {
         });
 
         const user = await User.findById(created.id);
-        res.json({ success: true, user: sanitizeUserPayload(user) });
+        res.json({ success: true, user: sanitizeUserPayload(user, requesterOwnerUserId) });
     } catch (error) {
         res.status(500).json({ success: false, error: 'Erro ao criar usuário' });
     }
@@ -8522,6 +8533,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
         }
 
         const currentIsActiveAdmin = isUserActive(current) && isUserAdminRole(current.role);
+        const isPrimaryOwnerAdmin = isPrimaryOwnerAdminUser(current, requesterOwnerUserId);
         const payload = {};
 
         if (Object.prototype.hasOwnProperty.call(req.body || {}, 'name')) {
@@ -8548,10 +8560,16 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
 
         if (isAdmin && Object.prototype.hasOwnProperty.call(req.body || {}, 'role')) {
             payload.role = normalizeUserRoleInput(req.body?.role);
+            if (isPrimaryOwnerAdmin && !isUserAdminRole(payload.role)) {
+                return res.status(400).json({ success: false, error: 'Nao e permitido rebaixar o admin principal da conta' });
+            }
         }
 
         if (isAdmin && Object.prototype.hasOwnProperty.call(req.body || {}, 'is_active')) {
             payload.is_active = normalizeUserActiveInput(req.body?.is_active, Number(current.is_active) > 0 ? 1 : 0);
+            if (isPrimaryOwnerAdmin && Number(payload.is_active) === 0) {
+                return res.status(400).json({ success: false, error: 'Nao e permitido desativar o admin principal da conta' });
+            }
             if (Number(current.id) === requesterId && Number(payload.is_active) === 0) {
                 return res.status(400).json({ success: false, error: 'Não é possível desativar o próprio usuário' });
             }
@@ -8563,6 +8581,10 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
             : (isUserActive(current) ? 1 : 0);
         const willStopBeingActiveAdmin = currentIsActiveAdmin && (!isUserAdminRole(nextRole) || Number(nextIsActive) === 0);
 
+        if (isPrimaryOwnerAdmin && willStopBeingActiveAdmin) {
+            return res.status(400).json({ success: false, error: 'O admin principal da conta deve permanecer ativo como admin' });
+        }
+
         if (willStopBeingActiveAdmin) {
             const activeAdminCount = await countActiveAdminsByOwner(requesterOwnerUserId);
             if (activeAdminCount <= 1) {
@@ -8571,7 +8593,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
         }
         await User.update(targetId, payload);
         const updated = await User.findById(targetId);
-        res.json({ success: true, user: sanitizeUserPayload(updated) });
+        res.json({ success: true, user: sanitizeUserPayload(updated, requesterOwnerUserId) });
     } catch (error) {
         res.status(500).json({ success: false, error: 'Erro ao atualizar usuário' });
     }
@@ -8602,6 +8624,9 @@ app.delete('/api/users/:id', authenticate, async (req, res) => {
         if (!isSameUserOwner(current, requesterOwnerUserId)) {
             return res.status(403).json({ success: false, error: 'Sem permissao para remover este usuario' });
         }
+        if (isPrimaryOwnerAdminUser(current, requesterOwnerUserId)) {
+            return res.status(400).json({ success: false, error: 'Nao e permitido remover o admin principal da conta' });
+        }
 
         const isTargetActiveAdmin = isUserActive(current) && isUserAdminRole(current.role);
         if (isTargetActiveAdmin) {
@@ -8613,7 +8638,7 @@ app.delete('/api/users/:id', authenticate, async (req, res) => {
 
         await User.update(targetId, { is_active: 0 });
         const updated = await User.findById(targetId);
-        res.json({ success: true, user: sanitizeUserPayload(updated) });
+        res.json({ success: true, user: sanitizeUserPayload(updated, requesterOwnerUserId) });
     } catch (error) {
         res.status(500).json({ success: false, error: 'Erro ao remover usuario' });
     }
