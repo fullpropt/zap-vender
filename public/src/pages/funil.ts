@@ -707,16 +707,6 @@ function viewLead(id: number) {
             <label class="form-label">WhatsApp</label>
             <p><a href="https://wa.me/55${currentLead.phone || ''}" target="_blank" style="color: var(--whatsapp);">${formatPhone(currentLead.phone || '')}</a></p>
         </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label class="form-label">Ve\u00EDculo</label>
-                <p>${currentLead.vehicle || '-'}</p>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Placa</label>
-                <p>${currentLead.plate || '-'}</p>
-            </div>
-        </div>
         <div class="form-group">
             <label class="form-label">Status</label>
             <select class="form-select" id="leadStatus" onchange="changeLeadStatus(${currentLead.id}, this.value)">
