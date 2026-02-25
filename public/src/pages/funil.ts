@@ -40,8 +40,10 @@ const DEFAULT_FUNNEL_STAGES: FunnelStageConfig[] = [
     { name: 'Perdido', description: 'N\u00E3o converteu' }
 ];
 const FUNNEL_STAGES_STORAGE_KEY = 'zapvender_funnel_stages';
-const FUNNEL_FETCH_BATCH_SIZE = 1000;
-const FUNNEL_FETCH_MAX_PAGES = 1000;
+const FUNNEL_FETCH_BATCH_SIZE = 400;
+const FUNNEL_FETCH_MAX_PAGES = 3000;
+const FUNNEL_FETCH_PAGE_RETRIES = 2;
+const FUNNEL_FETCH_RETRY_DELAY_MS = 350;
 const FUNNEL_CACHE_TTL_MS = 10 * 60 * 1000;
 const FUNNEL_CACHE_MIN_REVALIDATE_INTERVAL_MS = FUNNEL_CACHE_TTL_MS;
 const FUNNEL_CACHE_PREFIX = 'zapvender_funnel_cache_v1';
@@ -83,7 +85,16 @@ let funnelRuntimeCache: FunnelCacheSnapshot | null = null;
 let funnelStageCounts: FunnelStageCounts = { 1: 0, 2: 0, 3: 0, 4: 0 };
 let funnelCacheWriteTimer: ReturnType<typeof window.setTimeout> | null = null;
 let funnelCacheWriteDirty = false;
+let funnelLoadInFlight: Promise<void> | null = null;
+let funilInitialized = false;
+let dragAndDropInitialized = false;
 const pendingLeadStatusUpdates = new Set<number>();
+
+function wait(ms: number) {
+    return new Promise<void>((resolve) => {
+        window.setTimeout(resolve, ms);
+    });
+}
 
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -376,58 +387,76 @@ async function loadFunnelStageConfig() {
 }
 
 function initFunil() {
+    if (funilInitialized) {
+        void loadFunnel({ silent: true });
+        return;
+    }
+
+    funilInitialized = true;
     void loadFunnelStageConfig();
-    loadFunnel();
+    void loadFunnel();
     initDragAndDrop();
 }
 
 onReady(initFunil);
 
 async function loadFunnel(options: { forceRefresh?: boolean; silent?: boolean } = {}) {
-    const forceRefresh = options.forceRefresh === true;
-    const runtimeCached = forceRefresh ? null : funnelRuntimeCache;
-    const cached = runtimeCached || (forceRefresh ? null : readFunnelCache());
-    const cacheAgeMs = cached ? Math.max(0, Date.now() - cached.savedAt) : Number.POSITIVE_INFINITY;
-    const shouldSkipRefresh = !forceRefresh && !!cached && cacheAgeMs <= FUNNEL_CACHE_MIN_REVALIDATE_INTERVAL_MS;
+    if (funnelLoadInFlight) {
+        return funnelLoadInFlight;
+    }
 
-    if (cached) {
-        applyFunnelSnapshot(cached.leads || []);
-        if (!runtimeCached) {
-            funnelRuntimeCache = {
-                savedAt: cached.savedAt,
-                leads: [...cached.leads]
-            };
+    funnelLoadInFlight = (async () => {
+        const forceRefresh = options.forceRefresh === true;
+        const runtimeCached = forceRefresh ? null : funnelRuntimeCache;
+        const cached = runtimeCached || (forceRefresh ? null : readFunnelCache());
+        const cacheAgeMs = cached ? Math.max(0, Date.now() - cached.savedAt) : Number.POSITIVE_INFINITY;
+        const shouldSkipRefresh = !forceRefresh && !!cached && cacheAgeMs <= FUNNEL_CACHE_MIN_REVALIDATE_INTERVAL_MS;
+
+        if (cached) {
+            applyFunnelSnapshot(cached.leads || []);
+            if (!runtimeCached) {
+                funnelRuntimeCache = {
+                    savedAt: cached.savedAt,
+                    leads: [...cached.leads]
+                };
+            }
         }
-    }
 
-    if (shouldSkipRefresh) {
-        return;
-    }
+        if (shouldSkipRefresh) {
+            return;
+        }
+
+        try {
+            if (!cached) {
+                showLoading('Carregando funil...');
+            }
+
+            const fetchedLeads = await fetchAllFunnelLeads();
+            const normalizedLeads = normalizeLeadList(fetchedLeads);
+            funnelRuntimeCache = {
+                savedAt: Date.now(),
+                leads: normalizedLeads
+            };
+            writeFunnelCache(fetchedLeads);
+            applyFunnelSnapshot(normalizedLeads);
+
+            if (!cached) {
+                hideLoading();
+            }
+        } catch (error) {
+            if (!cached) {
+                hideLoading();
+                showToast('error', 'Erro', 'N\u00E3o foi poss\u00EDvel carregar o funil');
+            } else if (!options.silent) {
+                console.warn('Falha ao revalidar funil:', error);
+            }
+        }
+    })();
 
     try {
-        if (!cached) {
-            showLoading('Carregando funil...');
-        }
-
-        const fetchedLeads = await fetchAllFunnelLeads();
-        const normalizedLeads = normalizeLeadList(fetchedLeads);
-        funnelRuntimeCache = {
-            savedAt: Date.now(),
-            leads: normalizedLeads
-        };
-        writeFunnelCache(fetchedLeads);
-        applyFunnelSnapshot(normalizedLeads);
-
-        if (!cached) {
-            hideLoading();
-        }
-    } catch (error) {
-        if (!cached) {
-            hideLoading();
-            showToast('error', 'Erro', 'N\u00E3o foi poss\u00EDvel carregar o funil');
-        } else if (!options.silent) {
-            console.warn('Falha ao revalidar funil:', error);
-        }
+        await funnelLoadInFlight;
+    } finally {
+        funnelLoadInFlight = null;
     }
 }
 
@@ -444,7 +473,7 @@ async function fetchAllFunnelLeads() {
 
         let response: LeadsResponse;
         try {
-            response = await api.get(`/api/leads?${params.toString()}`);
+            response = await fetchFunnelLeadsPage(params);
         } catch (error) {
             if (allLeads.length > 0) {
                 console.warn('Interrompendo carregamento parcial do funil por erro de pagina:', error);
@@ -473,6 +502,26 @@ async function fetchAllFunnelLeads() {
     }
 
     return allLeads;
+}
+
+async function fetchFunnelLeadsPage(params: URLSearchParams) {
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt <= FUNNEL_FETCH_PAGE_RETRIES; attempt += 1) {
+        try {
+            return await api.get(`/api/leads?${params.toString()}`);
+        } catch (error) {
+            lastError = error;
+            const message = String((error as Error)?.message || '').toLowerCase();
+            const isAuthError = message.includes('sessao expirada') || message.includes('token');
+            if (isAuthError || attempt >= FUNNEL_FETCH_PAGE_RETRIES) {
+                break;
+            }
+            await wait(FUNNEL_FETCH_RETRY_DELAY_MS * (attempt + 1));
+        }
+    }
+
+    throw lastError;
 }
 
 function updateFunnelStats() {
@@ -528,6 +577,9 @@ function clearKanbanDropActiveState() {
 }
 
 function initDragAndDrop() {
+    if (dragAndDropInitialized) return;
+    dragAndDropInitialized = true;
+
     document.addEventListener('dragstart', (e) => {
         const target = e.target as HTMLElement | null;
         if (target?.classList.contains('kanban-card')) {

@@ -538,33 +538,30 @@ const Lead = {
         let sql = `
             SELECT
                 leads.*,
-                (
-                    SELECT c.session_id
-                    FROM conversations c
-                    WHERE c.lead_id = leads.id
-                    ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
-                    LIMIT 1
-                ) AS session_id,
-                (
-                    SELECT COALESCE(NULLIF(TRIM(ws.name), ''), NULLIF(TRIM(ws.phone), ''), c.session_id)
-                    FROM conversations c
-                    LEFT JOIN whatsapp_sessions ws ON ws.session_id = c.session_id
-                    WHERE c.lead_id = leads.id
-                    ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
-                    LIMIT 1
-                ) AS session_label
+                latest_conversation.session_id,
+                latest_conversation.session_label
             FROM leads
+            LEFT JOIN LATERAL (
+                SELECT
+                    c.session_id,
+                    COALESCE(NULLIF(TRIM(ws.name), ''), NULLIF(TRIM(ws.phone), ''), c.session_id) AS session_label
+                FROM conversations c
+                LEFT JOIN whatsapp_sessions ws ON ws.session_id = c.session_id
+                WHERE c.lead_id = leads.id
+                ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
+                LIMIT 1
+            ) latest_conversation ON TRUE
             WHERE 1=1
         `;
         const params = [];
         
         if (options.status) {
-            sql += ' AND status = ?';
+            sql += ' AND leads.status = ?';
             params.push(options.status);
         }
         
         if (options.assigned_to) {
-            sql += ' AND assigned_to = ?';
+            sql += ' AND leads.assigned_to = ?';
             params.push(options.assigned_to);
         }
 
@@ -584,7 +581,7 @@ const Lead = {
         }
         
         if (options.search) {
-            sql += ' AND (name LIKE ? OR phone LIKE ?)';
+            sql += ' AND (leads.name LIKE ? OR leads.phone LIKE ?)';
             params.push(`%${options.search}%`, `%${options.search}%`);
         }
 
@@ -593,7 +590,7 @@ const Lead = {
             params.push(String(options.session_id).trim());
         }
         
-        sql += ' ORDER BY updated_at DESC';
+        sql += ' ORDER BY leads.updated_at DESC';
         
         if (options.limit) {
             sql += ' LIMIT ?';

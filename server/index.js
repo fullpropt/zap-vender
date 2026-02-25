@@ -7836,7 +7836,7 @@ app.get('/api/leads/summary', authenticate, async (req, res) => {
     }
 });
 
-app.get('/api/leads', optionalAuth, async (req, res) => {
+app.get('/api/leads', authenticate, async (req, res) => {
     try {
         const { status, search, limit, offset, assigned_to } = req.query;
         const sessionId = sanitizeSessionId(req.query.session_id || req.query.sessionId);
@@ -7869,8 +7869,9 @@ app.get('/api/leads', optionalAuth, async (req, res) => {
     }
 });
 
-app.get('/api/leads/:id', optionalAuth, async (req, res) => {
+app.get('/api/leads/:id', authenticate, async (req, res) => {
 
+    const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
     const lead = await Lead.findById(req.params.id);
 
     if (!lead) {
@@ -7879,7 +7880,7 @@ app.get('/api/leads/:id', optionalAuth, async (req, res) => {
 
     }
 
-    if (!canAccessAssignedRecord(req, lead.assigned_to)) {
+    if (!(await canAccessAssignedRecordInOwnerScope(req, lead.assigned_to, ownerScopeUserId))) {
         return res.status(404).json({ error: 'Lead não encontrado' });
     }
 

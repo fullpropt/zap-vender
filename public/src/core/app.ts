@@ -221,6 +221,7 @@ function updateUserInfo() {
 }
 
 function logout() {
+    window.dispatchEvent(new CustomEvent('app:logout'));
     sessionStorage.removeItem('selfDashboardToken');
     sessionStorage.removeItem('selfDashboardUser');
     sessionStorage.removeItem('selfDashboardExpiry');

@@ -93,6 +93,7 @@ let isContactInfoOpen = false;
 let inboxSessionFilter = '';
 let inboxAvailableSessions: WhatsappSessionItem[] = [];
 let mediaUploadInProgress = false;
+let inboxLifecycleBound = false;
 
 const INBOX_SESSION_FILTER_STORAGE_KEY = 'zapvender_inbox_session_filter';
 
@@ -481,6 +482,7 @@ function getContatosUrl(id: string | number) {
 }
 
 function initInbox() {
+    bindInboxLifecycle();
     bindQuickReplyDismiss();
     loadContactFields();
     void loadInboxSessionFilters().finally(() => {
@@ -490,9 +492,7 @@ function initInbox() {
     initSocket();
     renderContactInfoPanel();
     setMobileConversationMode(false);
-    if (refreshInterval === null) {
-        refreshInterval = window.setInterval(loadConversations, 10000);
-    }
+    startInboxAutoRefresh();
 }
 
 onReady(initInbox);
@@ -835,9 +835,40 @@ async function loadConversations() {
         }
         updateUnreadBadge();
     } catch (error) {
+        const hasToken = Boolean(sessionStorage.getItem('selfDashboardToken'));
+        const isLoginRoute = String(window.location.hash || '').startsWith('#/login');
+        if (!hasToken || isLoginRoute) {
+            return;
+        }
         console.error(error);
         showToast('error', 'Erro', 'Não foi possível carregar as conversas');
     }
+}
+
+function stopInboxAutoRefresh() {
+    if (refreshInterval !== null) {
+        window.clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+}
+
+function startInboxAutoRefresh() {
+    if (refreshInterval !== null) return;
+    refreshInterval = window.setInterval(() => {
+        const hash = String(window.location.hash || '').toLowerCase();
+        if (!hash.startsWith('#/inbox')) {
+            stopInboxAutoRefresh();
+            return;
+        }
+        void loadConversations();
+    }, 10000);
+}
+
+function bindInboxLifecycle() {
+    if (inboxLifecycleBound) return;
+    inboxLifecycleBound = true;
+    window.addEventListener('app:logout', stopInboxAutoRefresh);
+    window.addEventListener('beforeunload', stopInboxAutoRefresh);
 }
 
 function renderConversations() {
