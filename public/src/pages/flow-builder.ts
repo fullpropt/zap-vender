@@ -654,6 +654,10 @@ function setupCanvasEvents() {
 
 // Adicionar no
 function addNode(type: NodeType, subtype: string, x: number, y: number) {
+    if (type === 'condition') {
+        return;
+    }
+
     const emptyCanvas = document.getElementById('emptyCanvas') as HTMLElement | null;
     if (emptyCanvas) emptyCanvas.style.display = 'none';
     
@@ -861,6 +865,17 @@ function handleDocumentMouseUp(e: MouseEvent) {
     cancelConnection();
 }
 
+function getLeadStatusLabel(value: unknown) {
+    const status = Number(value);
+    const labels: Record<number, string> = {
+        1: 'Etapa 1 - Novo',
+        2: 'Etapa 2 - Em Negociação',
+        3: 'Etapa 3 - Fechado',
+        4: 'Etapa 4 - Perdido'
+    };
+    return labels[status] || 'Etapa não definida';
+}
+
 // Preview do no
 function getNodePreview(node: FlowNode) {
     switch (node.type) {
@@ -870,6 +885,13 @@ function getNodePreview(node: FlowNode) {
             return `${node.data.conditions?.length || 0} condições`;
         case 'delay':
             return `Aguardar ${node.data.seconds}s`;
+        case 'transfer': {
+            const transferMessage = String(node.data.message || '').trim();
+            if (!transferMessage) return 'Mensagem de transferência não definida';
+            return transferMessage.length > 55 ? `${transferMessage.substring(0, 55)}...` : transferMessage;
+        }
+        case 'status':
+            return `Novo status: ${getLeadStatusLabel(node.data.status)}`;
         case 'event':
             return node.data.eventName || node.data.eventKey || 'Selecione um evento personalizado';
         case 'trigger':

@@ -1448,13 +1448,6 @@ export default function FlowBuilder() {
                                   <div className="desc">Aguarda resposta e ramifica por intenção</div>
                               </div>
                           </div>
-                          <div className="node-item" draggable="true" data-type="condition">
-                              <div className="icon condition icon-bolt"></div>
-                              <div className="info">
-                                  <div className="name">Condição</div>
-                                  <div className="desc">Ramifica baseado em resposta</div>
-                              </div>
-                          </div>
                           <div className="node-item" draggable="true" data-type="delay">
                               <div className="icon delay icon-clock"></div>
                               <div className="info">
