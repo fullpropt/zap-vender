@@ -619,7 +619,7 @@ async function apiRequest(endpoint: string, options: ApiRequestOptions = {}) {
                 const planInactiveMessage =
                     (data && typeof data.error === 'string' && data.error.trim())
                         ? data.error
-                        : 'Sua assinatura nao esta ativa. Reative para poder usar a aplicacao.';
+                        : 'Sua assinatura não está ativa. Reative para poder usar a aplicação.';
 
                 if (!isLoginRoute()) {
                     showToast('warning', 'Assinatura inativa', planInactiveMessage);

@@ -41,12 +41,12 @@ export default function Whatsapp() {
         const response = await win.api?.get?.('/api/plan/status');
         const status = String(response?.plan?.status || '').trim().toLowerCase();
         if (!allowedStatuses.has(status)) {
-          win.showToast?.('warning', 'Assinatura inativa', 'Sua assinatura nao esta ativa. Reative para poder usar a aplicacao.');
+          win.showToast?.('warning', 'Assinatura inativa', 'Sua assinatura não está ativa. Reative para poder usar a aplicação.');
           navigate('/configuracoes?panel=plan', { replace: true });
           return;
         }
       } catch (_) {
-        win.showToast?.('warning', 'Assinatura inativa', 'Nao foi possivel validar a assinatura. Reative seu plano para usar a aplicacao.');
+        win.showToast?.('warning', 'Assinatura inativa', 'Não foi possível validar a assinatura. Reative seu plano para usar a aplicação.');
         navigate('/configuracoes?panel=plan', { replace: true });
         return;
       }
