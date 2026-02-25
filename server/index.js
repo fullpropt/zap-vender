@@ -69,6 +69,7 @@ const queueService = require('./services/queueService');
 
 const flowService = require('./services/flowService');
 const senderAllocatorService = require('./services/senderAllocatorService');
+const tenantIntegrityAuditService = require('./services/tenantIntegrityAuditService');
 const { PostgresAdvisoryLock } = require('./services/postgresAdvisoryLock');
 const {
     MailMktIntegrationError,
@@ -200,6 +201,22 @@ const SCHEDULED_AUTOMATIONS_WORKER_ENABLED = parseBooleanEnv(
     process.env.SCHEDULED_AUTOMATIONS_WORKER_ENABLED,
     true
 );
+const TENANT_INTEGRITY_AUDIT_WORKER_ENABLED = parseBooleanEnv(
+    process.env.TENANT_INTEGRITY_AUDIT_WORKER_ENABLED,
+    true
+);
+const TENANT_INTEGRITY_AUDIT_INTERVAL_MS = parsePositiveIntEnv(
+    process.env.TENANT_INTEGRITY_AUDIT_INTERVAL_MS,
+    6 * 60 * 60 * 1000
+);
+const TENANT_INTEGRITY_AUDIT_SAMPLE_LIMIT = parsePositiveIntEnv(
+    process.env.TENANT_INTEGRITY_AUDIT_SAMPLE_LIMIT,
+    10
+);
+const TENANT_INTEGRITY_AUDIT_ALLOW_GLOBAL_MANUAL = parseBooleanEnv(
+    process.env.TENANT_INTEGRITY_AUDIT_ALLOW_GLOBAL_MANUAL,
+    false
+);
 
 const queueWorkerLeaderLock = new PostgresAdvisoryLock({
     name: 'queue-worker',
@@ -215,6 +232,14 @@ const scheduledAutomationLeaderLock = new PostgresAdvisoryLock({
     key2: 2,
     pollMs: POSTGRES_WORKER_LEADER_LOCK_POLL_MS,
     enabled: POSTGRES_WORKER_LEADER_LOCK_ENABLED && SCHEDULED_AUTOMATIONS_WORKER_ENABLED
+});
+
+const tenantIntegrityAuditLeaderLock = new PostgresAdvisoryLock({
+    name: 'tenant-integrity-audit',
+    key1: 47321,
+    key2: 3,
+    pollMs: POSTGRES_WORKER_LEADER_LOCK_POLL_MS,
+    enabled: POSTGRES_WORKER_LEADER_LOCK_ENABLED && TENANT_INTEGRITY_AUDIT_WORKER_ENABLED
 });
 
 function parseBaileysVersionFromEnv(value) {
@@ -4152,6 +4177,12 @@ const inactivityAutomationTimers = new Map();
 const scheduleAutomationSlots = new Map();
 let scheduleAutomationIntervalId = null;
 let scheduleAutomationsTickRunning = false;
+let tenantIntegrityAuditIntervalId = null;
+let tenantIntegrityAuditTickRunning = false;
+let tenantIntegrityAuditLastRunAt = null;
+let tenantIntegrityAuditLastError = null;
+let tenantIntegrityAuditLastResultCompact = null;
+let tenantIntegrityAuditLastFingerprint = null;
 
 function isSupportedAutomationTriggerType(triggerType = '') {
     const normalized = String(triggerType || '').trim().toLowerCase();
@@ -4736,6 +4767,116 @@ function startScheduledAutomationsWorker() {
 
     processScheduledAutomationsTick().catch((error) => {
         console.error('Falha no primeiro ciclo de automacoes agendadas:', error.message);
+    });
+}
+
+function buildTenantIntegrityAuditWorkerState() {
+    return {
+        enabled: TENANT_INTEGRITY_AUDIT_WORKER_ENABLED,
+        intervalMs: TENANT_INTEGRITY_AUDIT_INTERVAL_MS,
+        sampleLimit: TENANT_INTEGRITY_AUDIT_SAMPLE_LIMIT,
+        leaderLockEnabled: POSTGRES_WORKER_LEADER_LOCK_ENABLED && TENANT_INTEGRITY_AUDIT_WORKER_ENABLED,
+        leaderLockHeld: TENANT_INTEGRITY_AUDIT_WORKER_ENABLED ? tenantIntegrityAuditLeaderLock.isHeld() : false,
+        running: tenantIntegrityAuditTickRunning,
+        lastRunAt: tenantIntegrityAuditLastRunAt,
+        lastError: tenantIntegrityAuditLastError,
+        lastResult: tenantIntegrityAuditLastResultCompact
+    };
+}
+
+function logTenantIntegrityAuditSummary(result, context = {}) {
+    const compact = tenantIntegrityAuditService.compactResultForLog(result);
+    if (!compact) return;
+
+    const checksWithIssues = (compact.checks || []).filter((check) => Number(check.total || 0) > 0);
+    const issueSummary = checksWithIssues
+        .map((check) => `${check.code}=${check.total}`)
+        .join(', ');
+
+    const prefix = `[TenantIntegrityAudit][${String(context.trigger || 'manual')}]`;
+    if (compact.summary?.checksWithIssues > 0) {
+        console.warn(
+            `${prefix} inconsistencias=${compact.summary.totalIssueRows} checks=${compact.summary.checksWithIssues}/${compact.summary.totalChecks}` +
+            (issueSummary ? ` | ${issueSummary}` : '')
+        );
+    } else {
+        console.log(`${prefix} sem inconsistencias (${compact.summary?.totalChecks || 0} checks)`);
+    }
+}
+
+async function runTenantIntegrityAudit(options = {}) {
+    const trigger = String(options.trigger || 'manual').trim() || 'manual';
+    const ownerUserId = normalizeOwnerUserId(options.ownerUserId);
+    const sampleLimit = parsePositiveIntEnv(options.sampleLimit, TENANT_INTEGRITY_AUDIT_SAMPLE_LIMIT);
+    const shouldCacheAsWorkerResult = options.cacheAsWorker === true;
+
+    const result = await tenantIntegrityAuditService.runAudit({
+        ownerUserId: ownerUserId || undefined,
+        sampleLimit
+    });
+
+    if (shouldCacheAsWorkerResult) {
+        tenantIntegrityAuditLastRunAt = new Date().toISOString();
+        tenantIntegrityAuditLastError = null;
+        tenantIntegrityAuditLastResultCompact = tenantIntegrityAuditService.compactResultForLog(result);
+
+        const fingerprint = String(result?.fingerprint || '');
+        const hasIssues = Number(result?.summary?.checksWithIssues || 0) > 0;
+        const fingerprintChanged = fingerprint && fingerprint !== tenantIntegrityAuditLastFingerprint;
+        const shouldLog = trigger !== 'interval' || hasIssues || fingerprintChanged || !tenantIntegrityAuditLastFingerprint;
+
+        if (shouldLog) {
+            logTenantIntegrityAuditSummary(result, { trigger });
+        }
+
+        tenantIntegrityAuditLastFingerprint = fingerprint || tenantIntegrityAuditLastFingerprint;
+    }
+
+    return result;
+}
+
+async function processTenantIntegrityAuditTick(trigger = 'interval') {
+    if (TENANT_INTEGRITY_AUDIT_WORKER_ENABLED && !tenantIntegrityAuditLeaderLock.isHeld()) {
+        return null;
+    }
+    if (tenantIntegrityAuditTickRunning) return null;
+    tenantIntegrityAuditTickRunning = true;
+
+    try {
+        return await runTenantIntegrityAudit({
+            trigger,
+            cacheAsWorker: true,
+            sampleLimit: TENANT_INTEGRITY_AUDIT_SAMPLE_LIMIT
+        });
+    } catch (error) {
+        tenantIntegrityAuditLastRunAt = new Date().toISOString();
+        tenantIntegrityAuditLastError = String(error?.message || error || 'Erro desconhecido');
+        console.error(`[TenantIntegrityAudit][${trigger}] falha:`, error.message);
+        throw error;
+    } finally {
+        tenantIntegrityAuditTickRunning = false;
+    }
+}
+
+function startTenantIntegrityAuditWorker() {
+    if (tenantIntegrityAuditIntervalId) return;
+    if (!TENANT_INTEGRITY_AUDIT_WORKER_ENABLED) {
+        console.log('[LeaderLock][tenant-integrity-audit] worker desabilitado por configuracao');
+        return;
+    }
+
+    tenantIntegrityAuditLeaderLock.start().catch((error) => {
+        console.error('[LeaderLock][tenant-integrity-audit] falha ao iniciar lock:', error.message);
+    });
+
+    tenantIntegrityAuditIntervalId = setInterval(() => {
+        processTenantIntegrityAuditTick('interval').catch((error) => {
+            console.error('[TenantIntegrityAudit] falha no ciclo periodico:', error.message);
+        });
+    }, TENANT_INTEGRITY_AUDIT_INTERVAL_MS);
+
+    processTenantIntegrityAuditTick('startup').catch((error) => {
+        console.error('[TenantIntegrityAudit] falha no primeiro ciclo:', error.message);
     });
 }
 
@@ -6643,6 +6784,7 @@ function sessionExists(sessionId) {
 
     await rehydrateSessions(io);
     startScheduledAutomationsWorker();
+    startTenantIntegrityAuditWorker();
 })().catch((error) => {
     console.error('Erro ao inicializar servicos apos migracao:', error.message);
 });
@@ -11821,6 +11963,86 @@ app.delete('/api/webhooks/:id', authenticate, async (req, res) => {
 
     res.json({ success: true });
 
+});
+
+
+
+// ============================================
+
+// API ADMIN - AUDITORIA DE INTEGRIDADE MULTI-TENANT
+
+// ============================================
+
+app.get('/api/admin/audits/tenant-integrity', authenticate, async (req, res) => {
+    const requesterRole = getRequesterRole(req);
+    if (!isUserAdminRole(requesterRole)) {
+        return res.status(403).json({ error: 'Sem permissao para acessar auditoria de integridade' });
+    }
+
+    const workerState = buildTenantIntegrityAuditWorkerState();
+    const response = {
+        success: true,
+        worker: {
+            enabled: workerState.enabled,
+            intervalMs: workerState.intervalMs,
+            sampleLimit: workerState.sampleLimit,
+            leaderLockEnabled: workerState.leaderLockEnabled,
+            leaderLockHeld: workerState.leaderLockHeld,
+            running: workerState.running,
+            lastRunAt: workerState.lastRunAt,
+            lastError: workerState.lastError,
+            hasLastResult: !!workerState.lastResult
+        },
+        manualRun: {
+            defaultScope: 'owner',
+            allowGlobal: TENANT_INTEGRITY_AUDIT_ALLOW_GLOBAL_MANUAL
+        }
+    };
+
+    if (TENANT_INTEGRITY_AUDIT_ALLOW_GLOBAL_MANUAL && workerState.lastResult) {
+        response.worker.lastResult = workerState.lastResult;
+    }
+
+    res.json(response);
+});
+
+app.post('/api/admin/audits/tenant-integrity/run', authenticate, async (req, res) => {
+    const requesterRole = getRequesterRole(req);
+    if (!isUserAdminRole(requesterRole)) {
+        return res.status(403).json({ error: 'Sem permissao para executar auditoria de integridade' });
+    }
+
+    try {
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const requestedScope = String(body.scope || req.query?.scope || 'owner').trim().toLowerCase();
+        const requestedSampleLimit = body.sampleLimit || req.query?.sampleLimit || TENANT_INTEGRITY_AUDIT_SAMPLE_LIMIT;
+
+        let ownerScopeUserId = null;
+        if (requestedScope !== 'global') {
+            ownerScopeUserId = await resolveRequesterOwnerUserId(req);
+            if (!ownerScopeUserId) {
+                return res.status(400).json({ error: 'Nao foi possivel resolver owner da conta' });
+            }
+        } else if (!TENANT_INTEGRITY_AUDIT_ALLOW_GLOBAL_MANUAL) {
+            return res.status(403).json({ error: 'Execucao manual global de auditoria desabilitada' });
+        }
+
+        const audit = await runTenantIntegrityAudit({
+            trigger: 'manual-endpoint',
+            ownerUserId: requestedScope === 'global' ? null : ownerScopeUserId,
+            sampleLimit: requestedSampleLimit,
+            cacheAsWorker: false
+        });
+
+        res.json({
+            success: true,
+            audit,
+            worker: buildTenantIntegrityAuditWorkerState()
+        });
+    } catch (error) {
+        console.error('[TenantIntegrityAudit][manual-endpoint] falha:', error);
+        res.status(500).json({ error: 'Falha ao executar auditoria de integridade', details: error.message });
+    }
 });
 
 
