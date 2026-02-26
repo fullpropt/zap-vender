@@ -9,6 +9,10 @@ type FlowBuilderGlobals = {
   clearCanvas?: () => void;
   saveFlow?: () => void;
   generateFlowWithAi?: () => Promise<void>;
+  toggleFlowAiAssistant?: (forceOpen?: boolean) => void;
+  closeFlowAiAssistant?: () => void;
+  sendFlowAiAssistantPrompt?: () => Promise<void>;
+  handleFlowAiAssistantInputKeydown?: (event: KeyboardEvent) => void;
   toggleFlowActive?: () => void;
   updateFlowStatusFromSelect?: () => void;
   zoomIn?: () => void;
@@ -228,13 +232,6 @@ export default function FlowBuilder() {
             min-width: min(360px, 100%);
         }
 
-        .flow-builder-react .header-flow-actions {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
         .flow-builder-react .header-actions {
             display: flex;
             gap: 10px;
@@ -242,6 +239,213 @@ export default function FlowBuilder() {
             flex-wrap: wrap;
             box-sizing: border-box;
             padding-right: 28px;
+        }
+
+        .flow-builder-react .flow-canvas-toolbar {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            z-index: 40;
+            pointer-events: none;
+        }
+
+        .flow-builder-react .flow-canvas-toolbar .toolbar-btn {
+            pointer-events: auto;
+        }
+
+        .flow-builder-react .flow-canvas-toolbar .toolbar-btn.primary,
+        .flow-builder-react .flow-canvas-toolbar .toolbar-btn.ai-highlight {
+            min-width: 150px;
+            justify-content: center;
+            min-height: 38px;
+        }
+
+        .flow-builder-react .flow-canvas-toolbar .toolbar-btn.secondary {
+            min-height: 38px;
+        }
+
+        .flow-builder-react .flow-canvas-toolbar .toolbar-btn.is-hidden {
+            display: none;
+        }
+
+        .flow-builder-react .flow-ai-assistant-dock {
+            position: absolute;
+            left: 50%;
+            bottom: 16px;
+            transform: translateX(-50%);
+            z-index: 42;
+            width: min(640px, calc(100% - 36px));
+            display: grid;
+            justify-items: center;
+            pointer-events: none;
+        }
+
+        .flow-builder-react .flow-ai-assistant-launch {
+            pointer-events: auto;
+            min-width: 210px;
+            min-height: 40px;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .flow-builder-react .flow-ai-assistant-panel[hidden] {
+            display: none !important;
+        }
+
+        .flow-builder-react .flow-ai-assistant-panel {
+            width: 100%;
+            pointer-events: auto;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background:
+                radial-gradient(circle at top right, rgba(var(--primary-rgb), 0.08), transparent 46%),
+                rgba(15, 23, 42, 0.92);
+            box-shadow: 0 18px 42px rgba(2, 6, 23, 0.28);
+            overflow: hidden;
+            backdrop-filter: blur(4px);
+        }
+
+        .flow-builder-react .flow-ai-assistant-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+            background: rgba(2, 6, 23, 0.18);
+        }
+
+        .flow-builder-react .flow-ai-assistant-title {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #e7edf7;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .flow-builder-react .flow-ai-assistant-status {
+            font-size: 11px;
+            color: #9fb0c8;
+            margin-left: 6px;
+            font-weight: 500;
+        }
+
+        .flow-builder-react .flow-ai-assistant-close {
+            width: 28px;
+            height: 28px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: rgba(15, 23, 42, 0.45);
+            color: #cbd5e1;
+            cursor: pointer;
+            display: grid;
+            place-items: center;
+            font-size: 16px;
+            line-height: 1;
+            transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+        }
+
+        .flow-builder-react .flow-ai-assistant-close:hover {
+            border-color: rgba(var(--primary-rgb), 0.28);
+            color: #ffffff;
+            background: rgba(15, 23, 42, 0.65);
+        }
+
+        .flow-builder-react .flow-ai-assistant-messages {
+            max-height: 210px;
+            overflow-y: auto;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: rgba(2, 6, 23, 0.06);
+        }
+
+        .flow-builder-react .flow-ai-assistant-message {
+            display: inline-flex;
+            max-width: min(92%, 520px);
+            border-radius: 12px;
+            padding: 8px 10px;
+            font-size: 12px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+            border: 1px solid transparent;
+        }
+
+        .flow-builder-react .flow-ai-assistant-message.assistant {
+            align-self: flex-start;
+            background: rgba(30, 41, 59, 0.7);
+            border-color: rgba(148, 163, 184, 0.14);
+            color: #dbe7f6;
+        }
+
+        .flow-builder-react .flow-ai-assistant-message.user {
+            align-self: flex-end;
+            background: rgba(var(--primary-rgb), 0.17);
+            border-color: rgba(var(--primary-rgb), 0.26);
+            color: #effef5;
+        }
+
+        .flow-builder-react .flow-ai-assistant-message.system {
+            align-self: center;
+            background: rgba(59, 130, 246, 0.12);
+            border-color: rgba(59, 130, 246, 0.22);
+            color: #dbeafe;
+            font-size: 11px;
+            padding: 6px 9px;
+        }
+
+        .flow-builder-react .flow-ai-assistant-composer {
+            padding: 10px 12px 12px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: end;
+            background: rgba(15, 23, 42, 0.18);
+        }
+
+        .flow-builder-react .flow-ai-assistant-input {
+            width: 100%;
+            min-height: 42px;
+            max-height: 110px;
+            resize: vertical;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(2, 6, 23, 0.26);
+            color: #e7edf7;
+            padding: 10px 12px;
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .flow-builder-react .flow-ai-assistant-input::placeholder {
+            color: #93a7c2;
+        }
+
+        .flow-builder-react .flow-ai-assistant-input:focus {
+            outline: none;
+            border-color: rgba(var(--primary-rgb), 0.42);
+            box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+        }
+
+        .flow-builder-react .flow-ai-assistant-send {
+            min-height: 42px;
+            min-width: 94px;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .flow-builder-react .flow-ai-assistant-send[disabled] {
+            opacity: 0.65;
+            cursor: not-allowed;
+            filter: grayscale(0.08);
         }
 
         .flow-builder-react .sidebar-menu {
@@ -1483,20 +1687,41 @@ export default function FlowBuilder() {
                 justify-content: space-between;
                 gap: 8px;
             }
-            .flow-builder-react .header-flow-actions {
-                width: 100%;
-                display: grid;
-                grid-template-columns: 1fr;
-                gap: 8px;
-            }
-            .flow-builder-react .header-flow-actions .toolbar-btn {
-                width: 100%;
-                justify-content: center;
-            }
             .flow-list-item .name-row {
                 width: 100%;
             }
             .flow-inline-name-input {
+                min-width: 0;
+            }
+            .flow-builder-react .flow-canvas-toolbar {
+                top: 10px;
+                right: 10px;
+                gap: 8px;
+            }
+            .flow-builder-react .flow-canvas-toolbar .toolbar-btn.primary,
+            .flow-builder-react .flow-canvas-toolbar .toolbar-btn.ai-highlight {
+                min-width: 0;
+            }
+            .flow-builder-react .flow-ai-assistant-dock {
+                width: calc(100% - 20px);
+                bottom: 10px;
+            }
+            .flow-builder-react .flow-ai-assistant-launch {
+                width: min(100%, 240px);
+                min-width: 0;
+            }
+            .flow-builder-react .flow-ai-assistant-panel {
+                border-radius: 12px;
+            }
+            .flow-builder-react .flow-ai-assistant-messages {
+                max-height: 160px;
+            }
+            .flow-builder-react .flow-ai-assistant-composer {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            .flow-builder-react .flow-ai-assistant-send {
+                width: 100%;
                 min-width: 0;
             }
         }
@@ -1565,17 +1790,6 @@ export default function FlowBuilder() {
                                   <span className="icon icon-list icon-sm"></span> Meus Fluxos
                               </button>
                           </div>
-                      </div>
-                      <div className="header-flow-actions">
-                          <button className="toolbar-btn secondary" onClick={() => globals.saveFlow?.()}>
-                              <span className="icon icon-save icon-sm"></span> Salvar
-                          </button>
-                          <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
-                              <span className="icon icon-add icon-sm"></span> Novo Fluxo
-                          </button>
-                          <button className="toolbar-btn ai-highlight" onClick={() => globals.generateFlowWithAi?.()}>
-                              <span className="icon icon-spark icon-sm"></span> Gerar com IA
-                          </button>
                       </div>
                   </div>
               </div>
@@ -1694,6 +1908,65 @@ export default function FlowBuilder() {
                           </div>
                       </div>
                       
+                      <div className="flow-canvas-toolbar" id="flowCanvasToolbar">
+                          <button className="toolbar-btn secondary is-hidden" id="flowCanvasSaveBtn" onClick={() => globals.saveFlow?.()}>
+                              <span className="icon icon-save icon-sm"></span> Salvar
+                          </button>
+                          <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
+                              <span className="icon icon-add icon-sm"></span> Novo Fluxo
+                          </button>
+                      </div>
+
+                      <div className="flow-ai-assistant-dock" id="flowAiAssistantDock">
+                          <button
+                              className="toolbar-btn ai-highlight flow-ai-assistant-launch"
+                              id="flowAiAssistantLaunchBtn"
+                              type="button"
+                              onClick={() => globals.toggleFlowAiAssistant?.(true)}
+                          >
+                              <span className="icon icon-spark icon-sm"></span> Gerar com IA
+                          </button>
+
+                          <div className="flow-ai-assistant-panel" id="flowAiAssistantPanel" hidden>
+                              <div className="flow-ai-assistant-header">
+                                  <div className="flow-ai-assistant-title">
+                                      <span className="icon icon-spark icon-sm"></span>
+                                      IA de Fluxos
+                                      <span className="flow-ai-assistant-status" id="flowAiAssistantStatus">Pronta</span>
+                                  </div>
+                                  <button
+                                      className="flow-ai-assistant-close"
+                                      id="flowAiAssistantCloseBtn"
+                                      type="button"
+                                      aria-label="Fechar IA de Fluxos"
+                                      onClick={() => globals.closeFlowAiAssistant?.()}
+                                  >
+                                      ×
+                                  </button>
+                              </div>
+
+                              <div className="flow-ai-assistant-messages" id="flowAiAssistantMessages"></div>
+
+                              <div className="flow-ai-assistant-composer">
+                                  <textarea
+                                      className="flow-ai-assistant-input"
+                                      id="flowAiAssistantInput"
+                                      rows={2}
+                                      placeholder="Ex.: gere um fluxo de conversa que receba novos leads e feche vendas"
+                                      onKeyDown={(event) => globals.handleFlowAiAssistantInputKeydown?.(event.nativeEvent as KeyboardEvent)}
+                                  ></textarea>
+                                  <button
+                                      className="toolbar-btn ai-highlight flow-ai-assistant-send"
+                                      id="flowAiAssistantSendBtn"
+                                      type="button"
+                                      onClick={() => globals.sendFlowAiAssistantPrompt?.()}
+                                  >
+                                      <span className="icon icon-spark icon-sm"></span> Gerar
+                                  </button>
+                              </div>
+                          </div>
+                      </div>
+
                       <div className="zoom-controls">
                           <button className="zoom-btn" onClick={() => globals.zoomIn?.()}>+</button>
                           <div className="zoom-level" id="zoomLevel">100%</div>

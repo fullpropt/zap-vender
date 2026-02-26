@@ -55,6 +55,12 @@ type AiGenerateFlowResponse = {
     draft?: AiGeneratedFlowDraft | null;
 };
 
+type AiFlowGenerationRunResult = {
+    provider?: string;
+    assumptions?: string[];
+    cancelled?: boolean;
+};
+
 type FlowSummary = {
     id: number;
     name: string;
@@ -85,6 +91,7 @@ let selectedNode: FlowNode | null = null;
 let currentFlowId: number | null = null;
 let currentFlowName = '';
 let currentFlowIsActive = true;
+let flowHasUnsavedChanges = false;
 let flowsCache: FlowSummary[] = [];
 let renamingFlowId: number | null = null;
 let renamingFlowDraft = '';
@@ -128,6 +135,11 @@ type FlowDialogElements = {
     closeBtn: HTMLButtonElement;
 };
 
+type FlowAiAssistantMessage = {
+    role: 'assistant' | 'user' | 'system';
+    text: string;
+};
+
 const DEFAULT_HANDLE = 'default';
 const LAST_OPEN_FLOW_ID_STORAGE_KEY = 'flow_builder:last_open_flow_id';
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
@@ -137,6 +149,10 @@ const DEFAULT_CONTACT_FIELDS: ContactField[] = [
 ];
 
 let activeFlowDialogDismiss: (() => void) | null = null;
+let flowAiAssistantOpen = false;
+let flowAiAssistantLoading = false;
+let flowAiAssistantBound = false;
+let flowAiAssistantMessages: FlowAiAssistantMessage[] = [];
 
 function getFlowDialogElements(): FlowDialogElements | null {
     const overlay = document.getElementById('flowDialogModal') as HTMLElement | null;
@@ -331,6 +347,175 @@ function notify(type: ToastType, title: string, message: string, fallbackMessage
     }
 
     void showFlowAlertDialog(fallbackMessage || message, title || 'Aviso');
+}
+
+function getFlowAiAssistantElements() {
+    return {
+        launchBtn: document.getElementById('flowAiAssistantLaunchBtn') as HTMLButtonElement | null,
+        panel: document.getElementById('flowAiAssistantPanel') as HTMLElement | null,
+        messages: document.getElementById('flowAiAssistantMessages') as HTMLElement | null,
+        input: document.getElementById('flowAiAssistantInput') as HTMLTextAreaElement | null,
+        sendBtn: document.getElementById('flowAiAssistantSendBtn') as HTMLButtonElement | null,
+        status: document.getElementById('flowAiAssistantStatus') as HTMLElement | null,
+        closeBtn: document.getElementById('flowAiAssistantCloseBtn') as HTMLButtonElement | null
+    };
+}
+
+function ensureFlowAiAssistantWelcome() {
+    if (flowAiAssistantMessages.length > 0) return;
+    flowAiAssistantMessages = [
+        {
+            role: 'assistant',
+            text: 'Descreva o fluxo que você quer criar. Ex.: "gere um fluxo de conversa que receba novos leads e feche vendas".'
+        }
+    ];
+}
+
+function renderFlowAiAssistantMessages() {
+    const { messages } = getFlowAiAssistantElements();
+    if (!messages) return;
+
+    ensureFlowAiAssistantWelcome();
+
+    messages.innerHTML = flowAiAssistantMessages
+        .map((item) => `<div class="flow-ai-assistant-message ${item.role}">${escapeHtml(item.text || '')}</div>`)
+        .join('');
+
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function autoResizeFlowAiAssistantInput() {
+    const { input } = getFlowAiAssistantElements();
+    if (!input) return;
+    input.style.height = 'auto';
+    const nextHeight = Math.min(Math.max(input.scrollHeight, 42), 110);
+    input.style.height = `${nextHeight}px`;
+}
+
+function renderFlowAiAssistantState() {
+    const { launchBtn, panel, sendBtn, status, input } = getFlowAiAssistantElements();
+
+    if (launchBtn) {
+        launchBtn.hidden = flowAiAssistantOpen;
+        launchBtn.classList.toggle('is-hidden', flowAiAssistantOpen);
+    }
+    if (panel) {
+        panel.hidden = !flowAiAssistantOpen;
+    }
+
+    if (status) {
+        status.textContent = flowAiAssistantLoading ? 'Gerando...' : 'Pronta';
+    }
+
+    if (sendBtn) {
+        const hasText = Boolean(String(input?.value || '').trim());
+        sendBtn.disabled = flowAiAssistantLoading || !hasText;
+    }
+
+    if (flowAiAssistantOpen) {
+        renderFlowAiAssistantMessages();
+        autoResizeFlowAiAssistantInput();
+    }
+}
+
+function appendFlowAiAssistantMessage(role: FlowAiAssistantMessage['role'], text: string) {
+    const normalized = String(text || '').trim();
+    if (!normalized) return;
+    flowAiAssistantMessages.push({ role, text: normalized });
+    renderFlowAiAssistantMessages();
+}
+
+function setFlowAiAssistantOpen(forceOpen?: boolean) {
+    flowAiAssistantOpen = typeof forceOpen === 'boolean' ? forceOpen : !flowAiAssistantOpen;
+    ensureFlowAiAssistantWelcome();
+    renderFlowAiAssistantState();
+
+    if (flowAiAssistantOpen) {
+        window.requestAnimationFrame(() => {
+            const { input } = getFlowAiAssistantElements();
+            input?.focus();
+            if (input) {
+                const end = input.value.length;
+                input.setSelectionRange(end, end);
+            }
+        });
+    }
+}
+
+function toggleFlowAiAssistant(forceOpen?: boolean) {
+    setFlowAiAssistantOpen(forceOpen);
+}
+
+function closeFlowAiAssistant() {
+    setFlowAiAssistantOpen(false);
+}
+
+function handleFlowAiAssistantInputKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter') return;
+    if (event.shiftKey) return;
+    event.preventDefault();
+    void sendFlowAiAssistantPrompt();
+}
+
+function bindFlowAiAssistant() {
+    if (flowAiAssistantBound) return;
+    const { panel, input } = getFlowAiAssistantElements();
+    if (!panel || !input) return;
+
+    flowAiAssistantBound = true;
+
+    const stopWheelPropagation = (event: Event) => {
+        event.stopPropagation();
+    };
+    panel.addEventListener('wheel', stopWheelPropagation, { passive: true });
+    panel.addEventListener('mousedown', (event) => event.stopPropagation());
+    panel.addEventListener('click', (event) => event.stopPropagation());
+
+    input.addEventListener('input', () => {
+        autoResizeFlowAiAssistantInput();
+        renderFlowAiAssistantState();
+    });
+
+    renderFlowAiAssistantState();
+}
+
+async function sendFlowAiAssistantPrompt() {
+    const { input } = getFlowAiAssistantElements();
+    if (!input || flowAiAssistantLoading) return;
+
+    const promptText = String(input.value || '').trim();
+    if (!promptText) {
+        renderFlowAiAssistantState();
+        return;
+    }
+
+    appendFlowAiAssistantMessage('user', promptText);
+    input.value = '';
+    flowAiAssistantLoading = true;
+    renderFlowAiAssistantState();
+
+    try {
+        const result = await runGenerateFlowWithAiPrompt(promptText);
+        if (result.cancelled) {
+            appendFlowAiAssistantMessage('system', 'Geração cancelada.');
+            return;
+        }
+
+        const provider = String(result.provider || 'IA').toUpperCase();
+        const assumptions = Array.isArray(result.assumptions) ? result.assumptions : [];
+        const summary = assumptions.length
+            ? `Rascunho gerado (${provider}). Revise, ajuste se necessário e salve.\n\nObservações:\n- ${assumptions.join('\n- ')}`
+            : `Rascunho gerado (${provider}). Revise, ajuste se necessário e salve.`;
+        appendFlowAiAssistantMessage('assistant', summary);
+    } catch (error) {
+        appendFlowAiAssistantMessage('assistant', `Não consegui gerar o fluxo agora: ${error instanceof Error ? error.message : 'Falha inesperada'}`);
+    } finally {
+        flowAiAssistantLoading = false;
+        renderFlowAiAssistantState();
+        window.requestAnimationFrame(() => {
+            input.focus();
+        });
+    }
 }
 
 function isIntentTrigger(node?: FlowNode | null) {
@@ -737,14 +922,37 @@ function renderCurrentFlowName() {
     renderCurrentFlowStatusIndicator();
 }
 
+function renderFlowSaveButtonVisibility() {
+    const saveBtn = document.getElementById('flowCanvasSaveBtn') as HTMLButtonElement | null;
+    if (!saveBtn) return;
+
+    saveBtn.classList.toggle('is-hidden', !flowHasUnsavedChanges);
+    saveBtn.toggleAttribute('hidden', !flowHasUnsavedChanges);
+}
+
+function setFlowDirtyState(nextDirty: boolean) {
+    const normalized = !!nextDirty;
+    flowHasUnsavedChanges = normalized;
+    renderFlowSaveButtonVisibility();
+}
+
+function markFlowDirty() {
+    if (flowHasUnsavedChanges) return;
+    setFlowDirtyState(true);
+}
+
 function updateFlowStatusFromSelect() {
     const statusSelect = document.getElementById('flowStatus') as HTMLSelectElement | null;
     if (!statusSelect) return;
-    setCurrentFlowActive(statusSelect.value === '1');
+    const nextActive = statusSelect.value === '1';
+    if (nextActive === currentFlowIsActive) return;
+    setCurrentFlowActive(nextActive);
+    markFlowDirty();
 }
 
 function toggleFlowActive() {
     setCurrentFlowActive(!currentFlowIsActive);
+    markFlowDirty();
 }
 
 async function restoreLastFlowOrOpenModal() {
@@ -783,6 +991,8 @@ function initFlowBuilder() {
         setCurrentFlowActive(true);
     }
     renderCurrentFlowName();
+    setFlowDirtyState(false);
+    bindFlowAiAssistant();
     renderFlowVariableTags();
     loadFlowVariableFields();
     loadCustomEventsCatalog({ silent: true });
@@ -898,6 +1108,7 @@ function addNode(type: NodeType, subtype: string, x: number, y: number) {
     nodes.push(node);
     renderNode(node);
     selectNode(id);
+    markFlowDirty();
 }
 
 // Dados padrao do no
@@ -1050,8 +1261,11 @@ function handleDocumentMouseMove(e: MouseEvent) {
 
     if (isDragging && dragNode) {
         const point = clientToFlowCoords(e.clientX, e.clientY);
-        dragNode.position.x = point.x - dragOffset.x;
-        dragNode.position.y = point.y - dragOffset.y;
+        const nextX = point.x - dragOffset.x;
+        const nextY = point.y - dragOffset.y;
+        const moved = nextX !== dragNode.position.x || nextY !== dragNode.position.y;
+        dragNode.position.x = nextX;
+        dragNode.position.y = nextY;
 
         const nodeEl = document.getElementById(dragNode.id) as HTMLElement | null;
         if (nodeEl) {
@@ -1060,6 +1274,9 @@ function handleDocumentMouseMove(e: MouseEvent) {
         }
 
         renderConnections();
+        if (moved) {
+            markFlowDirty();
+        }
     }
 
     if (isConnecting) {
@@ -1178,6 +1395,8 @@ function deleteNode(id: string) {
         const emptyCanvas = document.getElementById('emptyCanvas') as HTMLElement | null;
         if (emptyCanvas) emptyCanvas.style.display = 'block';
     }
+
+    markFlowDirty();
 }
 
 function duplicateNode(id: string, event?: Event) {
@@ -1206,6 +1425,7 @@ function duplicateNode(id: string, event?: Event) {
     renderNode(duplicate);
     renderConnections();
     selectNode(duplicate.id);
+    markFlowDirty();
 }
 
 // Renderizar propriedades
@@ -1408,6 +1628,7 @@ function updateNodeProperty(key: keyof NodeData, value: any) {
     }
 
     rerenderNode(selectedNode.id);
+    markFlowDirty();
 }
 
 function updateEventNodeSelection(value: string) {
@@ -1420,6 +1641,7 @@ function updateEventNodeSelection(value: string) {
         selectedNode.data.eventName = '';
         rerenderNode(selectedNode.id);
         renderProperties();
+        markFlowDirty();
         return;
     }
 
@@ -1429,6 +1651,7 @@ function updateEventNodeSelection(value: string) {
     selectedNode.data.eventName = String(selected?.name || '').trim();
     rerenderNode(selectedNode.id);
     renderProperties();
+    markFlowDirty();
 }
 
 function rerenderNode(nodeId: string) {
@@ -1547,6 +1770,8 @@ function toggleNodeCollapsed(id: string, event?: Event) {
     if (selectedNode?.id === id) {
         renderProperties();
     }
+
+    markFlowDirty();
 }
 
 function cleanupInvalidEdgesForNode(nodeId: string) {
@@ -1575,6 +1800,7 @@ function addIntentRoute() {
     syncIntentRoutesFromNode(selectedNode);
     rerenderNode(selectedNode.id);
     renderProperties();
+    markFlowDirty();
 }
 
 function updateIntentRoute(index: number, key: 'label' | 'phrases', value: string) {
@@ -1586,6 +1812,7 @@ function updateIntentRoute(index: number, key: 'label' | 'phrases', value: strin
     syncIntentRoutesFromNode(selectedNode);
     rerenderNode(selectedNode.id);
     renderProperties();
+    markFlowDirty();
 }
 
 function removeIntentRoute(index: number) {
@@ -1597,6 +1824,7 @@ function removeIntentRoute(index: number) {
     syncIntentRoutesFromNode(selectedNode);
     rerenderNode(selectedNode.id);
     renderProperties();
+    markFlowDirty();
 }
 
 // Condicoes
@@ -1609,17 +1837,20 @@ function addCondition() {
     
     selectedNode.data.conditions.push({ value: '', next: '' });
     renderProperties();
+    markFlowDirty();
 }
 
 function updateCondition(index: number, key: 'value' | 'next', value: string) {
     if (!selectedNode) return;
     selectedNode.data.conditions[index][key] = value;
+    markFlowDirty();
 }
 
 function removeCondition(index: number) {
     if (!selectedNode) return;
     selectedNode.data.conditions.splice(index, 1);
     renderProperties();
+    markFlowDirty();
 }
 
 // Inserir variavel
@@ -1707,6 +1938,7 @@ function endConnection(nodeId: string, portType: string) {
         if (selectedNode?.id === newEdge.source) {
             renderProperties();
         }
+        markFlowDirty();
     }
 
     cancelConnection();
@@ -1804,6 +2036,7 @@ function renderConnections() {
         const removeConnection = () => {
             edges = edges.filter((item) => !isSameEdge(item, edge));
             renderConnections();
+            markFlowDirty();
         };
 
         hitPath.addEventListener('mouseenter', () => {
@@ -1895,6 +2128,7 @@ function resetEditorState() {
 
     renderFlowStatusControls();
     renderCurrentFlowName();
+    setFlowDirtyState(false);
     applyZoom();
 }
 
@@ -2031,6 +2265,7 @@ async function saveFlow() {
             persistLastOpenFlowId(currentFlowId);
             setCurrentFlowActive(result.flow?.is_active);
             renderCurrentFlowName();
+            setFlowDirtyState(false);
             notify('success', 'Sucesso', 'Fluxo salvo com sucesso!');
         } else {
             await showFlowAlertDialog('Erro ao salvar: ' + result.error, 'Salvar fluxo');
@@ -2317,6 +2552,7 @@ async function duplicateFlow(id: number, event?: Event) {
         currentFlowName = `${flow.name || 'Fluxo'} (copia)`;
         setCurrentFlowActive(flow?.is_active);
         renderCurrentFlowName();
+        setFlowDirtyState(true);
 
         nodes.forEach(node => renderNode(node));
         setTimeout(() => renderConnections(), 100);
@@ -2390,6 +2626,7 @@ async function loadFlow(id: number, options: LoadFlowOptions = {}): Promise<bool
             await loadCustomEventsCatalog({ silent: true });
             setCurrentFlowActive(result.flow?.is_active);
             renderCurrentFlowName();
+            setFlowDirtyState(false);
             
             // Renderizar nós
             nodes.forEach(node => renderNode(node));
@@ -2462,9 +2699,60 @@ function applyAiDraftToEditor(draft: AiGeneratedFlowDraft) {
     normalizeLoadedFlowData();
     setCurrentFlowActive(false);
     renderCurrentFlowName();
+    setFlowDirtyState(true);
 
     nodes.forEach((node) => renderNode(node));
     setTimeout(() => renderConnections(), 100);
+}
+
+async function runGenerateFlowWithAiPrompt(promptText: string): Promise<AiFlowGenerationRunResult> {
+    const normalizedPrompt = String(promptText || '').trim();
+    if (!normalizedPrompt) {
+        return { cancelled: true };
+    }
+
+    if (nodes.length > 0) {
+        const confirmed = await showFlowConfirmDialog(
+            'Substituir o fluxo atual pelo rascunho gerado por IA? As alteracoes nao salvas serao perdidas.',
+            'Gerar fluxo com IA'
+        );
+        if (!confirmed) {
+            return { cancelled: true };
+        }
+    }
+
+    const token = getSessionToken();
+    if (!token) {
+        throw new Error('Sessao expirada. Faca login novamente.');
+    }
+
+    notify('info', 'IA', 'Gerando rascunho de fluxo...');
+    const response = await fetch('/api/ai/flows/generate', {
+        method: 'POST',
+        headers: buildAuthHeaders(true),
+        body: JSON.stringify({
+            prompt: normalizedPrompt
+        })
+    });
+    const result = await response.json() as AiGenerateFlowResponse;
+
+    if (!response.ok || !result?.success || !result?.draft) {
+        throw new Error(result?.error || 'Nao foi possivel gerar o fluxo com IA');
+    }
+
+    applyAiDraftToEditor(result.draft);
+
+    const assumptions = Array.isArray(result.draft.assumptions) ? result.draft.assumptions : [];
+    const provider = String(result.provider || 'ia').toUpperCase();
+    const summaryMessage = assumptions.length > 0
+        ? `Rascunho gerado (${provider}). Revise antes de salvar.`
+        : `Rascunho gerado (${provider}).`;
+    notify('success', 'IA', summaryMessage);
+
+    return {
+        provider,
+        assumptions
+    };
 }
 
 async function generateFlowWithAi() {
@@ -2478,43 +2766,8 @@ async function generateFlowWithAi() {
     const promptText = String(promptValue || '').trim();
     if (!promptText) return;
 
-    if (nodes.length > 0) {
-        const confirmed = await showFlowConfirmDialog(
-            'Substituir o fluxo atual pelo rascunho gerado por IA? As alteracoes nao salvas serao perdidas.',
-            'Gerar fluxo com IA'
-        );
-        if (!confirmed) return;
-    }
-
-    const token = getSessionToken();
-    if (!token) {
-        await showFlowAlertDialog('Sessao expirada. Faca login novamente.', 'Sessao');
-        return;
-    }
-
     try {
-        notify('info', 'IA', 'Gerando rascunho de fluxo...');
-        const response = await fetch('/api/ai/flows/generate', {
-            method: 'POST',
-            headers: buildAuthHeaders(true),
-            body: JSON.stringify({
-                prompt: promptText
-            })
-        });
-        const result = await response.json() as AiGenerateFlowResponse;
-
-        if (!response.ok || !result?.success || !result?.draft) {
-            throw new Error(result?.error || 'Nao foi possivel gerar o fluxo com IA');
-        }
-
-        applyAiDraftToEditor(result.draft);
-
-        const assumptions = Array.isArray(result.draft.assumptions) ? result.draft.assumptions : [];
-        const provider = String(result.provider || 'ia').toUpperCase();
-        const summaryMessage = assumptions.length > 0
-            ? `Rascunho gerado (${provider}). Revise antes de salvar.`
-            : `Rascunho gerado (${provider}).`;
-        notify('success', 'IA', summaryMessage);
+        await runGenerateFlowWithAiPrompt(promptText);
     } catch (error) {
         await showFlowAlertDialog('Erro ao gerar fluxo com IA: ' + (error instanceof Error ? error.message : 'Falha inesperada'), 'Gerar fluxo com IA');
     }
@@ -2542,6 +2795,10 @@ const windowAny = window as Window & {
     clearCanvas?: () => void;
     saveFlow?: () => Promise<void>;
     generateFlowWithAi?: () => Promise<void>;
+    toggleFlowAiAssistant?: (forceOpen?: boolean) => void;
+    closeFlowAiAssistant?: () => void;
+    sendFlowAiAssistantPrompt?: () => Promise<void>;
+    handleFlowAiAssistantInputKeydown?: (event: KeyboardEvent) => void;
     toggleFlowActive?: () => void;
     updateFlowStatusFromSelect?: () => void;
     zoomIn?: () => void;
@@ -2577,6 +2834,10 @@ windowAny.createNewFlow = createNewFlow;
 windowAny.clearCanvas = clearCanvas;
 windowAny.saveFlow = saveFlow;
 windowAny.generateFlowWithAi = generateFlowWithAi;
+windowAny.toggleFlowAiAssistant = toggleFlowAiAssistant;
+windowAny.closeFlowAiAssistant = closeFlowAiAssistant;
+windowAny.sendFlowAiAssistantPrompt = sendFlowAiAssistantPrompt;
+windowAny.handleFlowAiAssistantInputKeydown = handleFlowAiAssistantInputKeydown;
 windowAny.toggleFlowActive = toggleFlowActive;
 windowAny.updateFlowStatusFromSelect = updateFlowStatusFromSelect;
 windowAny.zoomIn = zoomIn;
