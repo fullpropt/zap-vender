@@ -41,6 +41,14 @@ const RUNTIME_SUPPORTED_TRIGGER_TYPES: TriggerType[] = [
     'inactivity'
 ];
 
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
+
 function isRuntimeSupportedTriggerType(type: string): type is TriggerType {
     return RUNTIME_SUPPORTED_TRIGGER_TYPES.includes(type as TriggerType);
 }
@@ -772,7 +780,7 @@ function editAutomation(id: number) {
 }
 
 async function deleteAutomation(id: number) {
-    if (!confirm('Excluir esta automa??o?')) return;
+    if (!await appConfirm('Excluir esta automacao?', 'Excluir automacao')) return;
 
     try {
         await api.delete(`/api/automations/${id}`);

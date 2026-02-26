@@ -32,6 +32,14 @@ let selectedContacts = new Set<number>();
 let templates: Template[] = [];
 let queueInterval: number | null = null;
 
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
+
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', callback);
@@ -364,7 +372,7 @@ async function cancelQueueItem(id: number) {
 }
 
 async function clearQueue() {
-    if (!confirm('Limpar todas as mensagens pendentes da fila?')) return;
+    if (!await appConfirm('Limpar todas as mensagens pendentes da fila?', 'Limpar fila')) return;
     
     try {
         await api.delete('/api/queue');

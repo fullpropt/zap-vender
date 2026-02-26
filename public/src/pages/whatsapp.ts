@@ -43,6 +43,27 @@ let pairingCodeHideTimer: number | null = null;
 let pairingCodeVisible = false;
 let lastPairingCode = '';
 
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
+
+function appPrompt(message: string, options: { title?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string; cancelLabel?: string } = {}) {
+    const win = window as Window & {
+        showAppPrompt?: (
+            message: string,
+            options?: { title?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string; cancelLabel?: string }
+        ) => Promise<string | null>;
+    };
+    if (typeof win.showAppPrompt === 'function') {
+        return win.showAppPrompt(message, options);
+    }
+    return Promise.resolve(window.prompt(message, options.defaultValue || ''));
+}
+
 // Inicialização
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -311,9 +332,14 @@ function changeSession(sessionId: string) {
 
 async function createSessionPrompt() {
     const suggestedSessionId = getSuggestedNewSessionId();
-    const rawInput = window.prompt(
+    const rawInput = await appPrompt(
         'Informe o identificador da nova conta WhatsApp (ex: vendas_sp_session):',
-        suggestedSessionId
+        {
+            title: 'Nova conta WhatsApp',
+            defaultValue: suggestedSessionId,
+            placeholder: 'ex.: vendas_sp_session',
+            confirmLabel: 'Criar'
+        }
     );
     if (rawInput === null) return;
 
@@ -549,9 +575,9 @@ function requestPairingCode() {
 }
 
 // Desconectar
-function disconnect() {
+async function disconnect() {
     const sessionId = getCurrentSessionId();
-    if (confirm(`Tem certeza que deseja desconectar a conta ${sessionId}?`)) {
+    if (await appConfirm(`Tem certeza que deseja desconectar a conta ${sessionId}?`, 'Desconectar conta')) {
         socket?.emit('logout', { sessionId });
         handleDisconnected();
         void loadSessionOptions(sessionId);
@@ -898,7 +924,7 @@ const windowAny = window as Window & {
     initWhatsapp?: () => void;
     startConnection?: () => void;
     requestPairingCode?: () => void;
-    disconnect?: () => void;
+    disconnect?: () => Promise<void>;
     changeSession?: (sessionId: string) => void;
     createSessionPrompt?: () => void;
     toggleSidebar?: () => void;

@@ -107,6 +107,26 @@ let customEventsCache: CustomEventOption[] = [];
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 type ToastFn = (type: ToastType, title: string, message: string, duration?: number) => void;
+type FlowDialogMode = 'alert' | 'confirm' | 'prompt';
+type FlowDialogOptions = {
+    mode: FlowDialogMode;
+    title?: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    defaultValue?: string;
+    placeholder?: string;
+};
+type FlowDialogElements = {
+    overlay: HTMLElement;
+    title: HTMLElement;
+    message: HTMLElement;
+    inputWrap: HTMLElement;
+    input: HTMLInputElement;
+    cancelBtn: HTMLButtonElement;
+    confirmBtn: HTMLButtonElement;
+    closeBtn: HTMLButtonElement;
+};
 
 const DEFAULT_HANDLE = 'default';
 const LAST_OPEN_FLOW_ID_STORAGE_KEY = 'flow_builder:last_open_flow_id';
@@ -116,6 +136,193 @@ const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'email', label: 'Email', source: 'email', is_default: true, required: false, placeholder: 'email@exemplo.com' }
 ];
 
+let activeFlowDialogDismiss: (() => void) | null = null;
+
+function getFlowDialogElements(): FlowDialogElements | null {
+    const overlay = document.getElementById('flowDialogModal') as HTMLElement | null;
+    const title = document.getElementById('flowDialogTitle') as HTMLElement | null;
+    const message = document.getElementById('flowDialogMessage') as HTMLElement | null;
+    const inputWrap = document.getElementById('flowDialogInputWrap') as HTMLElement | null;
+    const input = document.getElementById('flowDialogInput') as HTMLInputElement | null;
+    const cancelBtn = document.getElementById('flowDialogCancelBtn') as HTMLButtonElement | null;
+    const confirmBtn = document.getElementById('flowDialogConfirmBtn') as HTMLButtonElement | null;
+    const closeBtn = document.getElementById('flowDialogCloseBtn') as HTMLButtonElement | null;
+
+    if (!overlay || !title || !message || !inputWrap || !input || !cancelBtn || !confirmBtn || !closeBtn) {
+        return null;
+    }
+
+    return {
+        overlay,
+        title,
+        message,
+        inputWrap,
+        input,
+        cancelBtn,
+        confirmBtn,
+        closeBtn
+    };
+}
+
+function fallbackNativeDialog(options: FlowDialogOptions): Promise<any> {
+    if (options.mode === 'alert') {
+        window.alert(options.message);
+        return Promise.resolve();
+    }
+
+    if (options.mode === 'confirm') {
+        return Promise.resolve(window.confirm(options.message));
+    }
+
+    const value = window.prompt(options.message, options.defaultValue || '');
+    return Promise.resolve(value === null ? null : String(value));
+}
+
+function openStyledFlowDialog(options: FlowDialogOptions): Promise<any> {
+    const elements = getFlowDialogElements();
+    if (!elements) {
+        return fallbackNativeDialog(options);
+    }
+
+    if (typeof activeFlowDialogDismiss === 'function') {
+        activeFlowDialogDismiss();
+    }
+
+    return new Promise((resolve) => {
+        const {
+            overlay,
+            title,
+            message,
+            inputWrap,
+            input,
+            cancelBtn,
+            confirmBtn,
+            closeBtn
+        } = elements;
+
+        let settled = false;
+        const isPrompt = options.mode === 'prompt';
+        const isAlert = options.mode === 'alert';
+
+        const finish = (result: any) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(result);
+        };
+
+        const cancelResult = () => {
+            if (isAlert) return undefined;
+            if (isPrompt) return null;
+            return false;
+        };
+
+        const cleanup = () => {
+            activeFlowDialogDismiss = null;
+            overlay.classList.remove('active');
+            overlay.onclick = null;
+            cancelBtn.onclick = null;
+            confirmBtn.onclick = null;
+            closeBtn.onclick = null;
+            input.onkeydown = null;
+            document.removeEventListener('keydown', onKeydown, true);
+        };
+
+        const onKeydown = (event: KeyboardEvent) => {
+            if (!overlay.classList.contains('active')) return;
+
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                finish(cancelResult());
+                return;
+            }
+
+            if (event.key === 'Enter' && (isPrompt || options.mode === 'confirm')) {
+                const target = event.target as HTMLElement | null;
+                if (!isPrompt || target === input) {
+                    event.preventDefault();
+                    finish(isPrompt ? input.value : true);
+                }
+            }
+        };
+
+        activeFlowDialogDismiss = () => finish(cancelResult());
+
+        title.textContent = String(options.title || (isPrompt ? 'Digite um valor' : isAlert ? 'Aviso' : 'Confirmacao'));
+        message.textContent = String(options.message || '');
+
+        inputWrap.classList.toggle('active', isPrompt);
+        input.value = isPrompt ? String(options.defaultValue || '') : '';
+        input.placeholder = isPrompt ? String(options.placeholder || '') : '';
+
+        cancelBtn.style.display = isAlert ? 'none' : '';
+        cancelBtn.textContent = String(options.cancelLabel || 'Cancelar');
+        confirmBtn.textContent = String(options.confirmLabel || (isPrompt ? 'Aplicar' : 'OK'));
+
+        overlay.onclick = (event) => {
+            if (event.target === overlay) {
+                finish(cancelResult());
+            }
+        };
+        cancelBtn.onclick = () => finish(cancelResult());
+        closeBtn.onclick = () => finish(cancelResult());
+        confirmBtn.onclick = () => finish(isPrompt ? input.value : (isAlert ? undefined : true));
+        input.onkeydown = (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                finish(input.value);
+            }
+        };
+
+        document.addEventListener('keydown', onKeydown, true);
+        overlay.classList.add('active');
+
+        requestAnimationFrame(() => {
+            if (isPrompt) {
+                input.focus();
+                input.select();
+                return;
+            }
+            if (!isAlert) {
+                confirmBtn.focus();
+                return;
+            }
+            closeBtn.focus();
+        });
+    });
+}
+
+function showFlowAlertDialog(message: string, title = 'Aviso') {
+    return openStyledFlowDialog({
+        mode: 'alert',
+        title,
+        message,
+        confirmLabel: 'OK'
+    });
+}
+
+function showFlowConfirmDialog(message: string, title = 'Confirmacao') {
+    return openStyledFlowDialog({
+        mode: 'confirm',
+        title,
+        message,
+        confirmLabel: 'OK',
+        cancelLabel: 'Cancelar'
+    }) as Promise<boolean>;
+}
+
+function showFlowPromptDialog(message: string, options: { title?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string; cancelLabel?: string } = {}) {
+    return openStyledFlowDialog({
+        mode: 'prompt',
+        title: options.title,
+        message,
+        defaultValue: options.defaultValue,
+        placeholder: options.placeholder,
+        confirmLabel: options.confirmLabel || 'OK',
+        cancelLabel: options.cancelLabel || 'Cancelar'
+    }) as Promise<string | null>;
+}
+
 function notify(type: ToastType, title: string, message: string, fallbackMessage?: string) {
     const globalToast = (window as Window & { showToast?: ToastFn }).showToast;
     if (typeof globalToast === 'function') {
@@ -123,7 +330,7 @@ function notify(type: ToastType, title: string, message: string, fallbackMessage
         return;
     }
 
-    alert(fallbackMessage || message);
+    void showFlowAlertDialog(fallbackMessage || message, title || 'Aviso');
 }
 
 function isIntentTrigger(node?: FlowNode | null) {
@@ -384,7 +591,7 @@ async function loadCustomEventsCatalog(options: { silent?: boolean } = {}) {
     } catch (error) {
         customEventsCache = [];
         if (!options.silent) {
-            alert('Nao foi possivel atualizar a lista de eventos personalizados.');
+            void showFlowAlertDialog('Nao foi possivel atualizar a lista de eventos personalizados.', 'Eventos');
         }
     }
 
@@ -1654,8 +1861,8 @@ function applyZoom() {
 }
 
 // Limpar canvas
-function clearCanvas() {
-    if (!confirm('Limpar todo o fluxo?')) return;
+async function clearCanvas() {
+    if (!await showFlowConfirmDialog('Limpar todo o fluxo?', 'Limpar fluxo')) return;
     resetEditorState();
 }
 
@@ -1768,23 +1975,28 @@ function normalizeLoadedFlowData() {
 async function saveFlow() {
     let name = String(currentFlowName || '').trim();
     if (!name) {
-        const typedName = prompt('Digite um nome para o fluxo:', 'Novo Fluxo');
+        const typedName = await showFlowPromptDialog('Digite um nome para o fluxo:', {
+            title: 'Salvar fluxo',
+            defaultValue: 'Novo Fluxo',
+            placeholder: 'Nome do fluxo',
+            confirmLabel: 'Salvar'
+        });
         if (!typedName) return;
         name = typedName.trim();
     }
     if (!name) {
-        alert('Digite um nome para o fluxo');
+        await showFlowAlertDialog('Digite um nome para o fluxo', 'Salvar fluxo');
         return;
     }
 
     if (nodes.length === 0) {
-        alert('Adicione pelo menos um bloco ao fluxo');
+        await showFlowAlertDialog('Adicione pelo menos um bloco ao fluxo', 'Salvar fluxo');
         return;
     }
 
     const token = getSessionToken();
     if (!token) {
-        alert('Sessão expirada. Faça login novamente.');
+        await showFlowAlertDialog('Sessão expirada. Faça login novamente.', 'Sessao');
         return;
     }
 
@@ -1821,10 +2033,10 @@ async function saveFlow() {
             renderCurrentFlowName();
             notify('success', 'Sucesso', 'Fluxo salvo com sucesso!');
         } else {
-            alert('Erro ao salvar: ' + result.error);
+            await showFlowAlertDialog('Erro ao salvar: ' + result.error, 'Salvar fluxo');
         }
     } catch (error) {
-        alert('Erro ao salvar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+        await showFlowAlertDialog('Erro ao salvar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'), 'Salvar fluxo');
     }
 }
 
@@ -1994,7 +2206,7 @@ async function saveFlowRenameInline(id: number, event?: Event) {
     const input = document.getElementById(`flowRenameInput-${flowId}`) as HTMLInputElement | null;
     const nextName = String(input?.value ?? renamingFlowDraft).trim();
     if (!nextName) {
-        alert('O nome do fluxo não pode ficar vazio.');
+        await showFlowAlertDialog('O nome do fluxo não pode ficar vazio.', 'Renomear fluxo');
         focusRenameFlowInput(flowId);
         return;
     }
@@ -2015,7 +2227,7 @@ async function saveFlowRenameInline(id: number, event?: Event) {
         const result = await response.json();
 
         if (!result.success) {
-            alert('Erro ao renomear fluxo: ' + (result.error || 'Falha inesperada'));
+            await showFlowAlertDialog('Erro ao renomear fluxo: ' + (result.error || 'Falha inesperada'), 'Renomear fluxo');
             return;
         }
 
@@ -2028,7 +2240,7 @@ async function saveFlowRenameInline(id: number, event?: Event) {
         renamingFlowDraft = '';
         await loadFlows();
     } catch (error) {
-        alert('Erro ao renomear fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+        await showFlowAlertDialog('Erro ao renomear fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'), 'Renomear fluxo');
     }
 }
 
@@ -2050,7 +2262,7 @@ async function toggleFlowActivation(id: number, event?: Event) {
     })());
 
     if (!targetFlow) {
-        alert('Não foi possível localizar o fluxo para alterar status.');
+        await showFlowAlertDialog('Não foi possível localizar o fluxo para alterar status.', 'Status do fluxo');
         return;
     }
 
@@ -2065,7 +2277,7 @@ async function toggleFlowActivation(id: number, event?: Event) {
         const result = await response.json();
 
         if (!result.success) {
-            alert('Erro ao atualizar status: ' + (result.error || 'Falha inesperada'));
+            await showFlowAlertDialog('Erro ao atualizar status: ' + (result.error || 'Falha inesperada'), 'Status do fluxo');
             return;
         }
 
@@ -2075,7 +2287,7 @@ async function toggleFlowActivation(id: number, event?: Event) {
 
         await loadFlows();
     } catch (error) {
-        alert('Erro ao atualizar status: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+        await showFlowAlertDialog('Erro ao atualizar status: ' + (error instanceof Error ? error.message : 'Falha inesperada'), 'Status do fluxo');
     }
 }
 
@@ -2090,7 +2302,7 @@ async function duplicateFlow(id: number, event?: Event) {
         const result = await response.json();
 
         if (!result.success) {
-            alert('Erro ao duplicar fluxo: ' + (result.error || 'Falha inesperada'));
+            await showFlowAlertDialog('Erro ao duplicar fluxo: ' + (result.error || 'Falha inesperada'), 'Duplicar fluxo');
             return;
         }
 
@@ -2109,7 +2321,7 @@ async function duplicateFlow(id: number, event?: Event) {
         nodes.forEach(node => renderNode(node));
         setTimeout(() => renderConnections(), 100);
     } catch (error) {
-        alert('Erro ao duplicar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+        await showFlowAlertDialog('Erro ao duplicar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'), 'Duplicar fluxo');
     }
 }
 
@@ -2117,7 +2329,7 @@ async function discardFlow(id: number, event?: Event) {
     event?.preventDefault();
     event?.stopPropagation();
 
-    if (!confirm('Descartar este fluxo? Esta ação não pode ser desfeita.')) return;
+    if (!await showFlowConfirmDialog('Descartar este fluxo? Esta ação não pode ser desfeita.', 'Descartar fluxo')) return;
 
     try {
         const response = await fetch(`/api/flows/${id}`, {
@@ -2127,7 +2339,7 @@ async function discardFlow(id: number, event?: Event) {
         const result = await response.json();
 
         if (!result.success) {
-            alert('Erro ao descartar fluxo: ' + (result.error || 'Falha inesperada'));
+            await showFlowAlertDialog('Erro ao descartar fluxo: ' + (result.error || 'Falha inesperada'), 'Descartar fluxo');
             return;
         }
 
@@ -2138,7 +2350,7 @@ async function discardFlow(id: number, event?: Event) {
 
         await loadFlows();
     } catch (error) {
-        alert('Erro ao descartar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+        await showFlowAlertDialog('Erro ao descartar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'), 'Descartar fluxo');
     }
 }
 
@@ -2190,13 +2402,13 @@ async function loadFlow(id: number, options: LoadFlowOptions = {}): Promise<bool
                 persistLastOpenFlowId(null);
             }
             if (!options.silent) {
-                alert('Erro ao carregar fluxo: ' + result.error);
+                await showFlowAlertDialog('Erro ao carregar fluxo: ' + result.error, 'Carregar fluxo');
             }
             return false;
         }
     } catch (error) {
         if (!options.silent) {
-            alert('Erro ao carregar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+            await showFlowAlertDialog('Erro ao carregar fluxo: ' + (error instanceof Error ? error.message : 'Falha inesperada'), 'Carregar fluxo');
         }
         return false;
     }
@@ -2240,17 +2452,26 @@ function applyAiDraftToEditor(draft: AiGeneratedFlowDraft) {
 
 async function generateFlowWithAi() {
     const seedPrompt = 'gere um fluxo de conversa que receba novos leads e feche vendas';
-    const promptText = String(prompt('Descreva o fluxo que a IA deve gerar:', seedPrompt) || '').trim();
+    const promptValue = await showFlowPromptDialog('Descreva o fluxo que a IA deve gerar:', {
+        title: 'Gerar fluxo com IA',
+        defaultValue: seedPrompt,
+        placeholder: 'Ex.: gere um fluxo de conversa que receba novos leads e feche vendas',
+        confirmLabel: 'Gerar'
+    });
+    const promptText = String(promptValue || '').trim();
     if (!promptText) return;
 
     if (nodes.length > 0) {
-        const confirmed = confirm('Substituir o fluxo atual pelo rascunho gerado por IA? As alteracoes nao salvas serao perdidas.');
+        const confirmed = await showFlowConfirmDialog(
+            'Substituir o fluxo atual pelo rascunho gerado por IA? As alteracoes nao salvas serao perdidas.',
+            'Gerar fluxo com IA'
+        );
         if (!confirmed) return;
     }
 
     const token = getSessionToken();
     if (!token) {
-        alert('Sessao expirada. Faca login novamente.');
+        await showFlowAlertDialog('Sessao expirada. Faca login novamente.', 'Sessao');
         return;
     }
 
@@ -2278,7 +2499,7 @@ async function generateFlowWithAi() {
             : `Rascunho gerado (${provider}).`;
         notify('success', 'IA', summaryMessage);
     } catch (error) {
-        alert('Erro ao gerar fluxo com IA: ' + (error instanceof Error ? error.message : 'Falha inesperada'));
+        await showFlowAlertDialog('Erro ao gerar fluxo com IA: ' + (error instanceof Error ? error.message : 'Falha inesperada'), 'Gerar fluxo com IA');
     }
 }
 

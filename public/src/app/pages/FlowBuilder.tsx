@@ -994,6 +994,66 @@ export default function FlowBuilder() {
             border-top: 1px solid rgba(148, 163, 184, 0.2);
             background: rgba(2, 6, 23, 0.28);
         }
+
+        .flow-dialog-modal {
+            width: min(560px, 100%);
+        }
+
+        .flow-dialog-body {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .flow-dialog-message {
+            margin: 0;
+            color: #d7e2f0;
+            line-height: 1.45;
+            white-space: pre-wrap;
+        }
+
+        .flow-dialog-input-wrap {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .flow-dialog-input-wrap.active {
+            display: flex;
+        }
+
+        .flow-dialog-input {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: rgba(15, 23, 42, 0.82);
+            color: #e7edf7;
+            padding: 12px 14px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .flow-dialog-input::placeholder {
+            color: rgba(203, 213, 225, 0.65);
+        }
+
+        .flow-dialog-input:focus {
+            border-color: rgba(var(--primary-rgb), 0.65);
+            box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.16);
+        }
+
+        .flow-dialog-footer {
+            justify-content: flex-end;
+        }
+
+        .flow-dialog-actions {
+            width: 100%;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
         
         .flow-list-item {
             display: grid;
@@ -1558,6 +1618,27 @@ export default function FlowBuilder() {
                       <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
                           <span className="icon icon-add icon-sm"></span> Criar Novo Fluxo
                       </button>
+                  </div>
+              </div>
+          </div>
+
+          <div className="modal-overlay" id="flowDialogModal">
+              <div className="modal flow-dialog-modal" role="dialog" aria-modal="true" aria-labelledby="flowDialogTitle">
+                  <div className="modal-header">
+                      <h2 id="flowDialogTitle">Aviso</h2>
+                      <button className="modal-close" id="flowDialogCloseBtn" type="button">&times;</button>
+                  </div>
+                  <div className="modal-body flow-dialog-body">
+                      <p className="flow-dialog-message" id="flowDialogMessage"></p>
+                      <div className="flow-dialog-input-wrap" id="flowDialogInputWrap">
+                          <input className="flow-dialog-input" id="flowDialogInput" type="text" />
+                      </div>
+                  </div>
+                  <div className="modal-footer flow-dialog-footer">
+                      <div className="flow-dialog-actions">
+                          <button className="toolbar-btn secondary" id="flowDialogCancelBtn" type="button">Cancelar</button>
+                          <button className="toolbar-btn primary" id="flowDialogConfirmBtn" type="button">OK</button>
+                      </div>
                   </div>
               </div>
           </div>

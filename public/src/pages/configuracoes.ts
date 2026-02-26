@@ -93,6 +93,14 @@ type PlanStatusApiPayload = {
     };
 };
 
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
+
 type PlanStatusViewModel = {
     ownerName: string;
     ownerEmail: string;
@@ -868,7 +876,7 @@ async function updateSettingsTag(id: number) {
 }
 
 async function deleteSettingsTag(id: number) {
-    if (!confirm('Deseja remover esta etiqueta?')) return;
+    if (!await appConfirm('Deseja remover esta etiqueta?', 'Remover etiqueta')) return;
 
     try {
         await api.delete(`/api/tags/${id}`);
@@ -1319,7 +1327,7 @@ async function saveCopysSettings() {
 }
 
 async function deleteTemplate(id: number) {
-    if (!confirm('Excluir esta resposta rápida?')) return;
+    if (!await appConfirm('Excluir esta resposta rapida?', 'Excluir resposta rapida')) return;
     try {
         await api.delete(`/api/templates/${id}`);
         await loadTemplates();
@@ -1582,7 +1590,7 @@ async function removeWhatsAppSession(sessionToken: string) {
     const sessionId = sanitizeSessionId(decodeSessionToken(sessionToken));
     if (!sessionId) return;
 
-    const confirmed = confirm(`Remover a conta ${sessionId}? Essa acao desconecta e exclui a sessao.`);
+    const confirmed = await appConfirm(`Remover a conta ${sessionId}? Essa acao desconecta e exclui a sessao.`, 'Remover conta WhatsApp');
     if (!confirmed) return;
 
     try {
@@ -2106,8 +2114,8 @@ function copyApiKey() {
     navigator.clipboard.writeText(apiKey);
     showToast('success', 'Copiado', 'API Key copiada!');
 }
-function regenerateApiKey() {
-    if (!confirm('Regenerar a API Key?')) return;
+async function regenerateApiKey() {
+    if (!await appConfirm('Regenerar a API Key?', 'Regenerar API Key')) return;
     const apiKey = document.getElementById('apiKey') as HTMLInputElement | null;
     if (apiKey) apiKey.value = 'sk_live_' + Math.random().toString(36).substring(2, 15);
     showToast('success', 'Sucesso', 'Nova API Key gerada!');
@@ -2156,7 +2164,7 @@ const windowAny = window as Window & {
     updateUser?: () => Promise<void>;
     changePassword?: () => Promise<void>;
     copyApiKey?: () => void;
-    regenerateApiKey?: () => void;
+    regenerateApiKey?: () => Promise<void>;
     testWebhook?: () => void;
     saveApiSettings?: () => void;
     loadPlanStatus?: (options?: { silent?: boolean }) => Promise<void>;

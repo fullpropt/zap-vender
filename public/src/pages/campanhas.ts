@@ -110,6 +110,15 @@ let campaignsRealtimeRefreshInFlight = false;
 let activeCampaignDetailsId: number | null = null;
 let activeCampaignDetailsTab: 'overview' | 'messages' | 'recipients' = 'overview';
 let campaignRecipientsRefreshInFlight = false;
+
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
+
 const DEFAULT_DELAY_MIN_SECONDS = 5;
 const DEFAULT_DELAY_MAX_SECONDS = 15;
 const CAMPAIGNS_CACHE_TTL_MS = 60 * 1000;
@@ -1357,7 +1366,7 @@ function editCampaign(id: number) {
 }
 
 async function startCampaign(id: number) {
-    if (!confirm('Iniciar esta campanha?')) return;
+    if (!await appConfirm('Iniciar esta campanha?', 'Iniciar campanha')) return;
     try {
         await api.put(`/api/campaigns/${id}`, { status: 'active' });
     } catch (error) {
@@ -1379,7 +1388,7 @@ async function startCampaign(id: number) {
 }
 
 async function pauseCampaign(id: number) {
-    if (!confirm('Pausar esta campanha?')) return;
+    if (!await appConfirm('Pausar esta campanha?', 'Pausar campanha')) return;
     try {
         await api.put(`/api/campaigns/${id}`, { status: 'paused' });
     } catch (error) {
@@ -1401,7 +1410,7 @@ async function pauseCampaign(id: number) {
 }
 
 async function deleteCampaign(id: number) {
-    if (!confirm('Excluir esta campanha?')) return;
+    if (!await appConfirm('Excluir esta campanha?', 'Excluir campanha')) return;
     try {
         await api.delete(`/api/campaigns/${id}`);
     } catch (error) {

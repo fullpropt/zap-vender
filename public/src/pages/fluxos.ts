@@ -41,6 +41,14 @@ let flows: Flow[] = [];
 let stepCount = 1;
 let currentFlowId: number | null = null;
 
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
+
 function toBoolean(value: unknown) {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'number') return value === 1;
@@ -640,8 +648,8 @@ function toggleFlow(id: number) {
     }
 }
 
-function deleteFlow(id: number) {
-    if (!confirm('Excluir este fluxo?')) return;
+async function deleteFlow(id: number) {
+    if (!await appConfirm('Excluir este fluxo?', 'Excluir fluxo')) return;
     flows = flows.filter(f => f.id !== id);
     renderFlows();
     updateStats();
@@ -657,7 +665,7 @@ const windowAny = window as Window & {
     editFlow?: (id: number) => void;
     saveFlowChanges?: () => void;
     toggleFlow?: (id: number) => void;
-    deleteFlow?: (id: number) => void;
+    deleteFlow?: (id: number) => Promise<void>;
 };
 windowAny.initFluxos = initFluxos;
 windowAny.loadFlows = loadFlows;
@@ -670,4 +678,3 @@ windowAny.toggleFlow = toggleFlow;
 windowAny.deleteFlow = deleteFlow;
 
 export { initFluxos };
-

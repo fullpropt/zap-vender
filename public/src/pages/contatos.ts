@@ -104,6 +104,27 @@ const CONTACTS_CACHE_PREFIX = 'zapvender_contacts_cache_v2';
 const FUNNEL_CACHE_PREFIX = 'zapvender_funnel_leads_cache_v1';
 let contactsBootstrappedOnce = false;
 
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
+
+function appPrompt(message: string, options: { title?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string; cancelLabel?: string } = {}) {
+    const win = window as Window & {
+        showAppPrompt?: (
+            message: string,
+            options?: { title?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string; cancelLabel?: string }
+        ) => Promise<string | null>;
+    };
+    if (typeof win.showAppPrompt === 'function') {
+        return win.showAppPrompt(message, options);
+    }
+    return Promise.resolve(window.prompt(message, options.defaultValue || ''));
+}
+
 function getContactsTotalPages(total = filteredContacts.length) {
     return Math.max(1, Math.ceil(Math.max(0, Number(total) || 0) / perPage));
 }
@@ -1116,7 +1137,7 @@ async function updateContact() {
 }
 
 async function deleteContact(id: number) {
-    if (!confirm('Excluir este contato?')) return;
+    if (!await appConfirm('Excluir este contato?', 'Excluir contato')) return;
     try {
         showLoading('Excluindo...');
         await api.delete(`/api/leads/${id}`);
@@ -1206,7 +1227,7 @@ async function bulkDelete() {
         return;
     }
 
-    if (!confirm(`Excluir ${formatNumber(uniqueLeadIds.length)} contatos?`)) return;
+    if (!await appConfirm(`Excluir ${formatNumber(uniqueLeadIds.length)} contatos?`, 'Excluir contatos')) return;
 
     try {
         let deleted = 0;
@@ -1248,8 +1269,11 @@ async function bulkDelete() {
     }
 }
 
-function bulkChangeStatus() {
-    const status = prompt('Novo status (1=Novo, 2=Em Andamento, 3=Concluído, 4=Perdido):');
+async function bulkChangeStatus() {
+    const status = await appPrompt('Novo status (1=Novo, 2=Em Andamento, 3=Concluido, 4=Perdido):', {
+        title: 'Alterar status em lote',
+        placeholder: '1, 2, 3 ou 4'
+    });
     if (!status || ![1,2,3,4].includes(parseInt(status))) return;
     
     // Implementar mudança em lote
@@ -1350,7 +1374,10 @@ async function bulkChangeStatusSelection() {
     const modalStatusValue = (document.getElementById('bulkStatusValue') as HTMLSelectElement | null)?.value;
     const statusInput = (modalStatusValue && String(modalStatusValue).trim())
         ? modalStatusValue
-        : prompt('Novo status (1=Novo, 2=Em Andamento, 3=Concluido, 4=Perdido):');
+        : await appPrompt('Novo status (1=Novo, 2=Em Andamento, 3=Concluido, 4=Perdido):', {
+            title: 'Alterar status em lote',
+            placeholder: '1, 2, 3 ou 4'
+        });
     if (statusInput === null) return;
 
     const normalizedStatusInput = String(statusInput || '').trim().toLowerCase();
@@ -1425,7 +1452,10 @@ async function bulkAddTagSelection() {
     const modalTagsValue = (document.getElementById('bulkTagInput') as HTMLInputElement | null)?.value;
     const rawInput = (modalTagsValue && String(modalTagsValue).trim())
         ? modalTagsValue
-        : prompt('Digite a(s) tag(s) para adicionar (separadas por virgula):');
+        : await appPrompt('Digite a(s) tag(s) para adicionar (separadas por virgula):', {
+            title: 'Adicionar tags em lote',
+            placeholder: 'Ex.: VIP, retorno, urgente'
+        });
     if (rawInput === null) return;
 
     const tagsToAdd = Array.from(new Set(
@@ -1623,7 +1653,7 @@ const windowAny = window as Window & {
     bulkSendMessage?: () => void;
     sendBulkMessage?: () => Promise<void>;
     bulkDelete?: () => Promise<void>;
-    bulkChangeStatus?: () => void;
+    bulkChangeStatus?: () => Promise<void>;
     bulkAddTag?: () => void;
     submitBulkChangeStatus?: () => Promise<void>;
     submitBulkAddTag?: () => Promise<void>;
