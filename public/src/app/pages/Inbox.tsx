@@ -351,6 +351,18 @@ export default function Inbox() {
             overflow: hidden;
             text-overflow: ellipsis;
         }
+        .conversation-preview-media-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 20px;
+            height: 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1;
+            background: rgba(var(--primary-rgb), 0.12);
+            border: 1px solid rgba(var(--primary-rgb), 0.18);
+        }
         .conversation-meta {
             text-align: right;
             flex-shrink: 0;

@@ -1037,7 +1037,7 @@ function renderConversations() {
                     <div class="conversation-name">${escapeHtml(c.name || 'Sem nome')}</div>
                     ${c.sessionLabel ? `<span class="conversation-session-chip" title="${escapeHtml(c.sessionId || '')}">${escapeHtml(c.sessionLabel)}</span>` : ''}
                 </div>
-                <div class="conversation-preview">${escapeHtml(c.lastMessage || 'Sem mensagens')}</div>
+                <div class="conversation-preview">${renderConversationPreview(c.lastMessage, 'Sem mensagens')}</div>
             </div>
             <div class="conversation-meta">
                 <div class="conversation-time">${c.lastMessageAt ? timeAgo(c.lastMessageAt) : ''}</div>
@@ -1081,7 +1081,7 @@ function renderFilteredConversations(filtered: Conversation[]) {
                     <div class="conversation-name">${escapeHtml(c.name || 'Sem nome')}</div>
                     ${c.sessionLabel ? `<span class="conversation-session-chip" title="${escapeHtml(c.sessionId || '')}">${escapeHtml(c.sessionLabel)}</span>` : ''}
                 </div>
-                <div class="conversation-preview">${escapeHtml(c.lastMessage || '')}</div>
+                <div class="conversation-preview">${renderConversationPreview(c.lastMessage, '')}</div>
             </div>
             <div class="conversation-meta">
                 <div class="conversation-time">${c.lastMessageAt ? timeAgo(c.lastMessageAt) : ''}</div>
@@ -1520,6 +1520,35 @@ function isMediaPreviewText(value?: string | null) {
         '[localizacao]',
         '[mensagem]'
     ].includes(normalized);
+}
+
+function getConversationPreviewMediaMeta(value?: string | null) {
+    const normalized = String(value || '').trim().toLowerCase();
+
+    if (normalized === '[imagem]') return { icon: '🖼️', label: 'Imagem' };
+    if (normalized === '[video]') return { icon: '🎬', label: 'Vídeo' };
+    if (normalized === '[audio]') return { icon: '🎵', label: 'Áudio' };
+    if (normalized === '[documento]') return { icon: '📄', label: 'Documento' };
+    if (normalized === '[sticker]') return { icon: '✨', label: 'Sticker' };
+    if (normalized === '[contato]') return { icon: '👤', label: 'Contato' };
+    if (normalized === '[localizacao]') return { icon: '📍', label: 'Localização' };
+    if (normalized === '[mensagem]') return { icon: '💬', label: 'Mensagem' };
+
+    return null;
+}
+
+function renderConversationPreview(lastMessage?: string | null, fallback = '') {
+    const text = String(lastMessage || '').trim();
+    if (!text) {
+        return escapeHtml(fallback);
+    }
+
+    const mediaMeta = getConversationPreviewMediaMeta(text);
+    if (!mediaMeta) {
+        return escapeHtml(text);
+    }
+
+    return `<span class="conversation-preview-media-icon" title="${escapeHtml(mediaMeta.label)}" aria-label="${escapeHtml(mediaMeta.label)}">${mediaMeta.icon}</span>`;
 }
 
 function resolveDocumentLabel(message: ChatMessage) {
