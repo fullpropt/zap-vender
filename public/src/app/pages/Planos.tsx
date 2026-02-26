@@ -231,8 +231,8 @@ export default function Planos() {
     <div className="sales-page">
       <style>{`
         .sales-page {
-          --bg: #f8fcfb;
-          --bg-2: #eef7f3;
+          --bg: #eff8f4;
+          --bg-2: #e5f2ec;
           --panel: rgba(6, 20, 23, 0.88);
           --panel-strong: rgba(4, 15, 18, 0.96);
           --line: rgba(160, 189, 193, 0.16);
@@ -244,10 +244,11 @@ export default function Planos() {
           color: var(--text);
           min-height: 100vh;
           background:
-            radial-gradient(980px 520px at 88% 8%, rgba(35, 198, 111, 0.16) 0%, rgba(35, 198, 111, 0) 62%),
-            radial-gradient(820px 500px at 8% 92%, rgba(246, 184, 78, 0.1) 0%, rgba(246, 184, 78, 0) 64%),
-            radial-gradient(520px 280px at 50% 0%, rgba(94, 217, 255, 0.06) 0%, rgba(94, 217, 255, 0) 72%),
-            linear-gradient(180deg, #fbfefd 0%, var(--bg) 42%, var(--bg-2) 100%);
+            radial-gradient(1100px 540px at 50% -6%, rgba(8, 30, 24, 0.2) 0%, rgba(8, 30, 24, 0) 72%),
+            radial-gradient(980px 520px at 88% 8%, rgba(35, 198, 111, 0.2) 0%, rgba(35, 198, 111, 0) 62%),
+            radial-gradient(820px 500px at 8% 92%, rgba(246, 184, 78, 0.12) 0%, rgba(246, 184, 78, 0) 64%),
+            radial-gradient(620px 320px at 50% 0%, rgba(94, 217, 255, 0.07) 0%, rgba(94, 217, 255, 0) 72%),
+            linear-gradient(180deg, #f3fbf8 0%, #eef8f3 18%, var(--bg) 52%, var(--bg-2) 100%);
           position: relative;
           overflow-x: hidden;
         }
@@ -263,7 +264,7 @@ export default function Planos() {
           inset: auto;
           pointer-events: none;
           z-index: -1;
-          opacity: 0.3;
+          opacity: 0.38;
         }
 
         .sales-page::before {
@@ -272,9 +273,10 @@ export default function Planos() {
           top: -110px;
           right: -90px;
           border-radius: 999px;
-          border: 1px solid rgba(35, 198, 111, 0.12);
+          border: 1px solid rgba(35, 198, 111, 0.1);
           transform: rotate(14deg);
-          background: radial-gradient(circle at 35% 35%, rgba(35, 198, 111, 0.14), rgba(35, 198, 111, 0));
+          background: radial-gradient(circle at 35% 35%, rgba(35, 198, 111, 0.2), rgba(35, 198, 111, 0));
+          filter: blur(4px);
         }
 
         .sales-page::after {
@@ -284,8 +286,9 @@ export default function Planos() {
           left: -100px;
           border-radius: 30px;
           border: 1px solid rgba(246, 184, 78, 0.12);
-          background: linear-gradient(135deg, rgba(246, 184, 78, 0.12), rgba(246, 184, 78, 0));
+          background: linear-gradient(135deg, rgba(246, 184, 78, 0.15), rgba(246, 184, 78, 0));
           transform: rotate(-14deg);
+          filter: blur(2px);
         }
 
         .sales-shell {
@@ -471,6 +474,11 @@ export default function Planos() {
         .sales-page main {
           display: grid;
           gap: 16px;
+          position: relative;
+          z-index: 1;
+        }
+
+        .sales-page main > section {
           position: relative;
           z-index: 1;
         }
@@ -1072,6 +1080,63 @@ export default function Planos() {
           margin-bottom: 16px;
         }
 
+        .section-variant-left,
+        .section-variant-right,
+        .section-variant-frame {
+          width: min(1220px, 100%);
+        }
+
+        .section-variant-left {
+          margin-right: auto;
+          background:
+            radial-gradient(560px 220px at 8% 0%, rgba(35, 198, 111, 0.1), rgba(35, 198, 111, 0) 72%),
+            linear-gradient(180deg, rgba(7, 21, 24, 0.9), rgba(5, 16, 18, 0.96));
+        }
+
+        .section-variant-right {
+          margin-left: auto;
+          background:
+            radial-gradient(560px 220px at 92% 0%, rgba(94, 217, 255, 0.08), rgba(94, 217, 255, 0) 72%),
+            radial-gradient(460px 200px at 20% 100%, rgba(246, 184, 78, 0.07), rgba(246, 184, 78, 0) 70%),
+            linear-gradient(180deg, rgba(7, 21, 24, 0.9), rgba(5, 16, 18, 0.96));
+        }
+
+        .section-variant-frame {
+          margin-inline: auto;
+        }
+
+        .section-variant-plain {
+          border: none;
+          background: transparent;
+          box-shadow: none;
+          padding: 2px 0;
+        }
+
+        .section-variant-plain::before {
+          display: none;
+        }
+
+        .section-variant-plain .section-head {
+          margin-bottom: 14px;
+        }
+
+        .resources-section.section-variant-plain .resource-grid {
+          margin-top: 14px;
+          grid-template-columns: 1.2fr 1fr 1fr;
+        }
+
+        .resources-section.section-variant-plain .resource-card {
+          background:
+            radial-gradient(240px 120px at 80% 0%, rgba(35, 198, 111, 0.09), rgba(35, 198, 111, 0)),
+            linear-gradient(165deg, rgba(11, 28, 31, 0.94), rgba(7, 18, 21, 0.98));
+        }
+
+        .resources-section.section-variant-plain .resource-card:nth-child(1),
+        .resources-section.section-variant-plain .resource-card:nth-child(4) {
+          grid-column: span 2;
+          min-height: 164px;
+        }
+
         .section-tag {
           display: inline-flex;
           align-items: center;
@@ -1288,6 +1353,53 @@ export default function Planos() {
           gap: 12px;
           margin-bottom: 16px;
           flex-wrap: wrap;
+        }
+
+        .section-head > div {
+          max-width: 760px;
+        }
+
+        .section-head.is-center {
+          justify-content: center;
+        }
+
+        .section-head.is-center > div {
+          margin-inline: auto;
+          text-align: center;
+        }
+
+        .section-head.is-right {
+          justify-content: flex-end;
+        }
+
+        .section-head.is-right > div {
+          margin-left: auto;
+          text-align: right;
+        }
+
+        .journey-section.section-variant-right .hero-cta-row {
+          justify-content: flex-end;
+        }
+
+        .journey-section.section-variant-right .journey-step {
+          margin-left: auto;
+        }
+
+        .journey-section.section-variant-right .journey-card {
+          text-align: right;
+        }
+
+        .journey-section.section-variant-right .journey-grid {
+          position: relative;
+        }
+
+        .journey-section.section-variant-right .journey-grid::before {
+          content: '';
+          position: absolute;
+          inset: 18px 0 auto;
+          height: 1px;
+          background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0));
+          pointer-events: none;
         }
 
         .section-title {
@@ -1813,6 +1925,17 @@ export default function Planos() {
         }
 
         @media (max-width: 980px) {
+          .section-variant-left,
+          .section-variant-right,
+          .section-variant-frame {
+            width: 100%;
+            margin-inline: 0;
+          }
+
+          .section-variant-plain {
+            padding: 0;
+          }
+
           .section-grid {
             grid-template-columns: 1fr;
           }
@@ -1852,6 +1975,16 @@ export default function Planos() {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
+          .resources-section.section-variant-plain .resource-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .resources-section.section-variant-plain .resource-card:nth-child(1),
+          .resources-section.section-variant-plain .resource-card:nth-child(4) {
+            grid-column: auto;
+            min-height: 150px;
+          }
+
           .testimonial-grid,
           .roadmap-grid {
             grid-template-columns: 1fr;
@@ -1863,6 +1996,27 @@ export default function Planos() {
 
           .faq-grid {
             grid-template-columns: 1fr;
+          }
+
+          .section-head.is-right > div {
+            text-align: left;
+            margin-left: 0;
+          }
+
+          .journey-section.section-variant-right .journey-card {
+            text-align: left;
+          }
+
+          .journey-section.section-variant-right .journey-step {
+            margin-left: 0;
+          }
+
+          .journey-section.section-variant-right .hero-cta-row {
+            justify-content: center;
+          }
+
+          .journey-section.section-variant-right .journey-grid::before {
+            display: none;
           }
         }
 
@@ -1954,6 +2108,10 @@ export default function Planos() {
           .resource-grid,
           .journey-grid,
           .plan-feature-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .resources-section.section-variant-plain .resource-grid {
             grid-template-columns: 1fr;
           }
 
@@ -2227,8 +2385,8 @@ export default function Planos() {
               </p>
             </div>
           </section>
-          <section className="solution-section" id="solucao" aria-labelledby="titulo-solucao">
-            <div className="section-head">
+          <section className="solution-section section-variant-left" id="solucao" aria-labelledby="titulo-solucao">
+            <div className="section-head is-left">
               <div>
                 <div className="section-tag">O que o ZapVender resolve</div>
                 <h2 className="section-title" id="titulo-solucao">Primeiro a solucao, depois o preco</h2>
@@ -2275,8 +2433,8 @@ export default function Planos() {
             </div>
           </section>
 
-          <section className="resources-section" id="recursos" aria-labelledby="titulo-recursos">
-            <div className="section-head">
+          <section className="resources-section section-variant-plain" id="recursos" aria-labelledby="titulo-recursos">
+            <div className="section-head is-center">
               <div>
                 <div className="section-tag">Recursos principais</div>
                 <h2 className="section-title" id="titulo-recursos">O que existe dentro da plataforma</h2>
@@ -2297,8 +2455,8 @@ export default function Planos() {
             </div>
           </section>
 
-          <section className="journey-section" aria-labelledby="titulo-jornada">
-            <div className="section-head">
+          <section className="journey-section section-variant-right" aria-labelledby="titulo-jornada">
+            <div className="section-head is-right">
               <div>
                 <div className="section-tag">Fluxo de uso</div>
                 <h2 className="section-title" id="titulo-jornada">Como o ZapVender entra na rotina comercial</h2>
@@ -2330,8 +2488,8 @@ export default function Planos() {
             </div>
           </section>
 
-          <section className="plans-section" id="planos-lista" aria-labelledby="titulo-planos">
-            <div className="section-head">
+          <section className="plans-section section-variant-frame" id="planos-lista" aria-labelledby="titulo-planos">
+            <div className="section-head is-left">
               <div>
                 <h2 className="section-title" id="titulo-planos">Planos</h2>
                 <p className="section-subtitle">
