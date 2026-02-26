@@ -181,12 +181,14 @@ export default function FlowBuilder() {
             align-items: center;
             gap: 10px;
             flex-wrap: wrap;
+            box-sizing: border-box;
+            padding-right: 10px;
         }
 
         .flow-builder-react .header-flow-row .flow-name-highlight {
             margin-top: 0;
-            flex: 1 1 360px;
-            max-width: none;
+            flex: 0 1 620px;
+            width: min(620px, 100%);
             min-width: min(360px, 100%);
         }
 
@@ -200,6 +202,8 @@ export default function FlowBuilder() {
             gap: 10px;
             align-items: center;
             flex-wrap: wrap;
+            box-sizing: border-box;
+            padding-right: 10px;
         }
 
         .flow-builder-react .sidebar-menu {
@@ -1424,11 +1428,13 @@ export default function FlowBuilder() {
                 display: grid;
                 grid-template-columns: 1fr;
                 gap: 8px;
+                padding-right: 0;
             }
             .flow-builder-react .header-flow-row {
                 display: grid;
                 grid-template-columns: 1fr;
                 gap: 8px;
+                padding-right: 0;
             }
             .flow-builder-react .header-flow-spacer {
                 display: none;
