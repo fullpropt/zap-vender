@@ -17,27 +17,6 @@ const planFeatures = [
   'Gestão de sessões WhatsApp direto no painel'
 ];
 
-const testimonials = [
-  {
-    quote: 'Antes eu atendia tudo espalhado. Com o ZapVender consegui organizar o time, responder mais rapido e parar de perder lead no WhatsApp.',
-    name: 'Carlos M.',
-    role: 'Operacao comercial',
-    metric: 'Mais controle no atendimento'
-  },
-  {
-    quote: 'A melhor parte foi juntar CRM + inbox + automacao no mesmo painel. A equipe passou a acompanhar status dos contatos sem planilha paralela.',
-    name: 'Juliana R.',
-    role: 'Gestao de vendas',
-    metric: 'Processo mais padronizado'
-  },
-  {
-    quote: 'Para validacao comercial, o plano unico ajuda muito. O cliente entende a oferta em poucos segundos e a conversa avanca mais rapido.',
-    name: 'Rafael S.',
-    role: 'Parceiro comercial',
-    metric: 'Menos friccao na oferta'
-  }
-];
-
 const faqItems = [
   {
     question: 'Como funciona a cobranca do plano?',
@@ -1629,7 +1608,6 @@ export default function Planos() {
           line-height: 1.5;
         }
 
-        .testimonials-section,
         .comparison-section {
           margin-top: 16px;
           border-radius: 18px;
@@ -1637,67 +1615,6 @@ export default function Planos() {
           background:
             linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.008));
           padding: 14px;
-        }
-
-        .testimonial-grid {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 10px;
-        }
-
-        .testimonial-card {
-          border-radius: 14px;
-          border: 1px solid rgba(255, 255, 255, 0.07);
-          background:
-            radial-gradient(180px 80px at 80% 0%, rgba(35, 198, 111, 0.05), rgba(35, 198, 111, 0)),
-            linear-gradient(165deg, rgba(13, 30, 34, 0.9), rgba(8, 20, 23, 0.96));
-          padding: 14px;
-          display: grid;
-          gap: 10px;
-        }
-
-        .testimonial-quote {
-          margin: 0;
-          color: #dceeee;
-          font-size: 13px;
-          line-height: 1.6;
-        }
-
-        .testimonial-quote::before {
-          content: '“';
-          color: rgba(53, 224, 132, 0.9);
-          font-size: 18px;
-          line-height: 0;
-          margin-right: 3px;
-        }
-
-        .testimonial-footer {
-          display: grid;
-          gap: 3px;
-        }
-
-        .testimonial-name {
-          font-size: 13px;
-          font-weight: 700;
-          color: #f0fbfb;
-        }
-
-        .testimonial-role {
-          color: #9fb9b9;
-          font-size: 12px;
-        }
-
-        .testimonial-metric {
-          margin-top: 2px;
-          display: inline-flex;
-          width: fit-content;
-          border-radius: 999px;
-          border: 1px solid rgba(35, 198, 111, 0.2);
-          background: rgba(35, 198, 111, 0.08);
-          color: #bff6d5;
-          font-size: 11px;
-          padding: 5px 9px;
-          font-weight: 700;
         }
 
         .roadmap-grid {
@@ -2089,7 +2006,6 @@ export default function Planos() {
             min-height: 150px;
           }
 
-          .testimonial-grid,
           .roadmap-grid {
             grid-template-columns: 1fr;
           }
@@ -2264,7 +2180,6 @@ export default function Planos() {
             padding: 12px;
           }
 
-          .testimonials-section,
           .comparison-section {
             margin-top: 12px;
             border-radius: 14px;
@@ -2660,30 +2575,6 @@ export default function Planos() {
               </article>
             </div>
 
-            <section className="testimonials-section" aria-labelledby="titulo-depoimentos">
-              <div className="section-head">
-                <div>
-                  <h2 className="section-title" id="titulo-depoimentos">Depoimentos (modelo comercial)</h2>
-                  <p className="section-subtitle">
-                    Bloco pronto para prova social. Substitua pelos relatos reais dos seus clientes quando quiser publicar.
-                  </p>
-                </div>
-              </div>
-
-              <div className="testimonial-grid">
-                {testimonials.map((item) => (
-                  <article className="testimonial-card" key={`${item.name}-${item.metric}`}>
-                    <p className="testimonial-quote">{item.quote}</p>
-                    <div className="testimonial-footer">
-                      <div className="testimonial-name">{item.name}</div>
-                      <div className="testimonial-role">{item.role}</div>
-                      <span className="testimonial-metric">{item.metric}</span>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-
             <section className="comparison-section" aria-labelledby="titulo-comparacao">
               <div className="section-head">
                 <div>
@@ -2747,7 +2638,7 @@ export default function Planos() {
               <div>
                 <h3 className="bottom-cta-title">Pronto para publicar e começar a vender</h3>
                 <p className="bottom-cta-text">
-                  Use esta rota como landing de venda agora e evolua depois com checkout, depoimentos e comparação de planos.
+                  Use esta rota como landing de venda agora e evolua depois com checkout e comparação de planos.
                 </p>
               </div>
               <div className="sales-nav-actions">
