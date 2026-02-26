@@ -552,16 +552,152 @@ export default function Inbox() {
         .chat-messages .message.sent .message-media-image {
             border-color: rgba(var(--primary-rgb), 0.35);
         }
-        .message-media-audio {
-            display: block;
-            width: 100%;
-            min-width: 220px;
-            max-width: 100%;
-            height: 38px;
-        }
         .chat-messages .message.media-audio {
-            min-width: 240px;
-            max-width: min(320px, 72%);
+            min-width: 250px;
+            max-width: min(360px, 78%);
+            padding: 9px 12px 8px;
+        }
+        .message-media-audio-wrap {
+            width: 100%;
+        }
+        .message-media-audio-native {
+            display: none;
+        }
+        .message-audio-player {
+            display: grid;
+            grid-template-columns: auto minmax(110px, 1fr) auto auto;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            min-width: 0;
+        }
+        .message-audio-toggle {
+            width: 28px;
+            height: 28px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
+            color: inherit;
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+            transition: border-color 0.14s ease, background-color 0.14s ease, transform 0.14s ease;
+        }
+        .message-audio-toggle:hover {
+            transform: translateY(-1px);
+        }
+        .chat-messages .message.sent .message-audio-toggle {
+            border-color: rgba(var(--primary-rgb), 0.2);
+            background: rgba(var(--primary-rgb), 0.08);
+        }
+        .chat-messages .message.received .message-audio-toggle {
+            border-color: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .message-audio-toggle:focus-visible {
+            outline: 2px solid rgba(var(--primary-rgb), 0.28);
+            outline-offset: 1px;
+            border-color: rgba(var(--primary-rgb), 0.28);
+        }
+        .message-audio-toggle-icon {
+            font-size: 12px;
+            transform: translateX(0.5px);
+        }
+        .message-audio-player.is-playing .message-audio-toggle-icon {
+            font-size: 10px;
+            transform: none;
+        }
+        .message-audio-range {
+            width: 100%;
+            min-width: 0;
+            margin: 0;
+            background: transparent;
+            accent-color: var(--primary);
+            -webkit-appearance: none;
+            appearance: none;
+            cursor: pointer;
+            height: 20px;
+        }
+        .message-audio-range::-webkit-slider-runnable-track {
+            height: 2px;
+            border-radius: 999px;
+            background:
+                linear-gradient(
+                    90deg,
+                    rgba(var(--primary-rgb), 0.72) 0%,
+                    rgba(var(--primary-rgb), 0.72) var(--audio-progress),
+                    rgba(255, 255, 255, 0.12) var(--audio-progress),
+                    rgba(255, 255, 255, 0.12) 100%
+                );
+        }
+        .chat-messages .message.sent .message-audio-range::-webkit-slider-runnable-track {
+            background:
+                linear-gradient(
+                    90deg,
+                    rgba(209, 255, 233, 0.82) 0%,
+                    rgba(209, 255, 233, 0.82) var(--audio-progress),
+                    rgba(232, 255, 244, 0.16) var(--audio-progress),
+                    rgba(232, 255, 244, 0.16) 100%
+                );
+        }
+        .message-audio-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(var(--primary-rgb), 0.32);
+            background: #eafcf4;
+            margin-top: -4px;
+            box-shadow: 0 1px 6px rgba(2, 6, 23, 0.2);
+            opacity: 0;
+            transition: opacity 0.14s ease, transform 0.14s ease;
+        }
+        .message-audio-player:hover .message-audio-range::-webkit-slider-thumb,
+        .message-audio-range:focus-visible::-webkit-slider-thumb {
+            opacity: 1;
+        }
+        .message-audio-range::-moz-range-track {
+            height: 2px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.12);
+        }
+        .message-audio-range::-moz-range-progress {
+            height: 2px;
+            border-radius: 999px;
+            background: rgba(var(--primary-rgb), 0.72);
+        }
+        .chat-messages .message.sent .message-audio-range::-moz-range-progress {
+            background: rgba(209, 255, 233, 0.82);
+        }
+        .message-audio-range::-moz-range-thumb {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(var(--primary-rgb), 0.32);
+            background: #eafcf4;
+            box-shadow: 0 1px 6px rgba(2, 6, 23, 0.2);
+            opacity: 0;
+            transition: opacity 0.14s ease;
+        }
+        .message-audio-player:hover .message-audio-range::-moz-range-thumb,
+        .message-audio-range:focus-visible::-moz-range-thumb {
+            opacity: 1;
+        }
+        .message-audio-range:focus-visible {
+            outline: none;
+        }
+        .message-audio-time {
+            font-size: 10px;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.01em;
+            white-space: nowrap;
+            color: rgba(189, 202, 221, 0.85);
+        }
+        .chat-messages .message.sent .message-audio-time {
+            color: rgba(225, 252, 241, 0.84);
         }
         .message-media-download {
             color: var(--gray-700);
@@ -569,6 +705,25 @@ export default function Inbox() {
             font-size: 11px;
             font-weight: 600;
             width: fit-content;
+        }
+        .message-audio-download {
+            display: inline-grid;
+            place-items: center;
+            width: 20px;
+            min-width: 20px;
+            height: 20px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
+            font-size: 11px;
+            line-height: 1;
+            opacity: 0.86;
+        }
+        .message-audio-download:hover {
+            text-decoration: none;
+            opacity: 1;
+            border-color: rgba(var(--primary-rgb), 0.2);
+            background: rgba(var(--primary-rgb), 0.08);
         }
         .chat-messages .message.sent .message-media-download {
             color: rgba(236, 255, 246, 0.9);
@@ -1131,8 +1286,16 @@ export default function Inbox() {
                 min-width: 0;
                 max-width: 100%;
             }
-            .message-media-audio {
-                min-width: 210px;
+            .message-audio-player {
+                grid-template-columns: auto minmax(76px, 1fr) auto auto;
+                gap: 6px;
+            }
+            .message-audio-time {
+                font-size: 9px;
+            }
+            .message-audio-toggle {
+                width: 26px;
+                height: 26px;
             }
             .conversations-header {
                 padding: 14px 12px;

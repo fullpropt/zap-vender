@@ -1441,8 +1441,39 @@ function renderMessageContent(message: ChatMessage) {
         const safeUrl = escapeHtml(mediaUrl);
         return `
             <div class="message-media message-media-audio-wrap">
-                <audio controls preload="metadata" class="message-media-audio" src="${safeUrl}"></audio>
-                <a class="message-media-download" href="${safeUrl}" target="_blank" rel="noopener noreferrer" download>Baixar audio</a>
+                <div class="message-audio-player" data-audio-player>
+                    <audio preload="metadata" class="message-media-audio-native" src="${safeUrl}"></audio>
+                    <button
+                        class="message-audio-toggle"
+                        type="button"
+                        data-audio-toggle
+                        aria-label="Reproduzir audio"
+                        title="Reproduzir audio"
+                    >
+                        <span class="message-audio-toggle-icon" data-audio-icon aria-hidden="true">▶</span>
+                    </button>
+                    <input
+                        class="message-audio-range"
+                        data-audio-range
+                        type="range"
+                        min="0"
+                        max="1000"
+                        step="1"
+                        value="0"
+                        aria-label="Progresso do audio"
+                        style="--audio-progress: 0%;"
+                    />
+                    <span class="message-audio-time" data-audio-time>0:00 / 0:00</span>
+                    <a
+                        class="message-media-download message-audio-download"
+                        href="${safeUrl}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download
+                        aria-label="Baixar audio"
+                        title="Baixar audio"
+                    >↓</a>
+                </div>
             </div>
             ${hasReadableText ? `<div class="message-caption">${safeText}</div>` : ''}
         `;
@@ -1685,6 +1716,7 @@ function renderChat() {
 
     setMobileConversationMode(true);
     closeContactInfoPanel();
+    bindInlineAudioPlayers(panel);
     bindChatScrollBottomVisibility();
     scrollToBottom();
 }
@@ -1716,7 +1748,98 @@ function renderMessages() {
 function renderMessagesInto(container: HTMLElement | null) {
     if (!container) return;
     container.innerHTML = `<div class="chat-messages-stack">${renderMessages()}</div>`;
+    bindInlineAudioPlayers(container);
     updateChatScrollBottomVisibility();
+}
+
+function formatAudioPlayerTime(totalSeconds: number) {
+    const safe = Number.isFinite(totalSeconds) && totalSeconds > 0 ? Math.floor(totalSeconds) : 0;
+    const minutes = Math.floor(safe / 60);
+    const seconds = safe % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function pauseOtherInlineAudioPlayers(currentAudio: HTMLAudioElement | null) {
+    const audios = document.querySelectorAll('.message-media-audio-native') as NodeListOf<HTMLAudioElement>;
+    audios.forEach((audio) => {
+        if (!audio || audio === currentAudio) return;
+        if (!audio.paused) {
+            try { audio.pause(); } catch {}
+        }
+    });
+}
+
+function bindInlineAudioPlayers(root?: ParentNode | null) {
+    const scope = root || document;
+    const players = scope.querySelectorAll?.('.message-audio-player') as NodeListOf<HTMLElement> | undefined;
+    if (!players || players.length === 0) return;
+
+    players.forEach((player) => {
+        if (player.dataset.audioBound === '1') return;
+        player.dataset.audioBound = '1';
+
+        const audio = player.querySelector('.message-media-audio-native') as HTMLAudioElement | null;
+        const toggle = player.querySelector('[data-audio-toggle]') as HTMLButtonElement | null;
+        const icon = player.querySelector('[data-audio-icon]') as HTMLElement | null;
+        const range = player.querySelector('[data-audio-range]') as HTMLInputElement | null;
+        const timeLabel = player.querySelector('[data-audio-time]') as HTMLElement | null;
+        if (!audio || !toggle || !icon || !range || !timeLabel) return;
+
+        const syncUi = () => {
+            const duration = Number.isFinite(audio.duration) ? Math.max(0, audio.duration) : 0;
+            const current = Number.isFinite(audio.currentTime) ? Math.max(0, audio.currentTime) : 0;
+            const progress = duration > 0 ? Math.min(100, Math.max(0, (current / duration) * 100)) : 0;
+
+            range.value = duration > 0 ? String(Math.round((current / duration) * 1000)) : '0';
+            range.style.setProperty('--audio-progress', `${progress}%`);
+            icon.textContent = audio.paused ? '▶' : '❚❚';
+            toggle.setAttribute('aria-label', audio.paused ? 'Reproduzir audio' : 'Pausar audio');
+            toggle.setAttribute('title', audio.paused ? 'Reproduzir audio' : 'Pausar audio');
+            timeLabel.textContent = `${formatAudioPlayerTime(current)} / ${formatAudioPlayerTime(duration)}`;
+            player.classList.toggle('is-playing', !audio.paused);
+        };
+
+        toggle.addEventListener('click', async (event) => {
+            event.preventDefault();
+            if (audio.paused) {
+                pauseOtherInlineAudioPlayers(audio);
+                try {
+                    await audio.play();
+                } catch {
+                    // browser may block autoplay interactions in edge cases
+                }
+            } else {
+                audio.pause();
+            }
+            syncUi();
+        });
+
+        range.addEventListener('input', () => {
+            const duration = Number.isFinite(audio.duration) ? Math.max(0, audio.duration) : 0;
+            if (!duration) {
+                syncUi();
+                return;
+            }
+            const nextProgress = Math.min(1000, Math.max(0, Number(range.value) || 0)) / 1000;
+            audio.currentTime = duration * nextProgress;
+            syncUi();
+        });
+
+        audio.addEventListener('loadedmetadata', syncUi);
+        audio.addEventListener('durationchange', syncUi);
+        audio.addEventListener('timeupdate', syncUi);
+        audio.addEventListener('play', () => {
+            pauseOtherInlineAudioPlayers(audio);
+            syncUi();
+        });
+        audio.addEventListener('pause', syncUi);
+        audio.addEventListener('ended', () => {
+            audio.currentTime = 0;
+            syncUi();
+        });
+
+        syncUi();
+    });
 }
 
 function isChatNearBottom(container: HTMLElement, threshold = 96) {
