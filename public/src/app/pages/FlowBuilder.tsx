@@ -121,6 +121,15 @@ export default function FlowBuilder() {
             max-width: min(620px, 100%);
         }
 
+        .flow-builder-react .flow-name-highlight-meta {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+
         .flow-builder-react .flow-name-highlight-content {
             min-width: 0;
             flex: 1;
@@ -175,6 +184,33 @@ export default function FlowBuilder() {
             color: #cbd5e1;
         }
 
+        .flow-builder-react .flow-name-highlight-link {
+            border: none;
+            background: transparent;
+            color: #bfd0e6;
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1.2;
+            white-space: nowrap;
+            opacity: 0.92;
+            transition: color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+        }
+        .flow-builder-react .flow-name-highlight-link:hover {
+            color: #e7edf7;
+            opacity: 1;
+            transform: translateY(-1px);
+        }
+        .flow-builder-react .flow-name-highlight-link:focus-visible {
+            outline: 2px solid rgba(var(--primary-rgb), 0.28);
+            outline-offset: 2px;
+            border-radius: 6px;
+        }
+
         .flow-builder-react .header-flow-row {
             width: 100%;
             display: flex;
@@ -192,9 +228,11 @@ export default function FlowBuilder() {
             min-width: min(360px, 100%);
         }
 
-        .flow-builder-react .header-flow-spacer {
-            flex: 1 1 auto;
-            min-width: 12px;
+        .flow-builder-react .header-flow-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
         }
 
         .flow-builder-react .header-actions {
@@ -1436,14 +1474,22 @@ export default function FlowBuilder() {
                 gap: 8px;
                 padding-right: 0;
             }
-            .flow-builder-react .header-flow-spacer {
-                display: none;
-            }
             .flow-builder-react .header-flow-row .flow-name-highlight {
                 min-width: 0;
                 width: 100%;
             }
-            .flow-builder-react .header-flow-row .toolbar-btn {
+            .flow-builder-react .flow-name-highlight-meta {
+                width: 100%;
+                justify-content: space-between;
+                gap: 8px;
+            }
+            .flow-builder-react .header-flow-actions {
+                width: 100%;
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            .flow-builder-react .header-flow-actions .toolbar-btn {
                 width: 100%;
                 justify-content: center;
             }
@@ -1507,29 +1553,30 @@ export default function FlowBuilder() {
                       <h1><span className="icon icon-flows icon-sm"></span> Construtor de Fluxos</h1>
                       <p>Crie automações visuais para suas conversas</p>
                   </div>
-                  <div className="header-actions">
-                      <button className="toolbar-btn secondary" onClick={() => globals.openFlowsModal?.()}>
-                          <span className="icon icon-list icon-sm"></span> Meus Fluxos
-                      </button>
-                      <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
-                          <span className="icon icon-add icon-sm"></span> Novo Fluxo
-                      </button>
-                  </div>
                   <div className="header-flow-row">
                       <div className="flow-name-highlight">
                           <div className="flow-name-highlight-content">
                               <div className="flow-name-highlight-label">Fluxo atual</div>
                               <div className="flow-name-highlight-name" id="currentFlowNameDisplay">Novo fluxo (não salvo)</div>
                           </div>
-                          <span className="flow-name-highlight-status draft" id="currentFlowStatusDisplay">Não salvo</span>
+                          <div className="flow-name-highlight-meta">
+                              <span className="flow-name-highlight-status draft" id="currentFlowStatusDisplay">Não salvo</span>
+                              <button className="flow-name-highlight-link" type="button" onClick={() => globals.openFlowsModal?.()}>
+                                  <span className="icon icon-list icon-sm"></span> Meus Fluxos
+                              </button>
+                          </div>
                       </div>
-                      <button className="toolbar-btn secondary" onClick={() => globals.saveFlow?.()}>
-                          <span className="icon icon-save icon-sm"></span> Salvar
-                      </button>
-                      <div className="header-flow-spacer"></div>
-                      <button className="toolbar-btn ai-highlight" onClick={() => globals.generateFlowWithAi?.()}>
-                          <span className="icon icon-spark icon-sm"></span> Gerar com IA
-                      </button>
+                      <div className="header-flow-actions">
+                          <button className="toolbar-btn secondary" onClick={() => globals.saveFlow?.()}>
+                              <span className="icon icon-save icon-sm"></span> Salvar
+                          </button>
+                          <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
+                              <span className="icon icon-add icon-sm"></span> Novo Fluxo
+                          </button>
+                          <button className="toolbar-btn ai-highlight" onClick={() => globals.generateFlowWithAi?.()}>
+                              <span className="icon icon-spark icon-sm"></span> Gerar com IA
+                          </button>
+                      </div>
                   </div>
               </div>
               
