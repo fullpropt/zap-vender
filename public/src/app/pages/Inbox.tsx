@@ -355,13 +355,12 @@ export default function Inbox() {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-width: 20px;
-            height: 20px;
-            border-radius: 6px;
-            font-size: 13px;
+            min-width: 14px;
+            height: 14px;
+            font-size: 12px;
             line-height: 1;
-            background: rgba(var(--primary-rgb), 0.12);
-            border: 1px solid rgba(var(--primary-rgb), 0.18);
+            color: var(--gray-600);
+            opacity: 0.9;
         }
         .conversation-meta {
             text-align: right;

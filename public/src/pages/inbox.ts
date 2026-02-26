@@ -1525,14 +1525,14 @@ function isMediaPreviewText(value?: string | null) {
 function getConversationPreviewMediaMeta(value?: string | null) {
     const normalized = String(value || '').trim().toLowerCase();
 
-    if (normalized === '[imagem]') return { icon: '🖼️', label: 'Imagem' };
-    if (normalized === '[video]') return { icon: '🎬', label: 'Vídeo' };
-    if (normalized === '[audio]') return { icon: '🎵', label: 'Áudio' };
-    if (normalized === '[documento]') return { icon: '📄', label: 'Documento' };
-    if (normalized === '[sticker]') return { icon: '✨', label: 'Sticker' };
-    if (normalized === '[contato]') return { icon: '👤', label: 'Contato' };
-    if (normalized === '[localizacao]') return { icon: '📍', label: 'Localização' };
-    if (normalized === '[mensagem]') return { icon: '💬', label: 'Mensagem' };
+    if (normalized === '[imagem]') return { icon: '▣', label: 'Imagem' };
+    if (normalized === '[video]') return { icon: '▶', label: 'Video' };
+    if (normalized === '[audio]') return { icon: '♫', label: 'Audio' };
+    if (normalized === '[documento]') return { icon: '⎘', label: 'Documento' };
+    if (normalized === '[sticker]') return { icon: '✦', label: 'Sticker' };
+    if (normalized === '[contato]') return { icon: '◉', label: 'Contato' };
+    if (normalized === '[localizacao]') return { icon: '⌖', label: 'Localizacao' };
+    if (normalized === '[mensagem]') return { icon: '✉', label: 'Mensagem' };
 
     return null;
 }
