@@ -6890,6 +6890,13 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
 
 
+    const providerMessageTimestampMs = parseMessageTimestampMs(
+        result?.messageTimestamp || result?.message?.messageTimestamp
+    );
+    const sentAtIso = providerMessageTimestampMs > 0
+        ? new Date(providerMessageTimestampMs).toISOString()
+        : new Date().toISOString();
+
     // Salvar mensagem
 
     let savedMessage;
@@ -6922,7 +6929,7 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
             is_from_me: true,
 
-            sent_at: new Date().toISOString(),
+            sent_at: sentAtIso,
             campaign_id: options.campaignId || null
 
         });
@@ -6943,7 +6950,7 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
     
 
-    await Conversation.touch(conversation.id, savedMessage?.id || null, new Date().toISOString());
+    await Conversation.touch(conversation.id, savedMessage?.id || null, sentAtIso);
     if (options.campaignId) {
         await Campaign.refreshMetrics(options.campaignId);
     }
@@ -6970,7 +6977,7 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
     
 
-    return { ...result, savedMessage, lead, conversation };
+    return { ...result, savedMessage, lead, conversation, sentAt: sentAtIso };
 
 }
 
@@ -10619,13 +10626,15 @@ app.post('/api/send', authenticate, async (req, res) => {
 
         const result = await sendMessage(sessionId, to, message, type || 'text', sendOptions);
 
-        res.json({ 
+        const responseTimestamp = result?.savedMessage?.sent_at || result?.sentAt || new Date().toISOString();
+        res.json({
 
-            success: true, 
+            success: true,
 
             messageId: result.key.id,
 
-            timestamp: new Date().toISOString()
+            timestamp: responseTimestamp,
+            sentAt: responseTimestamp
 
         });
 
@@ -10690,13 +10699,15 @@ app.post('/api/messages/send', authenticate, async (req, res) => {
         };
         const result = await sendMessage(resolvedSessionId, to, content, type || 'text', sendOptions);
 
+        const responseTimestamp = result?.savedMessage?.sent_at || result?.sentAt || new Date().toISOString();
         res.json({
 
             success: true,
 
             messageId: result.key.id,
 
-            timestamp: new Date().toISOString()
+            timestamp: responseTimestamp,
+            sentAt: responseTimestamp
 
         });
 

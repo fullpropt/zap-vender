@@ -883,6 +883,9 @@ export default function Inbox() {
             left: 20px;
             bottom: calc(100% + 10px);
             width: min(320px, calc(100% - 40px));
+            max-height: min(360px, 46vh);
+            overflow-y: auto;
+            overscroll-behavior: contain;
             padding: 10px;
             border-radius: 14px;
             border: 1px solid rgba(var(--primary-rgb), 0.16);
@@ -891,11 +894,28 @@ export default function Inbox() {
                 linear-gradient(180deg, rgba(12, 20, 32, 0.98), rgba(10, 16, 27, 0.99));
             box-shadow: 0 16px 30px rgba(2, 6, 23, 0.35);
             z-index: 20;
-            grid-template-columns: repeat(8, minmax(0, 1fr));
-            gap: 6px;
         }
         .chat-input .chat-emoji-picker.open {
+            display: block;
+        }
+        .chat-input .chat-emoji-section + .chat-emoji-section {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .chat-input .chat-emoji-section-title {
+            margin: 0 0 6px;
+            color: rgba(191, 206, 227, 0.82);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            line-height: 1.2;
+        }
+        .chat-input .chat-emoji-section-grid {
             display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            gap: 6px;
         }
         .chat-input .chat-emoji-item {
             width: 100%;
@@ -1271,9 +1291,20 @@ export default function Inbox() {
                 right: 12px;
                 width: auto;
                 bottom: calc(100% + 8px);
-                grid-template-columns: repeat(7, minmax(0, 1fr));
                 padding: 8px;
                 border-radius: 12px;
+            }
+            .chat-input .chat-emoji-section-title {
+                margin-bottom: 5px;
+                font-size: 9px;
+            }
+            .chat-input .chat-emoji-section + .chat-emoji-section {
+                margin-top: 8px;
+                padding-top: 8px;
+            }
+            .chat-input .chat-emoji-section-grid {
+                grid-template-columns: repeat(7, minmax(0, 1fr));
+                gap: 5px;
             }
             .chat-input .chat-input-btn {
                 width: 42px;

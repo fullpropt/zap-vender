@@ -106,12 +106,54 @@ const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'email', label: 'Email', is_default: true, source: 'email' }
 ];
 
-const TEXT_EMOJIS = [
-    '😀', '😁', '😂', '🤣', '😊', '😍', '😉', '😎',
-    '🥹', '😅', '🤔', '😮', '😴', '😭', '😡', '🙏',
-    '👏', '👍', '👎', '💚', '❤️', '🔥', '✨', '🎯',
-    '📩', '💬', '📞', '✅', '⚡', '🚀', '🎉', '🤝'
+const TEXT_EMOJI_CATEGORIES: Array<{ id: string; label: string; emojis: string[] }> = [
+    {
+        id: 'faces',
+        label: 'Rostos',
+        emojis: [
+            '😀', '😁', '😂', '🤣', '😅', '😊', '🙂', '😉',
+            '😎', '🤩', '🥳', '😍', '🥰', '😘', '😗', '😚',
+            '😋', '😛', '😜', '🤪', '🤗', '🥹', '😌', '🤔',
+            '🫡', '😮', '😯', '😴', '😪', '😭', '😢', '😤',
+            '😡', '🤯', '😬', '🙄', '😇'
+        ]
+    },
+    {
+        id: 'gestures',
+        label: 'Gestos',
+        emojis: [
+            '🫶', '🤝', '🙏', '👏', '🙌', '👍', '👎', '👌',
+            '✌️', '🤞', '👊'
+        ]
+    },
+    {
+        id: 'hearts',
+        label: 'Corações',
+        emojis: [
+            '💚', '❤️', '🩵', '💙', '💛', '🧡', '💜', '🖤'
+        ]
+    },
+    {
+        id: 'highlights',
+        label: 'Destaques',
+        emojis: [
+            '🔥', '✨', '⭐', '🌟', '💯', '✅', '⚡', '🚀'
+        ]
+    },
+    {
+        id: 'business',
+        label: 'Trabalho',
+        emojis: [
+            '🎉', '🎊', '🎯', '🏆', '📌', '📝', '📩', '💬',
+            '📞', '📲', '⏰', '📅', '📎', '💡', '🔔', '🤖'
+        ]
+    }
 ];
+
+const TEXT_EMOJIS = TEXT_EMOJI_CATEGORIES.reduce<string[]>((all, category) => {
+    all.push(...category.emojis);
+    return all;
+}, []);
 
 function normalizeDirection(message: Record<string, any>): 'outgoing' | 'incoming' {
     const rawDirection = String(message.direction || '').trim().toLowerCase();
@@ -536,6 +578,44 @@ function setMobileConversationMode(chatOpen: boolean) {
     }
 }
 
+function isCurrentChatVisible() {
+    if (!currentConversation) return false;
+    if (!isMobileInboxView()) return true;
+    const chatPanel = document.getElementById('chatPanel') as HTMLElement | null;
+    return Boolean(chatPanel?.classList.contains('active'));
+}
+
+function setConversationUnreadLocal(conversationId: number, unread: number) {
+    const normalizedConversationId = Number(conversationId);
+    if (!Number.isFinite(normalizedConversationId) || normalizedConversationId <= 0) return;
+
+    const safeUnread = Math.max(0, Number(unread) || 0);
+    let changed = false;
+
+    if (currentConversation && Number(currentConversation.id) === normalizedConversationId) {
+        if ((currentConversation.unread || 0) !== safeUnread) {
+            currentConversation.unread = safeUnread;
+            changed = true;
+        }
+    }
+
+    conversations = conversations.map((conversation) => {
+        if (Number(conversation.id) !== normalizedConversationId) return conversation;
+        if ((conversation.unread || 0) === safeUnread) return conversation;
+        changed = true;
+        return { ...conversation, unread: safeUnread };
+    });
+
+    if (!changed) return;
+
+    if (currentFilter === 'unread') {
+        renderFilteredConversations(conversations.filter((conversation) => (conversation.unread || 0) > 0));
+    } else {
+        renderConversations();
+    }
+    updateUnreadBadge();
+}
+
 function setContactInfoPanelState(forceOpen?: boolean) {
     const panel = document.getElementById('inboxRightPanel') as HTMLElement | null;
     const backdrop = document.getElementById('contactInfoBackdrop') as HTMLElement | null;
@@ -752,6 +832,7 @@ function initSocket() {
             const incomingConversationId = Number(data?.conversationId || 0);
             const incomingLeadId = Number(data?.leadId || 0);
             const incomingSessionId = sanitizeSessionId(data?.sessionId || data?.session_id || '');
+            const isFromMe = Boolean(data?.isFromMe);
             const isCurrent =
                 currentConversation &&
                 (
@@ -782,6 +863,21 @@ function initSocket() {
                 const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
                 renderMessagesInto(chatMessages);
                 scrollToBottom();
+
+                if (!isFromMe && isCurrentChatVisible()) {
+                    const activeConversationId = Number(currentConversation?.id || 0);
+                    if (activeConversationId > 0) {
+                        setConversationUnreadLocal(activeConversationId, 0);
+                        const conversationSessionId = resolveConversationSessionId(currentConversation);
+                        socket?.emit('mark-read', {
+                            sessionId: conversationSessionId,
+                            conversationId: activeConversationId
+                        });
+                        void api.post(`/api/conversations/${activeConversationId}/read`, {}).catch(() => {
+                            // Melhor esforço para manter badge sincronizada
+                        });
+                    }
+                }
             }
             loadConversations();
         });
@@ -822,6 +918,9 @@ function initSocket() {
 
 async function loadConversations() {
     try {
+        const activeOpenConversationId = isCurrentChatVisible()
+            ? Number(currentConversation?.id || 0)
+            : 0;
         const query = inboxSessionFilter
             ? `?session_id=${encodeURIComponent(inboxSessionFilter)}`
             : '';
@@ -837,7 +936,9 @@ async function loadConversations() {
             avatarUrl: sanitizeAvatarUrl(c.avatar_url || c.avatarUrl),
             lastMessage: c.lastMessage || c.last_message || 'Clique para iniciar conversa',
             lastMessageAt: c.lastMessageAt || c.last_message_at || c.updated_at || c.created_at,
-            unread: c.unread || c.unread_count || 0,
+            unread: activeOpenConversationId > 0 && Number(c.id) === activeOpenConversationId
+                ? 0
+                : (c.unread || c.unread_count || 0),
             status: c.status
         }));
 
@@ -1068,7 +1169,7 @@ async function loadMessages(leadId: number, conversationId?: number, sessionId?:
         messages = (response.messages || []).map(m => ({
             ...m,
             direction: normalizeDirection(m),
-            created_at: m.created_at || m.sent_at || new Date().toISOString(),
+            created_at: m.sent_at || m.created_at || new Date().toISOString(),
             media_type: m.media_type || 'text',
             media_url: m.media_url || null,
             media_mime_type: m.media_mime_type || null,
@@ -1203,10 +1304,27 @@ function renderQuickReplyItems() {
 }
 
 function renderEmojiPickerItems() {
-    return TEXT_EMOJIS
-        .map((emoji, index) => {
-            const label = escapeHtml(`Inserir emoji ${emoji}`);
-            return `<button type="button" class="chat-emoji-item" onclick="selectEmojiByIndex(${index})" title="${label}" aria-label="${label}">${emoji}</button>`;
+    let emojiIndex = 0;
+
+    return TEXT_EMOJI_CATEGORIES
+        .map((category) => {
+            const title = escapeHtml(category.label);
+            const items = category.emojis
+                .map((emoji) => {
+                    const currentIndex = emojiIndex++;
+                    const label = escapeHtml(`Inserir emoji ${emoji}`);
+                    return `<button type="button" class="chat-emoji-item" onclick="selectEmojiByIndex(${currentIndex})" title="${label}" aria-label="${label}">${emoji}</button>`;
+                })
+                .join('');
+
+            return `
+                <section class="chat-emoji-section" aria-label="${title}">
+                    <div class="chat-emoji-section-title">${title}</div>
+                    <div class="chat-emoji-section-grid">
+                        ${items}
+                    </div>
+                </section>
+            `;
         })
         .join('');
 }
@@ -1336,6 +1454,9 @@ async function sendQuickReplyAudio(quickReply: TemplateItem) {
         });
         if (response?.messageId) {
             (newMessage as Record<string, any>).message_id = String(response.messageId);
+        }
+        if (response?.sentAt || response?.timestamp) {
+            newMessage.created_at = String(response.sentAt || response.timestamp);
         }
         newMessage.status = 'sent';
         renderMessagesInto(chatMessages);
@@ -1632,6 +1753,9 @@ async function handleMediaInputChange(event: Event) {
         });
         if (response?.messageId) {
             (tempMessage as Record<string, any>).message_id = String(response.messageId);
+        }
+        if (response?.sentAt || response?.timestamp) {
+            tempMessage.created_at = String(response.sentAt || response.timestamp);
         }
 
         tempMessage.status = 'sent';
@@ -1933,6 +2057,9 @@ async function sendMessage() {
         });
         if (response?.messageId) {
             (newMessage as Record<string, any>).message_id = String(response.messageId);
+        }
+        if (response?.sentAt || response?.timestamp) {
+            newMessage.created_at = String(response.sentAt || response.timestamp);
         }
         
         newMessage.status = 'sent';
