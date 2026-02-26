@@ -197,6 +197,14 @@ const journeySteps = [
   }
 ];
 
+const heroAudienceChips = [
+  'Agencias',
+  'Times comerciais',
+  'Infoprodutos',
+  'Prestadores',
+  'Inside sales'
+];
+
 export default function Planos() {
   useEffect(() => {
     const previousTitle = document.title;
@@ -223,23 +231,23 @@ export default function Planos() {
     <div className="sales-page">
       <style>{`
         .sales-page {
-          --bg: #f7fbfa;
-          --bg-2: #eef6f3;
-          --panel: rgba(9, 27, 31, 0.88);
-          --panel-strong: rgba(8, 24, 27, 0.96);
-          --line: rgba(146, 174, 180, 0.2);
+          --bg: #f8fcfb;
+          --bg-2: #eef7f3;
+          --panel: rgba(6, 20, 23, 0.88);
+          --panel-strong: rgba(4, 15, 18, 0.96);
+          --line: rgba(160, 189, 193, 0.16);
           --text: #eef7f7;
-          --muted: #a7c1c1;
+          --muted: #aac6c6;
           --brand: #23c66f;
           --brand-2: #15a34a;
           --accent: #f6b84e;
           color: var(--text);
           min-height: 100vh;
           background:
-            radial-gradient(780px 420px at 92% 6%, rgba(35, 198, 111, 0.14) 0%, rgba(35, 198, 111, 0) 62%),
-            radial-gradient(720px 420px at 6% 90%, rgba(246, 184, 78, 0.12) 0%, rgba(246, 184, 78, 0) 62%),
-            radial-gradient(560px 300px at 50% 0%, rgba(94, 217, 255, 0.08) 0%, rgba(94, 217, 255, 0) 70%),
-            linear-gradient(180deg, var(--bg) 0%, #f5faf8 45%, var(--bg-2) 100%);
+            radial-gradient(980px 520px at 88% 8%, rgba(35, 198, 111, 0.16) 0%, rgba(35, 198, 111, 0) 62%),
+            radial-gradient(820px 500px at 8% 92%, rgba(246, 184, 78, 0.1) 0%, rgba(246, 184, 78, 0) 64%),
+            radial-gradient(520px 280px at 50% 0%, rgba(94, 217, 255, 0.06) 0%, rgba(94, 217, 255, 0) 72%),
+            linear-gradient(180deg, #fbfefd 0%, var(--bg) 42%, var(--bg-2) 100%);
           position: relative;
           overflow-x: hidden;
         }
@@ -255,50 +263,72 @@ export default function Planos() {
           inset: auto;
           pointer-events: none;
           z-index: -1;
-          opacity: 0.36;
+          opacity: 0.3;
         }
 
         .sales-page::before {
-          width: 360px;
-          height: 360px;
-          top: -80px;
-          right: -60px;
-          border-radius: 34px;
-          border: 1px solid rgba(35, 198, 111, 0.14);
+          width: 420px;
+          height: 420px;
+          top: -110px;
+          right: -90px;
+          border-radius: 999px;
+          border: 1px solid rgba(35, 198, 111, 0.12);
           transform: rotate(14deg);
-          background: linear-gradient(135deg, rgba(35, 198, 111, 0.07), rgba(35, 198, 111, 0));
+          background: radial-gradient(circle at 35% 35%, rgba(35, 198, 111, 0.14), rgba(35, 198, 111, 0));
         }
 
         .sales-page::after {
-          width: 300px;
-          height: 300px;
-          bottom: 20px;
-          left: -80px;
-          border-radius: 999px;
+          width: 360px;
+          height: 360px;
+          bottom: 10px;
+          left: -100px;
+          border-radius: 30px;
           border: 1px solid rgba(246, 184, 78, 0.12);
-          background: radial-gradient(circle at 35% 35%, rgba(246, 184, 78, 0.14), rgba(246, 184, 78, 0));
+          background: linear-gradient(135deg, rgba(246, 184, 78, 0.12), rgba(246, 184, 78, 0));
+          transform: rotate(-14deg);
         }
 
         .sales-shell {
           position: relative;
           z-index: 1;
-          width: min(1320px, calc(100% - 28px));
+          width: min(1360px, calc(100% - 28px));
           margin: 0 auto;
-          padding: 16px 0 44px;
+          padding: 14px 14px 26px;
+          border-radius: 28px;
+          border: 1px solid rgba(12, 33, 37, 0.1);
+          background:
+            radial-gradient(620px 280px at 50% 0%, rgba(35, 198, 111, 0.15), rgba(35, 198, 111, 0) 70%),
+            radial-gradient(480px 220px at 12% 18%, rgba(94, 217, 255, 0.08), rgba(94, 217, 255, 0) 72%),
+            linear-gradient(180deg, rgba(5, 16, 19, 0.96), rgba(4, 14, 17, 0.985));
+          box-shadow:
+            0 28px 70px rgba(8, 18, 22, 0.2),
+            0 6px 20px rgba(8, 18, 22, 0.08);
+          overflow: hidden;
           animation: page-enter 420ms ease-out;
         }
 
         .sales-shell::before {
           content: '';
           position: absolute;
-          inset: 10px -6px auto;
-          height: 96px;
-          border-radius: 22px;
-          background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.4));
-          border: 1px solid rgba(12, 31, 35, 0.04);
-          box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+          inset: -120px -40px auto;
+          height: 320px;
+          border-radius: 999px;
+          background: radial-gradient(circle at 50% 50%, rgba(35, 198, 111, 0.22), rgba(35, 198, 111, 0) 70%);
           z-index: 0;
           pointer-events: none;
+          filter: blur(8px);
+        }
+
+        .sales-shell::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          z-index: 0;
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+            radial-gradient(500px 260px at 86% 26%, rgba(35, 198, 111, 0.08), rgba(35, 198, 111, 0));
+          mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.5));
         }
 
         .sales-nav-sticky {
@@ -314,15 +344,17 @@ export default function Planos() {
           justify-content: space-between;
           gap: 16px;
           flex-wrap: wrap;
-          padding: 12px 14px;
-          border-radius: 18px;
-          border: 1px solid var(--line);
-          background: rgba(7, 19, 23, 0.72);
-          backdrop-filter: blur(12px);
+          padding: 10px 12px;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+            rgba(5, 16, 18, 0.78);
+          backdrop-filter: blur(14px);
           margin-bottom: 0;
           position: relative;
           z-index: 1;
-          box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16);
+          box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
         }
 
         .sales-nav::after {
@@ -331,8 +363,8 @@ export default function Planos() {
           inset: -1px;
           border-radius: inherit;
           pointer-events: none;
-          border: 1px solid rgba(255, 255, 255, 0.03);
-          opacity: 0.6;
+          border: 1px solid rgba(255, 255, 255, 0.04);
+          opacity: 0.9;
         }
 
         .sales-brand {
@@ -350,7 +382,7 @@ export default function Planos() {
           width: 128px;
           height: auto;
           display: block;
-          filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.35));
+          filter: drop-shadow(0 8px 20px rgba(35, 198, 111, 0.12));
         }
 
         .sales-nav-actions {
@@ -364,21 +396,21 @@ export default function Planos() {
         .sales-nav-links {
           display: inline-flex;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
           flex-wrap: wrap;
           justify-content: center;
           padding: 4px;
-          border-radius: 12px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(255, 255, 255, 0.02);
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: rgba(255, 255, 255, 0.015);
         }
 
         .sales-nav-link {
           border: 1px solid transparent;
           background: transparent;
-          color: #d4e8e8;
-          border-radius: 10px;
-          padding: 8px 11px;
+          color: #d3e9e9;
+          border-radius: 999px;
+          padding: 8px 12px;
           font-size: 13px;
           font-weight: 700;
           cursor: pointer;
@@ -386,16 +418,16 @@ export default function Planos() {
         }
 
         .sales-nav-link:hover {
-          background: rgba(255, 255, 255, 0.03);
-          border-color: rgba(255, 255, 255, 0.08);
+          background: rgba(255, 255, 255, 0.035);
+          border-color: rgba(255, 255, 255, 0.06);
           color: #eff9f9;
         }
 
         .sales-btn {
           appearance: none;
           border: 1px solid transparent;
-          border-radius: 12px;
-          padding: 10px 14px;
+          border-radius: 999px;
+          padding: 10px 15px;
           font-weight: 700;
           font-size: 14px;
           text-decoration: none;
@@ -410,8 +442,9 @@ export default function Planos() {
 
         .sales-btn-outline {
           color: var(--text);
-          background: rgba(255, 255, 255, 0.03);
-          border-color: rgba(255, 255, 255, 0.14);
+          background: rgba(255, 255, 255, 0.02);
+          border-color: rgba(255, 255, 255, 0.12);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
         }
 
         .sales-btn-outline:hover {
@@ -421,12 +454,25 @@ export default function Planos() {
 
         .sales-btn-primary {
           color: #04140b;
-          background: linear-gradient(135deg, #35e084, var(--brand));
-          box-shadow: 0 12px 28px rgba(21, 163, 74, 0.24);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0)) padding-box,
+            linear-gradient(135deg, #68f6ab, #35e084 42%, var(--brand) 100%);
+          box-shadow:
+            0 10px 24px rgba(21, 163, 74, 0.22),
+            0 0 0 1px rgba(35, 198, 111, 0.18);
         }
 
         .sales-btn-primary:hover {
-          box-shadow: 0 18px 32px rgba(21, 163, 74, 0.3);
+          box-shadow:
+            0 14px 28px rgba(21, 163, 74, 0.28),
+            0 0 0 1px rgba(35, 198, 111, 0.2);
+        }
+
+        .sales-page main {
+          display: grid;
+          gap: 16px;
+          position: relative;
+          z-index: 1;
         }
 
         .sales-hero,
@@ -440,7 +486,7 @@ export default function Planos() {
 
         .sales-hero {
           display: block;
-          margin-bottom: 20px;
+          margin-bottom: 0;
         }
 
         .hero-copy,
@@ -452,10 +498,18 @@ export default function Planos() {
         }
 
         .hero-copy {
-          padding: clamp(20px, 3vw, 30px);
+          padding: clamp(22px, 3.4vw, 36px);
           position: relative;
           overflow: hidden;
           text-align: center;
+          border-radius: 24px;
+          background:
+            radial-gradient(680px 280px at 50% 0%, rgba(35, 198, 111, 0.14), rgba(35, 198, 111, 0) 72%),
+            radial-gradient(420px 220px at 6% 26%, rgba(94, 217, 255, 0.07), rgba(94, 217, 255, 0) 75%),
+            linear-gradient(180deg, rgba(7, 21, 24, 0.96), rgba(5, 16, 19, 0.98));
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.03),
+            0 24px 40px rgba(0, 0, 0, 0.18);
         }
 
         .hero-copy > * {
@@ -466,57 +520,76 @@ export default function Planos() {
         .hero-copy::before {
           content: '';
           position: absolute;
-          inset: auto -40px -70px auto;
-          width: 240px;
-          height: 240px;
-          border-radius: 26px;
-          transform: rotate(18deg);
-          background: linear-gradient(135deg, rgba(35, 198, 111, 0.12), rgba(35, 198, 111, 0));
-          border: 1px solid rgba(35, 198, 111, 0.12);
+          inset: auto -80px -110px auto;
+          width: 340px;
+          height: 340px;
+          border-radius: 999px;
+          background: radial-gradient(circle at 35% 35%, rgba(35, 198, 111, 0.16), rgba(35, 198, 111, 0));
           z-index: 0;
+        }
+
+        .hero-copy::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          z-index: 0;
+          background:
+            linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+          background-size: 100% 34px, 34px 100%;
+          opacity: 0.22;
+          mask-image: radial-gradient(circle at 50% 22%, rgba(0, 0, 0, 1), rgba(0, 0, 0, 0.22) 72%);
         }
 
         .hero-title {
           margin: 0 auto;
           font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
-          font-size: clamp(30px, 4.2vw, 56px);
-          line-height: 1.02;
-          letter-spacing: -0.03em;
-          max-width: 18ch;
+          font-size: clamp(32px, 4.6vw, 62px);
+          line-height: 0.98;
+          letter-spacing: -0.04em;
+          max-width: 15ch;
+          text-wrap: balance;
         }
 
         .hero-title strong {
-          color: #d2ffe6;
-          text-shadow: 0 0 32px rgba(35, 198, 111, 0.14);
+          color: transparent;
+          background: linear-gradient(180deg, #ebfff4 0%, #8ef7be 58%, #4ce48f 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          text-shadow: 0 0 24px rgba(35, 198, 111, 0.08);
         }
 
         .hero-subtitle {
           margin: 14px auto 0;
-          color: var(--muted);
+          color: #b8d0d0;
           font-size: 16px;
-          line-height: 1.65;
-          max-width: 68ch;
+          line-height: 1.6;
+          max-width: 58ch;
+          text-wrap: balance;
         }
 
         .hero-benefit-list {
           display: flex;
           flex-wrap: wrap;
           justify-content: center;
-          gap: 8px;
-          margin: 16px auto 0;
+          gap: 9px;
+          margin: 18px auto 0;
           padding: 0;
           list-style: none;
-          max-width: 920px;
+          max-width: 860px;
         }
 
         .hero-benefit-list li {
           border-radius: 999px;
           border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(255, 255, 255, 0.02);
-          padding: 9px 12px;
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012));
+          padding: 9px 13px;
           font-size: 12px;
           color: #d7ecec;
           line-height: 1.2;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
         }
 
         .hero-cta-row {
@@ -527,44 +600,109 @@ export default function Planos() {
           margin-top: 16px;
         }
 
+        .hero-proof-row {
+          margin: 16px auto 0;
+          max-width: 920px;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.012));
+          padding: 10px 12px;
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 10px;
+          align-items: center;
+          text-align: left;
+        }
+
+        .hero-proof-label {
+          color: #b8d4d4;
+          font-size: 12px;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+
+        .hero-proof-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .hero-proof-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: rgba(255, 255, 255, 0.015);
+          padding: 6px 8px;
+          color: #d6ebeb;
+          font-size: 11px;
+          line-height: 1;
+        }
+
+        .hero-proof-chip::before {
+          content: '';
+          width: 5px;
+          height: 5px;
+          border-radius: 999px;
+          background: rgba(107, 246, 171, 0.95);
+          box-shadow: 0 0 0 4px rgba(53, 224, 132, 0.08);
+        }
+
         .hero-note {
-          margin-top: 10px;
-          color: #9bb5b5;
+          margin-top: 12px;
+          color: #99b6b6;
           font-size: 12px;
         }
 
         .hero-visual {
           margin: 18px auto 0;
           max-width: 980px;
-          border-radius: 20px;
+          border-radius: 22px;
           border: 1px solid rgba(255, 255, 255, 0.08);
           background:
-            radial-gradient(520px 260px at 80% 10%, rgba(35, 198, 111, 0.12), rgba(35, 198, 111, 0)),
-            linear-gradient(165deg, rgba(12, 31, 35, 0.9), rgba(7, 21, 24, 0.94));
+            radial-gradient(620px 280px at 78% 6%, rgba(35, 198, 111, 0.16), rgba(35, 198, 111, 0)),
+            radial-gradient(300px 200px at 14% 90%, rgba(246, 184, 78, 0.08), rgba(246, 184, 78, 0)),
+            linear-gradient(165deg, rgba(7, 22, 25, 0.94), rgba(5, 15, 18, 0.98));
           padding: 14px;
           position: relative;
           overflow: hidden;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
         }
 
         .hero-visual::before {
           content: '';
           position: absolute;
-          inset: auto auto -80px -60px;
-          width: 240px;
-          height: 240px;
-          border-radius: 24px;
-          transform: rotate(18deg);
-          background: linear-gradient(135deg, rgba(246, 184, 78, 0.12), rgba(246, 184, 78, 0));
-          border: 1px solid rgba(246, 184, 78, 0.08);
+          inset: auto auto -120px -80px;
+          width: 320px;
+          height: 320px;
+          border-radius: 999px;
+          background: radial-gradient(circle at 35% 35%, rgba(246, 184, 78, 0.12), rgba(246, 184, 78, 0));
+        }
+
+        .hero-visual::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background:
+            linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+          background-size: 100% 28px, 28px 100%;
+          opacity: 0.14;
         }
 
         .hero-screen {
           position: relative;
           z-index: 1;
-          border-radius: 16px;
+          border-radius: 18px;
           border: 1px solid rgba(255, 255, 255, 0.08);
-          background: linear-gradient(180deg, rgba(5, 17, 20, 0.88), rgba(7, 20, 23, 0.96));
+          background:
+            radial-gradient(440px 200px at 60% 0%, rgba(35, 198, 111, 0.08), rgba(35, 198, 111, 0)),
+            linear-gradient(180deg, rgba(4, 15, 17, 0.9), rgba(6, 18, 21, 0.98));
           padding: 12px;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
         }
 
         .hero-screen-top {
@@ -602,7 +740,7 @@ export default function Planos() {
         .hero-screen-tabs span {
           border-radius: 999px;
           border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(255, 255, 255, 0.02);
+          background: rgba(255, 255, 255, 0.015);
           color: #c9dddd;
           font-size: 11px;
           font-weight: 700;
@@ -621,6 +759,7 @@ export default function Planos() {
           border-radius: 14px;
           border: 1px solid rgba(255, 255, 255, 0.06);
           background: rgba(0, 0, 0, 0.12);
+          box-shadow: 0 16px 30px rgba(0, 0, 0, 0.12);
         }
 
         .hero-illustration-caption {
@@ -630,7 +769,7 @@ export default function Planos() {
           align-items: center;
           border-radius: 12px;
           border: 1px solid rgba(255, 255, 255, 0.06);
-          background: rgba(255, 255, 255, 0.015);
+          background: rgba(255, 255, 255, 0.02);
           padding: 10px;
           text-align: left;
         }
@@ -904,10 +1043,27 @@ export default function Planos() {
         .resources-section,
         .journey-section,
         .plans-section {
+          position: relative;
+          overflow: hidden;
           border-radius: 22px;
-          border: 1px solid var(--line);
-          background: linear-gradient(180deg, rgba(7, 22, 25, 0.84), rgba(7, 20, 23, 0.94));
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          background:
+            radial-gradient(560px 220px at 80% 0%, rgba(35, 198, 111, 0.08), rgba(35, 198, 111, 0) 72%),
+            linear-gradient(180deg, rgba(7, 21, 24, 0.9), rgba(5, 16, 18, 0.96));
           padding: 20px;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+        }
+
+        .solution-section::before,
+        .resources-section::before,
+        .journey-section::before,
+        .plans-section::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+          opacity: 0.75;
         }
 
         .solution-section,
@@ -949,9 +1105,11 @@ export default function Planos() {
 
         .section-panel {
           border-radius: 16px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.012));
           padding: 14px;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
         }
 
         .section-panel p {
@@ -971,7 +1129,8 @@ export default function Planos() {
         .pillar-card {
           border-radius: 14px;
           border: 1px solid rgba(255, 255, 255, 0.07);
-          background: rgba(255, 255, 255, 0.02);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.008));
           padding: 12px;
           display: grid;
           gap: 8px;
@@ -1034,12 +1193,20 @@ export default function Planos() {
           border-radius: 14px;
           border: 1px solid rgba(255, 255, 255, 0.07);
           background:
-            linear-gradient(165deg, rgba(13, 33, 37, 0.9), rgba(8, 22, 25, 0.92));
+            radial-gradient(240px 120px at 80% 0%, rgba(35, 198, 111, 0.07), rgba(35, 198, 111, 0)),
+            linear-gradient(165deg, rgba(11, 28, 31, 0.92), rgba(7, 18, 21, 0.96));
           padding: 12px;
           display: grid;
           gap: 8px;
           min-height: 150px;
           align-content: start;
+          transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+        }
+
+        .resource-card:hover {
+          transform: translateY(-2px);
+          border-color: rgba(35, 198, 111, 0.16);
+          box-shadow: 0 16px 24px rgba(0, 0, 0, 0.14);
         }
 
         .resource-kicker {
@@ -1072,10 +1239,17 @@ export default function Planos() {
         .journey-card {
           border-radius: 14px;
           border: 1px solid rgba(255, 255, 255, 0.07);
-          background: rgba(255, 255, 255, 0.02);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
           padding: 12px;
           display: grid;
           gap: 8px;
+          transition: transform 160ms ease, border-color 160ms ease;
+        }
+
+        .journey-card:hover {
+          transform: translateY(-2px);
+          border-color: rgba(246, 184, 78, 0.14);
         }
 
         .journey-step {
@@ -1139,8 +1313,8 @@ export default function Planos() {
           border-radius: 18px;
           border: 1px solid rgba(255, 255, 255, 0.08);
           background:
-            linear-gradient(155deg, rgba(15, 37, 42, 0.95), rgba(10, 27, 31, 0.95)),
-            linear-gradient(180deg, rgba(35, 198, 111, 0.06), rgba(35, 198, 111, 0));
+            radial-gradient(420px 200px at 82% 4%, rgba(35, 198, 111, 0.1), rgba(35, 198, 111, 0) 72%),
+            linear-gradient(155deg, rgba(12, 30, 33, 0.96), rgba(7, 19, 22, 0.98));
           padding: 18px;
           display: grid;
           grid-template-columns: 1.2fr .8fr;
@@ -1209,10 +1383,13 @@ export default function Planos() {
         .plan-sidebar {
           border-radius: 16px;
           border: 1px solid rgba(255, 255, 255, 0.08);
-          background: var(--panel-strong);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01)),
+            rgba(4, 14, 16, 0.92);
           padding: 14px;
           display: grid;
           gap: 10px;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
         }
 
         .plan-sidebar-price {
@@ -1244,7 +1421,8 @@ export default function Planos() {
           margin-top: 16px;
           border-radius: 18px;
           border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(255, 255, 255, 0.02);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.008));
           padding: 14px;
         }
 
@@ -1258,7 +1436,8 @@ export default function Planos() {
           border-radius: 14px;
           border: 1px solid rgba(255, 255, 255, 0.07);
           background:
-            linear-gradient(165deg, rgba(16, 36, 40, 0.88), rgba(10, 26, 29, 0.94));
+            radial-gradient(180px 80px at 80% 0%, rgba(35, 198, 111, 0.05), rgba(35, 198, 111, 0)),
+            linear-gradient(165deg, rgba(13, 30, 34, 0.9), rgba(8, 20, 23, 0.96));
           padding: 14px;
           display: grid;
           gap: 10px;
@@ -1318,7 +1497,8 @@ export default function Planos() {
         .roadmap-card {
           border-radius: 14px;
           border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(255, 255, 255, 0.02);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.01));
           padding: 12px;
           display: grid;
           gap: 8px;
@@ -1394,7 +1574,7 @@ export default function Planos() {
           overflow-x: auto;
           border-radius: 12px;
           border: 1px solid rgba(255, 255, 255, 0.06);
-          background: rgba(4, 14, 16, 0.46);
+          background: rgba(3, 11, 13, 0.55);
         }
 
         .comparison-table {
@@ -1447,7 +1627,8 @@ export default function Planos() {
         .faq-item {
           border-radius: 14px;
           border: 1px solid rgba(255, 255, 255, 0.07);
-          background: rgba(255, 255, 255, 0.02);
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.01));
           padding: 12px;
         }
 
@@ -1468,7 +1649,8 @@ export default function Planos() {
           border-radius: 18px;
           border: 1px solid rgba(35, 198, 111, 0.22);
           background:
-            linear-gradient(145deg, rgba(13, 39, 31, 0.88), rgba(8, 23, 20, 0.9));
+            radial-gradient(340px 160px at 72% 10%, rgba(35, 198, 111, 0.13), rgba(35, 198, 111, 0)),
+            linear-gradient(145deg, rgba(10, 29, 24, 0.92), rgba(6, 18, 16, 0.95));
           padding: 16px;
           display: flex;
           align-items: center;
@@ -1640,7 +1822,20 @@ export default function Planos() {
             text-align: center;
           }
 
+          .hero-proof-row {
+            grid-template-columns: 1fr;
+            text-align: center;
+          }
+
+          .hero-proof-label {
+            white-space: normal;
+          }
+
           .hero-legend {
+            justify-content: center;
+          }
+
+          .hero-proof-chips {
             justify-content: center;
           }
 
@@ -1674,8 +1869,8 @@ export default function Planos() {
         @media (max-width: 700px) {
           .sales-shell {
             width: calc(100% - 20px);
-            padding-top: 10px;
-            padding-bottom: 24px;
+            padding: 10px 10px 18px;
+            border-radius: 18px;
           }
 
           .sales-nav {
@@ -1696,6 +1891,7 @@ export default function Planos() {
             width: 100%;
             justify-content: space-between;
             padding: 4px;
+            border-radius: 14px;
           }
 
           .sales-nav-link {
@@ -1704,6 +1900,7 @@ export default function Planos() {
             text-align: center;
             padding: 8px 6px;
             font-size: 12px;
+            border-radius: 10px;
           }
 
           .sales-nav-actions {
@@ -1727,11 +1924,13 @@ export default function Planos() {
 
           .hero-copy {
             padding: 18px;
+            border-radius: 18px;
           }
 
           .hero-visual {
             margin-top: 14px;
             padding: 10px;
+            border-radius: 16px;
           }
 
           .hero-screen {
@@ -1744,6 +1943,11 @@ export default function Planos() {
 
           .hero-illustration-caption {
             padding: 9px;
+          }
+
+          .hero-proof-row {
+            padding: 9px;
+            border-radius: 12px;
           }
 
           .pillar-grid,
@@ -1870,6 +2074,15 @@ export default function Planos() {
                 >
                   Ver recursos
                 </button>
+              </div>
+
+              <div className="hero-proof-row" aria-label="Publicos ideais para o ZapVender">
+                <div className="hero-proof-label">Ideal para operacoes que vendem pelo WhatsApp</div>
+                <div className="hero-proof-chips" aria-hidden="true">
+                  {heroAudienceChips.map((chip) => (
+                    <span className="hero-proof-chip" key={chip}>{chip}</span>
+                  ))}
+                </div>
               </div>
 
               <div className="hero-visual" aria-label="Visual da plataforma ZapVender">
