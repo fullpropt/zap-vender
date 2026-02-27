@@ -55,6 +55,14 @@ type EmailSettingsResponse = {
   provider?: string;
   appName?: string;
   requestTimeoutMs?: number;
+  mailgunFromEmail?: string;
+  mailgunFromName?: string;
+  mailgunDomain?: string;
+  mailgunBaseUrl?: string;
+  mailgunReplyToEmail?: string;
+  mailgunReplyToName?: string;
+  mailgunApiKeyMasked?: string;
+  hasMailgunApiKey?: boolean;
   sendgridFromEmail?: string;
   sendgridFromName?: string;
   sendgridReplyToEmail?: string;
@@ -142,9 +150,19 @@ export default function AdminDashboard() {
   const [emailError, setEmailError] = useState('');
   const [emailSuccess, setEmailSuccess] = useState('');
   const [overview, setOverview] = useState<AppAdminOverview | null>(null);
-  const [provider, setProvider] = useState('sendgrid');
+  const [provider, setProvider] = useState('mailgun');
   const [appName, setAppName] = useState('ZapVender');
   const [requestTimeoutMs, setRequestTimeoutMs] = useState(10000);
+  const [mailgunDomain, setMailgunDomain] = useState('');
+  const [mailgunBaseUrl, setMailgunBaseUrl] = useState('https://api.mailgun.net');
+  const [mailgunFromEmail, setMailgunFromEmail] = useState('');
+  const [mailgunFromName, setMailgunFromName] = useState('ZapVender');
+  const [mailgunReplyToEmail, setMailgunReplyToEmail] = useState('');
+  const [mailgunReplyToName, setMailgunReplyToName] = useState('');
+  const [mailgunApiKeyInput, setMailgunApiKeyInput] = useState('');
+  const [removeMailgunApiKey, setRemoveMailgunApiKey] = useState(false);
+  const [mailgunApiKeyMasked, setMailgunApiKeyMasked] = useState('');
+  const [hasMailgunApiKey, setHasMailgunApiKey] = useState(false);
   const [sendgridFromEmail, setSendgridFromEmail] = useState('');
   const [sendgridFromName, setSendgridFromName] = useState('ZapVender');
   const [sendgridReplyToEmail, setSendgridReplyToEmail] = useState('');
@@ -194,9 +212,19 @@ export default function AdminDashboard() {
         if (cancelled) return;
         const settings = response?.settings || {};
 
-        setProvider(String(settings.provider || 'sendgrid'));
+        setProvider(String(settings.provider || 'mailgun'));
         setAppName(String(settings.appName || 'ZapVender'));
         setRequestTimeoutMs(Number(settings.requestTimeoutMs || 10000));
+        setMailgunDomain(String(settings.mailgunDomain || ''));
+        setMailgunBaseUrl(String(settings.mailgunBaseUrl || 'https://api.mailgun.net'));
+        setMailgunFromEmail(String(settings.mailgunFromEmail || ''));
+        setMailgunFromName(String(settings.mailgunFromName || 'ZapVender'));
+        setMailgunReplyToEmail(String(settings.mailgunReplyToEmail || ''));
+        setMailgunReplyToName(String(settings.mailgunReplyToName || ''));
+        setMailgunApiKeyMasked(String(settings.mailgunApiKeyMasked || ''));
+        setHasMailgunApiKey(normalizeBoolean(settings.hasMailgunApiKey));
+        setMailgunApiKeyInput('');
+        setRemoveMailgunApiKey(false);
         setSendgridFromEmail(String(settings.sendgridFromEmail || ''));
         setSendgridFromName(String(settings.sendgridFromName || 'ZapVender'));
         setSendgridReplyToEmail(String(settings.sendgridReplyToEmail || ''));
@@ -256,6 +284,12 @@ export default function AdminDashboard() {
         provider,
         appName,
         requestTimeoutMs,
+        mailgunDomain,
+        mailgunBaseUrl,
+        mailgunFromEmail,
+        mailgunFromName,
+        mailgunReplyToEmail,
+        mailgunReplyToName,
         sendgridFromEmail,
         sendgridFromName,
         sendgridReplyToEmail,
@@ -264,6 +298,12 @@ export default function AdminDashboard() {
         htmlTemplate,
         textTemplate
       };
+
+      if (removeMailgunApiKey) {
+        payload.mailgunApiKey = '';
+      } else if (String(mailgunApiKeyInput || '').trim()) {
+        payload.mailgunApiKey = String(mailgunApiKeyInput || '').trim();
+      }
 
       if (removeSendgridApiKey) {
         payload.sendgridApiKey = '';
@@ -280,9 +320,19 @@ export default function AdminDashboard() {
       );
       const settings = response?.settings || {};
 
-      setProvider(String(settings.provider || 'sendgrid'));
+      setProvider(String(settings.provider || 'mailgun'));
       setAppName(String(settings.appName || 'ZapVender'));
       setRequestTimeoutMs(Number(settings.requestTimeoutMs || 10000));
+      setMailgunDomain(String(settings.mailgunDomain || ''));
+      setMailgunBaseUrl(String(settings.mailgunBaseUrl || 'https://api.mailgun.net'));
+      setMailgunFromEmail(String(settings.mailgunFromEmail || ''));
+      setMailgunFromName(String(settings.mailgunFromName || 'ZapVender'));
+      setMailgunReplyToEmail(String(settings.mailgunReplyToEmail || ''));
+      setMailgunReplyToName(String(settings.mailgunReplyToName || ''));
+      setMailgunApiKeyMasked(String(settings.mailgunApiKeyMasked || ''));
+      setHasMailgunApiKey(normalizeBoolean(settings.hasMailgunApiKey));
+      setMailgunApiKeyInput('');
+      setRemoveMailgunApiKey(false);
       setSendgridFromEmail(String(settings.sendgridFromEmail || ''));
       setSendgridFromName(String(settings.sendgridFromName || 'ZapVender'));
       setSendgridReplyToEmail(String(settings.sendgridReplyToEmail || ''));
@@ -497,6 +547,7 @@ export default function AdminDashboard() {
                   <div className="admin-form-group">
                     <label>Provider</label>
                     <select value={provider} onChange={(event) => setProvider(event.target.value)}>
+                      <option value="mailgun">Mailgun</option>
                       <option value="sendgrid">SendGrid</option>
                     </select>
                   </div>
@@ -505,41 +556,89 @@ export default function AdminDashboard() {
                     <input value={appName} onChange={(event) => setAppName(event.target.value)} />
                   </div>
                   <div className="admin-form-group">
-                    <label>SendGrid FROM email</label>
-                    <input value={sendgridFromEmail} onChange={(event) => setSendgridFromEmail(event.target.value)} placeholder="no-reply@seu-dominio.com" />
-                  </div>
-                  <div className="admin-form-group">
-                    <label>SendGrid FROM nome</label>
-                    <input value={sendgridFromName} onChange={(event) => setSendgridFromName(event.target.value)} placeholder="ZapVender" />
-                  </div>
-                  <div className="admin-form-group">
-                    <label>Reply-To email (opcional)</label>
-                    <input value={sendgridReplyToEmail} onChange={(event) => setSendgridReplyToEmail(event.target.value)} placeholder="suporte@seu-dominio.com" />
-                  </div>
-                  <div className="admin-form-group">
-                    <label>Reply-To nome (opcional)</label>
-                    <input value={sendgridReplyToName} onChange={(event) => setSendgridReplyToName(event.target.value)} />
-                  </div>
-                  <div className="admin-form-group">
                     <label>Timeout da requisicao (ms)</label>
                     <input type="number" min={1000} max={60000} value={requestTimeoutMs} onChange={(event) => setRequestTimeoutMs(Number(event.target.value || 10000))} />
                   </div>
-                  <div className="admin-form-group">
-                    <label>SENDGRID_API_KEY</label>
-                    <input
-                      type="password"
-                      value={sendgridApiKeyInput}
-                      onChange={(event) => setSendgridApiKeyInput(event.target.value)}
-                      placeholder={hasSendgridApiKey ? 'Chave ja configurada. Preencha apenas se quiser substituir.' : 'Cole a API key do SendGrid'}
-                    />
-                    <div className="admin-muted">
-                      Atual: {hasSendgridApiKey ? sendgridApiKeyMasked || 'Configurada' : 'Nao configurada'}
-                    </div>
-                    <label style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 400 }}>
-                      <input type="checkbox" checked={removeSendgridApiKey} onChange={(event) => setRemoveSendgridApiKey(event.target.checked)} />
-                      Remover chave salva
-                    </label>
-                  </div>
+                  {provider === 'mailgun' && (
+                    <>
+                      <div className="admin-form-group">
+                        <label>MAILGUN_DOMAIN</label>
+                        <input value={mailgunDomain} onChange={(event) => setMailgunDomain(event.target.value)} placeholder="mg.seu-dominio.com" />
+                      </div>
+                      <div className="admin-form-group">
+                        <label>MAILGUN_BASE_URL</label>
+                        <input value={mailgunBaseUrl} onChange={(event) => setMailgunBaseUrl(event.target.value)} placeholder="https://api.mailgun.net" />
+                      </div>
+                      <div className="admin-form-group">
+                        <label>MAILGUN_FROM_EMAIL</label>
+                        <input value={mailgunFromEmail} onChange={(event) => setMailgunFromEmail(event.target.value)} placeholder="no-reply@seu-dominio.com" />
+                      </div>
+                      <div className="admin-form-group">
+                        <label>MAILGUN_FROM_NAME</label>
+                        <input value={mailgunFromName} onChange={(event) => setMailgunFromName(event.target.value)} placeholder="ZapVender" />
+                      </div>
+                      <div className="admin-form-group">
+                        <label>MAILGUN_REPLY_TO_EMAIL (opcional)</label>
+                        <input value={mailgunReplyToEmail} onChange={(event) => setMailgunReplyToEmail(event.target.value)} placeholder="suporte@seu-dominio.com" />
+                      </div>
+                      <div className="admin-form-group">
+                        <label>MAILGUN_REPLY_TO_NAME (opcional)</label>
+                        <input value={mailgunReplyToName} onChange={(event) => setMailgunReplyToName(event.target.value)} />
+                      </div>
+                      <div className="admin-form-group">
+                        <label>MAILGUN_API_KEY</label>
+                        <input
+                          type="password"
+                          value={mailgunApiKeyInput}
+                          onChange={(event) => setMailgunApiKeyInput(event.target.value)}
+                          placeholder={hasMailgunApiKey ? 'Chave ja configurada. Preencha apenas se quiser substituir.' : 'Cole a API key do Mailgun'}
+                        />
+                        <div className="admin-muted">
+                          Atual: {hasMailgunApiKey ? mailgunApiKeyMasked || 'Configurada' : 'Nao configurada'}
+                        </div>
+                        <label style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 400 }}>
+                          <input type="checkbox" checked={removeMailgunApiKey} onChange={(event) => setRemoveMailgunApiKey(event.target.checked)} />
+                          Remover chave salva
+                        </label>
+                      </div>
+                    </>
+                  )}
+                  {provider === 'sendgrid' && (
+                    <>
+                      <div className="admin-form-group">
+                        <label>SendGrid FROM email</label>
+                        <input value={sendgridFromEmail} onChange={(event) => setSendgridFromEmail(event.target.value)} placeholder="no-reply@seu-dominio.com" />
+                      </div>
+                      <div className="admin-form-group">
+                        <label>SendGrid FROM nome</label>
+                        <input value={sendgridFromName} onChange={(event) => setSendgridFromName(event.target.value)} placeholder="ZapVender" />
+                      </div>
+                      <div className="admin-form-group">
+                        <label>Reply-To email (opcional)</label>
+                        <input value={sendgridReplyToEmail} onChange={(event) => setSendgridReplyToEmail(event.target.value)} placeholder="suporte@seu-dominio.com" />
+                      </div>
+                      <div className="admin-form-group">
+                        <label>Reply-To nome (opcional)</label>
+                        <input value={sendgridReplyToName} onChange={(event) => setSendgridReplyToName(event.target.value)} />
+                      </div>
+                      <div className="admin-form-group">
+                        <label>SENDGRID_API_KEY</label>
+                        <input
+                          type="password"
+                          value={sendgridApiKeyInput}
+                          onChange={(event) => setSendgridApiKeyInput(event.target.value)}
+                          placeholder={hasSendgridApiKey ? 'Chave ja configurada. Preencha apenas se quiser substituir.' : 'Cole a API key do SendGrid'}
+                        />
+                        <div className="admin-muted">
+                          Atual: {hasSendgridApiKey ? sendgridApiKeyMasked || 'Configurada' : 'Nao configurada'}
+                        </div>
+                        <label style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 400 }}>
+                          <input type="checkbox" checked={removeSendgridApiKey} onChange={(event) => setRemoveSendgridApiKey(event.target.checked)} />
+                          Remover chave salva
+                        </label>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="admin-form-group">

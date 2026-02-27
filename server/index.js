@@ -9046,7 +9046,7 @@ function clampEmailRequestTimeoutMs(value, fallback = 10000) {
 
 function normalizeEmailDeliveryProvider(value, fallback = 'sendgrid') {
     const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === 'sendgrid' || normalized === 'mailmkt') {
+    if (normalized === 'mailgun' || normalized === 'sendgrid' || normalized === 'mailmkt') {
         return normalized;
     }
     return fallback;
@@ -9069,11 +9069,17 @@ function normalizeEmailDeliverySettingsInput(payload = {}, currentSettings = {})
     const source = payload && typeof payload === 'object' ? payload : {};
     const current = currentSettings && typeof currentSettings === 'object' ? currentSettings : {};
 
-    const provider = normalizeEmailDeliveryProvider(source.provider ?? current.provider, 'sendgrid');
-    const fromEmail = String(source.sendgridFromEmail ?? current.sendgridFromEmail ?? '').trim().toLowerCase();
-    const fromName = String(source.sendgridFromName ?? current.sendgridFromName ?? DEFAULT_APP_NAME).trim() || DEFAULT_APP_NAME;
-    const replyToEmail = String(source.sendgridReplyToEmail ?? current.sendgridReplyToEmail ?? '').trim().toLowerCase();
-    const replyToName = String(source.sendgridReplyToName ?? current.sendgridReplyToName ?? '').trim();
+    const provider = normalizeEmailDeliveryProvider(source.provider ?? current.provider, 'mailgun');
+    const sendgridFromEmail = String(source.sendgridFromEmail ?? current.sendgridFromEmail ?? '').trim().toLowerCase();
+    const sendgridFromName = String(source.sendgridFromName ?? current.sendgridFromName ?? DEFAULT_APP_NAME).trim() || DEFAULT_APP_NAME;
+    const sendgridReplyToEmail = String(source.sendgridReplyToEmail ?? current.sendgridReplyToEmail ?? '').trim().toLowerCase();
+    const sendgridReplyToName = String(source.sendgridReplyToName ?? current.sendgridReplyToName ?? '').trim();
+    const mailgunDomain = String(source.mailgunDomain ?? current.mailgunDomain ?? '').trim();
+    const mailgunBaseUrl = String(source.mailgunBaseUrl ?? current.mailgunBaseUrl ?? '').trim() || 'https://api.mailgun.net';
+    const mailgunFromEmail = String(source.mailgunFromEmail ?? current.mailgunFromEmail ?? '').trim().toLowerCase();
+    const mailgunFromName = String(source.mailgunFromName ?? current.mailgunFromName ?? DEFAULT_APP_NAME).trim() || DEFAULT_APP_NAME;
+    const mailgunReplyToEmail = String(source.mailgunReplyToEmail ?? current.mailgunReplyToEmail ?? '').trim().toLowerCase();
+    const mailgunReplyToName = String(source.mailgunReplyToName ?? current.mailgunReplyToName ?? '').trim();
     const requestTimeoutMs = clampEmailRequestTimeoutMs(
         source.requestTimeoutMs ?? current.requestTimeoutMs,
         10000
@@ -9093,20 +9099,31 @@ function normalizeEmailDeliverySettingsInput(payload = {}, currentSettings = {})
         DEFAULT_EMAIL_TEXT_TEMPLATE
     );
 
-    const hasApiKeyInPayload = Object.prototype.hasOwnProperty.call(source, 'sendgridApiKey');
-    const sendgridApiKey = hasApiKeyInPayload
+    const hasSendgridApiKeyInPayload = Object.prototype.hasOwnProperty.call(source, 'sendgridApiKey');
+    const sendgridApiKey = hasSendgridApiKeyInPayload
         ? String(source.sendgridApiKey || '').trim()
         : String(current.sendgridApiKey || '').trim();
+    const hasMailgunApiKeyInPayload = Object.prototype.hasOwnProperty.call(source, 'mailgunApiKey');
+    const mailgunApiKey = hasMailgunApiKeyInPayload
+        ? String(source.mailgunApiKey || '').trim()
+        : String(current.mailgunApiKey || '').trim();
 
     return {
         provider,
         appName,
         requestTimeoutMs,
+        mailgunApiKey,
+        mailgunDomain,
+        mailgunBaseUrl,
+        mailgunFromEmail,
+        mailgunFromName,
+        mailgunReplyToEmail,
+        mailgunReplyToName,
         sendgridApiKey,
-        sendgridFromEmail: fromEmail,
-        sendgridFromName: fromName,
-        sendgridReplyToEmail: replyToEmail,
-        sendgridReplyToName: replyToName,
+        sendgridFromEmail,
+        sendgridFromName,
+        sendgridReplyToEmail,
+        sendgridReplyToName,
         subjectTemplate,
         htmlTemplate,
         textTemplate
@@ -9116,32 +9133,48 @@ function normalizeEmailDeliverySettingsInput(payload = {}, currentSettings = {})
 async function loadEmailDeliverySettings() {
     const persisted = await Settings.get(EMAIL_DELIVERY_SETTINGS_KEY);
     const raw = persisted && typeof persisted === 'object' ? persisted : {};
-    const encryptedApiKey = String(raw.sendgridApiKeyEncrypted || '').trim();
-    const decryptedApiKey = encryptedApiKey ? String(decrypt(encryptedApiKey) || '').trim() : '';
+    const encryptedSendgridApiKey = String(raw.sendgridApiKeyEncrypted || '').trim();
+    const decryptedSendgridApiKey = encryptedSendgridApiKey ? String(decrypt(encryptedSendgridApiKey) || '').trim() : '';
+    const encryptedMailgunApiKey = String(raw.mailgunApiKeyEncrypted || '').trim();
+    const decryptedMailgunApiKey = encryptedMailgunApiKey ? String(decrypt(encryptedMailgunApiKey) || '').trim() : '';
 
     return normalizeEmailDeliverySettingsInput(
         {
             provider: raw.provider,
             appName: raw.appName,
             requestTimeoutMs: raw.requestTimeoutMs,
-            sendgridApiKey: decryptedApiKey,
+            sendgridApiKey: decryptedSendgridApiKey,
             sendgridFromEmail: raw.sendgridFromEmail,
             sendgridFromName: raw.sendgridFromName,
             sendgridReplyToEmail: raw.sendgridReplyToEmail,
             sendgridReplyToName: raw.sendgridReplyToName,
+            mailgunApiKey: decryptedMailgunApiKey,
+            mailgunDomain: raw.mailgunDomain,
+            mailgunBaseUrl: raw.mailgunBaseUrl,
+            mailgunFromEmail: raw.mailgunFromEmail,
+            mailgunFromName: raw.mailgunFromName,
+            mailgunReplyToEmail: raw.mailgunReplyToEmail,
+            mailgunReplyToName: raw.mailgunReplyToName,
             subjectTemplate: raw.subjectTemplate,
             htmlTemplate: raw.htmlTemplate,
             textTemplate: raw.textTemplate
         },
         {
-            provider: process.env.EMAIL_DELIVERY_PROVIDER || 'sendgrid',
+            provider: process.env.EMAIL_DELIVERY_PROVIDER || process.env.EMAIL_PROVIDER || 'mailgun',
             appName: process.env.APP_NAME || DEFAULT_APP_NAME,
-            requestTimeoutMs: process.env.EMAIL_REQUEST_TIMEOUT_MS || process.env.MAILMKT_REQUEST_TIMEOUT_MS || 10000,
+            requestTimeoutMs: process.env.EMAIL_REQUEST_TIMEOUT_MS || process.env.MAILGUN_REQUEST_TIMEOUT_MS || process.env.MAILMKT_REQUEST_TIMEOUT_MS || 10000,
             sendgridApiKey: process.env.SENDGRID_API_KEY || '',
             sendgridFromEmail: process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_FROM || '',
             sendgridFromName: process.env.SENDGRID_FROM_NAME || process.env.APP_NAME || DEFAULT_APP_NAME,
             sendgridReplyToEmail: process.env.SENDGRID_REPLY_TO_EMAIL || '',
             sendgridReplyToName: process.env.SENDGRID_REPLY_TO_NAME || '',
+            mailgunApiKey: process.env.MAILGUN_API_KEY || '',
+            mailgunDomain: process.env.MAILGUN_DOMAIN || '',
+            mailgunBaseUrl: process.env.MAILGUN_BASE_URL || 'https://api.mailgun.net',
+            mailgunFromEmail: process.env.MAILGUN_FROM_EMAIL || process.env.EMAIL_FROM || '',
+            mailgunFromName: process.env.MAILGUN_FROM_NAME || process.env.APP_NAME || DEFAULT_APP_NAME,
+            mailgunReplyToEmail: process.env.MAILGUN_REPLY_TO_EMAIL || '',
+            mailgunReplyToName: process.env.MAILGUN_REPLY_TO_NAME || '',
             subjectTemplate: process.env.EMAIL_CONFIRMATION_SUBJECT_TEMPLATE || DEFAULT_EMAIL_SUBJECT_TEMPLATE,
             htmlTemplate: process.env.EMAIL_CONFIRMATION_HTML_TEMPLATE || DEFAULT_EMAIL_HTML_TEMPLATE,
             textTemplate: process.env.EMAIL_CONFIRMATION_TEXT_TEMPLATE || DEFAULT_EMAIL_TEXT_TEMPLATE
@@ -9151,17 +9184,25 @@ async function loadEmailDeliverySettings() {
 
 function serializeEmailDeliverySettingsForStorage(settings = {}) {
     const normalized = normalizeEmailDeliverySettingsInput(settings, settings);
-    const encryptedApiKey = normalized.sendgridApiKey ? encrypt(normalized.sendgridApiKey) : '';
+    const encryptedSendgridApiKey = normalized.sendgridApiKey ? encrypt(normalized.sendgridApiKey) : '';
+    const encryptedMailgunApiKey = normalized.mailgunApiKey ? encrypt(normalized.mailgunApiKey) : '';
 
     return {
-        provider: normalizeEmailDeliveryProvider(normalized.provider, 'sendgrid'),
+        provider: normalizeEmailDeliveryProvider(normalized.provider, 'mailgun'),
         appName: normalized.appName,
         requestTimeoutMs: normalized.requestTimeoutMs,
-        sendgridApiKeyEncrypted: encryptedApiKey || null,
+        sendgridApiKeyEncrypted: encryptedSendgridApiKey || null,
         sendgridFromEmail: normalized.sendgridFromEmail,
         sendgridFromName: normalized.sendgridFromName,
         sendgridReplyToEmail: normalized.sendgridReplyToEmail || null,
         sendgridReplyToName: normalized.sendgridReplyToName || null,
+        mailgunApiKeyEncrypted: encryptedMailgunApiKey || null,
+        mailgunDomain: normalized.mailgunDomain || null,
+        mailgunBaseUrl: normalized.mailgunBaseUrl || null,
+        mailgunFromEmail: normalized.mailgunFromEmail || null,
+        mailgunFromName: normalized.mailgunFromName || null,
+        mailgunReplyToEmail: normalized.mailgunReplyToEmail || null,
+        mailgunReplyToName: normalized.mailgunReplyToName || null,
         subjectTemplate: normalized.subjectTemplate,
         htmlTemplate: normalized.htmlTemplate,
         textTemplate: normalized.textTemplate
@@ -9171,7 +9212,7 @@ function serializeEmailDeliverySettingsForStorage(settings = {}) {
 function sanitizeEmailDeliverySettingsForResponse(settings = {}) {
     const normalized = normalizeEmailDeliverySettingsInput(settings, settings);
     return {
-        provider: normalizeEmailDeliveryProvider(normalized.provider, 'sendgrid'),
+        provider: normalizeEmailDeliveryProvider(normalized.provider, 'mailgun'),
         appName: normalized.appName,
         requestTimeoutMs: normalized.requestTimeoutMs,
         sendgridFromEmail: normalized.sendgridFromEmail,
@@ -9180,6 +9221,14 @@ function sanitizeEmailDeliverySettingsForResponse(settings = {}) {
         sendgridReplyToName: normalized.sendgridReplyToName,
         sendgridApiKeyMasked: maskApiKeyValue(normalized.sendgridApiKey),
         hasSendgridApiKey: String(normalized.sendgridApiKey || '').trim().length > 0,
+        mailgunFromEmail: normalized.mailgunFromEmail,
+        mailgunFromName: normalized.mailgunFromName,
+        mailgunDomain: normalized.mailgunDomain,
+        mailgunBaseUrl: normalized.mailgunBaseUrl,
+        mailgunReplyToEmail: normalized.mailgunReplyToEmail,
+        mailgunReplyToName: normalized.mailgunReplyToName,
+        mailgunApiKeyMasked: maskApiKeyValue(normalized.mailgunApiKey),
+        hasMailgunApiKey: String(normalized.mailgunApiKey || '').trim().length > 0,
         subjectTemplate: normalized.subjectTemplate,
         htmlTemplate: normalized.htmlTemplate,
         textTemplate: normalized.textTemplate
@@ -13851,6 +13900,29 @@ app.put('/api/admin/dashboard/email-settings', authenticate, async (req, res) =>
                 return res.status(400).json({
                     success: false,
                     error: 'Informe a SENDGRID_API_KEY para enviar emails'
+                });
+            }
+        }
+
+        if (normalized.provider === 'mailgun') {
+            if (!String(normalized.mailgunDomain || '').trim()) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Informe o MAILGUN_DOMAIN para enviar emails'
+                });
+            }
+
+            if (!normalized.mailgunFromEmail || !isValidEmailAddress(normalized.mailgunFromEmail)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Informe um email remetente valido para o Mailgun'
+                });
+            }
+
+            if (!String(normalized.mailgunApiKey || '').trim()) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Informe a MAILGUN_API_KEY para enviar emails'
                 });
             }
         }

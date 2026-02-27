@@ -19,7 +19,7 @@ const DEFAULT_EMAIL_HTML_TEMPLATE = [
     '<p><a href="{{confirmation_url}}" target="_blank" rel="noopener noreferrer">Confirmar email</a></p>',
     '<p>Este link expira em {{expires_in_text}}.</p>'
 ].join('');
-const SUPPORTED_EMAIL_PROVIDERS = new Set(['sendgrid', 'mailmkt']);
+const SUPPORTED_EMAIL_PROVIDERS = new Set(['mailgun', 'sendgrid', 'mailmkt']);
 
 class MailMktIntegrationError extends Error {
     constructor(message, options = {}) {
@@ -87,6 +87,13 @@ function resolveMailMktEndpointUrl(baseUrl = '') {
     return `${normalizedBaseUrl}/api/integrations/zapvender/send-email-confirmation`;
 }
 
+function resolveMailgunEndpointUrl(baseUrl = '', domain = '') {
+    const normalizedBaseUrl = trimTrailingSlash(baseUrl || process.env.MAILGUN_BASE_URL || 'https://api.mailgun.net');
+    const normalizedDomain = String(domain || process.env.MAILGUN_DOMAIN || '').trim();
+    if (!normalizedBaseUrl || !normalizedDomain) return '';
+    return `${normalizedBaseUrl}/v3/${encodeURIComponent(normalizedDomain)}/messages`;
+}
+
 function hashEmailConfirmationToken(token) {
     return crypto
         .createHash('sha256')
@@ -137,6 +144,7 @@ function buildRuntimeEmailDeliveryConfig(overrides = {}) {
     const requestTimeoutMs = clampNumber(
         options.requestTimeoutMs
             || process.env.EMAIL_REQUEST_TIMEOUT_MS
+            || process.env.MAILGUN_REQUEST_TIMEOUT_MS
             || process.env.MAILMKT_REQUEST_TIMEOUT_MS,
         DEFAULT_REQUEST_TIMEOUT_MS
     );
@@ -146,6 +154,13 @@ function buildRuntimeEmailDeliveryConfig(overrides = {}) {
     const sendgridFromName = String(options.sendgridFromName || process.env.SENDGRID_FROM_NAME || process.env.APP_NAME || DEFAULT_APP_NAME).trim();
     const sendgridReplyToEmail = normalizeEmail(options.sendgridReplyToEmail || process.env.SENDGRID_REPLY_TO_EMAIL || '');
     const sendgridReplyToName = String(options.sendgridReplyToName || process.env.SENDGRID_REPLY_TO_NAME || '').trim();
+    const mailgunApiKey = String(options.mailgunApiKey || process.env.MAILGUN_API_KEY || '').trim();
+    const mailgunDomain = String(options.mailgunDomain || process.env.MAILGUN_DOMAIN || '').trim();
+    const mailgunBaseUrl = trimTrailingSlash(options.mailgunBaseUrl || process.env.MAILGUN_BASE_URL || 'https://api.mailgun.net');
+    const mailgunFromEmail = normalizeEmail(options.mailgunFromEmail || process.env.MAILGUN_FROM_EMAIL || process.env.EMAIL_FROM || '');
+    const mailgunFromName = String(options.mailgunFromName || process.env.MAILGUN_FROM_NAME || process.env.APP_NAME || DEFAULT_APP_NAME).trim();
+    const mailgunReplyToEmail = normalizeEmail(options.mailgunReplyToEmail || process.env.MAILGUN_REPLY_TO_EMAIL || '');
+    const mailgunReplyToName = String(options.mailgunReplyToName || process.env.MAILGUN_REPLY_TO_NAME || '').trim();
     const mailmktUrl = String(options.mailmktUrl || process.env.MAILMKT_URL || '').trim();
     const mailmktApiKey = String(options.mailmktApiKey || process.env.MAILMKT_INTEGRATION_API_KEY || '').trim();
     const appName = String(options.appName || process.env.APP_NAME || DEFAULT_APP_NAME).trim() || DEFAULT_APP_NAME;
@@ -167,12 +182,14 @@ function buildRuntimeEmailDeliveryConfig(overrides = {}) {
 
     let provider = normalizeProvider(options.provider || process.env.EMAIL_DELIVERY_PROVIDER || process.env.EMAIL_PROVIDER);
     if (!provider) {
-        if (sendgridApiKey && sendgridFromEmail) {
+        if (mailgunApiKey && mailgunDomain && mailgunFromEmail) {
+            provider = 'mailgun';
+        } else if (sendgridApiKey && sendgridFromEmail) {
             provider = 'sendgrid';
         } else if (mailmktUrl && mailmktApiKey) {
             provider = 'mailmkt';
         } else {
-            provider = 'sendgrid';
+            provider = 'mailgun';
         }
     }
 
@@ -183,6 +200,13 @@ function buildRuntimeEmailDeliveryConfig(overrides = {}) {
         htmlTemplate,
         textTemplate,
         requestTimeoutMs,
+        mailgunApiKey,
+        mailgunDomain,
+        mailgunBaseUrl,
+        mailgunFromEmail,
+        mailgunFromName,
+        mailgunReplyToEmail,
+        mailgunReplyToName,
         sendgridApiKey,
         sendgridFromEmail,
         sendgridFromName,
@@ -430,6 +454,120 @@ async function sendEmailConfirmationViaSendGrid(payload, config) {
     }
 }
 
+async function sendEmailConfirmationViaMailgun(payload, config) {
+    const endpointUrl = resolveMailgunEndpointUrl(config.mailgunBaseUrl, config.mailgunDomain);
+    const apiKey = String(config.mailgunApiKey || '').trim();
+    const fromEmail = normalizeEmail(config.mailgunFromEmail);
+    const fromName = String(config.mailgunFromName || '').trim();
+    const replyToEmail = normalizeEmail(config.mailgunReplyToEmail);
+    const replyToName = String(config.mailgunReplyToName || '').trim();
+    const timeoutMs = clampNumber(config.requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS);
+
+    if (!endpointUrl) {
+        throw new MailMktIntegrationError('MAILGUN_DOMAIN ou MAILGUN_BASE_URL nao configurada', {
+            statusCode: 500,
+            retryable: false
+        });
+    }
+
+    if (!apiKey) {
+        throw new MailMktIntegrationError('MAILGUN_API_KEY nao configurada', {
+            statusCode: 500,
+            retryable: false
+        });
+    }
+
+    if (!fromEmail) {
+        throw new MailMktIntegrationError('MAILGUN_FROM_EMAIL nao configurada', {
+            statusCode: 500,
+            retryable: false
+        });
+    }
+
+    const recipientEmail = normalizeEmail(payload.email);
+    if (!recipientEmail) {
+        throw new MailMktIntegrationError('Email do destinatario nao informado', {
+            statusCode: 400,
+            retryable: false
+        });
+    }
+
+    const recipientName = String(payload.name || '').trim() || normalizePersonName('', recipientEmail);
+    const subject = String(payload.subject || '').trim() || DEFAULT_EMAIL_SUBJECT_TEMPLATE;
+    const text = String(payload.text || '').trim();
+    const html = String(payload.html || '').trim();
+    const fromHeader = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
+    const toHeader = recipientName ? `${recipientName} <${recipientEmail}>` : recipientEmail;
+
+    const formData = new URLSearchParams();
+    formData.set('from', fromHeader);
+    formData.set('to', toHeader);
+    formData.set('subject', subject);
+    if (text) {
+        formData.set('text', text);
+    } else {
+        formData.set('text', DEFAULT_EMAIL_TEXT_TEMPLATE);
+    }
+    if (html) {
+        formData.set('html', html);
+    }
+    if (replyToEmail) {
+        const replyToHeader = replyToName ? `${replyToName} <${replyToEmail}>` : replyToEmail;
+        formData.set('h:Reply-To', replyToHeader);
+    }
+
+    const basicAuthToken = Buffer.from(`api:${apiKey}`).toString('base64');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch(endpointUrl, {
+            method: 'POST',
+            headers: {
+                Authorization: `Basic ${basicAuthToken}`,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: formData.toString(),
+            signal: controller.signal
+        });
+
+        if (!response.ok) {
+            const responseText = await response.text().catch(() => '');
+            const upstreamPreview = String(responseText || '').slice(0, 300);
+            const integrationError = new MailMktIntegrationError(
+                `Mailgun respondeu HTTP ${response.status}`,
+                {
+                    statusCode: response.status >= 500 ? 503 : 502,
+                    upstreamStatus: response.status,
+                    retryable: response.status >= 500 || response.status === 429
+                }
+            );
+            integrationError.upstreamBodyPreview = upstreamPreview || null;
+            throw integrationError;
+        }
+
+        return true;
+    } catch (error) {
+        if (error instanceof MailMktIntegrationError) {
+            throw error;
+        }
+
+        if (error?.name === 'AbortError') {
+            throw new MailMktIntegrationError('Timeout ao enviar confirmacao de email via Mailgun', {
+                statusCode: 503,
+                retryable: true
+            });
+        }
+
+        throw new MailMktIntegrationError(`Falha de rede ao enviar confirmacao via Mailgun: ${error.message}`, {
+            statusCode: 503,
+            retryable: true
+        });
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 async function sendRegistrationConfirmationEmail(req, user, tokenPayload, options = {}) {
     const emailSettings = options && typeof options === 'object'
         ? (options.emailSettings && typeof options.emailSettings === 'object' ? options.emailSettings : options)
@@ -455,7 +593,9 @@ async function sendRegistrationConfirmationEmail(req, user, tokenPayload, option
     };
 
     try {
-        if (config.provider === 'mailmkt') {
+        if (config.provider === 'mailgun') {
+            await sendEmailConfirmationViaMailgun(payload, config);
+        } else if (config.provider === 'mailmkt') {
             await sendEmailConfirmationViaMailMkt(payload, config);
         } else if (config.provider === 'sendgrid') {
             await sendEmailConfirmationViaSendGrid(payload, config);
