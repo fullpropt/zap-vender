@@ -45,10 +45,55 @@ export default function App() {
     document.body.classList.toggle('sidebar-open', isOpen);
   };
 
+  const syncApplicationAdminSidebarShortcut = () => {
+    const isApplicationAdmin = sessionStorage.getItem('selfDashboardIsAppAdmin') === '1';
+    const sidebars = document.querySelectorAll('.sidebar');
+    const isAdminDashboardRoute = location.pathname === '/admin-dashboard';
+
+    sidebars.forEach((sidebarEl) => {
+      if (!(sidebarEl instanceof HTMLElement)) return;
+      const footer = sidebarEl.querySelector('.sidebar-footer');
+      if (!(footer instanceof HTMLElement)) return;
+
+      let wrapper = footer.querySelector('.sidebar-admin-access');
+      if (!(wrapper instanceof HTMLElement)) {
+        wrapper = null;
+      }
+
+      if (!isApplicationAdmin) {
+        wrapper?.remove();
+        return;
+      }
+
+      if (!wrapper) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'sidebar-admin-access';
+        footer.insertBefore(wrapper, footer.firstChild || null);
+      }
+
+      let link = wrapper.querySelector('a');
+      if (!(link instanceof HTMLAnchorElement)) {
+        link = document.createElement('a');
+        link.href = '#/admin-dashboard';
+        link.className = 'nav-link sidebar-admin-link';
+        link.innerHTML = '<span class="icon icon-building"></span>Admin da Aplicacao';
+        wrapper.appendChild(link);
+      }
+
+      link.classList.toggle('active', isAdminDashboardRoute);
+      if (isAdminDashboardRoute) {
+        link.setAttribute('aria-current', 'page');
+      } else {
+        link.removeAttribute('aria-current');
+      }
+    });
+  };
+
   useEffect(() => {
     (window as Window & { refreshWhatsAppStatus?: () => void }).refreshWhatsAppStatus?.();
     closeSidebar();
     syncSidebarAccessibility();
+    syncApplicationAdminSidebarShortcut();
   }, [location.pathname, location.search, location.hash]);
 
   useEffect(() => {

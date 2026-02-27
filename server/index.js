@@ -13995,6 +13995,343 @@ app.post('/api/admin/dashboard/email-settings/test', authenticate, async (req, r
     }
 });
 
+app.put('/api/admin/dashboard/users/:id', authenticate, async (req, res) => {
+    if (!ensureApplicationAdmin(req, res)) return;
+
+    try {
+        const targetId = parseInt(String(req.params?.id || ''), 10);
+        if (!Number.isInteger(targetId) || targetId <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Usuario invalido'
+            });
+        }
+
+        const current = await User.findById(targetId);
+        if (!current) {
+            return res.status(404).json({
+                success: false,
+                error: 'Usuario nao encontrado'
+            });
+        }
+
+        const ownerUserId = normalizeOwnerUserId(current.owner_user_id) || Number(current.id || 0);
+        const isPrimaryOwnerAdmin = isPrimaryOwnerAdminUser(current, ownerUserId);
+        const requesterId = Number(req.user?.id || 0);
+        const payload = {};
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+
+        if (Object.prototype.hasOwnProperty.call(body, 'name')) {
+            const name = String(body.name || '').trim();
+            if (!name) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Nome e obrigatorio'
+                });
+            }
+            payload.name = name;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, 'email')) {
+            const email = String(body.email || '').trim().toLowerCase();
+            if (!email || !isValidEmailAddress(email)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Informe um e-mail valido'
+                });
+            }
+
+            const existing = await User.findActiveByEmail(email);
+            if (existing && Number(existing.id) !== targetId) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'E-mail ja cadastrado para outro usuario'
+                });
+            }
+
+            payload.email = email;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, 'role')) {
+            payload.role = normalizeUserRoleInput(body.role);
+            if (isPrimaryOwnerAdmin && !isUserAdminRole(payload.role)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Nao e permitido rebaixar o admin principal da conta'
+                });
+            }
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, 'is_active')) {
+            payload.is_active = normalizeUserActiveInput(body.is_active, Number(current.is_active) > 0 ? 1 : 0);
+            if (isPrimaryOwnerAdmin && Number(payload.is_active) === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Nao e permitido desativar o admin principal da conta'
+                });
+            }
+            if (requesterId === targetId && Number(payload.is_active) === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Nao e possivel desativar o proprio usuario'
+                });
+            }
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, 'email_confirmed')) {
+            const confirmed = Number(body.email_confirmed) > 0;
+            payload.email_confirmed = confirmed ? 1 : 0;
+            payload.email_confirmed_at = confirmed ? new Date().toISOString() : null;
+            payload.email_confirmation_token_hash = null;
+            payload.email_confirmation_expires_at = null;
+        }
+
+        if (!Object.keys(payload).length) {
+            return res.json({
+                success: true,
+                user: sanitizeUserPayload(current, ownerUserId)
+            });
+        }
+
+        await User.update(targetId, payload);
+        if (Object.prototype.hasOwnProperty.call(payload, 'is_active') && Number(payload.is_active) === 0) {
+            markUserPresenceOffline(targetId);
+        }
+
+        const updated = await User.findById(targetId);
+        return res.json({
+            success: true,
+            user: sanitizeUserPayload(updated, ownerUserId)
+        });
+    } catch (error) {
+        console.error('[admin/dashboard/users:put] falha:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Falha ao atualizar usuario'
+        });
+    }
+});
+
+app.delete('/api/admin/dashboard/users/:id', authenticate, async (req, res) => {
+    if (!ensureApplicationAdmin(req, res)) return;
+
+    try {
+        const targetId = parseInt(String(req.params?.id || ''), 10);
+        if (!Number.isInteger(targetId) || targetId <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Usuario invalido'
+            });
+        }
+
+        const requesterId = Number(req.user?.id || 0);
+        if (requesterId === targetId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Nao e possivel desativar o proprio usuario'
+            });
+        }
+
+        const current = await User.findById(targetId);
+        if (!current) {
+            return res.status(404).json({
+                success: false,
+                error: 'Usuario nao encontrado'
+            });
+        }
+
+        const ownerUserId = normalizeOwnerUserId(current.owner_user_id) || Number(current.id || 0);
+        if (isPrimaryOwnerAdminUser(current, ownerUserId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Use a acao de desativar conta para remover o admin principal'
+            });
+        }
+
+        await User.update(targetId, { is_active: 0 });
+        markUserPresenceOffline(targetId);
+        const updated = await User.findById(targetId);
+        return res.json({
+            success: true,
+            user: sanitizeUserPayload(updated, ownerUserId)
+        });
+    } catch (error) {
+        console.error('[admin/dashboard/users:delete] falha:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Falha ao desativar usuario'
+        });
+    }
+});
+
+app.put('/api/admin/dashboard/accounts/:ownerUserId', authenticate, async (req, res) => {
+    if (!ensureApplicationAdmin(req, res)) return;
+
+    try {
+        const ownerUserId = parseInt(String(req.params?.ownerUserId || ''), 10);
+        if (!Number.isInteger(ownerUserId) || ownerUserId <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Conta invalida'
+            });
+        }
+
+        const ownerUser = await User.findById(ownerUserId);
+        if (!ownerUser) {
+            return res.status(404).json({
+                success: false,
+                error: 'Conta nao encontrada'
+            });
+        }
+
+        const requesterId = Number(req.user?.id || 0);
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const userPayload = {};
+
+        if (Object.prototype.hasOwnProperty.call(body, 'name')) {
+            const name = String(body.name || '').trim();
+            if (!name) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Nome do admin principal e obrigatorio'
+                });
+            }
+            userPayload.name = name;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, 'email')) {
+            const email = String(body.email || '').trim().toLowerCase();
+            if (!email || !isValidEmailAddress(email)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Informe um e-mail valido'
+                });
+            }
+
+            const existing = await User.findActiveByEmail(email);
+            if (existing && Number(existing.id) !== ownerUserId) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'E-mail ja cadastrado para outra conta'
+                });
+            }
+            userPayload.email = email;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(body, 'is_active')) {
+            userPayload.is_active = normalizeUserActiveInput(body.is_active, Number(ownerUser.is_active) > 0 ? 1 : 0);
+            if (requesterId === ownerUserId && Number(userPayload.is_active) === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Nao e possivel desativar a propria conta de administrador'
+                });
+            }
+        }
+
+        userPayload.role = 'admin';
+        userPayload.owner_user_id = ownerUserId;
+        await User.update(ownerUserId, userPayload);
+        if (Number(userPayload.is_active) === 0) {
+            markUserPresenceOffline(ownerUserId);
+        }
+
+        const hasPlanPayload = Object.prototype.hasOwnProperty.call(body, 'plan') && body.plan && typeof body.plan === 'object';
+        if (hasPlanPayload) {
+            const plan = body.plan;
+            if (Object.prototype.hasOwnProperty.call(plan, 'name')) {
+                await Settings.set(buildScopedSettingsKey('plan_name', ownerUserId), String(plan.name || '').trim(), 'string');
+            }
+            if (Object.prototype.hasOwnProperty.call(plan, 'code')) {
+                await Settings.set(buildScopedSettingsKey('plan_code', ownerUserId), String(plan.code || '').trim(), 'string');
+            }
+            if (Object.prototype.hasOwnProperty.call(plan, 'status')) {
+                const normalizedStatus = normalizePlanStatusForApi(plan.status);
+                await Settings.set(buildScopedSettingsKey('plan_status', ownerUserId), normalizedStatus, 'string');
+            }
+            if (Object.prototype.hasOwnProperty.call(plan, 'provider')) {
+                await Settings.set(buildScopedSettingsKey('plan_provider', ownerUserId), String(plan.provider || '').trim(), 'string');
+            }
+            if (Object.prototype.hasOwnProperty.call(plan, 'message')) {
+                await Settings.set(buildScopedSettingsKey('plan_message', ownerUserId), String(plan.message || '').trim(), 'string');
+            }
+            if (Object.prototype.hasOwnProperty.call(plan, 'renewal_date')) {
+                const renewalDate = normalizeOptionalIsoDate(plan.renewal_date);
+                await Settings.set(buildScopedSettingsKey('plan_renewal_date', ownerUserId), renewalDate || '', 'string');
+            }
+        }
+
+        const overview = await buildApplicationAdminOverview();
+        const account = (Array.isArray(overview.accounts) ? overview.accounts : [])
+            .find((item) => Number(item.owner_user_id || 0) === ownerUserId) || null;
+
+        return res.json({
+            success: true,
+            account
+        });
+    } catch (error) {
+        console.error('[admin/dashboard/accounts:put] falha:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Falha ao atualizar conta'
+        });
+    }
+});
+
+app.delete('/api/admin/dashboard/accounts/:ownerUserId', authenticate, async (req, res) => {
+    if (!ensureApplicationAdmin(req, res)) return;
+
+    try {
+        const ownerUserId = parseInt(String(req.params?.ownerUserId || ''), 10);
+        if (!Number.isInteger(ownerUserId) || ownerUserId <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Conta invalida'
+            });
+        }
+
+        const requesterOwnerUserId = normalizeOwnerUserId(req.user?.owner_user_id) || Number(req.user?.id || 0);
+        if (ownerUserId === requesterOwnerUserId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Nao e possivel desativar a propria conta'
+            });
+        }
+
+        const users = await User.listByOwner(ownerUserId, { includeInactive: true });
+        if (!Array.isArray(users) || users.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Conta nao encontrada'
+            });
+        }
+
+        let disabledUsers = 0;
+        for (const user of users) {
+            const userId = Number(user?.id || 0);
+            if (!userId) continue;
+            await User.update(userId, { is_active: 0 });
+            markUserPresenceOffline(userId);
+            disabledUsers += 1;
+        }
+
+        await Settings.set(buildScopedSettingsKey('plan_status', ownerUserId), 'canceled', 'string');
+        await Settings.set(buildScopedSettingsKey('plan_message', ownerUserId), 'Conta desativada pelo administrador da aplicacao.', 'string');
+        await Settings.set(buildScopedSettingsKey('plan_last_verified_at', ownerUserId), new Date().toISOString(), 'string');
+
+        return res.json({
+            success: true,
+            owner_user_id: ownerUserId,
+            disabled_users: disabledUsers
+        });
+    } catch (error) {
+        console.error('[admin/dashboard/accounts:delete] falha:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Falha ao desativar conta'
+        });
+    }
+});
+
 
 
 // ============================================
