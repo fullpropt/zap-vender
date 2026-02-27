@@ -741,7 +741,13 @@ app.use('/api', (req, res, next) => {
 
     const path = req.path || '';
 
-    if (path.startsWith('/auth/login') || path.startsWith('/auth/refresh') || path.startsWith('/auth/register')) {
+    if (
+        path.startsWith('/auth/login') ||
+        path.startsWith('/auth/refresh') ||
+        path.startsWith('/auth/register') ||
+        path.startsWith('/auth/confirm-email') ||
+        path.startsWith('/auth/resend-confirmation')
+    ) {
 
         return next();
 
@@ -8658,6 +8664,85 @@ app.post('/api/auth/register', async (req, res) => {
     } catch (error) {
 
         res.status(500).json({ error: error.message });
+
+    }
+
+});
+
+
+
+app.post('/api/auth/resend-confirmation', async (req, res) => {
+
+    try {
+
+        const email = String(req.body?.email || '').trim().toLowerCase();
+
+        if (!email) {
+            return res.status(400).json({
+                error: 'Email e obrigatorio',
+                code: 'EMAIL_REQUIRED'
+            });
+        }
+
+        const user = await User.findActiveByEmail(email);
+
+        if (!user) {
+            return res.json({
+                success: true,
+                requiresEmailConfirmation: true,
+                sent: false,
+                message: 'Se existir uma conta pendente para este email, um novo link de confirmacao sera enviado.'
+            });
+        }
+
+        if (isEmailConfirmed(user)) {
+            return res.json({
+                success: true,
+                requiresEmailConfirmation: false,
+                sent: false,
+                alreadyConfirmed: true,
+                message: 'Este email ja esta confirmado. Voce pode entrar normalmente.'
+            });
+        }
+
+        const confirmationTokenPayload = createEmailConfirmationTokenPayload();
+        await User.update(user.id, {
+            email_confirmed: 0,
+            email_confirmed_at: null,
+            email_confirmation_token_hash: confirmationTokenPayload.tokenHash,
+            email_confirmation_expires_at: confirmationTokenPayload.expiresAt
+        });
+
+        const refreshedUser = await User.findByIdWithPassword(user.id);
+        const targetUser = refreshedUser || user;
+
+        try {
+            await sendRegistrationConfirmationEmail(req, targetUser, confirmationTokenPayload);
+        } catch (error) {
+            if (error instanceof MailMktIntegrationError) {
+                return res.status(error.statusCode || 502).json({
+                    error: 'Nao foi possivel reenviar o email de confirmacao agora',
+                    code: 'EMAIL_CONFIRMATION_SEND_FAILED',
+                    retryable: error.retryable !== false,
+                    requiresEmailConfirmation: true,
+                    sent: false
+                });
+            }
+            throw error;
+        }
+
+        return res.json({
+            success: true,
+            requiresEmailConfirmation: true,
+            sent: true,
+            message: 'Enviamos um novo link de confirmacao para o seu email.',
+            email: targetUser.email,
+            expiresInText: confirmationTokenPayload.expiresInText
+        });
+
+    } catch (error) {
+
+        return res.status(500).json({ error: error.message });
 
     }
 
