@@ -7,6 +7,7 @@ type InboxGlobals = {
   filterConversations?: (filter: string) => void;
   searchConversations?: () => void;
   changeInboxSessionFilter?: (sessionId: string) => void;
+  resyncInboxHistory?: () => void | Promise<void>;
   registerCurrentUser?: () => void;
   toggleContactInfo?: (forceOpen?: boolean) => void;
   logout?: () => void;
@@ -252,6 +253,37 @@ export default function Inbox() {
             border-color: rgba(var(--primary-rgb), 0.42);
             background: rgba(var(--primary-rgb), 0.1);
             color: var(--primary);
+        }
+        .inbox-session-highlight-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: flex-end;
+            flex-shrink: 0;
+        }
+        .inbox-session-resync-btn {
+            border-radius: 999px;
+            border: 1px solid rgba(var(--primary-rgb), 0.45);
+            background: rgba(var(--primary-rgb), 0.14);
+            color: var(--primary);
+            padding: 4px 12px;
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1.2;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        .inbox-session-resync-btn:hover:not(:disabled) {
+            background: rgba(var(--primary-rgb), 0.2);
+            border-color: rgba(var(--primary-rgb), 0.62);
+        }
+        .inbox-session-resync-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+        .inbox-session-resync-btn.is-loading {
+            cursor: progress;
         }
         .conversations-tabs {
             display: flex;
@@ -1494,6 +1526,13 @@ export default function Inbox() {
                 font-size: 10px;
                 padding: 3px 8px;
             }
+            .inbox-session-highlight-actions {
+                align-items: flex-end;
+            }
+            .inbox-session-resync-btn {
+                font-size: 10px;
+                padding: 3px 9px;
+            }
             .conversations-tabs {
                 margin-bottom: 10px;
             }
@@ -1615,7 +1654,17 @@ export default function Inbox() {
                   <div className="inbox-session-highlight-name">Todas as contas</div>
                   <div className="inbox-session-highlight-meta">Mostrando conversas de todas as contas</div>
                 </div>
-                <span className="inbox-session-highlight-status all">Filtro geral</span>
+                <div className="inbox-session-highlight-actions">
+                  <span className="inbox-session-highlight-status all">Filtro geral</span>
+                  <button
+                    id="inboxResyncHistoryBtn"
+                    className="inbox-session-resync-btn"
+                    type="button"
+                    onClick={() => globals.resyncInboxHistory?.()}
+                  >
+                    Ressincronizar
+                  </button>
+                </div>
               </div>
               <div className="conversations-tabs">
                 <button id="filterAllBtn" className="active" onClick={() => globals.filterConversations?.('all')}>Todos</button>

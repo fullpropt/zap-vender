@@ -186,6 +186,27 @@ function parsePositiveIntEnv(value, fallback) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parsePositiveIntInRange(value, fallback, min = 1, max = Number.POSITIVE_INFINITY) {
+    const fallbackValue = parseInt(String(fallback ?? ''), 10);
+    const normalizedFallback = Number.isFinite(fallbackValue) && fallbackValue > 0
+        ? fallbackValue
+        : Math.max(1, parseInt(String(min ?? ''), 10) || 1);
+
+    const parsed = parseInt(String(value ?? ''), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return normalizedFallback;
+    }
+
+    const normalizedMin = Number.isFinite(Number(min)) && Number(min) > 0
+        ? Math.floor(Number(min))
+        : 1;
+    const normalizedMax = Number.isFinite(Number(max)) && Number(max) > 0
+        ? Math.floor(Number(max))
+        : Number.POSITIVE_INFINITY;
+
+    return Math.min(normalizedMax, Math.max(normalizedMin, parsed));
+}
+
 const POSTGRES_WORKER_LEADER_LOCK_ENABLED = USE_POSTGRES && parseBooleanEnv(
     process.env.POSTGRES_WORKER_LEADER_LOCK_ENABLED,
     process.env.NODE_ENV === 'production'
@@ -632,7 +653,6 @@ const parseOriginHost = (value) => {
         return sanitizeOriginEntry(value).replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].toLowerCase();
     }
 };
-
 const allowedOriginEntries = (process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',').map(sanitizeOriginEntry).filter(Boolean)
     : (process.env.NODE_ENV === 'production'
@@ -921,6 +941,7 @@ const pendingLidResolutionRecoveries = new Map();
 const recoveredFlowMessageIds = new Map();
 const sessionReconnectCatchupTimers = new Map();
 const sessionReconnectCatchupInFlight = new Set();
+const sessionHistorySyncQueues = new Map();
 const reconnectInFlight = new Set();
 const FLOW_RECOVERY_DELAY_MS = parseInt(process.env.FLOW_RECOVERY_DELAY_MS || '', 10) || 2500;
 const FLOW_RECOVERY_WINDOW_MS = parseInt(process.env.FLOW_RECOVERY_WINDOW_MS || '', 10) || (5 * 60 * 1000);
@@ -936,6 +957,8 @@ const WHATSAPP_RECONNECT_CATCHUP_DELAY_MS = parsePositiveIntEnv(process.env.WHAT
 const WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS = parsePositiveIntEnv(process.env.WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS, 40);
 const WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION = parsePositiveIntEnv(process.env.WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION, 80);
 const WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS = parsePositiveIntEnv(process.env.WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS, 45000);
+const WHATSAPP_HISTORY_SYNC_ENABLED = parseBooleanEnv(process.env.WHATSAPP_HISTORY_SYNC_ENABLED, true);
+const WHATSAPP_HISTORY_SYNC_MESSAGES_LIMIT = parsePositiveIntEnv(process.env.WHATSAPP_HISTORY_SYNC_MESSAGES_LIMIT, 600);
 
 senderAllocatorService.setRuntimeSessionsGetter(() => sessions);
 senderAllocatorService.setDefaultSessionId(DEFAULT_WHATSAPP_SESSION_ID);
@@ -3810,6 +3833,21 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         });
 
+        sock.ev.on('messaging-history.set', (payload) => {
+            if (!isActiveSessionSocket(sessionId, sock)) {
+                return;
+            }
+
+            enqueueSessionHistorySync(sessionId, async () => {
+                const runtimeSession = sessions.get(sessionId);
+                if (!runtimeSession || runtimeSession.socket !== sock) {
+                    return;
+                }
+
+                await processMessagingHistorySet(sessionId, sock, payload || {});
+            });
+        });
+
 
 
         sock.ev.on('contacts.set', async (payload) => {
@@ -5597,9 +5635,8 @@ async function backfillConversationMessagesFromStore(options = {}) {
 
     if (inserted > 0 && unreadFromLead > 0) {
         const currentUnread = Math.max(0, Number(conversation.unread_count || 0));
-        const nextUnread = Math.max(currentUnread, unreadFromLead);
-        if (nextUnread !== currentUnread) {
-            await Conversation.update(conversation.id, { unread_count: nextUnread });
+        if (currentUnread <= 0) {
+            await Conversation.update(conversation.id, { unread_count: unreadFromLead });
         }
     }
 
@@ -5618,11 +5655,18 @@ function clearSessionReconnectCatchupTimer(sessionId) {
     sessionReconnectCatchupTimers.delete(normalizedSessionId);
 }
 
-async function listRecentConversationsForSessionCatchup(sessionId, limit = WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS) {
+async function listRecentConversationsForSessionCatchup(
+    sessionId,
+    limit = WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS,
+    options = {}
+) {
     const normalizedSessionId = sanitizeSessionId(sessionId);
     if (!normalizedSessionId) return [];
 
     const safeLimit = Math.max(1, Math.min(Number(limit) || WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS, 200));
+    const unreadOnly = options?.unreadOnly === true;
+    const unreadFilterSql = unreadOnly ? 'AND COALESCE(c.unread_count, 0) > 0' : '';
+
     return await query(`
         SELECT
             c.id AS conversation_id,
@@ -5641,6 +5685,7 @@ async function listRecentConversationsForSessionCatchup(sessionId, limit = WHATS
         FROM conversations c
         INNER JOIN leads l ON l.id = c.lead_id
         WHERE c.session_id = ?
+          ${unreadFilterSql}
         ORDER BY
             CASE WHEN COALESCE(c.unread_count, 0) > 0 THEN 0 ELSE 1 END ASC,
             COALESCE(c.updated_at, c.created_at) DESC,
@@ -5677,6 +5722,25 @@ async function runSessionReconnectCatchup(sessionId, options = {}) {
     const normalizedSessionId = sanitizeSessionId(sessionId);
     const trigger = String(options.trigger || 'reconnect-open').trim() || 'reconnect-open';
     const expectedSocket = options.expectedSocket || null;
+    const maxConversations = parsePositiveIntInRange(
+        options.maxConversations,
+        WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS,
+        1,
+        200
+    );
+    const messagesPerConversation = parsePositiveIntInRange(
+        options.messagesPerConversation,
+        WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION,
+        10,
+        500
+    );
+    const maxRuntimeMs = parsePositiveIntInRange(
+        options.maxRuntimeMs,
+        WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS,
+        3000,
+        300000
+    );
+    const unreadOnly = options?.unreadOnly === true;
 
     if (!WHATSAPP_RECONNECT_CATCHUP_ENABLED) return { skipped: 'disabled' };
     if (!normalizedSessionId) return { skipped: 'invalid_session' };
@@ -5692,7 +5756,11 @@ async function runSessionReconnectCatchup(sessionId, options = {}) {
         messagesInserted: 0,
         mediaHydrated: 0,
         skipped: null,
-        elapsedMs: 0
+        elapsedMs: 0,
+        maxConversations,
+        messagesPerConversation,
+        maxRuntimeMs,
+        unreadOnly
     };
 
     try {
@@ -5722,7 +5790,8 @@ async function runSessionReconnectCatchup(sessionId, options = {}) {
 
         const rows = await listRecentConversationsForSessionCatchup(
             normalizedSessionId,
-            WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS
+            maxConversations,
+            { unreadOnly }
         );
         if (!Array.isArray(rows) || rows.length === 0) {
             summary.skipped = 'no_conversations';
@@ -5732,7 +5801,7 @@ async function runSessionReconnectCatchup(sessionId, options = {}) {
         for (const row of rows) {
             summary.conversationsScanned += 1;
 
-            if ((Date.now() - startedAtMs) > WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS) {
+            if ((Date.now() - startedAtMs) > maxRuntimeMs) {
                 summary.skipped = 'runtime_limit_reached';
                 break;
             }
@@ -5755,7 +5824,7 @@ async function runSessionReconnectCatchup(sessionId, options = {}) {
                 conversation,
                 lead,
                 contactJid: lead.jid || '',
-                limit: WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION
+                limit: messagesPerConversation
             });
 
             const inserted = Number(backfillResult?.inserted || 0);
@@ -5770,9 +5839,10 @@ async function runSessionReconnectCatchup(sessionId, options = {}) {
         summary.elapsedMs = Math.max(0, Date.now() - startedAtMs);
         console.log(
             `[${normalizedSessionId}] Catch-up pos-reconexao (${trigger}) ` +
-            `conversas=${summary.conversationsScanned}/${WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS}, ` +
+            `conversas=${summary.conversationsScanned}/${maxConversations}, ` +
             `atualizadas=${summary.conversationsUpdated}, mensagens=${summary.messagesInserted}, ` +
-            `midias=${summary.mediaHydrated}, skipped=${summary.skipped || 'none'}, ${summary.elapsedMs}ms`
+            `midias=${summary.mediaHydrated}, unreadOnly=${unreadOnly ? 'yes' : 'no'}, ` +
+            `skipped=${summary.skipped || 'none'}, ${summary.elapsedMs}ms`
         );
         return summary;
     } catch (error) {
@@ -5815,6 +5885,138 @@ function scheduleSessionReconnectCatchup(sessionId, options = {}) {
         trigger,
         expectedSocket
     });
+}
+
+function normalizeHistorySyncMessageBatch(messages, limit = WHATSAPP_HISTORY_SYNC_MESSAGES_LIMIT) {
+    if (!Array.isArray(messages) || messages.length === 0) return [];
+
+    const ordered = messages
+        .filter((message) => message && typeof message === 'object')
+        .sort((a, b) => {
+            const aTs = parseMessageTimestampMs(a?.messageTimestamp);
+            const bTs = parseMessageTimestampMs(b?.messageTimestamp);
+            if (aTs === bTs) {
+                const aId = String(a?.key?.id || '');
+                const bId = String(b?.key?.id || '');
+                return aId.localeCompare(bId);
+            }
+            return aTs - bTs;
+        });
+
+    const safeLimit = Math.max(1, Number(limit) || WHATSAPP_HISTORY_SYNC_MESSAGES_LIMIT);
+    if (ordered.length <= safeLimit) return ordered;
+    return ordered.slice(-safeLimit);
+}
+
+function enqueueSessionHistorySync(sessionId, worker) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId || typeof worker !== 'function') return;
+
+    const currentQueue = sessionHistorySyncQueues.get(normalizedSessionId) || Promise.resolve();
+    const queued = currentQueue
+        .catch(() => null)
+        .then(() => worker())
+        .catch((error) => {
+            console.error(`[${normalizedSessionId}] Falha no processamento de historico:`, error.message);
+        })
+        .finally(() => {
+            if (sessionHistorySyncQueues.get(normalizedSessionId) === queued) {
+                sessionHistorySyncQueues.delete(normalizedSessionId);
+            }
+        });
+
+    sessionHistorySyncQueues.set(normalizedSessionId, queued);
+}
+
+async function processMessagingHistorySet(sessionId, sock, payload = {}) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!WHATSAPP_HISTORY_SYNC_ENABLED) return { skipped: 'disabled' };
+    if (!normalizedSessionId) return { skipped: 'invalid_session' };
+    if (!isActiveSessionSocket(normalizedSessionId, sock)) return { skipped: 'stale_socket' };
+
+    const syncType = Number(payload?.syncType || 0) || 0;
+    const isLatest = payload?.isLatest === true;
+    const chats = normalizeChatPayload(payload?.chats);
+    const contacts = Array.isArray(payload?.contacts) ? payload.contacts : [];
+    const historyMessages = normalizeHistorySyncMessageBatch(payload?.messages);
+    const sessionPhone = getSessionPhone(normalizedSessionId);
+
+    if (chats.length > 0) {
+        try {
+            await syncChatsToDatabase(normalizedSessionId, chats);
+        } catch (error) {
+            console.warn(`[${normalizedSessionId}] Falha ao sincronizar chats do historico:`, error.message);
+        }
+    }
+
+    if (contacts.length > 0) {
+        for (const contact of contacts) {
+            try {
+                await registerContactAlias(contact, normalizedSessionId, sessionPhone);
+            } catch (error) {
+                console.warn(`[${normalizedSessionId}] Falha ao registrar contato do historico:`, error.message);
+            }
+        }
+    }
+
+    let scannedMessages = 0;
+    let processedMessages = 0;
+    let failedMessages = 0;
+    let ciphertextQueued = 0;
+
+    for (const waMessage of historyMessages) {
+        scannedMessages += 1;
+
+        if (isGroupMessage(waMessage)) continue;
+
+        const hasPayload = Boolean(waMessage?.message);
+        const hasCiphertextStub = Number(waMessage?.messageStubType || 0) === BAILEYS_CIPHERTEXT_STUB_TYPE;
+        if (hasCiphertextStub) {
+            scheduleCiphertextRecovery(normalizedSessionId, waMessage);
+            ciphertextQueued += 1;
+            continue;
+        }
+        if (!hasPayload) continue;
+
+        try {
+            await processIncomingMessage(normalizedSessionId, waMessage, {
+                source: 'history_sync',
+                preserveUnreadCount: true,
+                skipInboundAutomation: true,
+                skipWebhook: true
+            });
+            processedMessages += 1;
+        } catch (error) {
+            failedMessages += 1;
+            console.warn(
+                `[${normalizedSessionId}] Falha ao processar mensagem do historico (${waMessage?.key?.id || 'sem-id'}):`,
+                error.message
+            );
+        }
+    }
+
+    if ((processedMessages > 0 || ciphertextQueued > 0) && isActiveSessionSocket(normalizedSessionId, sock)) {
+        scheduleSessionReconnectCatchup(normalizedSessionId, {
+            trigger: 'history-sync',
+            expectedSocket: sock,
+            delayMs: 1500
+        });
+    }
+
+    console.log(
+        `[${normalizedSessionId}] History sync recebido (type=${syncType}, latest=${isLatest ? 'yes' : 'no'}) ` +
+        `chats=${chats.length}, contatos=${contacts.length}, mensagens=${processedMessages}/${scannedMessages}, ` +
+        `ciphertext=${ciphertextQueued}, falhas=${failedMessages}`
+    );
+
+    return {
+        chats: chats.length,
+        contacts: contacts.length,
+        scannedMessages,
+        processedMessages,
+        failedMessages,
+        ciphertextQueued
+    };
 }
 
 function parseJsonSafe(value, fallback = null) {
@@ -6220,10 +6422,15 @@ async function getBusinessHoursSettings(forceRefresh = false) {
 
  */
 
-async function processIncomingMessage(sessionId, msg) {
+async function processIncomingMessage(sessionId, msg, options = {}) {
 
     if (isGroupMessage(msg)) return;
     if (!msg?.message) return;
+    const messageSource = String(options?.source || 'live').trim().toLowerCase();
+    const preserveUnreadCount = options?.preserveUnreadCount === true;
+    const skipInboundAutomation = options?.skipInboundAutomation === true;
+    const skipWebhook = options?.skipWebhook === true;
+    const skipRealtimeEmit = options?.skipRealtimeEmit === true;
     const sessionDisplayName = getSessionDisplayName(sessionId);
     const sessionPhone = getSessionPhone(sessionId);
     const sessionOwnerUserId = await resolveSessionOwnerUserId(sessionId);
@@ -6536,7 +6743,10 @@ async function processIncomingMessage(sessionId, msg) {
 
         is_from_me: isFromMe,
 
-        sent_at: msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000).toISOString() : new Date().toISOString()
+        sent_at: msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000).toISOString() : new Date().toISOString(),
+        metadata: messageSource !== 'live'
+            ? { source: messageSource }
+            : undefined
 
     };
 
@@ -6550,7 +6760,9 @@ async function processIncomingMessage(sessionId, msg) {
 
     if (!isFromMe) {
 
-        await Conversation.incrementUnread(conversation.id);
+        if (!preserveUnreadCount) {
+            await Conversation.incrementUnread(conversation.id);
+        }
 
         await Conversation.touch(conversation.id, savedMessage.id, messageTimestampIso);
 
@@ -6607,100 +6819,71 @@ async function processIncomingMessage(sessionId, msg) {
 
     const session = sessions.get(sessionId);
 
-    if (session?.clientSocket) {
-
+    if (!skipRealtimeEmit && session?.clientSocket) {
         session.clientSocket.emit('message', messageForClient);
-
     }
 
-    
+    if (!skipRealtimeEmit) {
+        emitToOwnerScope(sessionOwnerUserId || null, 'new-message', messageForClient);
+    }
 
-    emitToOwnerScope(sessionOwnerUserId || null, 'new-message', messageForClient);
-
-    
-
-    // Webhook
-
+    // Webhook e automacoes de entrada
     if (!isFromMe) {
+        if (!skipWebhook) {
+            webhookService.trigger('message.received', {
+                message: messageForClient,
+                lead: { id: lead.id, name: lead.name, phone: lead.phone }
+            }, {
+                ownerUserId: Number(sessionOwnerUserId || lead?.owner_user_id || 0) || undefined
+            });
+        }
 
-        webhookService.trigger('message.received', {
+        if (!skipInboundAutomation) {
+            console.log(`[${sessionId}] ?? Mensagem de ${lead.name || phone}: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
 
-            message: messageForClient,
+            const businessHoursSettings = await getBusinessHoursSettings();
+            const isOutsideBusinessHours = businessHoursSettings.enabled && !isWithinBusinessHours(businessHoursSettings);
 
-            lead: { id: lead.id, name: lead.name, phone: lead.phone }
+            if (isOutsideBusinessHours && !isSelfChat) {
+                const autoReplyText = String(businessHoursSettings.autoReplyMessage || '').trim();
 
-        }, {
-            ownerUserId: Number(sessionOwnerUserId || lead?.owner_user_id || 0) || undefined
-        });
-
-        
-
-        console.log(`[${sessionId}] ?? Mensagem de ${lead.name || phone}: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
-
-        
-
-        const businessHoursSettings = await getBusinessHoursSettings();
-        const isOutsideBusinessHours = businessHoursSettings.enabled && !isWithinBusinessHours(businessHoursSettings);
-
-        if (isOutsideBusinessHours && !isSelfChat) {
-            const autoReplyText = String(businessHoursSettings.autoReplyMessage || '').trim();
-
-            if (autoReplyText && shouldSendOutsideHoursAutoReply(conversation.id)) {
-                try {
-                    await sendMessage(sessionId, phone, autoReplyText, 'text', {
-                        conversationId: conversation.id
-                    });
-                    markOutsideHoursAutoReplySent(conversation.id);
-                } catch (autoReplyError) {
-                    console.error(`[${sessionId}] Erro ao enviar resposta fora do horario:`, autoReplyError.message);
+                if (autoReplyText && shouldSendOutsideHoursAutoReply(conversation.id)) {
+                    try {
+                        await sendMessage(sessionId, phone, autoReplyText, 'text', {
+                            conversationId: conversation.id
+                        });
+                        markOutsideHoursAutoReplySent(conversation.id);
+                    } catch (autoReplyError) {
+                        console.error(`[${sessionId}] Erro ao enviar resposta fora do horario:`, autoReplyError.message);
+                    }
                 }
+
+                return;
             }
 
-            return;
-        }
+            // Processar fluxo de automacao
+            if (conversation.is_bot_active) {
+                conversation.created = convCreated;
 
+                await flowService.processIncomingMessage(
+                    { text, mediaType },
+                    lead,
+                    conversation
+                );
+            }
 
-        // Processar fluxo de automação
-
-        if (conversation.is_bot_active) {
-
-            conversation.created = convCreated;
-
-            await flowService.processIncomingMessage(
-
-                { text, mediaType },
-
+            await scheduleAutomations({
+                event: AUTOMATION_EVENT_TYPES.MESSAGE_RECEIVED,
+                sessionId,
+                text,
+                mediaType,
                 lead,
-
-                conversation
-
-            );
-
+                conversation,
+                messageTimestampMs: Date.parse(messageTimestampIso) || Date.now(),
+                leadCreated,
+                conversationCreated: convCreated
+            });
         }
-
-
-
-        await scheduleAutomations({
-            event: AUTOMATION_EVENT_TYPES.MESSAGE_RECEIVED,
-
-            sessionId,
-
-            text,
-
-            mediaType,
-
-            lead,
-
-            conversation,
-
-            messageTimestampMs: Date.parse(messageTimestampIso) || Date.now(),
-
-            leadCreated,
-
-            conversationCreated: convCreated
-
-        });
-
     }
 
 }
@@ -7866,6 +8049,103 @@ app.get('/api/whatsapp/sessions', authenticate, requireActiveWhatsAppPlan, async
         res.json({ success: true, sessions: sessionsList });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/whatsapp/sessions/:sessionId/history/resync', authenticate, requireActiveWhatsAppPlan, async (req, res) => {
+    try {
+        const sessionId = sanitizeSessionId(req.params.sessionId);
+        if (!sessionId) {
+            return res.status(400).json({ success: false, error: 'sessionId invalido' });
+        }
+
+        const ownerScopeUserId = req.ownerScopeUserId || await resolveRequesterOwnerUserId(req);
+        if (ownerScopeUserId) {
+            const existingSession = await WhatsAppSession.findBySessionId(sessionId);
+            if (existingSession) {
+                const ownedSession = await WhatsAppSession.findBySessionId(sessionId, {
+                    owner_user_id: ownerScopeUserId
+                });
+                if (!ownedSession) {
+                    return res.status(403).json({ success: false, error: 'Sem permissao para ressincronizar esta conta' });
+                }
+            } else {
+                const runtimeSessionOwnerUserId = normalizeOwnerUserId(sessions.get(sessionId)?.ownerUserId);
+                if (!runtimeSessionOwnerUserId || runtimeSessionOwnerUserId !== ownerScopeUserId) {
+                    return res.status(404).json({ success: false, error: 'Conta nao encontrada' });
+                }
+            }
+        }
+
+        const runtimeSession = sessions.get(sessionId);
+        if (!runtimeSession?.socket) {
+            return res.status(409).json({
+                success: false,
+                error: 'Sessao nao esta ativa no runtime. Conecte o WhatsApp para ressincronizar.'
+            });
+        }
+        if (!runtimeSession.isConnected) {
+            return res.status(409).json({
+                success: false,
+                error: 'Sessao desconectada no momento. Aguarde reconexao para ressincronizar.'
+            });
+        }
+        if (!runtimeSession.store || typeof runtimeSession.store.loadMessages !== 'function') {
+            return res.status(409).json({
+                success: false,
+                error: 'Store local indisponivel para reidratacao. Tente novamente em instantes.'
+            });
+        }
+
+        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const scopeRaw = String(payload.scope || 'all').trim().toLowerCase();
+        const unreadOnly = ['unread', 'pending', 'nao_lidas', 'nao-lidas', 'naolidas'].includes(scopeRaw);
+        const maxConversations = parsePositiveIntInRange(
+            payload.maxConversations ?? payload.max_conversations,
+            WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS,
+            1,
+            200
+        );
+        const messagesPerConversation = parsePositiveIntInRange(
+            payload.messagesPerConversation ??
+            payload.messages_per_conversation ??
+            payload.limitPerConversation ??
+            payload.limit_per_conversation,
+            WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION,
+            10,
+            500
+        );
+        const maxRuntimeMs = parsePositiveIntInRange(
+            payload.maxRuntimeMs ?? payload.max_runtime_ms,
+            WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS,
+            3000,
+            300000
+        );
+        const trigger = String(payload.trigger || 'manual-api').trim() || 'manual-api';
+
+        const summary = await runSessionReconnectCatchup(sessionId, {
+            trigger,
+            expectedSocket: runtimeSession.socket,
+            maxConversations,
+            messagesPerConversation,
+            maxRuntimeMs,
+            unreadOnly
+        });
+
+        res.json({
+            success: true,
+            sessionId,
+            trigger,
+            options: {
+                scope: unreadOnly ? 'unread' : 'all',
+                maxConversations,
+                messagesPerConversation,
+                maxRuntimeMs
+            },
+            summary
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

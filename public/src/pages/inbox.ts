@@ -38,6 +38,17 @@ type ChatMessage = {
 type ConversationsResponse = { conversations?: Array<Record<string, any>> };
 type MessagesResponse = { messages?: Array<Record<string, any>> };
 type QuickRepliesResponse = { templates?: Array<Record<string, any>> };
+type InboxHistoryResyncResponse = {
+    success?: boolean;
+    sessionId?: string;
+    summary?: {
+        conversationsScanned?: number;
+        conversationsUpdated?: number;
+        messagesInserted?: number;
+        mediaHydrated?: number;
+        skipped?: string | null;
+    };
+};
 
 type TemplateItem = {
     id: number;
@@ -93,6 +104,7 @@ let contactFieldsCache: ContactField[] = [];
 let isContactInfoOpen = false;
 let inboxSessionFilter = '';
 let inboxAvailableSessions: WhatsappSessionItem[] = [];
+let inboxHistoryResyncInFlight = false;
 let mediaUploadInProgress = false;
 let inboxLifecycleBound = false;
 const stickerMediaRehydrateAttempts = new Set<string>();
@@ -335,6 +347,7 @@ function renderInboxSessionIndicator() {
             statusEl.textContent = 'Filtro geral';
             statusEl.className = 'inbox-session-highlight-status all';
         }
+        renderInboxHistoryResyncButtonState();
         return;
     }
 
@@ -353,6 +366,139 @@ function renderInboxSessionIndicator() {
     if (statusEl) {
         statusEl.textContent = statusLabel;
         statusEl.className = `inbox-session-highlight-status ${connected ? 'connected' : 'disconnected'}`;
+    }
+    renderInboxHistoryResyncButtonState();
+}
+
+function resolveInboxHistoryResyncSessionTargets() {
+    const selectedSessionId = sanitizeSessionId(inboxSessionFilter);
+    if (selectedSessionId) {
+        return [selectedSessionId];
+    }
+
+    return Array.from(
+        new Set(
+            inboxAvailableSessions
+                .filter((session) => isInboxSessionConnected(session))
+                .map((session) => sanitizeSessionId(session.session_id))
+                .filter(Boolean)
+        )
+    );
+}
+
+function renderInboxHistoryResyncButtonState() {
+    const button = document.getElementById('inboxResyncHistoryBtn') as HTMLButtonElement | null;
+    if (!button) return;
+
+    const selectedSessionId = sanitizeSessionId(inboxSessionFilter);
+    const targetSessionIds = resolveInboxHistoryResyncSessionTargets();
+    const canRun = targetSessionIds.length > 0;
+    const isLoading = inboxHistoryResyncInFlight;
+
+    button.disabled = isLoading || !canRun;
+    button.classList.toggle('is-loading', isLoading);
+    button.textContent = isLoading ? 'Ressincronizando...' : 'Ressincronizar';
+
+    if (selectedSessionId) {
+        button.title = `Ressincronizar histórico da conta ${selectedSessionId}`;
+    } else if (targetSessionIds.length > 0) {
+        button.title = `Ressincronizar ${targetSessionIds.length} conta(s) conectada(s)`;
+    } else {
+        button.title = 'Nenhuma conta conectada para ressincronizar';
+    }
+}
+
+async function resyncInboxHistory() {
+    if (inboxHistoryResyncInFlight) return;
+
+    const selectedSessionId = sanitizeSessionId(inboxSessionFilter);
+    const targetSessionIds = resolveInboxHistoryResyncSessionTargets();
+    if (targetSessionIds.length === 0) {
+        showToast('warning', 'Aviso', 'Nenhuma conta conectada disponivel para ressincronizacao');
+        renderInboxHistoryResyncButtonState();
+        return;
+    }
+
+    if (!selectedSessionId && targetSessionIds.length > 1) {
+        const confirmed = window.confirm(
+            `Ressincronizar historico de ${targetSessionIds.length} contas conectadas agora?`
+        );
+        if (!confirmed) return;
+    }
+
+    inboxHistoryResyncInFlight = true;
+    renderInboxHistoryResyncButtonState();
+    showLoading('Ressincronizando historico do WhatsApp...');
+
+    const summary = {
+        processedSessions: 0,
+        failedSessions: 0,
+        conversationsScanned: 0,
+        conversationsUpdated: 0,
+        messagesInserted: 0,
+        mediaHydrated: 0
+    };
+    const failed: string[] = [];
+
+    try {
+        for (const sessionId of targetSessionIds) {
+            try {
+                const response: InboxHistoryResyncResponse = await api.post(
+                    `/api/whatsapp/sessions/${encodeURIComponent(sessionId)}/history/resync`,
+                    {
+                        scope: 'all',
+                        trigger: 'inbox-manual-button'
+                    }
+                );
+
+                const result = response?.summary || {};
+                summary.processedSessions += 1;
+                summary.conversationsScanned += Number(result.conversationsScanned || 0);
+                summary.conversationsUpdated += Number(result.conversationsUpdated || 0);
+                summary.messagesInserted += Number(result.messagesInserted || 0);
+                summary.mediaHydrated += Number(result.mediaHydrated || 0);
+            } catch (error) {
+                summary.failedSessions += 1;
+                const errorMessage = error instanceof Error ? error.message : 'Falha ao ressincronizar';
+                failed.push(`${sessionId}: ${errorMessage}`);
+            }
+        }
+
+        await loadConversations();
+
+        if (currentConversation) {
+            const refreshed = conversations.find((item) => item.id === currentConversation?.id) || null;
+            if (refreshed) {
+                currentConversation = refreshed;
+                await loadMessages(refreshed.leadId, refreshed.id, refreshed.sessionId, refreshed.phone);
+            }
+        }
+
+        const totalsText =
+            `${summary.messagesInserted} mensagem(ns) recuperada(s) em ` +
+            `${summary.conversationsUpdated} conversa(s)`;
+
+        if (summary.failedSessions > 0 && summary.processedSessions > 0) {
+            showToast(
+                'warning',
+                'Ressincronizacao parcial',
+                `${summary.processedSessions}/${targetSessionIds.length} conta(s) processadas. ${totalsText}.`
+            );
+        } else if (summary.failedSessions > 0) {
+            showToast('error', 'Erro', failed[0] || 'Nao foi possivel ressincronizar o historico');
+        } else {
+            const scopeText = selectedSessionId
+                ? `Conta ${selectedSessionId}`
+                : `${summary.processedSessions} conta(s)`;
+            showToast('success', 'Ressincronizacao concluida', `${scopeText}: ${totalsText}.`);
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Nao foi possivel ressincronizar o historico';
+        showToast('error', 'Erro', message);
+    } finally {
+        hideLoading();
+        inboxHistoryResyncInFlight = false;
+        renderInboxHistoryResyncButtonState();
     }
 }
 
@@ -2332,6 +2478,7 @@ const windowAny = window as Window & {
     filterConversations?: (filter: 'all' | 'unread') => void;
     searchConversations?: () => void;
     changeInboxSessionFilter?: (sessionId: string) => void;
+    resyncInboxHistory?: () => Promise<void>;
     selectConversation?: (id: number) => Promise<void>;
     toggleQuickReplyPicker?: () => void;
     closeQuickReplyPicker?: () => void;
@@ -2355,6 +2502,7 @@ windowAny.initInbox = initInbox;
 windowAny.filterConversations = filterConversations;
 windowAny.searchConversations = searchConversations;
 windowAny.changeInboxSessionFilter = changeInboxSessionFilter;
+windowAny.resyncInboxHistory = resyncInboxHistory;
 windowAny.registerCurrentUser = registerCurrentUser;
 windowAny.logout = logout;
 windowAny.selectConversation = selectConversation;
