@@ -1,102 +1,158 @@
 /**
- * SELF PROTEÇÃO VEICULAR - Conexão com Banco de Dados
- * Módulo de conexão SQLite com better-sqlite3
+ * SELF PROTECAO VEICULAR - Conexao com Banco de Dados
+ * Modo Postgres-only
  */
 
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+let pool = null;
+let PostgresPool = null;
 
-// Diretório de dados
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
+const USE_POSTGRES = true;
+const DB_PATH = null;
 
-// Garantir que o diretório existe
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+function sanitizeAppNamePart(value, fallback = 'na') {
+    const normalized = String(value || '').trim();
+    if (!normalized) return fallback;
+    return normalized.replace(/[^a-zA-Z0-9._:-]/g, '-').slice(0, 48) || fallback;
 }
 
-// Caminho do banco de dados
-const DB_PATH = process.env.DATABASE_PATH || path.join(DATA_DIR, 'self.db');
+function resolvePostgresApplicationName() {
+    const explicit = String(process.env.DATABASE_APPLICATION_NAME || process.env.PGAPPNAME || '').trim();
+    if (explicit) return explicit.slice(0, 63);
 
-// Instância do banco de dados
-let db = null;
+    const service = sanitizeAppNamePart(process.env.RAILWAY_SERVICE_NAME || 'zapvender', 'zapvender');
+    const commit = sanitizeAppNamePart(
+        (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GITHUB_SHA || process.env.COMMIT_SHA || '').slice(0, 8),
+        'local'
+    );
+    const deploy = sanitizeAppNamePart(
+        (process.env.RAILWAY_DEPLOYMENT_ID || process.env.RAILWAY_DEPLOYMENT_TRIGGER_ID || process.env.HOSTNAME || '').slice(0, 10),
+        'proc'
+    );
 
-/**
- * Inicializar conexão com o banco de dados
- */
-function getDatabase() {
-    if (db) return db;
-    
+    return `${service}:${commit}:${deploy}`.slice(0, 63);
+}
+
+function getPostgresPool() {
+    if (PostgresPool) return PostgresPool;
     try {
-        db = new Database(DB_PATH, {
-            verbose: process.env.NODE_ENV === 'development' ? console.log : null
-        });
-        
-        // Configurações de performance
-        db.pragma('journal_mode = WAL');
-        db.pragma('synchronous = NORMAL');
-        db.pragma('cache_size = 10000');
-        db.pragma('temp_store = MEMORY');
-        db.pragma('foreign_keys = ON');
-        
-        console.log(`📦 Banco de dados conectado: ${DB_PATH}`);
-        
-        return db;
+        PostgresPool = require('pg').Pool;
+        return PostgresPool;
     } catch (error) {
-        console.error('❌ Erro ao conectar ao banco de dados:', error.message);
-        throw error;
+        throw new Error('pg nao esta disponivel. Instale a dependencia para usar Postgres.');
     }
 }
 
 /**
- * Executar query com parâmetros
+ * Inicializar conexao com o banco de dados
  */
-function query(sql, params = []) {
-    const database = getDatabase();
-    return database.prepare(sql).all(...params);
+function getDatabase() {
+    if (pool) return pool;
+
+    if (!process.env.DATABASE_URL) {
+        throw new Error('DATABASE_URL e obrigatoria (modo Postgres-only).');
+    }
+
+    const Pool = getPostgresPool();
+    const applicationName = resolvePostgresApplicationName();
+    pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        application_name: applicationName,
+        ssl: process.env.NODE_ENV == 'production'
+            ? { rejectUnauthorized: false }
+            : false
+    });
+
+    console.log('?? Banco de dados conectado: Postgres');
+    console.log(`[DB] application_name=${applicationName}`);
+    return pool;
+}
+
+function normalizeParams(sql, params) {
+    let index = 0;
+    const converted = sql.replace(/\?/g, () => `$${++index}`);
+    return { sql: converted, params };
 }
 
 /**
- * Executar query que retorna uma única linha
+ * Executar query com parametros
  */
-function queryOne(sql, params = []) {
+async function query(sql, params = []) {
     const database = getDatabase();
-    return database.prepare(sql).get(...params);
+    const normalized = normalizeParams(sql, params);
+    const result = await database.query(normalized.sql, normalized.params);
+    return result.rows;
+}
+
+/**
+ * Executar query que retorna uma unica linha
+ */
+async function queryOne(sql, params = []) {
+    const database = getDatabase();
+    const normalized = normalizeParams(sql, params);
+    const result = await database.query(normalized.sql, normalized.params);
+    return result.rows[0] || null;
 }
 
 /**
  * Executar INSERT/UPDATE/DELETE
  */
-function run(sql, params = []) {
+async function run(sql, params = []) {
     const database = getDatabase();
-    return database.prepare(sql).run(...params);
+    const normalized = normalizeParams(sql, params);
+    let statement = normalized.sql;
+
+    if (statement.trim().endsWith(';')) {
+        statement = statement.replace(/;\s*$/, '');
+    }
+
+    if (/^\s*insert\s+/i.test(statement) && !/returning\s+/i.test(statement)) {
+        statement = `${statement} RETURNING id`;
+    }
+
+    const result = await database.query(statement, normalized.params);
+    return {
+        lastInsertRowid: result.rows[0]?.id ?? null,
+        changes: result.rowCount
+    };
 }
 
 /**
- * Executar múltiplas queries em uma transação
+ * Executar multiplas queries em uma transacao
  */
-function transaction(callback) {
+async function transaction(callback) {
     const database = getDatabase();
-    return database.transaction(callback)();
+    const client = await database.connect();
+
+    try {
+        await client.query('BEGIN');
+        const result = await callback(client);
+        await client.query('COMMIT');
+        return result;
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
 }
 
 /**
- * Fechar conexão
+ * Fechar conexao
  */
-function close() {
-    if (db) {
-        db.close();
-        db = null;
-        console.log('📦 Conexão com banco de dados fechada');
+async function close() {
+    if (pool) {
+        await pool.end();
+        pool = null;
+        console.log('?? Conexao com banco de dados fechada');
     }
 }
 
 /**
  * Verificar se tabela existe
  */
-function tableExists(tableName) {
-    const result = queryOne(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+async function tableExists(tableName) {
+    const result = await queryOne(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
         [tableName]
     );
     return !!result;
@@ -108,7 +164,7 @@ function tableExists(tableName) {
 function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
         const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        const v = c == 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
     });
 }
@@ -122,5 +178,6 @@ module.exports = {
     close,
     tableExists,
     generateUUID,
-    DB_PATH
+    DB_PATH,
+    USE_POSTGRES
 };

@@ -35,13 +35,19 @@ Sistema completo de CRM com integração WhatsApp para gestão de leads, automa�
 - **npm** versão 10 ou superior
 - **VPS/Servidor** com acesso SSH (ou Railway)
 
+## ⚠️ Hardening obrigatório (produção)
+- API `/api/*` e WebSocket exigem JWT (`Authorization: Bearer <token>` e `auth.token` no Socket.IO).
+- Índices únicos criados na migração: `leads.phone` e `conversations(lead_id, session_id)` para evitar duplicidade/erros de `ON CONFLICT` (garanta que não existam duplicados antes de rodar `npm run db:migrate`).
+- Sessões do WhatsApp são persistidas em disco (`SESSIONS_DIR`) e reidratadas no boot; no Railway monte volume persistente e mantenha `SESSIONS_DIR=/mnt/data/sessions`.
+- Configure `JWT_SECRET` e `ENCRYPTION_KEY` com valores fortes; defina `CORS_ORIGINS` com as URLs do frontend/Railway.
+
 ## 🚀 Instalação Local
 
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/fullpropt/self-protecao-veicular.git
-cd self-protecao-veicular
+git clone https://github.com/fullpropt/zap-vender.git
+cd zap-vender
 ```
 
 ### 2. Configure as variáveis de ambiente
@@ -100,13 +106,31 @@ Abra no navegador: `http://localhost:3001`
 3. Conecte seu repositório GitHub
 4. Configure as variáveis de ambiente:
 
-| Variável | Descrição | Obrigatório |
+| Vari�vel | Descri��o | Obrigat�rio |
 |----------|-----------|-------------|
-| `PORT` | Porta do servidor (Railway define automaticamente) | Não |
+| `PORT` | Porta do servidor (Railway define automaticamente) | N�o |
 | `NODE_ENV` | `production` | Sim |
 | `JWT_SECRET` | Chave secreta para tokens JWT (min 32 chars) | Sim |
 | `ENCRYPTION_KEY` | Chave para criptografia de mensagens | Sim |
-| `WEBHOOK_SECRET` | Chave para validar webhooks externos | Não |
+| `WEBHOOK_SECRET` | Chave para validar webhooks externos | N�o |
+| `OPENAI_API_KEY` | Chave da OpenAI para gerar rascunhos de fluxo | N�o |
+| `OPENAI_FLOW_MODEL` | Modelo OpenAI para gera��o de fluxo (ex.: gpt-5-mini) | N�o |
+| `OPENAI_API_BASE_URL` | Base URL da API OpenAI (ou gateway compat�vel) | N�o |
+| `OPENAI_FLOW_TIMEOUT_MS` | Timeout da chamada de gera��o de fluxo (ms) | N�o |
+| `GEMINI_API_KEY` | Chave da API Gemini para classificador de inten��o | N�o |
+| `GEMINI_MODEL` | Modelo Gemini usado no classificador | N�o |
+| `FLOW_INTENT_CLASSIFIER_ENABLED` | Habilita classificador de inten��o para fluxos keyword | N�o |
+| `FLOW_INTENT_CLASSIFIER_MIN_CONFIDENCE` | Confian�a m�nima para aceitar decis�o da IA | N�o |
+| `FLOW_INTENT_CLASSIFIER_STRICT` | Se `true`, sem decis�o confi�vel da IA n�o dispara fluxo keyword | N�o |
+| `FLOW_INTENT_CLASSIFIER_MIN_CANDIDATES` | N�mero m�nimo de candidatos para chamar IA | N�o |
+| `FLOW_INTENT_CLASSIFIER_MAX_CANDIDATES` | N�mero m�ximo de candidatos enviados � IA | N�o |
+| `GEMINI_REQUEST_TIMEOUT_MS` | Timeout da chamada Gemini (ms) | N�o |
+| `GEMINI_QUOTA_BACKOFF_MS` | Tempo para pausar Gemini ap�s HTTP 429 e usar fallback local (ms) | N�o |
+| `FLOW_INTENT_FUZZY_THRESHOLD` | Threshold do Fuse.js no fallback local (menor = mais flex�vel) | N�o |
+| `FLOW_INTENT_FUZZY_MIN_SCORE` | Score combinado m�nimo para aceitar rota no fallback local | N�o |
+| `FLOW_INTENT_FUZZY_MIN_TOKEN_COVERAGE` | Cobertura m�nima de tokens relevantes para aceitar rota local | N�o |
+| `CORS_ORIGINS` | URLs permitidas (ex.: https://web-production-a38e.up.railway.app) | Sim |
+| `SESSIONS_DIR` | Diret�rio persistente das sess�es Baileys (`/mnt/data/sessions` no Railway) | Sim |
 
 5. Deploy será automático a cada push
 
@@ -116,6 +140,7 @@ O projeto já inclui os arquivos de configuração:
 - `railway.toml` - Configuração de build e deploy
 - `nixpacks.toml` - Configuração do Nixpacks para Node.js 20
 - `railway.json` - Configuração adicional
+- Monte um volume persistente e aponte `SESSIONS_DIR` para `/mnt/data/sessions` para manter sessões após restart.
 
 ## 📱 Conectando o WhatsApp
 
@@ -128,14 +153,14 @@ O projeto já inclui os arquivos de configuração:
 ## 📁 Estrutura do Projeto
 
 ```
-self-protecao-veicular/
+zap-vender/
 ├── server/
 │   ├── index.js              # Servidor principal
 │   ├── database/
-│   │   ├── connection.js     # Conexão SQLite
+│   │   ├── connection.js     # Conexão Postgres
 │   │   ├── migrate.js        # Script de migração
 │   │   ├── models.js         # Modelos de dados
-│   │   ├── schema.sql        # Esquema do banco
+│   │   ├── schema.pg.sql     # Esquema do banco (Postgres)
 │   │   └── seed.js           # Dados de exemplo
 │   ├── middleware/
 │   │   └── auth.js           # Middleware de autenticação
@@ -164,7 +189,7 @@ self-protecao-veicular/
 │   ├── configuracoes.html    # Configurações
 │   └── login.html            # Página de login
 ├── sessions/                 # Sessões WhatsApp (auto-gerado)
-├── data/                     # Banco de dados SQLite (auto-gerado)
+├── data/                     # Dados auxiliares locais (opcional)
 ├── uploads/                  # Arquivos enviados (auto-gerado)
 ├── docs/
 │   └── ARCHITECTURE.md       # Documentação de arquitetura
@@ -223,7 +248,7 @@ DELETE /api/leads/:id
 POST /api/send
 Content-Type: application/json
 {
-    "sessionId": "self_whatsapp_session",
+    "sessionId": "default_whatsapp_session",
     "to": "5527999999999",
     "message": "Olá! Esta é uma mensagem de teste.",
     "type": "text"
@@ -432,8 +457,7 @@ sudo certbot --nginx -d seu-dominio.com
 | `PORT` | Porta do servidor | 3001 |
 | `NODE_ENV` | Ambiente | development |
 | `SESSIONS_DIR` | Diretório de sessões | ./sessions |
-| `DATA_DIR` | Diretório de dados | ./data |
-| `DATABASE_PATH` | Caminho do banco SQLite | ./data/self.db |
+| `DATABASE_URL` | String de conexão Postgres | - |
 | `JWT_SECRET` | Chave secreta JWT | - |
 | `ENCRYPTION_KEY` | Chave de criptografia | - |
 | `MAX_RECONNECT_ATTEMPTS` | Tentativas de reconexão | 5 |
@@ -444,7 +468,22 @@ sudo certbot --nginx -d seu-dominio.com
 | `RATE_LIMIT_WINDOW_MS` | Janela de rate limit (ms) | 60000 |
 | `RATE_LIMIT_MAX_REQUESTS` | Máximo de requisições | 100 |
 | `WEBHOOK_SECRET` | Chave para webhooks | - |
-
+| `OPENAI_API_KEY` | Chave da OpenAI para gerar rascunhos de fluxo | - |
+| `OPENAI_FLOW_MODEL` | Modelo OpenAI para gera��o de fluxo | gpt-5-mini |
+| `OPENAI_API_BASE_URL` | Base URL da API OpenAI (ou gateway compat�vel) | https://api.openai.com/v1 |
+| `OPENAI_FLOW_TIMEOUT_MS` | Timeout da chamada de gera��o de fluxo (ms) | 25000 |
+| `GEMINI_API_KEY` | Chave da API Gemini para classificador de inten��o | - |
+| `GEMINI_MODEL` | Modelo Gemini usado no classificador | gemini-2.0-flash-lite |
+| `FLOW_INTENT_CLASSIFIER_ENABLED` | Habilita classificador de inten��o para fluxos keyword | true |
+| `FLOW_INTENT_CLASSIFIER_MIN_CONFIDENCE` | Confian�a m�nima para aceitar decis�o da IA | 0.70 |
+| `FLOW_INTENT_CLASSIFIER_STRICT` | Se `true`, sem decis�o confi�vel da IA n�o dispara fluxo keyword | false |
+| `FLOW_INTENT_CLASSIFIER_MIN_CANDIDATES` | N�mero m�nimo de candidatos para chamar IA | 1 |
+| `FLOW_INTENT_CLASSIFIER_MAX_CANDIDATES` | N�mero m�ximo de candidatos enviados � IA | 5 |
+| `GEMINI_REQUEST_TIMEOUT_MS` | Timeout da chamada Gemini (ms) | 4500 |
+| `GEMINI_QUOTA_BACKOFF_MS` | Tempo para pausar Gemini ap�s HTTP 429 e usar fallback local (ms) | 600000 |
+| `FLOW_INTENT_FUZZY_THRESHOLD` | Threshold do Fuse.js no fallback local (menor = mais flex�vel) | 0.34 |
+| `FLOW_INTENT_FUZZY_MIN_SCORE` | Score combinado m�nimo para aceitar rota no fallback local | 0.58 |
+| `FLOW_INTENT_FUZZY_MIN_TOKEN_COVERAGE` | Cobertura m�nima de tokens relevantes para aceitar rota local | 0.45 |
 ## ❓ Problemas Comuns
 
 ### QR Code não aparece
@@ -464,7 +503,7 @@ sudo certbot --nginx -d seu-dominio.com
 
 ### Erro de banco de dados
 - Execute `npm run db:migrate` para criar/atualizar tabelas
-- Verifique permissões na pasta `data/`
+- Verifique se `DATABASE_URL` está configurada corretamente
 
 ### Deploy no Railway falha
 - Verifique se a versão do Node.js está correta (>=20)
@@ -482,3 +521,4 @@ MIT License - Livre para uso comercial e modificações.
 ---
 
 **SELF Proteção Veicular** © 2026 - Todos os direitos reservados
+

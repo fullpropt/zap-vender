@@ -27,13 +27,20 @@ const WhatsApp = {
         }
         
         try {
-            this.socket = io(CONFIG.SOCKET_URL, {
+            const token = sessionStorage.getItem('selfDashboardToken');
+            const socketOptions = {
                 transports: ['websocket', 'polling'],
                 reconnection: true,
                 reconnectionAttempts: 10,
                 reconnectionDelay: 1000,
                 timeout: 20000
-            });
+            };
+
+            if (token) {
+                socketOptions.auth = { token };
+            }
+
+            this.socket = io(CONFIG.SOCKET_URL, socketOptions);
             
             this.setupEventListeners();
             return true;
