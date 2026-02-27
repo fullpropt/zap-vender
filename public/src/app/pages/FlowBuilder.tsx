@@ -60,6 +60,11 @@ export default function FlowBuilder() {
             --primary: #178C49;
             --primary-light: #1FAE5E;
             --primary-rgb: 23, 140, 73;
+            --flow-ai-scroll-track: rgba(7, 13, 23, 0.94);
+            --flow-ai-scroll-track-border: rgba(255, 255, 255, 0.03);
+            --flow-ai-scroll-thumb: rgba(var(--primary-rgb), 0.46);
+            --flow-ai-scroll-thumb-hover: rgba(var(--primary-rgb), 0.64);
+            --flow-ai-scroll-thumb-active: rgba(var(--primary-rgb), 0.76);
             --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
@@ -371,6 +376,65 @@ export default function FlowBuilder() {
             background: rgba(2, 6, 23, 0.06);
         }
 
+        .flow-builder-react .flow-ai-assistant-messages,
+        .flow-builder-react .flow-ai-assistant-input {
+            scrollbar-width: thin;
+            scrollbar-color: var(--flow-ai-scroll-thumb) var(--flow-ai-scroll-track);
+        }
+
+        .flow-builder-react .flow-ai-assistant-messages::-webkit-scrollbar,
+        .flow-builder-react .flow-ai-assistant-input::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        .flow-builder-react .flow-ai-assistant-messages::-webkit-scrollbar-track,
+        .flow-builder-react .flow-ai-assistant-input::-webkit-scrollbar-track {
+            background: linear-gradient(180deg, rgba(9, 15, 25, 0.96), rgba(11, 19, 31, 0.96));
+            border-left: 1px solid var(--flow-ai-scroll-track-border);
+        }
+
+        .flow-builder-react .flow-ai-assistant-messages::-webkit-scrollbar-thumb,
+        .flow-builder-react .flow-ai-assistant-input::-webkit-scrollbar-thumb {
+            background: linear-gradient(
+                180deg,
+                rgba(var(--primary-rgb), 0.62) 0%,
+                rgba(var(--primary-rgb), 0.38) 100%
+            );
+            border-radius: 999px;
+            border: 2px solid rgba(10, 17, 28, 0.92);
+            background-clip: padding-box;
+            min-height: 36px;
+        }
+
+        .flow-builder-react .flow-ai-assistant-messages::-webkit-scrollbar-thumb:hover,
+        .flow-builder-react .flow-ai-assistant-input::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(
+                180deg,
+                rgba(var(--primary-rgb), 0.78) 0%,
+                rgba(var(--primary-rgb), 0.5) 100%
+            );
+        }
+
+        .flow-builder-react .flow-ai-assistant-messages::-webkit-scrollbar-thumb:active,
+        .flow-builder-react .flow-ai-assistant-input::-webkit-scrollbar-thumb:active {
+            background: var(--flow-ai-scroll-thumb-active);
+        }
+
+        .flow-builder-react .flow-ai-assistant-messages::-webkit-scrollbar-button,
+        .flow-builder-react .flow-ai-assistant-input::-webkit-scrollbar-button {
+            background: rgba(8, 14, 24, 0.96);
+            border-left: 1px solid var(--flow-ai-scroll-track-border);
+            border-top: 1px solid var(--flow-ai-scroll-track-border);
+            height: 12px;
+            width: 12px;
+        }
+
+        .flow-builder-react .flow-ai-assistant-messages::-webkit-scrollbar-corner,
+        .flow-builder-react .flow-ai-assistant-input::-webkit-scrollbar-corner {
+            background: rgba(8, 14, 24, 0.96);
+        }
+
         .flow-builder-react .flow-ai-assistant-message {
             display: inline-flex;
             max-width: min(92%, 520px);
@@ -419,7 +483,8 @@ export default function FlowBuilder() {
             width: 100%;
             min-height: 42px;
             max-height: 110px;
-            resize: vertical;
+            resize: none;
+            overflow-y: auto;
             border-radius: 10px;
             border: 1px solid rgba(148, 163, 184, 0.2);
             background: rgba(2, 6, 23, 0.26);
@@ -441,9 +506,27 @@ export default function FlowBuilder() {
 
         .flow-builder-react .flow-ai-assistant-send {
             min-height: 42px;
-            min-width: 94px;
+            min-width: 104px;
             justify-content: center;
             font-weight: 700;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: linear-gradient(135deg, #25d366 0%, #1ca85a 54%, #178c49 100%);
+            color: #f8fff9;
+            box-shadow: 0 10px 24px rgba(23, 140, 73, 0.26), 0 6px 14px rgba(37, 211, 102, 0.22);
+            transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+        }
+
+        .flow-builder-react .flow-ai-assistant-send:hover:not([disabled]) {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 26px rgba(23, 140, 73, 0.34), 0 8px 18px rgba(37, 211, 102, 0.28);
+            filter: saturate(1.03);
+        }
+
+        .flow-builder-react .flow-ai-assistant-send:focus-visible {
+            outline: 2px solid rgba(var(--primary-rgb), 0.42);
+            outline-offset: 2px;
+            border-color: rgba(var(--primary-rgb), 0.52);
         }
 
         .flow-builder-react .flow-ai-assistant-send[disabled] {
