@@ -25,6 +25,9 @@ type Campaign = {
     delay_min?: number;
     delay_max?: number;
     start_at?: string;
+    send_window_enabled?: number | boolean;
+    send_window_start?: string;
+    send_window_end?: string;
 };
 
 type CampaignSenderAccount = {
@@ -125,6 +128,8 @@ function appConfirm(message: string, title = 'Confirmacao') {
 
 const DEFAULT_DELAY_MIN_SECONDS = 5;
 const DEFAULT_DELAY_MAX_SECONDS = 15;
+const DEFAULT_SEND_WINDOW_START = '08:00';
+const DEFAULT_SEND_WINDOW_END = '18:00';
 const MAX_CAMPAIGN_MESSAGE_VARIATIONS = 10;
 const CAMPAIGNS_CACHE_TTL_MS = 60 * 1000;
 const CAMPAIGNS_LIVE_REFRESH_MS = 4000;
@@ -1011,6 +1016,7 @@ function renderCampaignOverviewContent(campaign: Campaign) {
         <p><strong>Status:</strong> ${getCampaignStatusLabel(campaign.status)}</p>
         <p><strong>Distribuição:</strong> ${escapeCampaignText(getDistributionStrategyLabel(campaign.distribution_strategy || 'single'))}</p>
         <p><strong>Contas de envio:</strong> ${escapeCampaignText(renderCampaignSenderAccountsSummary(campaign))}</p>
+        <p><strong>Horário de envio:</strong> ${escapeCampaignText(formatCampaignSendWindowLabel(campaign))}</p>
         <p><strong>Tag:</strong> ${campaign.tag_filter || 'Todas'}</p>
         <p><strong>Criada em:</strong> ${formatDate(campaign.created_at, 'datetime')}</p>
     `;
@@ -1235,6 +1241,8 @@ function resetCampaignForm() {
     setSelectValue(document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null, 'single');
     renderCampaignSenderAccountsSelector([]);
     setDelayRangeInputs(DEFAULT_DELAY_MIN_SECONDS, DEFAULT_DELAY_MAX_SECONDS);
+    setCampaignSendWindowInputs(false, DEFAULT_SEND_WINDOW_START, DEFAULT_SEND_WINDOW_END);
+    bindCampaignSendWindowToggle();
     closeCampaignMessageVariableMenu();
     bindCampaignMessageVariablePicker();
     resetCampaignMessageVariationsState([]);
@@ -1248,6 +1256,7 @@ function openCampaignModal() {
     void loadSenderSessions();
     bindCampaignMessageVariablePicker();
     bindCampaignMessageVariationsUi();
+    bindCampaignSendWindowToggle();
     const win = window as Window & { openModal?: (id: string) => void };
     win.openModal?.('newCampaignModal');
 }
@@ -1281,6 +1290,60 @@ function setDelayRangeInputs(minSeconds = DEFAULT_DELAY_MIN_SECONDS, maxSeconds 
     const maxInput = document.getElementById('campaignDelayMax') as HTMLInputElement | null;
     if (minInput) minInput.value = String(minSeconds);
     if (maxInput) maxInput.value = String(maxSeconds);
+}
+
+function normalizeWindowTimeInput(value: unknown, fallback: string) {
+    const raw = String(value || '').trim();
+    if (!raw) return fallback;
+    const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return fallback;
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)) return fallback;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return fallback;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function isCampaignSendWindowEnabled(campaign?: Partial<Campaign>) {
+    return campaign?.send_window_enabled === true || Number(campaign?.send_window_enabled || 0) > 0;
+}
+
+function setCampaignSendWindowInputs(enabled = false, start = DEFAULT_SEND_WINDOW_START, end = DEFAULT_SEND_WINDOW_END) {
+    const enabledInput = document.getElementById('campaignSendWindowEnabled') as HTMLInputElement | null;
+    const startInput = document.getElementById('campaignSendWindowStart') as HTMLInputElement | null;
+    const endInput = document.getElementById('campaignSendWindowEnd') as HTMLInputElement | null;
+    const normalizedStart = normalizeWindowTimeInput(start, DEFAULT_SEND_WINDOW_START);
+    const normalizedEnd = normalizeWindowTimeInput(end, DEFAULT_SEND_WINDOW_END);
+
+    if (enabledInput) enabledInput.checked = !!enabled;
+    if (startInput) startInput.value = normalizedStart;
+    if (endInput) endInput.value = normalizedEnd;
+}
+
+function syncCampaignSendWindowInputsState() {
+    const enabledInput = document.getElementById('campaignSendWindowEnabled') as HTMLInputElement | null;
+    const startInput = document.getElementById('campaignSendWindowStart') as HTMLInputElement | null;
+    const endInput = document.getElementById('campaignSendWindowEnd') as HTMLInputElement | null;
+    const enabled = !!enabledInput?.checked;
+
+    if (startInput) startInput.disabled = !enabled;
+    if (endInput) endInput.disabled = !enabled;
+}
+
+function bindCampaignSendWindowToggle() {
+    const enabledInput = document.getElementById('campaignSendWindowEnabled') as HTMLInputElement | null;
+    if (!enabledInput) return;
+    enabledInput.onchange = () => syncCampaignSendWindowInputsState();
+    syncCampaignSendWindowInputsState();
+}
+
+function formatCampaignSendWindowLabel(campaign?: Partial<Campaign>) {
+    if (!isCampaignSendWindowEnabled(campaign)) {
+        return 'Sem restrição (24h)';
+    }
+    const start = normalizeWindowTimeInput(campaign?.send_window_start, DEFAULT_SEND_WINDOW_START);
+    const end = normalizeWindowTimeInput(campaign?.send_window_end, DEFAULT_SEND_WINDOW_END);
+    return `${start} às ${end}`;
 }
 
 function resolveCampaignDelayRangeMs(campaign?: Partial<Campaign>) {
@@ -1538,6 +1601,15 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
     const normalizedMaxSeconds = Number.isFinite(maxSeconds) && maxSeconds > 0 ? maxSeconds : normalizedMinSeconds;
     const delayMinMs = Math.min(normalizedMinSeconds, normalizedMaxSeconds) * 1000;
     const delayMaxMs = Math.max(normalizedMinSeconds, normalizedMaxSeconds) * 1000;
+    const sendWindowEnabled = !!((document.getElementById('campaignSendWindowEnabled') as HTMLInputElement | null)?.checked);
+    const sendWindowStart = normalizeWindowTimeInput(
+        (document.getElementById('campaignSendWindowStart') as HTMLInputElement | null)?.value,
+        DEFAULT_SEND_WINDOW_START
+    );
+    const sendWindowEnd = normalizeWindowTimeInput(
+        (document.getElementById('campaignSendWindowEnd') as HTMLInputElement | null)?.value,
+        DEFAULT_SEND_WINDOW_END
+    );
 
     const data = {
         name: (document.getElementById('campaignName') as HTMLInputElement | null)?.value.trim() || '',
@@ -1553,6 +1625,9 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         delay_min: delayMinMs,
         delay_max: delayMaxMs,
         start_at: (document.getElementById('campaignStart') as HTMLInputElement | null)?.value || '',
+        send_window_enabled: sendWindowEnabled,
+        send_window_start: sendWindowStart,
+        send_window_end: sendWindowEnd,
         sender_accounts: collectCampaignSenderAccountsFromForm()
     };
 
@@ -1663,6 +1738,12 @@ function editCampaign(id: number) {
 
     const startInput = document.getElementById('campaignStart') as HTMLInputElement | null;
     if (startInput) startInput.value = formatInputDateTime(campaign.start_at);
+    setCampaignSendWindowInputs(
+        isCampaignSendWindowEnabled(campaign),
+        normalizeWindowTimeInput(campaign.send_window_start, DEFAULT_SEND_WINDOW_START),
+        normalizeWindowTimeInput(campaign.send_window_end, DEFAULT_SEND_WINDOW_END)
+    );
+    bindCampaignSendWindowToggle();
 
     renderCampaignSenderAccountsSelector(normalizeCampaignSenderAccounts(campaign.sender_accounts));
 

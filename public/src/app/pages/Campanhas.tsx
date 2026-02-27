@@ -700,6 +700,24 @@ export default function Campanhas() {
                                   <input type="datetime-local" className="form-input" id="campaignStart" />
                               </div>
                           </div>
+                          <div className="form-group">
+                              <label className="form-label">Horário de envio</label>
+                              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 10, cursor: 'pointer', fontSize: 13 }}>
+                                  <input type="checkbox" id="campaignSendWindowEnabled" />
+                                  <span>Limitar disparos por horário</span>
+                              </label>
+                              <div className="form-row">
+                                  <div className="form-group" style={{ marginBottom: 0 }}>
+                                      <input type="time" className="form-input" id="campaignSendWindowStart" defaultValue="08:00" />
+                                  </div>
+                                  <div className="form-group" style={{ marginBottom: 0 }}>
+                                      <input type="time" className="form-input" id="campaignSendWindowEnd" defaultValue="18:00" />
+                                  </div>
+                              </div>
+                              <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--gray-500)' }}>
+                                  Ex.: 08:00 às 18:00. Fora desse intervalo, a campanha pausa e continua no próximo dia.
+                              </p>
+                          </div>
                       </form>
                   </div>
                   <div className="modal-footer">
@@ -745,3 +763,4 @@ export default function Campanhas() {
     </div>
   );
 }
+
