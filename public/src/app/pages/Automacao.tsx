@@ -12,6 +12,7 @@ type AutomacaoGlobals = {
   updateActionOptions?: () => void;
   updateTriggerOptions?: () => void;
   toggleAutomationAllSessions?: () => void;
+  toggleAutomationAllTags?: () => void;
   logout?: () => void;
 };
 
@@ -366,6 +367,25 @@ export default function Automacao() {
                                   </label>
                                   <div className="automation-session-scope-list" id="automationSessionScopeList">
                                       <p style={{ color: 'var(--gray-500)', fontSize: '12px', margin: 0 }}>Carregando contas...</p>
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div className="form-group">
+                              <label className="form-label">Tags aplicaveis</label>
+                              <div className="automation-session-scope">
+                                  <label className="checkbox-wrapper" style={{ marginBottom: 0 }}>
+                                      <input
+                                          type="checkbox"
+                                          id="automationAllTags"
+                                          defaultChecked
+                                          onChange={() => globals.toggleAutomationAllTags?.()}
+                                      />
+                                      <span className="checkbox-custom"></span>
+                                      Aplicar para todas as tags (padrao)
+                                  </label>
+                                  <div className="automation-session-scope-list" id="automationTagFilterList">
+                                      <p style={{ color: 'var(--gray-500)', fontSize: '12px', margin: 0 }}>Carregando tags...</p>
                                   </div>
                               </div>
                           </div>

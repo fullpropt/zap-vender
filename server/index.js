@@ -4563,6 +4563,55 @@ function parseAutomationSessionScope(value) {
     return normalized;
 }
 
+function normalizeAutomationTagLabel(value) {
+    return String(value || '').trim();
+}
+
+function normalizeAutomationTagKey(value) {
+    return normalizeAutomationTagLabel(value).toLowerCase();
+}
+
+function parseAutomationTagFilters(value) {
+    if (value === undefined || value === null || value === '') return [];
+
+    let parsed = value;
+    if (typeof parsed === 'string') {
+        const trimmed = parsed.trim();
+        if (!trimmed) return [];
+        try {
+            parsed = JSON.parse(trimmed);
+        } catch (_) {
+            parsed = trimmed
+                .split(',')
+                .map((item) => normalizeAutomationTagLabel(item))
+                .filter(Boolean);
+        }
+    }
+
+    if (!Array.isArray(parsed)) {
+        parsed = [parsed];
+    }
+
+    const seen = new Set();
+    const normalized = [];
+    for (const item of parsed) {
+        const label = normalizeAutomationTagLabel(item);
+        const key = normalizeAutomationTagKey(label);
+        if (!label || !key || seen.has(key)) continue;
+        seen.add(key);
+        normalized.push(label);
+    }
+
+    return normalized;
+}
+
+function normalizeAutomationTagFilterInput(value) {
+    if (value === undefined) return undefined;
+    const tags = parseAutomationTagFilters(value);
+    if (!tags.length) return null;
+    return JSON.stringify(tags);
+}
+
 function normalizeAutomationSessionScopeInput(value) {
     if (value === undefined) return undefined;
     const sessionIds = parseAutomationSessionScope(value);
@@ -4574,7 +4623,8 @@ function enrichAutomationForResponse(automation) {
     if (!automation) return automation;
     return {
         ...automation,
-        session_ids: parseAutomationSessionScope(automation.session_scope)
+        session_ids: parseAutomationSessionScope(automation.session_scope),
+        tag_filters: parseAutomationTagFilters(automation.tag_filter)
     };
 }
 
@@ -4585,6 +4635,21 @@ function shouldAutomationRunForSession(automation, sessionId) {
     const normalizedSessionId = sanitizeSessionId(sessionId);
     if (!normalizedSessionId) return false;
     return scopedSessionIds.includes(normalizedSessionId);
+}
+
+function shouldAutomationRunForLeadTags(automation, lead) {
+    const tagFilters = parseAutomationTagFilters(automation?.tag_filter);
+    if (!tagFilters.length) return true;
+    if (!lead) return false;
+
+    const leadTagKeys = new Set(
+        parseLeadTags(lead?.tags)
+            .map((tag) => normalizeAutomationTagKey(tag))
+            .filter(Boolean)
+    );
+    if (!leadTagKeys.size) return false;
+
+    return tagFilters.some((tag) => leadTagKeys.has(normalizeAutomationTagKey(tag)));
 }
 
 async function resolveAutomationConversation(lead, baseConversation = null, sessionId = DEFAULT_AUTOMATION_SESSION_ID) {
@@ -4609,10 +4674,13 @@ async function resolveAutomationConversation(lead, baseConversation = null, sess
 }
 
 function runAutomationWithDelay(automation, context) {
-    const delayMs = resolveAutomationDelayMs(automation, context);
+    const normalizedContext = normalizeAutomationContext(context);
+    if (!shouldAutomationRunForLeadTags(automation, normalizedContext.lead)) return;
+
+    const delayMs = resolveAutomationDelayMs(automation, normalizedContext);
 
     const execute = () => {
-        executeAutomationAction(automation, context).catch((error) => {
+        executeAutomationAction(automation, normalizedContext).catch((error) => {
             console.error(`Erro ao executar automacao ${automation.id}:`, error.message);
         });
     };
@@ -4631,6 +4699,7 @@ function shouldTriggerAutomation(automation, context, normalizedText) {
 
     const normalizedContext = normalizeAutomationContext(context);
     if (!shouldAutomationRunForSession(automation, normalizedContext.sessionId)) return false;
+    if (!shouldAutomationRunForLeadTags(automation, normalizedContext.lead)) return false;
     const eventType = normalizedContext.event;
 
     if (triggerType === 'keyword') {
@@ -5004,6 +5073,7 @@ async function executeAutomationAction(automation, context) {
     const { lead, conversation, sessionId, text } = normalizedContext;
 
     if (!automation || !lead) return;
+    if (!shouldAutomationRunForLeadTags(automation, lead)) return;
 
     const variables = buildAutomationVariables(lead, text);
     const actionType = automation.action_type;
@@ -11544,6 +11614,51 @@ function pickRandomCampaignMessagePoolEntry(pool = [], fallback = '') {
     return String(pool[index] || fallback);
 }
 
+const CAMPAIGN_SEND_WINDOW_DEFAULT_START = '08:00';
+const CAMPAIGN_SEND_WINDOW_DEFAULT_END = '18:00';
+
+function normalizeCampaignSendWindowTime(value, fallback = null) {
+    const raw = String(value || '').trim();
+    if (!raw) return fallback;
+    const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return fallback;
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)) return fallback;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return fallback;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function campaignSendWindowTimeToMinutes(time, fallbackMinutes) {
+    const match = String(time || '').match(/^(\d{2}):(\d{2})$/);
+    if (!match) return fallbackMinutes;
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)) return fallbackMinutes;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return fallbackMinutes;
+    return (hour * 60) + minute;
+}
+
+function normalizeCampaignSendWindowConfig(campaign = {}) {
+    const enabled = parseBooleanInput(campaign?.send_window_enabled, false);
+    const start = normalizeCampaignSendWindowTime(
+        campaign?.send_window_start,
+        CAMPAIGN_SEND_WINDOW_DEFAULT_START
+    ) || CAMPAIGN_SEND_WINDOW_DEFAULT_START;
+    const end = normalizeCampaignSendWindowTime(
+        campaign?.send_window_end,
+        CAMPAIGN_SEND_WINDOW_DEFAULT_END
+    ) || CAMPAIGN_SEND_WINDOW_DEFAULT_END;
+
+    return {
+        enabled,
+        start,
+        end,
+        startMinutes: campaignSendWindowTimeToMinutes(start, 8 * 60),
+        endMinutes: campaignSendWindowTimeToMinutes(end, 18 * 60)
+    };
+}
+
 function sanitizeCampaignPayload(input = {}, options = {}) {
 
     const payload = { ...input };
@@ -11571,6 +11686,15 @@ function sanitizeCampaignPayload(input = {}, options = {}) {
 
     if (!Object.prototype.hasOwnProperty.call(payload, 'distribution_strategy') && Object.prototype.hasOwnProperty.call(payload, 'distributionStrategy')) {
         payload.distribution_strategy = payload.distributionStrategy;
+    }
+    if (!Object.prototype.hasOwnProperty.call(payload, 'send_window_enabled') && Object.prototype.hasOwnProperty.call(payload, 'sendWindowEnabled')) {
+        payload.send_window_enabled = payload.sendWindowEnabled;
+    }
+    if (!Object.prototype.hasOwnProperty.call(payload, 'send_window_start') && Object.prototype.hasOwnProperty.call(payload, 'sendWindowStart')) {
+        payload.send_window_start = payload.sendWindowStart;
+    }
+    if (!Object.prototype.hasOwnProperty.call(payload, 'send_window_end') && Object.prototype.hasOwnProperty.call(payload, 'sendWindowEnd')) {
+        payload.send_window_end = payload.sendWindowEnd;
     }
     const hasDistributionStrategy = Object.prototype.hasOwnProperty.call(payload, 'distribution_strategy');
     if (hasDistributionStrategy) {
@@ -11622,6 +11746,15 @@ function sanitizeCampaignPayload(input = {}, options = {}) {
     if (Object.prototype.hasOwnProperty.call(payload, 'messageVariations')) {
         delete payload.messageVariations;
     }
+    if (Object.prototype.hasOwnProperty.call(payload, 'sendWindowEnabled')) {
+        delete payload.sendWindowEnabled;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'sendWindowStart')) {
+        delete payload.sendWindowStart;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'sendWindowEnd')) {
+        delete payload.sendWindowEnd;
+    }
 
     if (Object.prototype.hasOwnProperty.call(payload, 'sender_accounts')) {
         delete payload.sender_accounts;
@@ -11635,6 +11768,39 @@ function sanitizeCampaignPayload(input = {}, options = {}) {
 
         payload.start_at = null;
 
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'send_window_enabled')) {
+        payload.send_window_enabled = parseBooleanInput(payload.send_window_enabled, false) ? 1 : 0;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'send_window_start')) {
+        const rawStart = payload.send_window_start;
+        const normalizedStart = normalizeCampaignSendWindowTime(rawStart, null);
+        if (String(rawStart || '').trim() && !normalizedStart) {
+            throw new Error('Horario inicial da janela de envio invalido. Use HH:MM.');
+        }
+        payload.send_window_start = normalizedStart;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'send_window_end')) {
+        const rawEnd = payload.send_window_end;
+        const normalizedEnd = normalizeCampaignSendWindowTime(rawEnd, null);
+        if (String(rawEnd || '').trim() && !normalizedEnd) {
+            throw new Error('Horario final da janela de envio invalido. Use HH:MM.');
+        }
+        payload.send_window_end = normalizedEnd;
+    }
+
+    if (Number(payload.send_window_enabled) > 0) {
+        payload.send_window_start = normalizeCampaignSendWindowTime(
+            payload.send_window_start,
+            CAMPAIGN_SEND_WINDOW_DEFAULT_START
+        );
+        payload.send_window_end = normalizeCampaignSendWindowTime(
+            payload.send_window_end,
+            CAMPAIGN_SEND_WINDOW_DEFAULT_END
+        );
     }
 
 
@@ -11711,9 +11877,79 @@ function randomIntBetween(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function buildCampaignScheduledAtByLead(leadIds = [], assignmentMetaByLead = {}, baseStartMs = Date.now(), delayMinMs = 0, delayMaxMs = 0) {
+function isWithinCampaignSendWindow(sendWindowConfig, date = new Date()) {
+    if (!sendWindowConfig?.enabled) return true;
+
+    const nowMinutes = (date.getHours() * 60) + date.getMinutes();
+    const start = Number(sendWindowConfig.startMinutes);
+    const end = Number(sendWindowConfig.endMinutes);
+
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return true;
+    if (start === end) return true;
+
+    if (start < end) {
+        return nowMinutes >= start && nowMinutes < end;
+    }
+
+    return nowMinutes >= start || nowMinutes < end;
+}
+
+function alignCampaignScheduleToSendWindow(timestampMs, sendWindowConfig = null) {
+    const numericTimestamp = Number(timestampMs);
+    if (!Number.isFinite(numericTimestamp)) {
+        return Date.now();
+    }
+    if (!sendWindowConfig?.enabled) {
+        return numericTimestamp;
+    }
+
+    if (isWithinCampaignSendWindow(sendWindowConfig, new Date(numericTimestamp))) {
+        return numericTimestamp;
+    }
+
+    const start = Number(sendWindowConfig.startMinutes);
+    const end = Number(sendWindowConfig.endMinutes);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) {
+        return numericTimestamp;
+    }
+
+    const baseDate = new Date(numericTimestamp);
+    const nowMinutes = (baseDate.getHours() * 60) + baseDate.getMinutes();
+    const startHour = Math.floor(start / 60);
+    const startMinute = start % 60;
+
+    if (start < end) {
+        if (nowMinutes < start) {
+            baseDate.setHours(startHour, startMinute, 0, 0);
+            return baseDate.getTime();
+        }
+
+        baseDate.setDate(baseDate.getDate() + 1);
+        baseDate.setHours(startHour, startMinute, 0, 0);
+        return baseDate.getTime();
+    }
+
+    baseDate.setHours(startHour, startMinute, 0, 0);
+    return baseDate.getTime();
+}
+
+function addCampaignDelayRespectingSendWindow(currentMs, delayMs, sendWindowConfig = null) {
+    const base = Number.isFinite(Number(currentMs)) ? Number(currentMs) : Date.now();
+    const safeDelay = Number.isFinite(Number(delayMs)) ? Math.max(0, Number(delayMs)) : 0;
+    return alignCampaignScheduleToSendWindow(base + safeDelay, sendWindowConfig);
+}
+
+function buildCampaignScheduledAtByLead(
+    leadIds = [],
+    assignmentMetaByLead = {},
+    baseStartMs = Date.now(),
+    delayMinMs = 0,
+    delayMaxMs = 0,
+    sendWindowConfig = null
+) {
     const scheduledAtByLead = {};
     const nextMsByDayOffset = new Map();
+    const normalizedBaseStartMs = alignCampaignScheduleToSendWindow(baseStartMs, sendWindowConfig);
 
     for (const leadId of leadIds) {
         const key = String(leadId);
@@ -11722,13 +11958,21 @@ function buildCampaignScheduledAtByLead(leadIds = [], assignmentMetaByLead = {},
             : null;
         const dayOffsetRaw = Number(meta?.day_offset);
         const dayOffset = Number.isFinite(dayOffsetRaw) && dayOffsetRaw > 0 ? Math.floor(dayOffsetRaw) : 0;
-        const bucketStartMs = baseStartMs + (dayOffset * 24 * 60 * 60 * 1000);
+        const bucketStartMs = normalizedBaseStartMs + (dayOffset * 24 * 60 * 60 * 1000);
+        const normalizedBucketStartMs = alignCampaignScheduleToSendWindow(bucketStartMs, sendWindowConfig);
         const nextMs = nextMsByDayOffset.has(dayOffset)
             ? Number(nextMsByDayOffset.get(dayOffset))
-            : bucketStartMs;
+            : normalizedBucketStartMs;
 
         scheduledAtByLead[key] = new Date(nextMs).toISOString();
-        nextMsByDayOffset.set(dayOffset, nextMs + randomIntBetween(delayMinMs, delayMaxMs));
+        nextMsByDayOffset.set(
+            dayOffset,
+            addCampaignDelayRespectingSendWindow(
+                nextMs,
+                randomIntBetween(delayMinMs, delayMaxMs),
+                sendWindowConfig
+            )
+        );
     }
 
     return scheduledAtByLead;
@@ -12098,8 +12342,8 @@ async function queueCampaignMessages(campaign, options = {}) {
     const assignmentMetaByLead = distributionPlan.assignmentMetaByLead || {};
 
     const startAtMs = parseCampaignStartAt(campaign.start_at);
-
-    const baseStartMs = startAtMs || Date.now();
+    const sendWindowConfig = normalizeCampaignSendWindowConfig(campaign);
+    const baseStartMs = alignCampaignScheduleToSendWindow(startAtMs || Date.now(), sendWindowConfig);
 
     const { minMs: delayMinMsRaw, maxMs: delayMaxMsRaw } = resolveCampaignDelayRange(campaign, 5000);
     const delayMinMs = Math.max(250, delayMinMsRaw || 0);
@@ -12109,7 +12353,8 @@ async function queueCampaignMessages(campaign, options = {}) {
         assignmentMetaByLead,
         baseStartMs,
         delayMinMs,
-        delayMaxMs
+        delayMaxMs,
+        sendWindowConfig
     );
 
     let queuedCount = 0;
@@ -12119,8 +12364,11 @@ async function queueCampaignMessages(campaign, options = {}) {
         for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
 
             const content = steps[stepIndex];
-            const stepBaseMs = baseStartMs + (stepIndex * delayMaxMs);
-            const nextLeadAtMsByDayOffset = new Map([[0, stepBaseMs]]);
+            const stepBaseMs = alignCampaignScheduleToSendWindow(
+                baseStartMs + (stepIndex * delayMaxMs),
+                sendWindowConfig
+            );
+            const nextLeadAtMsByDayOffset = new Map();
 
             for (let leadIndex = 0; leadIndex < leadIds.length; leadIndex++) {
 
@@ -12130,9 +12378,13 @@ async function queueCampaignMessages(campaign, options = {}) {
                 const leadDayOffset = Number.isFinite(leadDayOffsetRaw) && leadDayOffsetRaw > 0
                     ? Math.floor(leadDayOffsetRaw)
                     : 0;
+                const defaultNextLeadAtMs = alignCampaignScheduleToSendWindow(
+                    stepBaseMs + (leadDayOffset * 24 * 60 * 60 * 1000),
+                    sendWindowConfig
+                );
                 const nextLeadAtMs = nextLeadAtMsByDayOffset.has(leadDayOffset)
                     ? Number(nextLeadAtMsByDayOffset.get(leadDayOffset))
-                    : (stepBaseMs + (leadDayOffset * 24 * 60 * 60 * 1000));
+                    : defaultNextLeadAtMs;
                 const scheduledAt = new Date(nextLeadAtMs).toISOString();
 
                 await queueService.add({
@@ -12161,7 +12413,11 @@ async function queueCampaignMessages(campaign, options = {}) {
 
                 nextLeadAtMsByDayOffset.set(
                     leadDayOffset,
-                    nextLeadAtMs + randomIntBetween(delayMinMs, delayMaxMs)
+                    addCampaignDelayRespectingSendWindow(
+                        nextLeadAtMs,
+                        randomIntBetween(delayMinMs, delayMaxMs),
+                        sendWindowConfig
+                    )
                 );
 
             }
@@ -12621,6 +12877,12 @@ app.post('/api/automations', authenticate, async (req, res) => {
             );
             delete payload.session_ids;
         }
+        if (Object.prototype.hasOwnProperty.call(payload, 'tag_filters') || Object.prototype.hasOwnProperty.call(payload, 'tag_filter')) {
+            payload.tag_filter = normalizeAutomationTagFilterInput(
+                Object.prototype.hasOwnProperty.call(payload, 'tag_filters') ? payload.tag_filters : payload.tag_filter
+            );
+            delete payload.tag_filters;
+        }
 
         const triggerType = String(payload.trigger_type || '').trim().toLowerCase();
         if (!isSupportedAutomationTriggerType(triggerType)) {
@@ -12673,6 +12935,12 @@ app.put('/api/automations/:id', authenticate, async (req, res) => {
             Object.prototype.hasOwnProperty.call(payload, 'session_ids') ? payload.session_ids : payload.session_scope
         );
         delete payload.session_ids;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'tag_filters') || Object.prototype.hasOwnProperty.call(payload, 'tag_filter')) {
+        payload.tag_filter = normalizeAutomationTagFilterInput(
+            Object.prototype.hasOwnProperty.call(payload, 'tag_filters') ? payload.tag_filters : payload.tag_filter
+        );
+        delete payload.tag_filters;
     }
 
     if (Object.prototype.hasOwnProperty.call(payload, 'trigger_type')) {

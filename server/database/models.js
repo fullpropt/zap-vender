@@ -1234,13 +1234,17 @@ const Template = {
 const Campaign = {
     async create(data) {
         const uuid = generateUUID();
+        const sendWindowEnabled = normalizeBooleanFlag(data.send_window_enabled, 0);
+        const sendWindowStart = String(data.send_window_start || '').trim() || null;
+        const sendWindowEnd = String(data.send_window_end || '').trim() || null;
 
         const result = await run(`
             INSERT INTO campaigns (
                 uuid, name, description, type, distribution_strategy, distribution_config,
-                status, segment, tag_filter, message, delay, delay_min, delay_max, start_at, created_by
+                status, segment, tag_filter, message, delay, delay_min, delay_max, start_at,
+                send_window_enabled, send_window_start, send_window_end, created_by
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             data.name,
@@ -1256,6 +1260,9 @@ const Campaign = {
             data.delay_min || data.delay || 0,
             data.delay_max || data.delay_min || data.delay || 0,
             data.start_at,
+            sendWindowEnabled,
+            sendWindowStart,
+            sendWindowEnd,
             data.created_by
         ]);
 
@@ -1359,7 +1366,8 @@ const Campaign = {
         const allowedFields = [
             'name', 'description', 'type', 'status', 'segment', 'tag_filter',
             'message', 'delay', 'delay_min', 'delay_max', 'start_at', 'sent', 'delivered', 'read', 'replied',
-            'distribution_strategy', 'distribution_config'
+            'distribution_strategy', 'distribution_config',
+            'send_window_enabled', 'send_window_start', 'send_window_end'
         ];
 
         for (const [key, value] of Object.entries(data)) {
@@ -1369,6 +1377,10 @@ const Campaign = {
                     values.push(String(value || '').trim() || 'single');
                 } else if (key === 'distribution_config') {
                     values.push(toJsonStringOrNull(value));
+                } else if (key === 'send_window_enabled') {
+                    values.push(normalizeBooleanFlag(value, 0));
+                } else if (key === 'send_window_start' || key === 'send_window_end') {
+                    values.push(String(value || '').trim() || null);
                 } else {
                     values.push(value);
                 }
@@ -1722,8 +1734,8 @@ const Automation = {
         const isActive = typeof data.is_active === 'boolean' ? (data.is_active ? 1 : 0) : (data.is_active ?? 1);
 
         const result = await run(`
-            INSERT INTO automations (uuid, name, description, trigger_type, trigger_value, action_type, action_value, delay, session_scope, is_active, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO automations (uuid, name, description, trigger_type, trigger_value, action_type, action_value, delay, session_scope, tag_filter, is_active, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             data.name,
@@ -1734,6 +1746,7 @@ const Automation = {
             data.action_value,
             data.delay || 0,
             data.session_scope || null,
+            data.tag_filter || null,
             isActive,
             data.created_by
         ]);
@@ -1834,7 +1847,7 @@ const Automation = {
 
         const allowedFields = [
             'name', 'description', 'trigger_type', 'trigger_value',
-            'action_type', 'action_value', 'delay', 'session_scope', 'is_active', 'executions', 'last_execution'
+            'action_type', 'action_value', 'delay', 'session_scope', 'tag_filter', 'is_active', 'executions', 'last_execution'
         ];
 
         for (const [key, value] of Object.entries(data)) {

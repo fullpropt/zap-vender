@@ -134,6 +134,9 @@ CREATE TABLE IF NOT EXISTS campaigns (
     delay_min INTEGER DEFAULT 0,
     delay_max INTEGER DEFAULT 0,
     start_at TIMESTAMPTZ,
+    send_window_enabled INTEGER DEFAULT 0,
+    send_window_start TEXT,
+    send_window_end TEXT,
     sent INTEGER DEFAULT 0,
     delivered INTEGER DEFAULT 0,
     read INTEGER DEFAULT 0,
@@ -166,6 +169,7 @@ CREATE TABLE IF NOT EXISTS automations (
     action_value TEXT,
     delay INTEGER DEFAULT 0,
     session_scope TEXT,
+    tag_filter TEXT,
     is_active INTEGER DEFAULT 1,
     executions INTEGER DEFAULT 0,
     last_execution TIMESTAMPTZ,
@@ -372,7 +376,11 @@ ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS delay_max INTEGER;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS tag_filter TEXT;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS distribution_strategy TEXT DEFAULT 'single';
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS distribution_config TEXT;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS send_window_enabled INTEGER DEFAULT 0;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS send_window_start TEXT;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS send_window_end TEXT;
 ALTER TABLE automations ADD COLUMN IF NOT EXISTS session_scope TEXT;
+ALTER TABLE automations ADD COLUMN IF NOT EXISTS tag_filter TEXT;
 ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS campaign_enabled INTEGER DEFAULT 1;
 ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS daily_limit INTEGER DEFAULT 0;
 ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS dispatch_weight INTEGER DEFAULT 1;

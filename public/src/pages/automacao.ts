@@ -14,6 +14,8 @@ type Automation = {
     delay?: number;
     session_scope?: string | null;
     session_ids?: string[];
+    tag_filter?: string | null;
+    tag_filters?: string[];
     is_active: boolean;
     executions?: number;
     last_execution?: string | null;
@@ -29,9 +31,17 @@ type WhatsappSessionItem = {
     phone?: string;
 };
 
+type TagItem = {
+    id?: number;
+    name?: string;
+    color?: string;
+};
+
 let automations: Automation[] = [];
 let automationSessions: WhatsappSessionItem[] = [];
 let pendingAutomationSessionScope: string[] | null = null;
+let automationTags: TagItem[] = [];
+let pendingAutomationTagFilters: string[] | null = null;
 const RUNTIME_SUPPORTED_TRIGGER_TYPES: TriggerType[] = [
     'new_lead',
     'status_change',
@@ -90,12 +100,60 @@ function parseAutomationSessionIds(value: unknown) {
     return [];
 }
 
+function normalizeAutomationTagLabel(value: unknown) {
+    return String(value || '').trim();
+}
+
+function normalizeAutomationTagKey(value: unknown) {
+    return normalizeAutomationTagLabel(value).toLowerCase();
+}
+
+function parseAutomationTagFilters(value: unknown) {
+    if (Array.isArray(value)) {
+        const seen = new Set<string>();
+        const normalized: string[] = [];
+        for (const item of value) {
+            const label = normalizeAutomationTagLabel(item);
+            const key = normalizeAutomationTagKey(label);
+            if (!label || !key || seen.has(key)) continue;
+            seen.add(key);
+            normalized.push(label);
+        }
+        return normalized;
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return [];
+        try {
+            const parsed = JSON.parse(trimmed);
+            return parseAutomationTagFilters(parsed);
+        } catch (_) {
+            return parseAutomationTagFilters(
+                trimmed
+                    .split(',')
+                    .map((item) => normalizeAutomationTagLabel(item))
+                    .filter(Boolean)
+            );
+        }
+    }
+
+    return [];
+}
+
 function getAutomationSessionIds(automation: Automation | undefined) {
     if (!automation) return [];
     const fromApi = parseAutomationSessionIds(automation.session_ids);
     if (fromApi.length) return Array.from(new Set(fromApi));
     const fromScope = parseAutomationSessionIds(automation.session_scope);
     return Array.from(new Set(fromScope));
+}
+
+function getAutomationTagFilters(automation: Automation | undefined) {
+    if (!automation) return [];
+    const fromApi = parseAutomationTagFilters(automation.tag_filters);
+    if (fromApi.length) return fromApi;
+    return parseAutomationTagFilters(automation.tag_filter);
 }
 
 function getSessionStatusLabel(session: WhatsappSessionItem) {
@@ -139,6 +197,7 @@ function resetAutomationForm() {
     updateTriggerOptions();
     updateActionOptions();
     setAutomationSessionScopeSelection([]);
+    setAutomationTagFilterSelection([]);
     setAutomationModalTitle('new');
 }
 
@@ -337,6 +396,82 @@ function renderAutomationSessionScopeOptions() {
     updateAutomationSessionScopeInputs();
 }
 
+function setAutomationTagFilterSelection(tags: string[]) {
+    pendingAutomationTagFilters = Array.from(new Set(
+        (tags || [])
+            .map((item) => normalizeAutomationTagLabel(item))
+            .filter(Boolean)
+    ));
+    renderAutomationTagFilterOptions();
+}
+
+function updateAutomationTagFilterInputs() {
+    const allCheckbox = document.getElementById('automationAllTags') as HTMLInputElement | null;
+    const isAll = !!allCheckbox?.checked;
+    document.querySelectorAll<HTMLInputElement>('.automation-tag-filter-checkbox').forEach((input) => {
+        input.disabled = isAll;
+    });
+}
+
+function toggleAutomationAllTags() {
+    updateAutomationTagFilterInputs();
+}
+
+function getSelectedAutomationTagFilters() {
+    const allCheckbox = document.getElementById('automationAllTags') as HTMLInputElement | null;
+    if (allCheckbox?.checked) return [];
+
+    return Array.from(document.querySelectorAll<HTMLInputElement>('.automation-tag-filter-checkbox:checked'))
+        .map((input) => normalizeAutomationTagLabel(input.value))
+        .filter(Boolean);
+}
+
+function renderAutomationTagFilterOptions() {
+    const allCheckbox = document.getElementById('automationAllTags') as HTMLInputElement | null;
+    const container = document.getElementById('automationTagFilterList') as HTMLElement | null;
+    if (!container) return;
+
+    const selectedSet = new Set((pendingAutomationTagFilters || []).map((tag) => normalizeAutomationTagKey(tag)));
+    const hasSpecificSelection = selectedSet.size > 0;
+    if (allCheckbox) {
+        allCheckbox.checked = !hasSpecificSelection;
+    }
+
+    if (!automationTags.length) {
+        container.innerHTML = '<p style="color: var(--gray-500); font-size: 12px; margin: 0;">Nenhuma tag cadastrada.</p>';
+        if (allCheckbox) allCheckbox.checked = true;
+        updateAutomationTagFilterInputs();
+        return;
+    }
+
+    container.innerHTML = automationTags.map((tag) => {
+        const tagName = normalizeAutomationTagLabel(tag.name);
+        if (!tagName) return '';
+        const normalizedKey = normalizeAutomationTagKey(tagName);
+        const checked = selectedSet.has(normalizedKey);
+        const safeName = escapeAutomationText(tagName);
+        const color = String(tag.color || '').trim() || '#178c49';
+
+        return `
+            <label class="checkbox-wrapper automation-session-option">
+                <input
+                    type="checkbox"
+                    class="automation-tag-filter-checkbox"
+                    value="${safeName}"
+                    ${checked ? 'checked' : ''}
+                >
+                <span class="checkbox-custom"></span>
+                <span style="display: inline-flex; align-items: center; gap: 8px;">
+                    <span style="width: 10px; height: 10px; border-radius: 999px; background: ${escapeAutomationText(color)};"></span>
+                    <strong>${safeName}</strong>
+                </span>
+            </label>
+        `;
+    }).join('');
+
+    updateAutomationTagFilterInputs();
+}
+
 async function loadAutomationSessions() {
     try {
         const response = await api.get('/api/whatsapp/sessions?includeDisabled=true');
@@ -350,9 +485,26 @@ async function loadAutomationSessions() {
     }
 }
 
+async function loadAutomationTags() {
+    try {
+        const response = await api.get('/api/tags');
+        automationTags = Array.isArray(response?.tags) ? response.tags : [];
+    } catch (_) {
+        automationTags = [];
+    }
+
+    automationTags.sort((a, b) => normalizeAutomationTagLabel(a?.name).localeCompare(normalizeAutomationTagLabel(b?.name), 'pt-BR'));
+    renderAutomationTagFilterOptions();
+    if (automations.length) {
+        renderAutomations();
+    }
+}
+
 function initAutomacao() {
     pendingAutomationSessionScope = [];
+    pendingAutomationTagFilters = [];
     void loadAutomationSessions();
+    void loadAutomationTags();
     loadAutomations();
     updateTriggerOptions();
     updateActionOptions();
@@ -465,7 +617,8 @@ function renderAutomations() {
             </div>
             <div class="automation-body">
                 <p style="color: var(--gray-600); margin-bottom: 10px; font-size: 13px;">${a.description || 'Sem descrição'}</p>
-                <p style="color: var(--gray-500); margin-bottom: 15px; font-size: 12px;"><strong>Contas:</strong> ${getAutomationSessionScopeSummary(a)}</p>
+                <p style="color: var(--gray-500); margin-bottom: 6px; font-size: 12px;"><strong>Contas:</strong> ${getAutomationSessionScopeSummary(a)}</p>
+                <p style="color: var(--gray-500); margin-bottom: 15px; font-size: 12px;"><strong>Tags:</strong> ${getAutomationTagFilterSummary(a)}</p>
                 
                 <div class="automation-trigger">
                     <div class="automation-trigger-icon trigger"><span class="icon icon-bolt icon-sm"></span></div>
@@ -529,6 +682,18 @@ function getAutomationSessionScopeSummary(automation: Automation) {
     const labels = sessionIds.map((sessionId) => {
         const found = automationSessions.find((session) => sanitizeSessionId(session.session_id) === sessionId);
         return found ? getSessionDisplayName(found) : sessionId;
+    });
+    return labels.join(' | ');
+}
+
+function getAutomationTagFilterSummary(automation: Automation) {
+    const tags = getAutomationTagFilters(automation);
+    if (!tags.length) return 'Todas as tags';
+
+    const labels = tags.map((tagName) => {
+        const normalizedKey = normalizeAutomationTagKey(tagName);
+        const found = automationTags.find((tag) => normalizeAutomationTagKey(tag?.name) === normalizedKey);
+        return normalizeAutomationTagLabel(found?.name || tagName);
     });
     return labels.join(' | ');
 }
@@ -693,6 +858,7 @@ async function saveAutomation() {
     const actionValue = getActionValue(actionType);
     const existing = automationId ? automations.find(a => a.id === automationId) : null;
     const selectedSessionIds = getSelectedAutomationSessionIds();
+    const selectedTagFilters = getSelectedAutomationTagFilters();
 
     const data: Record<string, unknown> = {
         name,
@@ -703,6 +869,7 @@ async function saveAutomation() {
         action_value: actionValue,
         delay,
         session_ids: selectedSessionIds,
+        tag_filters: selectedTagFilters,
         is_active: existing ? existing.is_active : true
     };
 
@@ -772,6 +939,7 @@ function editAutomation(id: number) {
     if (delaySelect) delaySelect.value = String(automation.delay || 0);
 
     setAutomationSessionScopeSelection(getAutomationSessionIds(automation));
+    setAutomationTagFilterSelection(getAutomationTagFilters(automation));
 
     setAutomationModalTitle('edit');
 
@@ -801,6 +969,7 @@ const windowAny = window as Window & {
     updateTriggerOptions?: () => void;
     updateActionOptions?: () => void;
     toggleAutomationAllSessions?: () => void;
+    toggleAutomationAllTags?: () => void;
     toggleAutomation?: (id: number, active: boolean) => Promise<void>;
     saveAutomation?: () => Promise<void>;
     editAutomation?: (id: number) => void;
@@ -812,6 +981,7 @@ windowAny.openAutomationModal = openAutomationModal;
 windowAny.updateTriggerOptions = updateTriggerOptions;
 windowAny.updateActionOptions = updateActionOptions;
 windowAny.toggleAutomationAllSessions = toggleAutomationAllSessions;
+windowAny.toggleAutomationAllTags = toggleAutomationAllTags;
 windowAny.toggleAutomation = toggleAutomation;
 windowAny.saveAutomation = saveAutomation;
 windowAny.editAutomation = editAutomation;
