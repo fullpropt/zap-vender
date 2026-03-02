@@ -392,8 +392,11 @@ export default function Planos() {
   const [highlightTransition, setHighlightTransition] = useState<
     'idle' | 'out-next' | 'in-next' | 'out-prev' | 'in-prev'
   >('idle');
-  const [isHighlightFocused, setIsHighlightFocused] = useState(false);
   const highlightSectionRef = useRef<HTMLElement | null>(null);
+  const highlightShellRef = useRef<HTMLDivElement | null>(null);
+  const activeHighlightTabRef = useRef<HighlightTabId>('dashboard');
+  const wasHighlightLockedRef = useRef(false);
+  const lastScrollYRef = useRef(0);
   const highlightSwitchLockedRef = useRef(false);
   const highlightSwitchUnlockTimeoutRef = useRef<number | null>(null);
   const highlightTransitionOutTimeoutRef = useRef<number | null>(null);
@@ -407,6 +410,10 @@ export default function Planos() {
     ? (activeHighlightIndex / (highlightTabOrder.length - 1)) * 100
     : 0;
   const highlightNavThumbTop = `clamp(0px, calc(${highlightNavProgress}% - 17px), calc(100% - 34px))`;
+
+  useEffect(() => {
+    activeHighlightTabRef.current = activeHighlightTab;
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -441,7 +448,7 @@ export default function Planos() {
   };
 
   const startHighlightSwap = (nextTab: HighlightTabId, direction: 'next' | 'prev') => {
-    if (nextTab === activeHighlightTab) return false;
+    if (nextTab === activeHighlightTabRef.current) return false;
 
     if (highlightTransitionOutTimeoutRef.current !== null) {
       window.clearTimeout(highlightTransitionOutTimeoutRef.current);
@@ -454,6 +461,7 @@ export default function Planos() {
     setHighlightTransition(direction === 'next' ? 'out-next' : 'out-prev');
 
     highlightTransitionOutTimeoutRef.current = window.setTimeout(() => {
+      activeHighlightTabRef.current = nextTab;
       setActiveHighlightTab(nextTab);
       setHighlightTransition(direction === 'next' ? 'in-next' : 'in-prev');
 
@@ -466,9 +474,9 @@ export default function Planos() {
   };
 
   const changeHighlightToTab = (nextTab: HighlightTabId) => {
-    if (nextTab === activeHighlightTab) return false;
+    if (nextTab === activeHighlightTabRef.current) return false;
 
-    const currentIndex = highlightTabOrder.indexOf(activeHighlightTab);
+    const currentIndex = highlightTabOrder.indexOf(activeHighlightTabRef.current);
     const nextIndex = highlightTabOrder.indexOf(nextTab);
     const direction = nextIndex > currentIndex ? 'next' : 'prev';
 
@@ -476,7 +484,7 @@ export default function Planos() {
   };
 
   const changeHighlightByStep = (step: 1 | -1) => {
-    const currentIndex = highlightTabOrder.indexOf(activeHighlightTab);
+    const currentIndex = highlightTabOrder.indexOf(activeHighlightTabRef.current);
     if (currentIndex === -1) return false;
 
     const nextIndex = currentIndex + step;
@@ -489,43 +497,90 @@ export default function Planos() {
   };
 
   const canMoveHighlightByStep = (step: 1 | -1) => {
-    const currentIndex = highlightTabOrder.indexOf(activeHighlightTab);
+    const currentIndex = highlightTabOrder.indexOf(activeHighlightTabRef.current);
     if (currentIndex === -1) return false;
 
     const nextIndex = currentIndex + step;
     return nextIndex >= 0 && nextIndex < highlightTabOrder.length;
   };
 
-  const isHighlightLockZone = () => {
-    const section = highlightSectionRef.current;
-    if (!section) return false;
-
-    const rect = section.getBoundingClientRect();
+  const getHighlightLockMetrics = () => {
+    const target = highlightShellRef.current ?? highlightSectionRef.current;
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-    const activationTop = 96;
-    const activationWindow = 220;
-    const activationBottom = Math.max(
-      activationTop + 40,
-      Math.min(viewportHeight - 48, activationTop + 180)
-    );
+    if (!target) {
+      return {
+        isLocked: false,
+        source: 'none',
+        top: 0,
+        bottom: 0,
+        height: 0,
+        visibleHeight: 0,
+        visibleRatio: 0,
+        viewportHeight,
+        fitsViewport: false
+      };
+    }
 
-    // Mantém o lock somente numa faixa próxima ao topo da seção, evitando ativar cedo ao voltar de baixo para cima.
-    const topWithinLockBand = rect.top <= activationTop && rect.top >= activationTop - activationWindow;
-    return topWithinLockBand && rect.bottom >= activationBottom;
+    const rect = target.getBoundingClientRect();
+    const epsilon = 4;
+    const visibleTop = Math.max(rect.top, 0);
+    const visibleBottom = Math.min(rect.bottom, viewportHeight);
+    const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+    const height = Math.max(rect.height, 1);
+    const visibleRatio = visibleHeight / height;
+    const fitsViewport = height <= viewportHeight - 8;
+    const lockByFit = rect.top >= -epsilon && rect.bottom <= viewportHeight + epsilon;
+    const lockTopBand = 96;
+    const lockBottomBand = Math.max(lockTopBand + 40, viewportHeight - 96);
+    const lockByPinned = rect.top <= lockTopBand && rect.bottom >= lockBottomBand;
+    const lockByDominant = visibleRatio >= 0.74 && lockByPinned;
+    const isLocked = fitsViewport ? lockByFit : lockByDominant;
+
+    return {
+      isLocked,
+      source: target === highlightShellRef.current ? 'shell' : 'section',
+      top: rect.top,
+      bottom: rect.bottom,
+      height: rect.height,
+      visibleHeight,
+      visibleRatio,
+      viewportHeight,
+      fitsViewport
+    };
   };
 
+  const isHighlightLockZone = () => getHighlightLockMetrics().isLocked;
+
   useEffect(() => {
-    const updateHighlightFocus = () => {
-      setIsHighlightFocused(isHighlightLockZone());
+    const updateHighlightDebug = () => {
+      const currentScrollY = window.scrollY || window.pageYOffset || 0;
+      const scrollingDown = currentScrollY >= lastScrollYRef.current;
+      lastScrollYRef.current = currentScrollY;
+
+      const metrics = getHighlightLockMetrics();
+
+      const justEnteredLock = metrics.isLocked && !wasHighlightLockedRef.current;
+      wasHighlightLockedRef.current = metrics.isLocked;
+
+      if (!justEnteredLock || highlightSwitchLockedRef.current) return;
+
+      // Entrada no highlight: alinha a aba ao sentido da rolagem para travar de forma consistente.
+      const entryTab: HighlightTabId = scrollingDown ? 'dashboard' : 'meta';
+      if (activeHighlightTabRef.current === entryTab) return;
+
+      activeHighlightTabRef.current = entryTab;
+      setHighlightTransition('idle');
+      setActiveHighlightTab(entryTab);
     };
 
-    updateHighlightFocus();
-    window.addEventListener('scroll', updateHighlightFocus, { passive: true });
-    window.addEventListener('resize', updateHighlightFocus);
+    lastScrollYRef.current = window.scrollY || window.pageYOffset || 0;
+    updateHighlightDebug();
+    window.addEventListener('scroll', updateHighlightDebug, { passive: true });
+    window.addEventListener('resize', updateHighlightDebug);
 
     return () => {
-      window.removeEventListener('scroll', updateHighlightFocus);
-      window.removeEventListener('resize', updateHighlightFocus);
+      window.removeEventListener('scroll', updateHighlightDebug);
+      window.removeEventListener('resize', updateHighlightDebug);
     };
   }, []);
 
@@ -533,20 +588,31 @@ export default function Planos() {
     const handleGlobalWheel = (event: globalThis.WheelEvent) => {
       if (!isHighlightLockZone()) return;
       if (event.deltaY === 0) return;
+      if (Math.abs(event.deltaY) < 2) return;
 
-      const step: 1 | -1 = event.deltaY > 0 ? 1 : -1;
-      const canMove = canMoveHighlightByStep(step);
-      if (!canMove) return;
+      const direction: 1 | -1 = event.deltaY > 0 ? 1 : -1;
+      const canMove = canMoveHighlightByStep(direction);
 
-      // Enquanto existir card para trocar, bloqueia o scroll global da página.
+      // Sem card nessa direção: libera rolagem normal da página.
+      if (!canMove) {
+        return;
+      }
+
+      // Enquanto a troca está em cooldown, mantém a página estável.
+      if (highlightSwitchLockedRef.current) {
+        if (event.cancelable) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
+
       if (event.cancelable) {
         event.preventDefault();
         event.stopPropagation();
       }
-      if (highlightSwitchLockedRef.current) return;
-      if (Math.abs(event.deltaY) < 18) return;
 
-      const changed = changeHighlightByStep(step);
+      const changed = changeHighlightByStep(direction);
       if (!changed) return;
       lockHighlightSwitch();
     };
@@ -571,15 +637,14 @@ export default function Planos() {
       const deltaX = highlightTouchStartXRef.current === null ? 0 : Math.abs(highlightTouchStartXRef.current - touch.clientX);
       const step: 1 | -1 = deltaY > 0 ? 1 : -1;
       const canMove = canMoveHighlightByStep(step);
-
-      if (canMove && event.cancelable) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-
       if (highlightSwitchLockedRef.current) return;
       if (Math.abs(deltaY) < 34 || deltaX > Math.abs(deltaY)) return;
       if (!canMove) return;
+
+      if (event.cancelable) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
 
       const changed = changeHighlightByStep(step);
       if (!changed) return;
@@ -594,20 +659,20 @@ export default function Planos() {
       highlightTouchStartXRef.current = null;
     };
 
-    window.addEventListener('wheel', handleGlobalWheel, { passive: false, capture: true });
-    window.addEventListener('touchstart', handleGlobalTouchStart, { passive: true });
-    window.addEventListener('touchmove', handleGlobalTouchMove, { passive: false, capture: true });
-    window.addEventListener('touchend', handleGlobalTouchEnd, { passive: true });
-    window.addEventListener('touchcancel', handleGlobalTouchEnd, { passive: true });
+    document.addEventListener('wheel', handleGlobalWheel, { passive: false, capture: true });
+    document.addEventListener('touchstart', handleGlobalTouchStart, { passive: true, capture: true });
+    document.addEventListener('touchmove', handleGlobalTouchMove, { passive: false, capture: true });
+    document.addEventListener('touchend', handleGlobalTouchEnd, { passive: true, capture: true });
+    document.addEventListener('touchcancel', handleGlobalTouchEnd, { passive: true, capture: true });
 
     return () => {
-      window.removeEventListener('wheel', handleGlobalWheel, { capture: true });
-      window.removeEventListener('touchstart', handleGlobalTouchStart);
-      window.removeEventListener('touchmove', handleGlobalTouchMove, { capture: true });
-      window.removeEventListener('touchend', handleGlobalTouchEnd);
-      window.removeEventListener('touchcancel', handleGlobalTouchEnd);
+      document.removeEventListener('wheel', handleGlobalWheel, { capture: true });
+      document.removeEventListener('touchstart', handleGlobalTouchStart, { capture: true });
+      document.removeEventListener('touchmove', handleGlobalTouchMove, { capture: true });
+      document.removeEventListener('touchend', handleGlobalTouchEnd, { capture: true });
+      document.removeEventListener('touchcancel', handleGlobalTouchEnd, { capture: true });
     };
-  }, [activeHighlightTab, isHighlightFocused]);
+  }, [activeHighlightTab]);
 
   const highlightShellClassName = [
     'highlight-model-shell',
@@ -6493,7 +6558,7 @@ export default function Planos() {
           >
             <span id="recursos" className="section-anchor" aria-hidden="true" />
 
-            <div className={highlightShellClassName}>
+            <div ref={highlightShellRef} className={highlightShellClassName}>
               <aside className="highlight-model-nav" aria-label="Navegação de benefícios">
                 <span className="highlight-model-nav-rail" aria-hidden="true">
                   <span className="highlight-model-nav-rail-thumb" style={{ top: highlightNavThumbTop }} />
