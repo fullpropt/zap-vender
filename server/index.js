@@ -3270,7 +3270,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
         const syncFullHistory = WHATSAPP_SYNC_FULL_HISTORY;
         const browserName = await resolveWhatsAppBrowserName();
 
-        const store = typeof makeInMemoryStore === 'function' ? makeInMemoryStore({ logger }) : null;
+        const store = createRuntimeStore({ sessionId, makeInMemoryStore });
 
 
 
@@ -3330,11 +3330,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
 
 
-        if (store) {
-
-            store.bind(sock.ev);
-
-        }
+        bindRuntimeStoreToSocket(sessionId, store, sock);
 
         
 
@@ -5459,6 +5455,270 @@ async function syncChatsToDatabase(sessionId, payload) {
 
 
 
+function createFallbackRuntimeStore() {
+    const chatsByJid = new Map();
+    const messagesByJid = new Map();
+
+    function resolveMessageJid(value) {
+        return normalizeJid(
+            value?.key?.remoteJid ||
+            value?.remoteJid ||
+            value?.jid ||
+            ''
+        );
+    }
+
+    function resolveMessageId(value) {
+        return normalizeText(value?.key?.id || value?.id || '');
+    }
+
+    function ensureMessageBucket(jid) {
+        const normalizedJid = normalizeJid(jid);
+        if (!normalizedJid) return null;
+        if (!messagesByJid.has(normalizedJid)) {
+            messagesByJid.set(normalizedJid, new Map());
+        }
+        return messagesByJid.get(normalizedJid);
+    }
+
+    function upsertChat(chat) {
+        const jid = normalizeJid(chat?.id || chat?.jid || '');
+        if (!jid) return;
+
+        const current = chatsByJid.get(jid) || {};
+        chatsByJid.set(jid, {
+            ...current,
+            ...chat,
+            id: jid
+        });
+    }
+
+    function upsertMessage(message) {
+        const jid = resolveMessageJid(message);
+        const id = resolveMessageId(message);
+        if (!jid || !id) return;
+
+        const bucket = ensureMessageBucket(jid);
+        if (!bucket) return;
+
+        const current = bucket.get(id) || {};
+        bucket.set(id, {
+            ...current,
+            ...message,
+            key: {
+                ...(current?.key || {}),
+                ...(message?.key || {}),
+                remoteJid: jid
+            }
+        });
+    }
+
+    function patchMessage(update) {
+        const key = update?.key || {};
+        const jid = resolveMessageJid({ key });
+        const id = resolveMessageId({ key });
+        if (!jid || !id) return;
+
+        const bucket = ensureMessageBucket(jid);
+        if (!bucket) return;
+
+        const current = bucket.get(id);
+        const updatePayload = (update && typeof update.update === 'object') ? update.update : {};
+
+        if (!current && !updatePayload?.message) return;
+
+        bucket.set(id, {
+            ...(current || {}),
+            ...updatePayload,
+            key: {
+                ...(current?.key || {}),
+                ...key,
+                remoteJid: jid
+            }
+        });
+    }
+
+    function deleteMessageByKey(key) {
+        const jid = resolveMessageJid({ key });
+        const id = resolveMessageId({ key });
+        if (!jid || !id) return;
+
+        const bucket = messagesByJid.get(jid);
+        if (!bucket) return;
+
+        bucket.delete(id);
+        if (bucket.size === 0) {
+            messagesByJid.delete(jid);
+        }
+    }
+
+    function clearMessagesByJid(jid) {
+        const normalizedJid = normalizeJid(jid);
+        if (!normalizedJid) return;
+        messagesByJid.delete(normalizedJid);
+    }
+
+    return {
+        __kind: 'fallback-runtime-store',
+        chats: {
+            all: () => Array.from(chatsByJid.values()),
+            toJSON: () => Array.from(chatsByJid.values()),
+            values: () => chatsByJid.values()
+        },
+        bind: (ev) => {
+            if (!ev || typeof ev.on !== 'function') return;
+
+            ev.on('messaging-history.set', (payload = {}) => {
+                const chats = normalizeChatPayload(payload);
+                const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+                for (const chat of chats) upsertChat(chat);
+                for (const message of messages) upsertMessage(message);
+            });
+
+            ev.on('chats.set', (payload) => {
+                for (const chat of normalizeChatPayload(payload)) upsertChat(chat);
+            });
+
+            ev.on('chats.upsert', (payload) => {
+                for (const chat of normalizeChatPayload(payload)) upsertChat(chat);
+            });
+
+            ev.on('chats.update', (payload) => {
+                for (const chat of normalizeChatPayload(payload)) upsertChat(chat);
+            });
+
+            ev.on('chats.delete', (payload) => {
+                const chatIds = Array.isArray(payload) ? payload : [];
+                for (const chatId of chatIds) {
+                    const jid = normalizeJid(chatId);
+                    if (!jid) continue;
+                    chatsByJid.delete(jid);
+                    clearMessagesByJid(jid);
+                }
+            });
+
+            ev.on('messages.upsert', (eventPayload = {}) => {
+                const messages = Array.isArray(eventPayload?.messages) ? eventPayload.messages : [];
+                for (const message of messages) upsertMessage(message);
+            });
+
+            ev.on('messages.update', (payload) => {
+                const updates = Array.isArray(payload) ? payload : [];
+                for (const update of updates) patchMessage(update);
+            });
+
+            ev.on('messages.delete', (payload = {}) => {
+                const keys = Array.isArray(payload?.keys) ? payload.keys : [];
+                if (keys.length > 0) {
+                    for (const key of keys) deleteMessageByKey(key);
+                    return;
+                }
+                if (payload?.all && payload?.jid) {
+                    clearMessagesByJid(payload.jid);
+                }
+            });
+        },
+        loadMessages: async (jid, limit = 40) => {
+            const normalizedJid = normalizeJid(jid);
+            if (!normalizedJid) return [];
+
+            const bucket = messagesByJid.get(normalizedJid);
+            if (!bucket || bucket.size === 0) return [];
+
+            const safeLimit = Math.max(1, Number(limit) || 40);
+            const allMessages = Array.from(bucket.values());
+            allMessages.sort((a, b) => {
+                const bTs = parseMessageTimestampMs(b?.messageTimestamp);
+                const aTs = parseMessageTimestampMs(a?.messageTimestamp);
+                if (aTs === bTs) {
+                    const aId = String(a?.key?.id || '');
+                    const bId = String(b?.key?.id || '');
+                    return bId.localeCompare(aId);
+                }
+                return bTs - aTs;
+            });
+            return allMessages.slice(0, safeLimit);
+        }
+    };
+}
+
+function createRuntimeStore({ sessionId = '', makeInMemoryStore = null } = {}) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (typeof makeInMemoryStore === 'function') {
+        try {
+            const store = makeInMemoryStore({ logger });
+            if (store && typeof store.bind === 'function' && typeof store.loadMessages === 'function') {
+                return store;
+            }
+            console.warn(
+                `[${normalizedSessionId || 'runtime'}] makeInMemoryStore retornou store sem loadMessages/bind; usando fallback local.`
+            );
+        } catch (error) {
+            console.warn(
+                `[${normalizedSessionId || 'runtime'}] Falha ao criar store via makeInMemoryStore; usando fallback local:`,
+                error.message
+            );
+        }
+    } else {
+        console.warn(`[${normalizedSessionId || 'runtime'}] makeInMemoryStore indisponivel; usando fallback local.`);
+    }
+
+    return createFallbackRuntimeStore();
+}
+
+function bindRuntimeStoreToSocket(sessionId, store, sock) {
+    if (!store || typeof store.bind !== 'function') return;
+    const emitter = sock?.ev;
+    if (!emitter) return;
+
+    try {
+        if (!store.__zapVenderBoundEmitters) {
+            Object.defineProperty(store, '__zapVenderBoundEmitters', {
+                value: new WeakSet(),
+                enumerable: false
+            });
+        }
+
+        const boundEmitters = store.__zapVenderBoundEmitters;
+        if (boundEmitters && typeof boundEmitters.has === 'function' && boundEmitters.has(emitter)) {
+            return;
+        }
+
+        store.bind(emitter);
+
+        if (boundEmitters && typeof boundEmitters.add === 'function') {
+            boundEmitters.add(emitter);
+        }
+    } catch (error) {
+        console.warn(`[${sanitizeSessionId(sessionId, 'runtime')}] Falha ao vincular store local:`, error.message);
+    }
+}
+
+function ensureRuntimeSessionStore(sessionId, runtimeSession, options = {}) {
+    if (!runtimeSession) return null;
+
+    if (runtimeSession.store && typeof runtimeSession.store.loadMessages === 'function') {
+        return runtimeSession.store;
+    }
+
+    const store = createRuntimeStore({
+        sessionId,
+        makeInMemoryStore: options.makeInMemoryStore
+    });
+
+    runtimeSession.store = store;
+    bindRuntimeStoreToSocket(sessionId, store, options.socket || runtimeSession.socket);
+    return runtimeSession.store;
+}
+
+function resolveRuntimeSessionStore(sessionId, runtimeSession, options = {}) {
+    const store = ensureRuntimeSessionStore(sessionId, runtimeSession, options);
+    if (store && typeof store.loadMessages === 'function') {
+        return store;
+    }
+    return null;
+}
+
 function extractStoreChats(store) {
 
     if (!store) return [];
@@ -5597,7 +5857,7 @@ async function backfillConversationMessagesFromStore(options = {}) {
     if (!sessionId || !conversation?.id) return createStoreBackfillResult();
 
     const session = sessions.get(sessionId);
-    const store = session?.store;
+    const store = resolveRuntimeSessionStore(sessionId, session);
     if (!store || typeof store.loadMessages !== 'function') {
         return createStoreBackfillResult();
     }
@@ -5865,13 +6125,14 @@ async function runSessionReconnectCatchup(sessionId, options = {}) {
             summary.skipped = 'session_not_connected';
             return summary;
         }
-        if (!runtimeSession.store || typeof runtimeSession.store.loadMessages !== 'function') {
+        const runtimeStore = resolveRuntimeSessionStore(normalizedSessionId, runtimeSession);
+        if (!runtimeStore || typeof runtimeStore.loadMessages !== 'function') {
             summary.skipped = 'store_unavailable';
             return summary;
         }
 
         try {
-            await triggerChatSync(normalizedSessionId, runtimeSession.socket, runtimeSession.store, 0);
+            await triggerChatSync(normalizedSessionId, runtimeSession.socket, runtimeStore, 0);
         } catch (syncError) {
             console.warn(`[${normalizedSessionId}] Falha no sync preliminar do catch-up:`, syncError.message);
         }
@@ -8178,7 +8439,8 @@ app.post('/api/whatsapp/sessions/:sessionId/history/resync', authenticate, requi
                 error: 'Sessao desconectada no momento. Aguarde reconexao para ressincronizar.'
             });
         }
-        if (!runtimeSession.store || typeof runtimeSession.store.loadMessages !== 'function') {
+        const runtimeStore = resolveRuntimeSessionStore(sessionId, runtimeSession);
+        if (!runtimeStore || typeof runtimeStore.loadMessages !== 'function') {
             return res.status(409).json({
                 success: false,
                 error: 'Store local indisponivel para reidratacao. Tente novamente em instantes.'
