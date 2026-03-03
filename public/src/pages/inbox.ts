@@ -436,7 +436,8 @@ async function resyncInboxHistory() {
         conversationsScanned: 0,
         conversationsUpdated: 0,
         messagesInserted: 0,
-        mediaHydrated: 0
+        mediaHydrated: 0,
+        truncatedSessions: 0
     };
     const failed: string[] = [];
 
@@ -447,7 +448,10 @@ async function resyncInboxHistory() {
                     `/api/whatsapp/sessions/${encodeURIComponent(sessionId)}/history/resync`,
                     {
                         scope: 'all',
-                        trigger: 'inbox-manual-button'
+                        trigger: 'inbox-manual-button',
+                        maxConversations: 200,
+                        messagesPerConversation: 220,
+                        maxRuntimeMs: 180000
                     }
                 );
 
@@ -457,6 +461,9 @@ async function resyncInboxHistory() {
                 summary.conversationsUpdated += Number(result.conversationsUpdated || 0);
                 summary.messagesInserted += Number(result.messagesInserted || 0);
                 summary.mediaHydrated += Number(result.mediaHydrated || 0);
+                if (String(result.skipped || '').trim() === 'runtime_limit_reached') {
+                    summary.truncatedSessions += 1;
+                }
             } catch (error) {
                 summary.failedSessions += 1;
                 const errorMessage = error instanceof Error ? error.message : 'Falha ao ressincronizar';
@@ -483,6 +490,12 @@ async function resyncInboxHistory() {
                 'warning',
                 'Ressincronizacao parcial',
                 `${summary.processedSessions}/${targetSessionIds.length} conta(s) processadas. ${totalsText}.`
+            );
+        } else if (summary.truncatedSessions > 0) {
+            showToast(
+                'warning',
+                'Ressincronizacao parcial',
+                `${totalsText}. ${summary.truncatedSessions} conta(s) atingiram limite de varredura; execute novamente para completar.`
             );
         } else if (summary.failedSessions > 0) {
             showToast('error', 'Erro', failed[0] || 'Nao foi possivel ressincronizar o historico');

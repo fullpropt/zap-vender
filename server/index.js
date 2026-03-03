@@ -969,6 +969,30 @@ const WHATSAPP_RECONNECT_CATCHUP_DELAY_MS = parsePositiveIntEnv(process.env.WHAT
 const WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS = parsePositiveIntEnv(process.env.WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS, 40);
 const WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION = parsePositiveIntEnv(process.env.WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION, 80);
 const WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS = parsePositiveIntEnv(process.env.WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS, 45000);
+const WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS_HARD_LIMIT = parsePositiveIntEnv(
+    process.env.WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS_HARD_LIMIT,
+    500
+);
+const WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION_HARD_LIMIT = parsePositiveIntEnv(
+    process.env.WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION_HARD_LIMIT,
+    1200
+);
+const WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_HARD_LIMIT_MS = parsePositiveIntEnv(
+    process.env.WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_HARD_LIMIT_MS,
+    300000
+);
+const WHATSAPP_MANUAL_RECONNECT_CATCHUP_MAX_CONVERSATIONS = parsePositiveIntEnv(
+    process.env.WHATSAPP_MANUAL_RECONNECT_CATCHUP_MAX_CONVERSATIONS,
+    Math.max(200, WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS)
+);
+const WHATSAPP_MANUAL_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION = parsePositiveIntEnv(
+    process.env.WHATSAPP_MANUAL_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION,
+    Math.max(220, WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION)
+);
+const WHATSAPP_MANUAL_RECONNECT_CATCHUP_MAX_RUNTIME_MS = parsePositiveIntEnv(
+    process.env.WHATSAPP_MANUAL_RECONNECT_CATCHUP_MAX_RUNTIME_MS,
+    Math.max(180000, WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS)
+);
 const WHATSAPP_HISTORY_SYNC_ENABLED = parseBooleanEnv(process.env.WHATSAPP_HISTORY_SYNC_ENABLED, true);
 const WHATSAPP_HISTORY_SYNC_MESSAGES_LIMIT = parsePositiveIntEnv(process.env.WHATSAPP_HISTORY_SYNC_MESSAGES_LIMIT, 600);
 
@@ -6011,7 +6035,13 @@ async function listRecentConversationsForSessionCatchup(
     const normalizedSessionId = sanitizeSessionId(sessionId);
     if (!normalizedSessionId) return [];
 
-    const safeLimit = Math.max(1, Math.min(Number(limit) || WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS, 200));
+    const safeLimit = Math.max(
+        1,
+        Math.min(
+            Number(limit) || WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS,
+            WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS_HARD_LIMIT
+        )
+    );
     const unreadOnly = options?.unreadOnly === true;
     const unreadFilterSql = unreadOnly ? 'AND COALESCE(c.unread_count, 0) > 0' : '';
 
@@ -6074,19 +6104,19 @@ async function runSessionReconnectCatchup(sessionId, options = {}) {
         options.maxConversations,
         WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS,
         1,
-        200
+        WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS_HARD_LIMIT
     );
     const messagesPerConversation = parsePositiveIntInRange(
         options.messagesPerConversation,
         WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION,
         10,
-        500
+        WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION_HARD_LIMIT
     );
     const maxRuntimeMs = parsePositiveIntInRange(
         options.maxRuntimeMs,
         WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS,
         3000,
-        300000
+        WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_HARD_LIMIT_MS
     );
     const unreadOnly = options?.unreadOnly === true;
 
@@ -8448,30 +8478,42 @@ app.post('/api/whatsapp/sessions/:sessionId/history/resync', authenticate, requi
         }
 
         const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const trigger = String(payload.trigger || 'manual-api').trim() || 'manual-api';
+        const isManualResync = /manual|resync/i.test(trigger);
         const scopeRaw = String(payload.scope || 'all').trim().toLowerCase();
         const unreadOnly = ['unread', 'pending', 'nao_lidas', 'nao-lidas', 'naolidas'].includes(scopeRaw);
+
+        const defaultMaxConversations = isManualResync
+            ? WHATSAPP_MANUAL_RECONNECT_CATCHUP_MAX_CONVERSATIONS
+            : WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS;
+        const defaultMessagesPerConversation = isManualResync
+            ? WHATSAPP_MANUAL_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION
+            : WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION;
+        const defaultMaxRuntimeMs = isManualResync
+            ? WHATSAPP_MANUAL_RECONNECT_CATCHUP_MAX_RUNTIME_MS
+            : WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS;
+
         const maxConversations = parsePositiveIntInRange(
             payload.maxConversations ?? payload.max_conversations,
-            WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS,
+            defaultMaxConversations,
             1,
-            200
+            WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS_HARD_LIMIT
         );
         const messagesPerConversation = parsePositiveIntInRange(
             payload.messagesPerConversation ??
             payload.messages_per_conversation ??
             payload.limitPerConversation ??
             payload.limit_per_conversation,
-            WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION,
+            defaultMessagesPerConversation,
             10,
-            500
+            WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION_HARD_LIMIT
         );
         const maxRuntimeMs = parsePositiveIntInRange(
             payload.maxRuntimeMs ?? payload.max_runtime_ms,
-            WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_MS,
+            defaultMaxRuntimeMs,
             3000,
-            300000
+            WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_HARD_LIMIT_MS
         );
-        const trigger = String(payload.trigger || 'manual-api').trim() || 'manual-api';
 
         const summary = await runSessionReconnectCatchup(sessionId, {
             trigger,
@@ -14551,16 +14593,31 @@ app.delete('/api/admin/dashboard/accounts/:ownerUserId', authenticate, async (re
             });
         }
 
-        const requesterOwnerUserId = normalizeOwnerUserId(req.user?.owner_user_id) || Number(req.user?.id || 0);
-        if (ownerUserId === requesterOwnerUserId) {
-            return res.status(400).json({
+        const ownerUser = await User.findById(ownerUserId);
+        if (!ownerUser) {
+            return res.status(404).json({
                 success: false,
-                error: 'Nao e possivel desativar a propria conta'
+                error: 'Conta nao encontrada'
             });
         }
 
         const users = await User.listByOwner(ownerUserId, { includeInactive: true });
-        if (!Array.isArray(users) || users.length === 0) {
+        const usersById = new Map();
+
+        for (const user of Array.isArray(users) ? users : []) {
+            const userId = Number(user?.id || 0);
+            if (userId > 0) {
+                usersById.set(userId, user);
+            }
+        }
+
+        // Fallback para contas legadas em que owner_user_id ainda nao foi preenchido corretamente.
+        if (!usersById.has(ownerUserId)) {
+            usersById.set(ownerUserId, ownerUser);
+        }
+
+        const usersToDisable = Array.from(usersById.values());
+        if (usersToDisable.length === 0) {
             return res.status(404).json({
                 success: false,
                 error: 'Conta nao encontrada'
@@ -14568,7 +14625,7 @@ app.delete('/api/admin/dashboard/accounts/:ownerUserId', authenticate, async (re
         }
 
         let disabledUsers = 0;
-        for (const user of users) {
+        for (const user of usersToDisable) {
             const userId = Number(user?.id || 0);
             if (!userId) continue;
             await User.update(userId, { is_active: 0 });
