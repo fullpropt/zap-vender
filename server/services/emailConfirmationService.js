@@ -97,6 +97,15 @@ function resolveLogoPathname() {
         return envLogoPath;
     }
 
+    try {
+        const publicPngLogoFile = path.join(__dirname, '..', '..', 'public', 'img', 'logo-zapvender.png');
+        if (fs.existsSync(publicPngLogoFile)) {
+            return '/img/logo-zapvender.png';
+        }
+    } catch (_) {
+        // noop
+    }
+
     if (process.env.NODE_ENV === 'production') {
         try {
             const assetsDir = path.join(__dirname, '..', '..', 'dist', 'assets');
