@@ -107,6 +107,12 @@ type UserEditDraft = {
   isPrimaryAdmin: boolean;
 };
 
+type UserActionConfirmDraft = {
+  userId: number;
+  name: string;
+  isActive: boolean;
+};
+
 type ActiveTab = 'accounts' | 'email';
 
 const DEFAULT_SUBJECT_TEMPLATE = 'Confirme seu cadastro no {{app_name}}';
@@ -255,6 +261,7 @@ export default function AdminDashboard() {
 
   const [accountDraft, setAccountDraft] = useState<AccountEditDraft | null>(null);
   const [userDraft, setUserDraft] = useState<UserEditDraft | null>(null);
+  const [userActionConfirmDraft, setUserActionConfirmDraft] = useState<UserActionConfirmDraft | null>(null);
 
   const summary = useMemo(() => overview?.summary || {}, [overview]);
   const accounts = useMemo(() => (Array.isArray(overview?.accounts) ? overview.accounts : []), [overview]);
@@ -441,6 +448,23 @@ export default function AdminDashboard() {
     });
   };
 
+  const openUserActionConfirm = (user: AppAdminUser) => {
+    const userId = Number(user.id || 0);
+    if (!userId) return;
+    if (user.is_primary_admin === true) {
+      setOverviewError('O admin principal deve ser gerenciado pela conta.');
+      return;
+    }
+
+    setOverviewError('');
+    setOverviewMessage('');
+    setUserActionConfirmDraft({
+      userId,
+      name: String(user.name || user.email || `Usuario ${userId}`),
+      isActive: Number(user.is_active) > 0
+    });
+  };
+
   const submitUserEdit = async () => {
     if (!userDraft) return;
     if (!userDraft.name.trim()) {
@@ -478,22 +502,9 @@ export default function AdminDashboard() {
     }
   };
 
-  const deactivateUser = async (user: AppAdminUser) => {
-    const userId = Number(user.id || 0);
-    if (!userId) return;
-    if (user.is_primary_admin === true) {
-      setOverviewError('O admin principal deve ser gerenciado pela conta.');
-      return;
-    }
-
-    const isActive = Number(user.is_active) > 0;
-    const confirmed = window.confirm(
-      isActive
-        ? 'Deseja desativar este usuario?'
-        : 'Deseja excluir permanentemente este usuario inativo? Esta acao nao pode ser desfeita.'
-    );
-    if (!confirmed) return;
-
+  const confirmUserAction = async () => {
+    if (!userActionConfirmDraft) return;
+    const { userId, isActive } = userActionConfirmDraft;
     const busyKey = `user-delete-${userId}`;
     setOverviewBusyKey(busyKey);
     setOverviewError('');
@@ -503,10 +514,35 @@ export default function AdminDashboard() {
         ? `/api/admin/dashboard/users/${userId}`
         : `/api/admin/dashboard/users/${userId}?mode=delete`;
       await adminApiRequest(endpoint, { method: 'DELETE' });
+      setUserActionConfirmDraft(null);
       setOverviewMessage(isActive ? 'Usuario desativado com sucesso.' : 'Usuario excluido com sucesso.');
       await loadOverview({ silent: true });
     } catch (error) {
+      setUserActionConfirmDraft(null);
       setOverviewError(error instanceof Error ? error.message : (isActive ? 'Falha ao desativar usuario' : 'Falha ao excluir usuario'));
+    } finally {
+      setOverviewBusyKey('');
+    }
+  };
+
+  const reactivateUser = async (user: AppAdminUser) => {
+    const userId = Number(user.id || 0);
+    if (!userId) return;
+    if (Number(user.is_active) > 0) return;
+
+    const busyKey = `user-reactivate-${userId}`;
+    setOverviewBusyKey(busyKey);
+    setOverviewError('');
+    setOverviewMessage('');
+    try {
+      await adminApiRequest(`/api/admin/dashboard/users/${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ is_active: 1 })
+      });
+      setOverviewMessage('Usuario reativado com sucesso.');
+      await loadOverview({ silent: true });
+    } catch (error) {
+      setOverviewError(error instanceof Error ? error.message : 'Falha ao reativar usuario');
     } finally {
       setOverviewBusyKey('');
     }
@@ -606,6 +642,7 @@ export default function AdminDashboard() {
 
   const accountEditBusy = accountDraft && overviewBusyKey === `account-edit-${accountDraft.ownerUserId}`;
   const userEditBusy = userDraft && overviewBusyKey === `user-edit-${userDraft.userId}`;
+  const userActionBusy = userActionConfirmDraft && overviewBusyKey === `user-delete-${userActionConfirmDraft.userId}`;
 
   return (
     <div className="admin-dashboard-react">
@@ -759,6 +796,7 @@ export default function AdminDashboard() {
                                 const userId = Number(item.id || 0);
                                 const isActive = Number(item.is_active) > 0;
                                 const isDeleting = overviewBusyKey === `user-delete-${userId}`;
+                                const isReactivating = overviewBusyKey === `user-reactivate-${userId}`;
                                 const disableDelete = item.is_primary_admin === true;
                                 return (
                                   <tr key={`${account.owner_user_id}-${item.id || item.email}`}>
@@ -771,15 +809,37 @@ export default function AdminDashboard() {
                                     <td>
                                       <div className="admin-user-actions">
                                         <button type="button" className="btn btn-outline btn-sm" onClick={() => openUserEditor(item)}>Editar</button>
-                                        <button
-                                          type="button"
-                                          className="btn btn-outline-danger btn-sm"
-                                          onClick={() => deactivateUser(item)}
-                                          disabled={disableDelete || isDeleting}
-                                          title={item.is_primary_admin ? 'Admin principal deve ser gerenciado na conta' : ''}
-                                        >
-                                          {isDeleting ? (isActive ? 'Desativando...' : 'Excluindo...') : (isActive ? 'Desativar' : 'Excluir')}
-                                        </button>
+                                        {isActive ? (
+                                          <button
+                                            type="button"
+                                            className="btn btn-outline-danger btn-sm"
+                                            onClick={() => openUserActionConfirm(item)}
+                                            disabled={disableDelete || isDeleting || isReactivating}
+                                            title={item.is_primary_admin ? 'Admin principal deve ser gerenciado na conta' : ''}
+                                          >
+                                            {isDeleting ? 'Desativando...' : 'Desativar'}
+                                          </button>
+                                        ) : (
+                                          <>
+                                            <button
+                                              type="button"
+                                              className="btn btn-outline btn-sm"
+                                              onClick={() => reactivateUser(item)}
+                                              disabled={isDeleting || isReactivating}
+                                            >
+                                              {isReactivating ? 'Reativando...' : 'Reativar'}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="btn btn-outline-danger btn-sm"
+                                              onClick={() => openUserActionConfirm(item)}
+                                              disabled={disableDelete || isDeleting || isReactivating}
+                                              title={item.is_primary_admin ? 'Admin principal deve ser gerenciado na conta' : ''}
+                                            >
+                                              {isDeleting ? 'Excluindo...' : 'Excluir'}
+                                            </button>
+                                          </>
+                                        )}
                                       </div>
                                     </td>
                                   </tr>
@@ -973,6 +1033,32 @@ export default function AdminDashboard() {
             <div className="modal-footer">
               <button type="button" className="btn btn-outline" onClick={() => setUserDraft(null)}>Cancelar</button>
               <button type="button" className="btn btn-primary" onClick={submitUserEdit} disabled={Boolean(userEditBusy)}>{userEditBusy ? 'Salvando...' : 'Salvar usuario'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {userActionConfirmDraft && (
+        <div className="modal-overlay active">
+          <div className="modal">
+            <div className="modal-header">
+              <h3 className="modal-title">{userActionConfirmDraft.isActive ? 'Confirmar desativacao' : 'Confirmar exclusao'}</h3>
+              <button type="button" className="modal-close" onClick={() => setUserActionConfirmDraft(null)} disabled={Boolean(userActionBusy)}>{'\u00D7'}</button>
+            </div>
+            <div className="modal-body">
+              <p className="admin-muted" style={{ margin: 0 }}>
+                {userActionConfirmDraft.isActive
+                  ? `Deseja desativar o usuario "${userActionConfirmDraft.name}"?`
+                  : `Deseja excluir permanentemente o usuario "${userActionConfirmDraft.name}"?`}
+              </p>
+              {!userActionConfirmDraft.isActive && (
+                <div className="admin-modal-note">Esta acao nao pode ser desfeita.</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline" onClick={() => setUserActionConfirmDraft(null)} disabled={Boolean(userActionBusy)}>Cancelar</button>
+              <button type="button" className="btn btn-outline-danger" onClick={confirmUserAction} disabled={Boolean(userActionBusy)}>
+                {userActionBusy ? (userActionConfirmDraft.isActive ? 'Desativando...' : 'Excluindo...') : (userActionConfirmDraft.isActive ? 'Desativar usuario' : 'Excluir usuario')}
+              </button>
             </div>
           </div>
         </div>
