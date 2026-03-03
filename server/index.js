@@ -79,11 +79,15 @@ const {
     DEFAULT_EMAIL_SUBJECT_TEMPLATE,
     DEFAULT_EMAIL_TEXT_TEMPLATE,
     MailMktIntegrationError,
+    buildEmailConfirmationUrl,
+    buildEmailTemplateContext,
+    buildRenderedEmailContent,
     buildRuntimeEmailDeliveryConfig,
     createEmailConfirmationTokenPayload,
     hashEmailConfirmationToken,
     isEmailConfirmed,
     isEmailConfirmationExpired,
+    resolveAppUrl,
     sendRegistrationConfirmationEmail,
     tokenFingerprint
 } = require('./services/emailConfirmationService');
@@ -9379,6 +9383,30 @@ function sanitizeEmailTemplateValue(value, fallback = '') {
     return normalized;
 }
 
+const LEGACY_EMAIL_TEXT_TEMPLATE = [
+    'Ola {{name}},',
+    '',
+    'Para concluir seu cadastro no {{app_name}}, confirme seu email no link abaixo:',
+    '{{confirmation_url}}',
+    '',
+    'Este link expira em {{expires_in_text}}.'
+].join('\n');
+const LEGACY_EMAIL_HTML_TEMPLATE = [
+    '<p>Ola {{name}},</p>',
+    '<p>Para concluir seu cadastro no <strong>{{app_name}}</strong>, confirme seu email no link abaixo:</p>',
+    '<p><a href="{{confirmation_url}}" target="_blank" rel="noopener noreferrer">Confirmar email</a></p>',
+    '<p>Este link expira em {{expires_in_text}}.</p>'
+].join('');
+
+function normalizeLegacyEmailTemplateValue(value, currentDefault, legacyDefault) {
+    const normalized = String(value || '');
+    if (!normalized.trim()) return normalized;
+    if (normalized.trim() === String(legacyDefault || '').trim()) {
+        return currentDefault;
+    }
+    return normalized;
+}
+
 function normalizeEmailDeliverySettingsInput(payload = {}, currentSettings = {}) {
     const source = payload && typeof payload === 'object' ? payload : {};
     const current = currentSettings && typeof currentSettings === 'object' ? currentSettings : {};
@@ -9405,11 +9433,19 @@ function normalizeEmailDeliverySettingsInput(payload = {}, currentSettings = {})
         DEFAULT_EMAIL_SUBJECT_TEMPLATE
     );
     const htmlTemplate = sanitizeEmailTemplateValue(
-        source.htmlTemplate ?? current.htmlTemplate,
+        normalizeLegacyEmailTemplateValue(
+            source.htmlTemplate ?? current.htmlTemplate,
+            DEFAULT_EMAIL_HTML_TEMPLATE,
+            LEGACY_EMAIL_HTML_TEMPLATE
+        ),
         DEFAULT_EMAIL_HTML_TEMPLATE
     );
     const textTemplate = sanitizeEmailTemplateValue(
-        source.textTemplate ?? current.textTemplate,
+        normalizeLegacyEmailTemplateValue(
+            source.textTemplate ?? current.textTemplate,
+            DEFAULT_EMAIL_TEXT_TEMPLATE,
+            LEGACY_EMAIL_TEXT_TEMPLATE
+        ),
         DEFAULT_EMAIL_TEXT_TEMPLATE
     );
 
@@ -14262,6 +14298,54 @@ app.put('/api/admin/dashboard/email-settings', authenticate, async (req, res) =>
         res.status(500).json({
             success: false,
             error: 'Falha ao salvar configuracoes de email'
+        });
+    }
+});
+
+app.post('/api/admin/dashboard/email-settings/preview', authenticate, async (req, res) => {
+    if (!ensureApplicationAdmin(req, res)) return;
+
+    try {
+        const currentSettings = await loadEmailDeliverySettings();
+        const normalized = normalizeEmailDeliverySettingsInput(req.body, currentSettings);
+        const runtimeSettings = buildRuntimeEmailDeliveryConfig(normalized);
+
+        const tokenPayload = createEmailConfirmationTokenPayload();
+        const baseAppUrl = resolveAppUrl(req) || String(process.env.APP_URL || 'https://zapvender.com').trim();
+        const confirmationUrl = buildEmailConfirmationUrl(baseAppUrl, tokenPayload.token);
+
+        const rawPreviewEmail = String(req.body?.previewEmail || req.body?.email || req.user?.email || '').trim().toLowerCase();
+        const previewEmail = isValidEmailAddress(rawPreviewEmail) ? rawPreviewEmail : 'contato@empresa.com';
+        const previewName = String(req.body?.previewName || req.body?.name || 'Usuario').trim() || 'Usuario';
+
+        const context = buildEmailTemplateContext(
+            {
+                id: req.user?.id || null,
+                name: previewName,
+                email: previewEmail
+            },
+            confirmationUrl,
+            {
+                appName: runtimeSettings.appName,
+                expiresInText: tokenPayload.expiresInText,
+                appUrl: baseAppUrl
+            }
+        );
+        const content = buildRenderedEmailContent(context, runtimeSettings);
+
+        return res.json({
+            success: true,
+            preview: {
+                subject: content.subject,
+                html: content.html,
+                text: content.text
+            }
+        });
+    } catch (error) {
+        console.error('[admin/dashboard/email-settings:preview] falha:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Falha ao gerar pre-visualizacao do email'
         });
     }
 });
