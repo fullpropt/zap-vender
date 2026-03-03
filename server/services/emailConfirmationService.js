@@ -6,7 +6,7 @@ const DEFAULT_APP_NAME = 'ZapVender';
 const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
 const DEFAULT_EMAIL_SUBJECT_TEMPLATE = 'Confirme seu cadastro no {{app_name}}';
 const DEFAULT_EMAIL_TEXT_TEMPLATE = [
-    'Ola {{name}},',
+    'Olá {{name}},',
     '',
     'Recebemos seu cadastro no {{app_name}}.',
     'Para ativar sua conta, confirme seu e-mail no link abaixo:',
@@ -15,8 +15,7 @@ const DEFAULT_EMAIL_TEXT_TEMPLATE = [
     'Este link expira em {{expires_in_text}}.',
     '',
     '---',
-    'ZapVender | Plataforma de atendimento e automacao para WhatsApp',
-    'Site: {{company_website}}',
+    'ZapVender | Plataforma de atendimento e automação para WhatsApp',
     'Suporte: {{company_email}}'
 ].join('\n');
 const DEFAULT_EMAIL_HTML_TEMPLATE = [
@@ -30,14 +29,14 @@ const DEFAULT_EMAIL_HTML_TEMPLATE = [
     '<img src="{{logo_url}}" alt="ZapVender" style="display:block;height:36px;width:auto;max-width:180px;">',
     '</td></tr>',
     '<tr><td style="padding:28px 24px;">',
-    '<p style="margin:0 0 12px 0;font-size:16px;line-height:1.5;color:#142033;">Ola {{name}},</p>',
-    '<p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#344054;">Recebemos seu cadastro no <strong>{{app_name}}</strong>. Para ativar sua conta, confirme seu e-mail clicando no botao abaixo.</p>',
+    '<p style="margin:0 0 12px 0;font-size:16px;line-height:1.5;color:#142033;">Olá {{name}},</p>',
+    '<p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#344054;">Recebemos seu cadastro no <strong>{{app_name}}</strong>. Para ativar sua conta, confirme seu e-mail clicando no botão abaixo.</p>',
     '<p style="margin:0 0 20px 0;"><a href="{{confirmation_url}}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#1dbf73;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px;">Confirmar e-mail</a></p>',
     '<p style="margin:0;font-size:13px;line-height:1.6;color:#667085;">Este link expira em {{expires_in_text}}.</p>',
     '</td></tr>',
     '<tr><td style="padding:16px 24px;background:#f8fafc;border-top:1px solid #e4e9f1;">',
-    '<p style="margin:0 0 6px 0;font-size:12px;line-height:1.5;color:#667085;"><strong>ZapVender</strong> | Plataforma de atendimento e automacao para WhatsApp.</p>',
-    '<p style="margin:0;font-size:12px;line-height:1.5;color:#667085;">Site: <a href="{{company_website}}" target="_blank" rel="noopener noreferrer" style="color:#0f766e;text-decoration:none;">{{company_website}}</a> | Suporte: <a href="mailto:{{company_email}}" style="color:#0f766e;text-decoration:none;">{{company_email}}</a></p>',
+    '<p style="margin:0 0 6px 0;font-size:12px;line-height:1.5;color:#667085;"><strong>ZapVender</strong> | Plataforma de atendimento e automação para WhatsApp.</p>',
+    '<p style="margin:0;font-size:12px;line-height:1.5;color:#667085;">Suporte: <a href="mailto:{{company_email}}" style="color:#0f766e;text-decoration:none;">{{company_email}}</a></p>',
     '</td></tr>',
     '</table>',
     '</td></tr>',
@@ -282,22 +281,22 @@ function buildRenderedEmailContent(context, config) {
     const renderedHtml = applyTemplate(config.htmlTemplate, context).trim();
     const renderedText = applyTemplate(config.textTemplate, context).trim();
     const text = renderedText || [
-        `Ola ${context.name || 'Cliente'},`,
+        `Olá ${context.name || 'Cliente'},`,
         '',
-        `Para concluir seu cadastro no ${context.app_name || DEFAULT_APP_NAME}, confirme seu email no link abaixo:`,
+        `Para concluir seu cadastro no ${context.app_name || DEFAULT_APP_NAME}, confirme seu e-mail no link abaixo:`,
         context.confirmation_url || '',
         '',
         `Este link expira em ${context.expires_in_text || DEFAULT_EXPIRES_IN_TEXT}.`
     ].join('\n');
     const html = renderedHtml || (
         '<p>'
-        + `Ola ${escapeHtml(context.name || 'Cliente')},`
+        + `Olá ${escapeHtml(context.name || 'Cliente')},`
         + '</p><p>Para concluir seu cadastro no <strong>'
         + `${escapeHtml(context.app_name || DEFAULT_APP_NAME)}`
-        + '</strong>, confirme seu email no link abaixo:</p>'
+        + '</strong>, confirme seu e-mail no link abaixo:</p>'
         + '<p><a href="'
         + `${escapeHtml(context.confirmation_url || '')}`
-        + '" target="_blank" rel="noopener noreferrer">Confirmar email</a></p>'
+        + '" target="_blank" rel="noopener noreferrer">Confirmar e-mail</a></p>'
         + '<p>Este link expira em '
         + `${escapeHtml(context.expires_in_text || DEFAULT_EXPIRES_IN_TEXT)}`
         + '.</p>'
