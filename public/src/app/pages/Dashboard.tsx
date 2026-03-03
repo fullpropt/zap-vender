@@ -24,6 +24,13 @@ type DashboardGlobals = {
 function DashboardStyles() {
   return (
     <style>{`
+        .dashboard-react .sidebar .nav-link:not(.active) {
+          background: transparent !important;
+          border: 1px solid transparent !important;
+          box-shadow: none !important;
+          -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
+        }
         .dashboard-botconversa { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px; }
         @media (max-width: 900px) { .dashboard-botconversa { grid-template-columns: 1fr; } }
         .stats-period-card, .stats-general-card, .events-personalized-card { background: var(--surface); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); padding: 24px; border: 1px solid var(--border-color); }

@@ -182,9 +182,18 @@ body {
     color: rgba(226, 232, 240, 0.82);
     text-decoration: none;
     border-radius: var(--border-radius);
+    background: transparent;
+    box-shadow: none;
     transition: all var(--transition);
     font-size: 14px;
     font-weight: 500;
+}
+
+.sidebar .nav-menu .nav-link:not(.active) {
+    background: transparent !important;
+    border: 1px solid transparent;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
 }
 
 .nav-link:hover {
