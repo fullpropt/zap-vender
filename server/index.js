@@ -14805,16 +14805,16 @@ app.delete('/api/admin/dashboard/accounts/:ownerUserId', authenticate, async (re
                 if (userIds.length > 0) {
                     const placeholders = userIds.map(() => '?').join(', ');
                     await runSafeReferenceUpdate(
-                        'UPDATE users SET owner_user_id = NULL WHERE owner_user_id = ?',
-                        [ownerUserId]
+                        `UPDATE users SET owner_user_id = NULL WHERE owner_user_id IN (${placeholders})`,
+                        userIds
                     );
                     await runSafeReferenceUpdate(
                         `UPDATE leads SET assigned_to = NULL WHERE assigned_to IN (${placeholders})`,
                         userIds
                     );
                     await runSafeReferenceUpdate(
-                        'UPDATE leads SET owner_user_id = NULL WHERE owner_user_id = ?',
-                        [ownerUserId]
+                        `UPDATE leads SET owner_user_id = NULL WHERE owner_user_id IN (${placeholders})`,
+                        userIds
                     );
                     await runSafeReferenceUpdate(
                         `UPDATE conversations SET assigned_to = NULL WHERE assigned_to IN (${placeholders})`,
@@ -14843,10 +14843,6 @@ app.delete('/api/admin/dashboard/accounts/:ownerUserId', authenticate, async (re
                         `UPDATE audit_logs SET user_id = NULL WHERE user_id IN (${placeholders})`,
                         userIds
                     );
-                    await runSafeReferenceUpdate(
-                        `DELETE FROM users WHERE id IN (${placeholders})`,
-                        userIds
-                    );
                 }
 
                 const ownerScopedTables = [
@@ -14872,6 +14868,14 @@ app.delete('/api/admin/dashboard/accounts/:ownerUserId', authenticate, async (re
                     'DELETE FROM settings WHERE key LIKE ?',
                     [`user:${ownerUserId}:%`]
                 );
+
+                if (userIds.length > 0) {
+                    const placeholders = userIds.map(() => '?').join(', ');
+                    await runSafeReferenceUpdate(
+                        `DELETE FROM users WHERE id IN (${placeholders})`,
+                        userIds
+                    );
+                }
 
                 await run('COMMIT');
             } catch (error) {
@@ -14915,9 +14919,13 @@ app.delete('/api/admin/dashboard/accounts/:ownerUserId', authenticate, async (re
         });
     } catch (error) {
         console.error('[admin/dashboard/accounts:delete] falha:', error);
+        const modeRaw = String(req.query?.mode || '').trim().toLowerCase();
+        const hardDelete = ['delete', 'hard', 'purge', 'remove', 'excluir'].includes(modeRaw);
         return res.status(500).json({
             success: false,
-            error: 'Falha ao desativar conta'
+            error: hardDelete
+                ? `Falha ao excluir conta: ${String(error?.message || 'erro interno')}`
+                : 'Falha ao desativar conta'
         });
     }
 });
