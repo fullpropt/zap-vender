@@ -315,7 +315,7 @@ export default function Login() {
 
           <button type="submit" className="btn-login">Entrar</button>
 
-          <div className="auth-resend-wrap">
+          <div className="auth-resend-wrap hidden" id="resendConfirmationWrap">
             <button
               type="button"
               className="auth-resend-btn"

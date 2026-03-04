@@ -87,11 +87,24 @@ function getResendConfirmationButton(): HTMLButtonElement | null {
     return document.getElementById('resendConfirmationBtn') as HTMLButtonElement | null;
 }
 
+function getResendConfirmationWrap(): HTMLElement | null {
+    return document.getElementById('resendConfirmationWrap');
+}
+
 function setResendConfirmationLoading(loading: boolean) {
     const button = getResendConfirmationButton();
     if (!button) return;
     button.disabled = loading;
     button.textContent = loading ? 'Reenviando...' : 'Reenviar confirmação';
+}
+
+function setResendConfirmationVisible(visible: boolean) {
+    const wrap = getResendConfirmationWrap();
+    if (!wrap) return;
+    wrap.classList.toggle('hidden', !visible);
+    if (!visible) {
+        setResendConfirmationLoading(false);
+    }
 }
 
 function normalizeEmailAddress(value: unknown) {
@@ -168,6 +181,7 @@ function setAuthMode(mode: AuthMode) {
 
     if (loginError) loginError.style.display = 'none';
     if (registerError) registerError.style.display = 'none';
+    setResendConfirmationVisible(false);
 }
 
 function normalizeIdentityPart(value: unknown): string {
@@ -269,6 +283,7 @@ async function handleLogin(e: Event) {
     const rememberSession = (document.getElementById('rememberSession') as HTMLInputElement | null)?.checked === true;
     const errorMsg = getErrorMessageElement();
     hideInfoMessage();
+    setResendConfirmationVisible(false);
 
     try {
         const response = await fetch(`${window.location.origin}/api/auth/login`, {
@@ -285,6 +300,10 @@ async function handleLogin(e: Event) {
         const data: LoginResponse = await response.json();
 
         if (!response.ok || !data?.token) {
+            const errorCode = String(data?.code || '').trim().toUpperCase();
+            if (errorCode === 'EMAIL_NOT_CONFIRMED') {
+                setResendConfirmationVisible(true);
+            }
             throw new Error(data?.error || 'Credenciais inv\u00E1lidas');
         }
 
