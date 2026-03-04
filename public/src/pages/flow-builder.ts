@@ -1177,7 +1177,8 @@ function renderNode(node: FlowNode) {
     
     const nodeEl = document.createElement('div');
     const isCollapsed = Boolean(node.data?.collapsed);
-    nodeEl.className = `flow-node${isCollapsed ? ' is-collapsed' : ''}`;
+    const isEventCircle = node.type === 'event';
+    nodeEl.className = `flow-node${isCollapsed ? ' is-collapsed' : ''}${isEventCircle ? ' event-circle' : ''}`;
     nodeEl.id = node.id;
     nodeEl.style.left = node.position.x + 'px';
     nodeEl.style.top = node.position.y + 'px';

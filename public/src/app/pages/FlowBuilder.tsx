@@ -706,6 +706,13 @@ export default function FlowBuilder() {
             pointer-events: auto;
         }
 
+        .flow-node.event-circle {
+            width: 128px;
+            min-width: 128px;
+            height: 128px;
+            border-radius: 999px;
+        }
+
         .flow-node * {
             pointer-events: auto;
         }
@@ -723,7 +730,20 @@ export default function FlowBuilder() {
             border-bottom: 1px solid var(--border);
             border-radius: 10px 10px 0 0;
         }
-        
+
+        .flow-node.event-circle .flow-node-header {
+            position: relative;
+            height: 100%;
+            border: 0;
+            border-radius: 999px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            padding: 12px;
+        }
+
         .flow-node-header.trigger { background: rgba(16, 185, 129, 0.1); }
         .flow-node-header.intent { background: rgba(245, 158, 11, 0.1); }
         .flow-node-header.message { background: rgba(59, 130, 246, 0.1); }
@@ -751,12 +771,22 @@ export default function FlowBuilder() {
         .flow-node-header.event .icon { color: #6d28d9; }
         .flow-node-header.transfer .icon { color: #b91c1c; }
 
+        .flow-node.event-circle .flow-node-header .icon {
+            font-size: 20px;
+        }
+
         .flow-node-header .title-group {
             flex: 1;
             min-width: 0;
             display: flex;
             flex-direction: column;
             gap: 2px;
+        }
+
+        .flow-node.event-circle .flow-node-header .title-group {
+            align-items: center;
+            text-align: center;
+            gap: 4px;
         }
 
         .flow-node-header .node-kind {
@@ -767,6 +797,10 @@ export default function FlowBuilder() {
             line-height: 1.1;
         }
 
+        .flow-node.event-circle .flow-node-header .node-kind {
+            display: none;
+        }
+
         .flow-node-header .title {
             font-weight: 600;
             font-size: 13px;
@@ -775,6 +809,13 @@ export default function FlowBuilder() {
             overflow: hidden;
             text-overflow: ellipsis;
             line-height: 1.2;
+        }
+
+        .flow-node.event-circle .flow-node-header .title {
+            font-size: 11px;
+            line-height: 1.2;
+            white-space: normal;
+            text-align: center;
         }
 
         .flow-node-header .duplicate-btn,
@@ -811,6 +852,27 @@ export default function FlowBuilder() {
             color: #b91c1c;
         }
 
+        .flow-node.event-circle .flow-node-header .duplicate-btn {
+            position: absolute;
+            top: -8px;
+            left: 8px;
+            min-width: 38px;
+            font-size: 9px;
+            padding: 2px 4px;
+        }
+
+        .flow-node.event-circle .flow-node-header .collapse-btn {
+            display: none;
+        }
+
+        .flow-node.event-circle .flow-node-header .delete-btn {
+            position: absolute;
+            top: -8px;
+            right: 8px;
+            min-width: 20px;
+            padding: 2px 4px;
+        }
+
         .flow-node-header .duplicate-btn:hover {
             background: rgba(16, 185, 129, 0.14);
             border-color: rgba(16, 185, 129, 0.4);
@@ -841,7 +903,11 @@ export default function FlowBuilder() {
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        
+
+        .flow-node.event-circle .flow-node-body {
+            display: none;
+        }
+
         .flow-node-ports {
             display: flex;
             justify-content: space-between;
@@ -849,6 +915,38 @@ export default function FlowBuilder() {
             gap: 8px;
             padding: 8px 14px;
             border-top: 1px solid var(--border);
+        }
+
+        .flow-node.event-circle .flow-node-ports {
+            position: absolute;
+            inset: 0;
+            border-top: none;
+            padding: 0;
+            pointer-events: none;
+        }
+
+        .flow-node.event-circle .flow-node-ports > .port.input {
+            position: absolute;
+            top: 50%;
+            left: -6px;
+            transform: translate(-50%, -50%);
+            pointer-events: auto;
+        }
+
+        .flow-node.event-circle .node-output-ports {
+            position: absolute;
+            top: 50%;
+            right: -6px;
+            transform: translate(50%, -50%);
+        }
+
+        .flow-node.event-circle .node-output-port {
+            padding: 0;
+            margin: 0;
+        }
+
+        .flow-node.event-circle .node-output-label {
+            display: none;
         }
 
         .flow-node.is-collapsed .flow-node-body {
