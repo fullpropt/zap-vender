@@ -727,6 +727,7 @@ export default function FlowBuilder() {
         .flow-node-header.trigger { background: rgba(16, 185, 129, 0.1); }
         .flow-node-header.intent { background: rgba(245, 158, 11, 0.1); }
         .flow-node-header.message { background: rgba(59, 130, 246, 0.1); }
+        .flow-node-header.message_once { background: rgba(20, 184, 166, 0.12); }
         .flow-node-header.condition { background: rgba(245, 158, 11, 0.1); }
         .flow-node-header.wait { background: rgba(59, 130, 246, 0.1); }
         .flow-node-header.action { background: rgba(139, 92, 246, 0.1); }
@@ -741,6 +742,7 @@ export default function FlowBuilder() {
         }
         .flow-node-header.trigger .icon { color: #047857; }
         .flow-node-header.message .icon,
+        .flow-node-header.message_once .icon,
         .flow-node-header.wait .icon { color: #1d4ed8; }
         .flow-node-header.intent .icon,
         .flow-node-header.condition .icon,
@@ -1909,6 +1911,13 @@ export default function FlowBuilder() {
                               <div className="info">
                                   <div className="name">Enviar Mensagem</div>
                                   <div className="desc">Envia texto ou mídia</div>
+                              </div>
+                          </div>
+                          <div className="node-item" draggable="true" data-type="message_once">
+                              <div className="icon message icon-message"></div>
+                              <div className="info">
+                                  <div className="name">Mensagem Única</div>
+                                  <div className="desc">Envia apenas 1 vez por lead</div>
                               </div>
                           </div>
                           <div className="node-item" draggable="true" data-type="wait">

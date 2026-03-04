@@ -16,7 +16,7 @@ const INTENT_STOPWORDS = new Set([
     'como', 'onde', 'qual', 'quais', 'quando', 'quanto', 'quanta',
     'posso', 'pode', 'podem', 'quero', 'queria', 'gostaria', 'tem',
     'tenho', 'tinha', 'tiver', 'isso', 'isto', 'aquele', 'aquela',
-    'esse', 'essa'
+    'esse', 'essa', 'ir', 'indo', 'vai', 'vou'
 ]);
 const DEFAULT_INTENT_FUZZY_THRESHOLD = 0.34;
 const DEFAULT_INTENT_FUZZY_MIN_SCORE = 0.58;
@@ -35,8 +35,14 @@ const INTENT_DIRECTION_CONFLICT_PAIRS = [
     ['buy', 'sell']
 ];
 const INTENT_TOKEN_CANONICAL_PREFIXES = [
-    { canonical: 'hora', prefixes: ['hora', 'horari'] }
+    {
+        canonical: 'agenda',
+        prefixes: ['hora', 'horari', 'disponib', 'agenda', 'agend']
+    }
 ];
+const INTENT_CONTEXT_HISTORY_KEY = 'intent_node_history_by_node';
+const INTENT_NO_MATCH_COUNTERS_KEY = 'intent_no_match_count_by_node';
+const LEAD_ONCE_MESSAGE_FLAG_KEY = 'flow_once_message_nodes';
 
 async function resolveOwnerScopeUserIdFromAssignee(...assignees) {
     for (const value of assignees) {
@@ -160,6 +166,54 @@ function sanitizeOutgoingFlowText(value = '') {
         .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
         .replace(/[\u200B-\u200D\uFEFF]/g, '')
         .trim();
+}
+
+function parseLeadCustomFields(value) {
+    if (!value) return {};
+
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return { ...value };
+    }
+
+    let current = value;
+    for (let depth = 0; depth < 3; depth += 1) {
+        if (typeof current !== 'string') break;
+        const trimmed = current.trim();
+        if (!trimmed) return {};
+        try {
+            current = JSON.parse(trimmed);
+        } catch (_) {
+            return {};
+        }
+    }
+
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+        return {};
+    }
+
+    return { ...current };
+}
+
+function normalizeSystemMetadataObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {};
+    }
+    return { ...value };
+}
+
+function normalizeFlowOnceMessageMap(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {};
+    }
+
+    const normalized = {};
+    for (const [rawKey, rawTimestamp] of Object.entries(value)) {
+        const key = String(rawKey || '').trim();
+        if (!key) continue;
+        const timestamp = String(rawTimestamp || '').trim();
+        normalized[key] = timestamp || new Date().toISOString();
+    }
+    return normalized;
 }
 
 function tokenMatchesIntentRoot(token = '', root = '') {
@@ -814,6 +868,212 @@ class FlowService extends EventEmitter {
 
         return this.restoreExecutionFromStorage(conversation, lead);
     }
+
+    ensureExecutionVariables(execution) {
+        if (!execution.variables || typeof execution.variables !== 'object' || Array.isArray(execution.variables)) {
+            execution.variables = {};
+        }
+        return execution.variables;
+    }
+
+    resolveIntentContextWindowSize() {
+        return Math.trunc(
+            readIntentNumberEnv('FLOW_INTENT_CONTEXT_WINDOW_MESSAGES', 4, 1, 8)
+        );
+    }
+
+    resolveIntentDefaultMinAttempts(node = null) {
+        const nodeSpecific = Number(node?.data?.defaultAfterAttempts);
+        if (Number.isFinite(nodeSpecific) && nodeSpecific > 0) {
+            return Math.max(1, Math.min(6, Math.trunc(nodeSpecific)));
+        }
+
+        const nodeType = String(node?.type || '').trim().toLowerCase();
+        if (nodeType !== 'intent') {
+            return 1;
+        }
+
+        return Math.trunc(
+            readIntentNumberEnv('FLOW_INTENT_NODE_DEFAULT_AFTER_ATTEMPTS', 2, 1, 6)
+        );
+    }
+
+    readIntentHistoryMap(execution) {
+        const variables = this.ensureExecutionVariables(execution);
+        const mapValue = variables[INTENT_CONTEXT_HISTORY_KEY];
+        if (!mapValue || typeof mapValue !== 'object' || Array.isArray(mapValue)) {
+            return {};
+        }
+        return { ...mapValue };
+    }
+
+    readIntentHistory(execution, nodeId = '') {
+        const normalizedNodeId = String(nodeId || '').trim();
+        if (!normalizedNodeId) return [];
+
+        const map = this.readIntentHistoryMap(execution);
+        const value = map[normalizedNodeId];
+        if (!Array.isArray(value)) return [];
+
+        return value
+            .map((item) => String(item || '').trim())
+            .filter(Boolean);
+    }
+
+    appendIntentHistory(execution, nodeId = '', messageText = '') {
+        const normalizedNodeId = String(nodeId || '').trim();
+        const normalizedMessage = String(messageText || '').trim();
+        if (!normalizedNodeId || !normalizedMessage) {
+            return this.readIntentHistory(execution, normalizedNodeId);
+        }
+
+        const variables = this.ensureExecutionVariables(execution);
+        const map = this.readIntentHistoryMap(execution);
+        const history = this.readIntentHistory(execution, normalizedNodeId);
+        const lastEntry = history[history.length - 1] || '';
+
+        if (normalizeIntentText(lastEntry) !== normalizeIntentText(normalizedMessage)) {
+            history.push(normalizedMessage);
+        }
+
+        const maxSize = this.resolveIntentContextWindowSize();
+        map[normalizedNodeId] = history.slice(-maxSize);
+        variables[INTENT_CONTEXT_HISTORY_KEY] = map;
+        return map[normalizedNodeId];
+    }
+
+    clearIntentHistory(execution, nodeId = '') {
+        const normalizedNodeId = String(nodeId || '').trim();
+        if (!normalizedNodeId) return;
+
+        const variables = this.ensureExecutionVariables(execution);
+        const map = this.readIntentHistoryMap(execution);
+        if (!Object.prototype.hasOwnProperty.call(map, normalizedNodeId)) {
+            return;
+        }
+
+        delete map[normalizedNodeId];
+        if (Object.keys(map).length === 0) {
+            delete variables[INTENT_CONTEXT_HISTORY_KEY];
+            return;
+        }
+
+        variables[INTENT_CONTEXT_HISTORY_KEY] = map;
+    }
+
+    resolveIntentInputText(execution, node, incomingMessageText = '') {
+        const nodeId = String(node?.id || '').trim();
+        const history = this.appendIntentHistory(execution, nodeId, incomingMessageText);
+        const mergedText = history.join('\n').trim();
+
+        const variables = this.ensureExecutionVariables(execution);
+        variables.intent_context_text = mergedText;
+
+        return mergedText || String(incomingMessageText || '').trim();
+    }
+
+    readIntentNoMatchCounters(execution) {
+        const variables = this.ensureExecutionVariables(execution);
+        const value = variables[INTENT_NO_MATCH_COUNTERS_KEY];
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return {};
+        }
+        return { ...value };
+    }
+
+    incrementIntentNoMatchCounter(execution, nodeId = '') {
+        const normalizedNodeId = String(nodeId || '').trim();
+        if (!normalizedNodeId) return 1;
+
+        const variables = this.ensureExecutionVariables(execution);
+        const counters = this.readIntentNoMatchCounters(execution);
+        const current = Number(counters[normalizedNodeId] || 0);
+        const next = Number.isFinite(current) && current > 0
+            ? Math.trunc(current) + 1
+            : 1;
+
+        counters[normalizedNodeId] = next;
+        variables[INTENT_NO_MATCH_COUNTERS_KEY] = counters;
+        variables.intent_no_match_count = next;
+        return next;
+    }
+
+    clearIntentNoMatchCounter(execution, nodeId = '') {
+        const normalizedNodeId = String(nodeId || '').trim();
+        if (!normalizedNodeId) return;
+
+        const variables = this.ensureExecutionVariables(execution);
+        const counters = this.readIntentNoMatchCounters(execution);
+        if (Object.prototype.hasOwnProperty.call(counters, normalizedNodeId)) {
+            delete counters[normalizedNodeId];
+        }
+
+        if (Object.keys(counters).length === 0) {
+            delete variables[INTENT_NO_MATCH_COUNTERS_KEY];
+        } else {
+            variables[INTENT_NO_MATCH_COUNTERS_KEY] = counters;
+        }
+        delete variables.intent_no_match_count;
+    }
+
+    async persistExecutionVariables(execution) {
+        await run(`
+            UPDATE flow_executions
+            SET variables = ?
+            WHERE id = ?
+        `, [JSON.stringify(execution.variables), execution.id]);
+    }
+
+    resolveOnceMessageNodeKey(execution, node) {
+        const explicitKey = String(node?.data?.onceKey || '').trim();
+        if (explicitKey) {
+            return explicitKey.slice(0, 180);
+        }
+
+        const nodeId = String(node?.id || '').trim();
+        if (!nodeId) return '';
+
+        const flowId = Number(execution?.flow?.id || 0);
+        if (Number.isInteger(flowId) && flowId > 0) {
+            return `flow:${flowId}:node:${nodeId}`;
+        }
+
+        return `node:${nodeId}`;
+    }
+
+    readLeadOnceMessageMap(lead) {
+        const customFields = parseLeadCustomFields(lead?.custom_fields);
+        const systemMetadata = normalizeSystemMetadataObject(customFields.__system);
+        return normalizeFlowOnceMessageMap(systemMetadata[LEAD_ONCE_MESSAGE_FLAG_KEY]);
+    }
+
+    hasLeadSeenOnceMessageNode(execution, node) {
+        const onceKey = this.resolveOnceMessageNodeKey(execution, node);
+        if (!onceKey) return false;
+        const onceMap = this.readLeadOnceMessageMap(execution?.lead);
+        return Boolean(onceMap[onceKey]);
+    }
+
+    async markLeadOnceMessageNodeSeen(execution, node) {
+        const onceKey = this.resolveOnceMessageNodeKey(execution, node);
+        if (!onceKey || !execution?.lead?.id) return false;
+
+        const customFields = parseLeadCustomFields(execution.lead.custom_fields);
+        const systemMetadata = normalizeSystemMetadataObject(customFields.__system);
+        const onceMap = normalizeFlowOnceMessageMap(systemMetadata[LEAD_ONCE_MESSAGE_FLAG_KEY]);
+        if (onceMap[onceKey]) return false;
+
+        onceMap[onceKey] = new Date().toISOString();
+        customFields.__system = {
+            ...systemMetadata,
+            [LEAD_ONCE_MESSAGE_FLAG_KEY]: onceMap
+        };
+
+        await Lead.update(execution.lead.id, { custom_fields: customFields });
+        execution.lead.custom_fields = JSON.stringify(customFields);
+        this.ensureExecutionVariables(execution).last_once_message_key = onceKey;
+        return true;
+    }
     
     /**
      * Processar mensagem recebida e verificar triggers
@@ -968,10 +1228,14 @@ class FlowService extends EventEmitter {
             || (currentNode.type === 'trigger' && (currentSubtype === 'keyword' || currentSubtype === 'intent'));
 
         if (isIntentNode) {
-            execution.variables.last_response = messageText;
-            const selectedHandle = await this.pickTriggerIntentHandle(execution, currentNode, messageText);
+            this.ensureExecutionVariables(execution).last_response = messageText;
+            const intentInputText = this.resolveIntentInputText(execution, currentNode, messageText);
+            const selectedHandle = await this.pickTriggerIntentHandle(execution, currentNode, intentInputText);
 
-            if (!selectedHandle) {
+            if (selectedHandle) {
+                this.clearIntentNoMatchCounter(execution, currentNode.id);
+                this.clearIntentHistory(execution, currentNode.id);
+            } else {
                 const outgoingEdges = (execution.flow?.edges || []).filter((edge) => edge.source === currentNode.id);
                 const hasDefaultRoute = outgoingEdges.some((edge) => {
                     const handle = String(edge?.sourceHandle || '').trim().toLowerCase();
@@ -981,22 +1245,26 @@ class FlowService extends EventEmitter {
                     const handle = String(edge?.sourceHandle || '').trim().toLowerCase();
                     return Boolean(handle) && handle !== 'default';
                 });
+                const noMatchCount = this.incrementIntentNoMatchCounter(execution, currentNode.id);
+                const minAttemptsBeforeDefault = this.resolveIntentDefaultMinAttempts(currentNode);
+                const shouldWaitForMoreInput = hasSpecificRoutes
+                    && (!hasDefaultRoute || noMatchCount < minAttemptsBeforeDefault);
 
-                // Sem match e sem rota padrao: mantem aguardando nova resposta em vez de encerrar.
-                if (hasSpecificRoutes && !hasDefaultRoute) {
-                    await run(`
-                        UPDATE flow_executions
-                        SET variables = ?
-                        WHERE id = ?
-                    `, [JSON.stringify(execution.variables), execution.id]);
+                // Sem match: mantem aguardando novas mensagens antes de cair no padrao.
+                if (shouldWaitForMoreInput) {
+                    await this.persistExecutionVariables(execution);
 
                     console.info(
                         `[flow-intent] Nenhuma rota correspondeu no no ${currentNode?.id || 'desconhecido'} `
                         + `(fluxo ${execution?.flow?.id || 'n/a'}, conversa ${execution?.conversation?.id || 'n/a'}). `
-                        + 'Execucao mantida aguardando nova resposta.'
+                        + `Tentativa ${noMatchCount}/${hasDefaultRoute ? minAttemptsBeforeDefault : 'sem-limite'}; `
+                        + 'execucao mantida aguardando nova resposta.'
                     );
                     return execution;
                 }
+
+                this.clearIntentNoMatchCounter(execution, currentNode.id);
+                this.clearIntentHistory(execution, currentNode.id);
             }
 
             await this.goToNextNode(execution, currentNode, selectedHandle);
@@ -1045,6 +1313,14 @@ class FlowService extends EventEmitter {
                     break;
                     
                 case 'message':
+                case 'message_once': {
+                    const isOnceMessage = node.type === 'message_once';
+                    const alreadySent = isOnceMessage && this.hasLeadSeenOnceMessageNode(execution, node);
+                    if (alreadySent) {
+                        await this.goToNextNode(execution, node);
+                        break;
+                    }
+
                     // Aguardar delay opcional do bloco de mensagem (0 = imediato)
                     const messageDelaySecondsRaw = Number(node?.data?.delaySeconds);
                     const messageDelaySeconds = Number.isFinite(messageDelaySecondsRaw)
@@ -1058,7 +1334,8 @@ class FlowService extends EventEmitter {
                     const rawContent = this.replaceVariables(node?.data?.content, execution.variables);
                     const content = sanitizeOutgoingFlowText(rawContent);
                     const mediaType = String(node?.data?.mediaType || 'text').trim().toLowerCase() || 'text';
-                    
+                    let sentSuccessfully = false;
+
                     if (this.sendFunction && (mediaType !== 'text' || content)) {
                         await this.sendFunction({
                             to: execution.lead.phone,
@@ -1069,16 +1346,22 @@ class FlowService extends EventEmitter {
                             mediaType,
                             mediaUrl: node?.data?.mediaUrl
                         });
+                        sentSuccessfully = true;
                     } else if (mediaType === 'text' && !content) {
                         console.warn(
                             `[flow-intent] Mensagem de fluxo vazia ignorada `
                             + `(fluxo ${execution?.flow?.id || 'n/a'}, no ${node?.id || 'n/a'}).`
                         );
                     }
-                    
+
+                    if (isOnceMessage && sentSuccessfully) {
+                        await this.markLeadOnceMessageNodeSeen(execution, node);
+                    }
+
                     // Ir para o proximo no
                     await this.goToNextNode(execution, node);
                     break;
+                }
                     
                 case 'wait':
                     // Aguarda resposta do usuario

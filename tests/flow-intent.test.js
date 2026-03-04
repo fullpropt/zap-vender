@@ -6,6 +6,7 @@ jest.mock('../server/services/intentClassifierService', () => ({
 const intentClassifier = require('../server/services/intentClassifierService');
 const flowService = require('../server/services/flowService');
 const { FlowService } = require('../server/services/flowService');
+const { Lead } = require('../server/database/models');
 
 describe('FlowService intent routing', () => {
     const execution = { triggerMessageText: '', variables: {} };
@@ -158,5 +159,88 @@ describe('FlowService intent routing compatibility', () => {
 
         executeSpy.mockRestore();
         endSpy.mockRestore();
+    });
+
+    test('intent node waits one extra message before default route and reuses context', async () => {
+        const service = new FlowService();
+        const node = {
+            id: 'intent-mid',
+            type: 'intent',
+            data: {
+                intentRoutes: [
+                    { id: 'route-hours', label: 'Duvida horario', phrases: 'qual horario voces tem disponibilidade' }
+                ]
+            }
+        };
+
+        const execution = {
+            id: 500,
+            flow: {
+                id: 9,
+                nodes: [node],
+                edges: [
+                    { source: 'intent-mid', target: 'hours-answer', sourceHandle: 'route-hours' },
+                    { source: 'intent-mid', target: 'fallback-answer', sourceHandle: 'default' }
+                ]
+            },
+            conversation: { id: 17 },
+            lead: { id: 31 },
+            currentNode: 'intent-mid',
+            variables: {}
+        };
+
+        const pickSpy = jest.spyOn(service, 'pickTriggerIntentHandle')
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce('route-hours');
+        const persistSpy = jest.spyOn(service, 'persistExecutionVariables').mockResolvedValue();
+        const goToNextSpy = jest.spyOn(service, 'goToNextNode').mockResolvedValue();
+
+        await service.continueFlow(execution, { text: 'voces tem disponibilidade?' });
+
+        expect(goToNextSpy).not.toHaveBeenCalled();
+        expect(persistSpy).toHaveBeenCalledTimes(1);
+        expect(execution.variables.intent_no_match_count_by_node['intent-mid']).toBe(1);
+
+        await service.continueFlow(execution, { text: 'qual horario voces tem?' });
+
+        expect(goToNextSpy).toHaveBeenCalledWith(execution, node, 'route-hours');
+        expect(String(pickSpy.mock.calls[1][2] || '')).toContain('voces tem disponibilidade?');
+        expect(String(pickSpy.mock.calls[1][2] || '')).toContain('qual horario voces tem?');
+
+        pickSpy.mockRestore();
+        persistSpy.mockRestore();
+        goToNextSpy.mockRestore();
+    });
+
+    test('message_once stores delivery flag per lead and node', async () => {
+        const service = new FlowService();
+        const execution = {
+            flow: { id: 21 },
+            lead: {
+                id: 44,
+                custom_fields: '{}'
+            },
+            variables: {}
+        };
+        const node = {
+            id: 'welcome_once',
+            type: 'message_once',
+            data: {}
+        };
+
+        const leadUpdateSpy = jest.spyOn(Lead, 'update').mockResolvedValue({ changes: 1 });
+
+        expect(service.hasLeadSeenOnceMessageNode(execution, node)).toBe(false);
+
+        const marked = await service.markLeadOnceMessageNodeSeen(execution, node);
+        expect(marked).toBe(true);
+        expect(leadUpdateSpy).toHaveBeenCalledTimes(1);
+
+        const updatedCustomFields = JSON.parse(execution.lead.custom_fields || '{}');
+        const onceMap = updatedCustomFields?.__system?.flow_once_message_nodes || {};
+        expect(onceMap['flow:21:node:welcome_once']).toBeTruthy();
+        expect(service.hasLeadSeenOnceMessageNode(execution, node)).toBe(true);
+
+        leadUpdateSpy.mockRestore();
     });
 });

@@ -1,7 +1,7 @@
 ﻿// Flow builder page logic migrated to module
 
 // Estado do construtor
-type NodeType = 'trigger' | 'intent' | 'message' | 'wait' | 'condition' | 'delay' | 'transfer' | 'tag' | 'status' | 'webhook' | 'event' | 'end';
+type NodeType = 'trigger' | 'intent' | 'message' | 'message_once' | 'wait' | 'condition' | 'delay' | 'transfer' | 'tag' | 'status' | 'webhook' | 'event' | 'end';
 type NodeData = {
     label: string;
     collapsed?: boolean;
@@ -821,6 +821,7 @@ function getNodeTypeLabel(node: FlowNode) {
         trigger: 'Gatilho',
         intent: 'Intenção',
         message: 'Enviar Mensagem',
+        message_once: 'Mensagem Única',
         wait: 'Aguardar Resposta',
         condition: 'Condição',
         delay: 'Delay',
@@ -1139,6 +1140,7 @@ function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
         trigger: { label: subtype === 'keyword' || subtype === 'intent' ? 'Intenção' : 'Novo Contato', collapsed: false, keyword: '', intentRoutes: [] },
         intent: { label: 'Intenção', collapsed: false, keyword: '', intentRoutes: [] },
         message: { label: 'Mensagem', collapsed: false, content: 'Olá! Como posso ajudar?', delaySeconds: 0 },
+        message_once: { label: 'Mensagem Única', collapsed: false, content: 'Olá! Como posso ajudar?', delaySeconds: 0 },
         wait: { label: 'Aguardar Resposta', collapsed: false, timeout: 300 },
         condition: { label: 'Condição', collapsed: false, conditions: [] },
         delay: { label: 'Delay', collapsed: false, seconds: 5 },
@@ -1184,6 +1186,7 @@ function renderNode(node: FlowNode) {
         trigger: 'icon-bolt',
         intent: 'icon-bolt',
         message: 'icon-message',
+        message_once: 'icon-message',
         wait: 'icon-clock',
         condition: 'icon-bolt',
         delay: 'icon-clock',
@@ -1344,6 +1347,7 @@ function getLeadStatusLabel(value: unknown) {
 function getNodePreview(node: FlowNode) {
     switch (node.type) {
         case 'message':
+        case 'message_once':
             return node.data.content?.substring(0, 50) + (node.data.content?.length > 50 ? '...' : '') || 'Clique para editar';
         case 'condition':
             return `${node.data.conditions?.length || 0} condições`;
@@ -1506,14 +1510,16 @@ function renderProperties() {
             break;
             
         case 'message':
+        case 'message_once':
             const messageDelaySeconds = Number.isFinite(Number(selectedNode.data.delaySeconds))
                 ? Math.max(0, Number(selectedNode.data.delaySeconds))
                 : 0;
+            const isOnceMessageNode = selectedNode.type === 'message_once';
             html += `
                 <div class="property-group">
-                    <label>Conteúdo da Mensagem</label>
+                    <label>${isOnceMessageNode ? 'Conteúdo da Mensagem Única' : 'Conteúdo da Mensagem'}</label>
                     <textarea id="messageContent" onchange="updateNodeProperty('content', this.value)">${selectedNode.data.content || ''}</textarea>
-                    <div class="hint">Use as variáveis de Campos Dinâmicos para personalizar</div>
+                    <div class="hint">${isOnceMessageNode ? 'Este bloco envia apenas uma vez por lead; nas próximas ativações ele é ignorado.' : 'Use as variáveis de Campos Dinâmicos para personalizar'}</div>
                 </div>
                 <div class="property-group">
                     <label>Delay antes de enviar (segundos)</label>
@@ -2185,7 +2191,7 @@ function normalizeLoadedFlowData() {
         if (!String(node.data?.label || '').trim()) {
             node.data.label = getNodeTypeLabel(node);
         }
-        if (node.type === 'message') {
+        if (node.type === 'message' || node.type === 'message_once') {
             const rawDelay = Number(node.data?.delaySeconds);
             node.data.delaySeconds = Number.isFinite(rawDelay) ? Math.max(0, rawDelay) : 0;
         }
