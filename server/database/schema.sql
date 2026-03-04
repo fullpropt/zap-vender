@@ -298,6 +298,28 @@ CREATE TABLE IF NOT EXISTS webhook_logs (
     created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
+-- Fila de entrega de webhooks (retry + idempotencia por dedupe_key)
+CREATE TABLE IF NOT EXISTS webhook_delivery_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    webhook_id INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+    event TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    dedupe_key TEXT NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    max_attempts INTEGER DEFAULT 3,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'sent', 'failed', 'cancelled')),
+    next_attempt_at TEXT,
+    locked_at TEXT,
+    last_error TEXT,
+    response_status INTEGER,
+    response_body TEXT,
+    duration_ms INTEGER,
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    processed_at TEXT,
+    UNIQUE (webhook_id, dedupe_key)
+);
+
 -- Tabela de Sessões WhatsApp
 CREATE TABLE IF NOT EXISTS whatsapp_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -458,6 +480,9 @@ CREATE INDEX IF NOT EXISTS idx_queue_scheduled ON message_queue(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_queue_priority ON message_queue(priority DESC);
 CREATE INDEX IF NOT EXISTS idx_queue_campaign ON message_queue(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_queue_session ON message_queue(session_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery_queue_status ON webhook_delivery_queue(status);
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery_queue_next_attempt ON webhook_delivery_queue(next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery_queue_webhook ON webhook_delivery_queue(webhook_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_campaign ON campaign_sender_accounts(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_session ON campaign_sender_accounts(session_id);
 

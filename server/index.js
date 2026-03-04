@@ -64,6 +64,7 @@ const {
 // Services
 
 const webhookService = require('./services/webhookService');
+const webhookQueueService = require('./services/webhookQueueService');
 
 const queueService = require('./services/queueService');
 
@@ -229,6 +230,10 @@ const QUEUE_WORKER_ENABLED = parseBooleanEnv(
     process.env.QUEUE_WORKER_ENABLED,
     true
 );
+const WEBHOOK_QUEUE_WORKER_ENABLED = parseBooleanEnv(
+    process.env.WEBHOOK_QUEUE_WORKER_ENABLED,
+    true
+);
 const SCHEDULED_AUTOMATIONS_WORKER_ENABLED = parseBooleanEnv(
     process.env.SCHEDULED_AUTOMATIONS_WORKER_ENABLED,
     true
@@ -290,6 +295,14 @@ const queueWorkerLeaderLock = new PostgresAdvisoryLock({
     key2: 1,
     pollMs: POSTGRES_WORKER_LEADER_LOCK_POLL_MS,
     enabled: POSTGRES_WORKER_LEADER_LOCK_ENABLED && QUEUE_WORKER_ENABLED
+});
+
+const webhookQueueWorkerLeaderLock = new PostgresAdvisoryLock({
+    name: 'webhook-queue-worker',
+    key1: 47321,
+    key2: 4,
+    pollMs: POSTGRES_WORKER_LEADER_LOCK_POLL_MS,
+    enabled: POSTGRES_WORKER_LEADER_LOCK_ENABLED && WEBHOOK_QUEUE_WORKER_ENABLED
 });
 
 const scheduledAutomationLeaderLock = new PostgresAdvisoryLock({
@@ -964,6 +977,10 @@ const sessionReconnectCatchupTimers = new Map();
 const sessionReconnectCatchupInFlight = new Set();
 const sessionHistorySyncQueues = new Map();
 const reconnectInFlight = new Set();
+let inboxReconciliationIntervalId = null;
+let inboxReconciliationBootstrapTimeoutId = null;
+let inboxReconciliationIsRunning = false;
+let inboxReconciliationLastSummary = null;
 const FLOW_RECOVERY_DELAY_MS = parseInt(process.env.FLOW_RECOVERY_DELAY_MS || '', 10) || 2500;
 const FLOW_RECOVERY_WINDOW_MS = parseInt(process.env.FLOW_RECOVERY_WINDOW_MS || '', 10) || (5 * 60 * 1000);
 const FLOW_RECOVERY_TRACKER_LIMIT = 4000;
@@ -1004,6 +1021,32 @@ const WHATSAPP_MANUAL_RECONNECT_CATCHUP_MAX_RUNTIME_MS = parsePositiveIntEnv(
 );
 const WHATSAPP_HISTORY_SYNC_ENABLED = parseBooleanEnv(process.env.WHATSAPP_HISTORY_SYNC_ENABLED, true);
 const WHATSAPP_HISTORY_SYNC_MESSAGES_LIMIT = parsePositiveIntEnv(process.env.WHATSAPP_HISTORY_SYNC_MESSAGES_LIMIT, 600);
+const INBOX_RECONCILIATION_WORKER_ENABLED = parseBooleanEnv(
+    process.env.INBOX_RECONCILIATION_WORKER_ENABLED,
+    true
+);
+const INBOX_RECONCILIATION_INTERVAL_MS = parsePositiveIntEnv(
+    process.env.INBOX_RECONCILIATION_INTERVAL_MS,
+    15 * 60 * 1000
+);
+const INBOX_RECONCILIATION_MAX_CONVERSATIONS = parsePositiveIntInRange(
+    process.env.INBOX_RECONCILIATION_MAX_CONVERSATIONS,
+    Math.min(80, WHATSAPP_MANUAL_RECONNECT_CATCHUP_MAX_CONVERSATIONS),
+    1,
+    WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS_HARD_LIMIT
+);
+const INBOX_RECONCILIATION_MESSAGES_PER_CONVERSATION = parsePositiveIntInRange(
+    process.env.INBOX_RECONCILIATION_MESSAGES_PER_CONVERSATION,
+    Math.min(120, WHATSAPP_MANUAL_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION),
+    10,
+    WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION_HARD_LIMIT
+);
+const INBOX_RECONCILIATION_MAX_RUNTIME_MS = parsePositiveIntInRange(
+    process.env.INBOX_RECONCILIATION_MAX_RUNTIME_MS,
+    Math.min(90000, WHATSAPP_MANUAL_RECONNECT_CATCHUP_MAX_RUNTIME_MS),
+    3000,
+    WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_HARD_LIMIT_MS
+);
 
 senderAllocatorService.setRuntimeSessionsGetter(() => sessions);
 senderAllocatorService.setDefaultSessionId(DEFAULT_WHATSAPP_SESSION_ID);
@@ -6283,6 +6326,140 @@ function scheduleSessionReconnectCatchup(sessionId, options = {}) {
     });
 }
 
+async function runInboxReconciliationCycle(options = {}) {
+    const trigger = String(options.trigger || 'inbox-reconciliation-worker').trim() || 'inbox-reconciliation-worker';
+    const force = options.force === true;
+
+    if (!INBOX_RECONCILIATION_WORKER_ENABLED && !force) {
+        return { skipped: 'disabled', trigger };
+    }
+    if (inboxReconciliationIsRunning) {
+        return { skipped: 'in_flight', trigger };
+    }
+
+    inboxReconciliationIsRunning = true;
+    const startedAtMs = Date.now();
+    const summary = {
+        trigger,
+        sessionsScanned: 0,
+        sessionsUpdated: 0,
+        messagesInserted: 0,
+        mediaHydrated: 0,
+        skippedByReason: {},
+        elapsedMs: 0
+    };
+
+    try {
+        const maxConversations = parsePositiveIntInRange(
+            options.maxConversations,
+            INBOX_RECONCILIATION_MAX_CONVERSATIONS,
+            1,
+            WHATSAPP_RECONNECT_CATCHUP_MAX_CONVERSATIONS_HARD_LIMIT
+        );
+        const messagesPerConversation = parsePositiveIntInRange(
+            options.messagesPerConversation,
+            INBOX_RECONCILIATION_MESSAGES_PER_CONVERSATION,
+            10,
+            WHATSAPP_RECONNECT_CATCHUP_MESSAGES_PER_CONVERSATION_HARD_LIMIT
+        );
+        const maxRuntimeMs = parsePositiveIntInRange(
+            options.maxRuntimeMs,
+            INBOX_RECONCILIATION_MAX_RUNTIME_MS,
+            3000,
+            WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_HARD_LIMIT_MS
+        );
+
+        const connectedSessions = Array.from(sessions.entries())
+            .filter(([, runtimeSession]) => runtimeSession?.socket && runtimeSession?.isConnected === true);
+
+        if (connectedSessions.length === 0) {
+            summary.skippedByReason.no_connected_sessions = 1;
+            return summary;
+        }
+
+        for (const [sessionId, runtimeSession] of connectedSessions) {
+            summary.sessionsScanned += 1;
+
+            try {
+                const catchupSummary = await runSessionReconnectCatchup(sessionId, {
+                    trigger,
+                    expectedSocket: runtimeSession.socket,
+                    maxConversations,
+                    messagesPerConversation,
+                    maxRuntimeMs,
+                    unreadOnly: false
+                });
+
+                const inserted = Math.max(0, Number(catchupSummary?.messagesInserted || 0));
+                const hydratedMedia = Math.max(0, Number(catchupSummary?.mediaHydrated || 0));
+
+                if (inserted > 0 || hydratedMedia > 0) {
+                    summary.sessionsUpdated += 1;
+                    summary.messagesInserted += inserted;
+                    summary.mediaHydrated += hydratedMedia;
+                }
+
+                const skippedReason = String(catchupSummary?.skipped || '').trim();
+                if (skippedReason) {
+                    summary.skippedByReason[skippedReason] = Number(summary.skippedByReason[skippedReason] || 0) + 1;
+                }
+            } catch (sessionError) {
+                summary.skippedByReason.error = Number(summary.skippedByReason.error || 0) + 1;
+                console.warn(`[${sessionId}] Falha na reconciliacao periodica do inbox:`, sessionError.message);
+            }
+        }
+
+        return summary;
+    } finally {
+        summary.elapsedMs = Math.max(0, Date.now() - startedAtMs);
+        inboxReconciliationLastSummary = {
+            ...summary,
+            completedAt: new Date().toISOString()
+        };
+        inboxReconciliationIsRunning = false;
+    }
+}
+
+function startInboxReconciliationWorker() {
+    if (inboxReconciliationIntervalId) return;
+
+    if (!INBOX_RECONCILIATION_WORKER_ENABLED) {
+        console.log('[InboxReconciliation] worker desabilitado por configuracao');
+        return;
+    }
+
+    const runCycle = () => {
+        runInboxReconciliationCycle({
+            trigger: 'inbox-reconciliation-worker'
+        }).catch((error) => {
+            console.error('[InboxReconciliation] Falha no ciclo periodico:', error.message);
+        });
+    };
+
+    inboxReconciliationIntervalId = setInterval(runCycle, INBOX_RECONCILIATION_INTERVAL_MS);
+
+    const bootstrapDelayMs = Math.max(
+        5000,
+        Math.min(30000, Math.floor(INBOX_RECONCILIATION_INTERVAL_MS / 2))
+    );
+    inboxReconciliationBootstrapTimeoutId = setTimeout(() => {
+        inboxReconciliationBootstrapTimeoutId = null;
+        runCycle();
+    }, bootstrapDelayMs);
+    console.log(`[InboxReconciliation] worker ativo (intervalo=${INBOX_RECONCILIATION_INTERVAL_MS}ms)`);
+}
+
+function stopInboxReconciliationWorker() {
+    if (inboxReconciliationBootstrapTimeoutId) {
+        clearTimeout(inboxReconciliationBootstrapTimeoutId);
+        inboxReconciliationBootstrapTimeoutId = null;
+    }
+    if (inboxReconciliationIntervalId) {
+        clearInterval(inboxReconciliationIntervalId);
+        inboxReconciliationIntervalId = null;
+    }
+}
+
 function normalizeHistorySyncMessageBatch(messages, limit = WHATSAPP_HISTORY_SYNC_MESSAGES_LIMIT) {
     if (!Array.isArray(messages) || messages.length === 0) return [];
 
@@ -7590,6 +7767,18 @@ function sessionExists(sessionId) {
 (async () => {
     await bootstrapPromise;
 
+    await webhookQueueService.init(async (options = {}) => {
+        return await webhookService.send(
+            options.webhook,
+            options.event,
+            options?.payload?.data,
+            { payload: options.payload }
+        );
+    }, {
+        workerEnabled: WEBHOOK_QUEUE_WORKER_ENABLED,
+        leaderLock: webhookQueueWorkerLeaderLock
+    });
+
     await queueService.init(async (options) => {
         const sid = resolveSessionIdOrDefault(options.sessionId);
         const to = options.to || extractNumber(options.jid || '');
@@ -7661,6 +7850,7 @@ function sessionExists(sessionId) {
     await rehydrateSessions(io);
     startScheduledAutomationsWorker();
     startTenantIntegrityAuditWorker();
+    startInboxReconciliationWorker();
 })().catch((error) => {
     console.error('Erro ao inicializar servicos apos migracao:', error.message);
 });
@@ -15726,6 +15916,8 @@ process.on('uncaughtException', (error) => {
         console.log('??  SIGTERM recebido, encerrando servidor...');
 
         queueService.stopProcessing();
+        stopInboxReconciliationWorker();
+        await webhookQueueService.shutdown();
 
         for (const [sessionId, session] of sessions.entries()) {
 
@@ -15746,6 +15938,8 @@ process.on('uncaughtException', (error) => {
         console.log('??  SIGINT recebido, encerrando servidor...');
 
         queueService.stopProcessing();
+        stopInboxReconciliationWorker();
+        await webhookQueueService.shutdown();
 
         await closeDatabase();
 
