@@ -82,12 +82,32 @@ type EmailPreviewPayload = {
   text?: string;
 };
 
+type SupportInboxMessageItem = {
+  id: number;
+  provider?: string;
+  from_name?: string | null;
+  from_email?: string;
+  to_email?: string;
+  subject?: string;
+  body_text?: string | null;
+  body_html?: string | null;
+  received_at?: string;
+  is_read?: number;
+};
+
+type SupportInboxPayload = {
+  messages?: SupportInboxMessageItem[];
+  unreadCount?: number;
+};
+
 type AdminApiResponse = {
   success?: boolean;
   error?: string;
   overview?: AppAdminOverview;
   settings?: EmailSettingsResponse;
   preview?: EmailPreviewPayload;
+  inbox?: SupportInboxPayload;
+  supportMessage?: SupportInboxMessageItem;
   message?: string;
   disabled_users?: number;
   reactivated_users?: number;
@@ -132,6 +152,7 @@ type AccountActionConfirmDraft = {
 };
 
 type ActiveTab = 'accounts' | 'email';
+type EmailSection = 'delivery' | 'inbox';
 
 const DEFAULT_SUBJECT_TEMPLATE = 'Confirme seu cadastro no {{app_name}}';
 const DEFAULT_TEXT_TEMPLATE = [
@@ -262,6 +283,7 @@ async function adminApiRequest(endpoint: string, options: RequestInit = {}): Pro
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('accounts');
+  const [emailSection, setEmailSection] = useState<EmailSection>('delivery');
   const [loadingOverview, setLoadingOverview] = useState(true);
   const [loadingEmailSettings, setLoadingEmailSettings] = useState(true);
   const [overview, setOverview] = useState<AppAdminOverview | null>(null);
@@ -302,6 +324,12 @@ export default function AdminDashboard() {
   const [sendingTestEmail, setSendingTestEmail] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [emailSuccess, setEmailSuccess] = useState('');
+  const [loadingSupportInbox, setLoadingSupportInbox] = useState(true);
+  const [supportInboxError, setSupportInboxError] = useState('');
+  const [supportInboxMessages, setSupportInboxMessages] = useState<SupportInboxMessageItem[]>([]);
+  const [supportInboxUnreadCount, setSupportInboxUnreadCount] = useState(0);
+  const [selectedSupportMessageId, setSelectedSupportMessageId] = useState<number | null>(null);
+  const [updatingSupportMessageId, setUpdatingSupportMessageId] = useState<number | null>(null);
 
   const [accountDraft, setAccountDraft] = useState<AccountEditDraft | null>(null);
   const [userDraft, setUserDraft] = useState<UserEditDraft | null>(null);
@@ -365,18 +393,51 @@ export default function AdminDashboard() {
     }
   };
 
+  const loadSupportInbox = async (options: { silent?: boolean } = {}) => {
+    const silent = options.silent === true;
+    if (!silent) setLoadingSupportInbox(true);
+    if (!silent) setSupportInboxError('');
+
+    try {
+      const response = await adminApiRequest('/api/admin/dashboard/email-support-inbox?limit=50');
+      const inbox = response?.inbox || {};
+      const messages = Array.isArray(inbox.messages) ? inbox.messages : [];
+      setSupportInboxMessages(messages);
+      setSupportInboxUnreadCount(Number(inbox.unreadCount || 0));
+
+      setSelectedSupportMessageId((current) => {
+        if (current && messages.some((item) => Number(item.id) === Number(current))) {
+          return current;
+        }
+        const firstId = Number(messages[0]?.id || 0);
+        return firstId > 0 ? firstId : null;
+      });
+    } catch (error) {
+      setSupportInboxError(error instanceof Error ? error.message : 'Falha ao carregar caixa de entrada');
+    } finally {
+      if (!silent) setLoadingSupportInbox(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     const boot = async () => {
       await import('../../core/app');
       if (cancelled) return;
-      await Promise.all([loadOverview(), loadEmailSettings()]);
+      await Promise.all([loadOverview(), loadEmailSettings(), loadSupportInbox()]);
     };
     void boot();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'email' || emailSection !== 'inbox') return;
+    if (loadingSupportInbox) return;
+    if (supportInboxMessages.length > 0) return;
+    void loadSupportInbox();
+  }, [activeTab, emailSection]);
 
   const handleLogout = async () => {
     const token = String(sessionStorage.getItem('selfDashboardToken') || '').trim();
@@ -793,6 +854,39 @@ export default function AdminDashboard() {
     }
   };
 
+  const markSupportMessageRead = async (messageId: number, isRead = true) => {
+    if (!messageId || updatingSupportMessageId) return;
+    const previous = supportInboxMessages.find((item) => Number(item.id) === Number(messageId));
+    const wasRead = Number(previous?.is_read || 0) > 0;
+    setUpdatingSupportMessageId(messageId);
+    setSupportInboxError('');
+
+    try {
+      await adminApiRequest(`/api/admin/dashboard/email-support-inbox/${messageId}/read`, {
+        method: 'POST',
+        body: JSON.stringify({ isRead })
+      });
+
+      setSupportInboxMessages((current) => current.map((item) => (
+        Number(item.id) === Number(messageId)
+          ? { ...item, is_read: isRead ? 1 : 0 }
+          : item
+      )));
+      if (wasRead !== isRead) {
+        setSupportInboxUnreadCount((current) => Math.max(0, current + (isRead ? -1 : 1)));
+      }
+    } catch (error) {
+      setSupportInboxError(error instanceof Error ? error.message : 'Falha ao atualizar mensagem');
+    } finally {
+      setUpdatingSupportMessageId(null);
+    }
+  };
+
+  const selectedSupportMessage = useMemo(
+    () => supportInboxMessages.find((item) => Number(item.id) === Number(selectedSupportMessageId)) || null,
+    [supportInboxMessages, selectedSupportMessageId]
+  );
+
   const accountEditBusy = accountDraft && overviewBusyKey === `account-edit-${accountDraft.ownerUserId}`;
   const accountActionBusy = accountActionConfirmDraft
     && overviewBusyKey === `account-${accountActionConfirmDraft.mode}-${accountActionConfirmDraft.ownerUserId}`;
@@ -843,11 +937,31 @@ export default function AdminDashboard() {
         .admin-dashboard-react .admin-form-group input, .admin-dashboard-react .admin-form-group select, .admin-dashboard-react .admin-form-group textarea { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--surface-muted); color: var(--gray-900); }
         .admin-dashboard-react .admin-form-group textarea { min-height: 120px; resize: vertical; font-family: monospace; font-size: 12px; }
         .admin-dashboard-react .admin-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+        .admin-dashboard-react .admin-email-sections { display: inline-flex; gap: 8px; margin-bottom: 14px; padding: 4px; border: 1px solid var(--border-color); border-radius: 999px; background: rgba(15, 23, 42, 0.36); }
+        .admin-dashboard-react .admin-email-section-btn { border: none; border-radius: 999px; padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--gray-600); background: transparent; cursor: pointer; }
+        .admin-dashboard-react .admin-email-section-btn.active { background: rgba(var(--primary-rgb), 0.2); color: #e8fff4; }
+        .admin-dashboard-react .admin-email-block { border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; margin-bottom: 12px; background: rgba(15, 23, 42, 0.24); }
+        .admin-dashboard-react .admin-email-block h3 { margin: 0 0 8px 0; font-size: 14px; color: #e5eefc; }
+        .admin-dashboard-react .admin-email-block p { margin: 0 0 10px 0; font-size: 12px; color: var(--gray-600); }
+        .admin-dashboard-react .admin-inbox-layout { display: grid; grid-template-columns: 320px 1fr; gap: 12px; min-height: 440px; }
+        .admin-dashboard-react .admin-inbox-list { border: 1px solid var(--border-color); border-radius: 12px; background: rgba(15, 23, 42, 0.25); overflow: auto; max-height: 560px; }
+        .admin-dashboard-react .admin-inbox-item { width: 100%; border: none; border-bottom: 1px solid var(--border-color); background: transparent; color: inherit; text-align: left; padding: 12px; cursor: pointer; }
+        .admin-dashboard-react .admin-inbox-item:last-child { border-bottom: none; }
+        .admin-dashboard-react .admin-inbox-item.active { background: rgba(var(--primary-rgb), 0.12); }
+        .admin-dashboard-react .admin-inbox-item-subject { font-size: 13px; font-weight: 600; color: #e6eefb; margin-bottom: 4px; }
+        .admin-dashboard-react .admin-inbox-item-meta { font-size: 11px; color: var(--gray-600); display: flex; justify-content: space-between; gap: 8px; }
+        .admin-dashboard-react .admin-inbox-item-unread { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; border-radius: 999px; background: rgba(34, 197, 94, 0.2); color: #86efac; font-size: 10px; font-weight: 700; padding: 0 6px; }
+        .admin-dashboard-react .admin-inbox-detail { border: 1px solid var(--border-color); border-radius: 12px; background: rgba(15, 23, 42, 0.25); padding: 14px; }
+        .admin-dashboard-react .admin-inbox-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+        .admin-dashboard-react .admin-inbox-subject { margin: 0; font-size: 16px; color: #edf4ff; }
+        .admin-dashboard-react .admin-inbox-body { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; background: rgba(2, 10, 18, 0.45); min-height: 240px; max-height: 420px; overflow: auto; white-space: pre-wrap; font-size: 12px; color: #dce7f7; }
+        .admin-dashboard-react .admin-inbox-empty { border: 1px dashed var(--border-color); border-radius: 10px; padding: 24px; text-align: center; color: var(--gray-600); }
         .admin-dashboard-react .admin-muted { color: var(--gray-600); font-size: 12px; }
         .admin-dashboard-react .admin-section-title { margin-bottom: 10px; font-size: 15px; color: #dce6f7; font-weight: 700; }
         .admin-dashboard-react .admin-empty { border: 1px dashed rgba(148, 163, 184, 0.35); border-radius: 12px; padding: 20px; text-align: center; color: var(--gray-600); background: rgba(15, 23, 42, 0.3); }
         .admin-dashboard-react .admin-modal-note { margin-top: 6px; color: var(--gray-600); font-size: 12px; }
         @media (max-width: 1100px) { .admin-dashboard-react .admin-plan-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 980px) { .admin-dashboard-react .admin-inbox-layout { grid-template-columns: 1fr; } }
         @media (max-width: 900px) { .admin-dashboard-react .admin-settings-grid { grid-template-columns: 1fr; } .admin-dashboard-react .admin-plan-grid { grid-template-columns: 1fr; } }
       `}</style>
       <button className="mobile-menu-toggle" type="button" onClick={() => { document.querySelector('.sidebar')?.classList.toggle('open'); document.querySelector('.sidebar-overlay')?.classList.toggle('active'); }}>
@@ -1025,67 +1139,204 @@ export default function AdminDashboard() {
 
         {activeTab === 'email' && (
           <div className="admin-settings-card">
-            {loadingEmailSettings ? (
+            <div className="admin-email-sections">
+              <button
+                type="button"
+                className={`admin-email-section-btn ${emailSection === 'delivery' ? 'active' : ''}`}
+                onClick={() => setEmailSection('delivery')}
+              >
+                Envio e template
+              </button>
+              <button
+                type="button"
+                className={`admin-email-section-btn ${emailSection === 'inbox' ? 'active' : ''}`}
+                onClick={() => setEmailSection('inbox')}
+              >
+                Caixa suporte ({supportInboxUnreadCount})
+              </button>
+            </div>
+
+            {emailSection === 'delivery' && (loadingEmailSettings ? (
               <div className="admin-muted">Carregando configurações...</div>
             ) : (
               <>
-                <div className="admin-settings-grid">
-                  <div className="admin-form-group"><label>Provider</label><select value={provider} onChange={(event) => setProvider(event.target.value)}><option value="mailgun">Mailgun</option><option value="sendgrid">SendGrid</option></select></div>
-                  <div className="admin-form-group"><label>Nome da aplicação</label><input value={appName} onChange={(event) => setAppName(event.target.value)} /></div>
-                  <div className="admin-form-group"><label>Timeout da requisição (ms)</label><input type="number" min={1000} max={60000} value={requestTimeoutMs} onChange={(event) => setRequestTimeoutMs(Number(event.target.value || 10000))} /></div>
+                <div className="admin-email-block">
+                  <h3>Canal de envio</h3>
+                  <p>Defina provider, remetente e autenticação.</p>
+                  <div className="admin-settings-grid">
+                    <div className="admin-form-group"><label>Provider</label><select value={provider} onChange={(event) => setProvider(event.target.value)}><option value="mailgun">Mailgun</option><option value="sendgrid">SendGrid</option></select></div>
+                    <div className="admin-form-group"><label>Nome da aplicação</label><input value={appName} onChange={(event) => setAppName(event.target.value)} /></div>
+                    <div className="admin-form-group"><label>Timeout da requisição (ms)</label><input type="number" min={1000} max={60000} value={requestTimeoutMs} onChange={(event) => setRequestTimeoutMs(Number(event.target.value || 10000))} /></div>
 
-                  {provider === 'mailgun' && (
-                    <>
-                      <div className="admin-form-group"><label>MAILGUN_DOMAIN</label><input value={mailgunDomain} onChange={(event) => setMailgunDomain(event.target.value)} placeholder="mg.seu-dominio.com" /></div>
-                      <div className="admin-form-group"><label>MAILGUN_BASE_URL</label><input value={mailgunBaseUrl} onChange={(event) => setMailgunBaseUrl(event.target.value)} placeholder="https://api.mailgun.net" /></div>
-                      <div className="admin-form-group"><label>MAILGUN_FROM_EMAIL</label><input value={mailgunFromEmail} onChange={(event) => setMailgunFromEmail(event.target.value)} placeholder="no-reply@seu-dominio.com" /></div>
-                      <div className="admin-form-group"><label>MAILGUN_FROM_NAME</label><input value={mailgunFromName} onChange={(event) => setMailgunFromName(event.target.value)} placeholder="ZapVender" /></div>
-                      <div className="admin-form-group"><label>MAILGUN_REPLY_TO_EMAIL (opcional)</label><input value={mailgunReplyToEmail} onChange={(event) => setMailgunReplyToEmail(event.target.value)} placeholder="suporte@seu-dominio.com" /></div>
-                      <div className="admin-form-group"><label>MAILGUN_REPLY_TO_NAME (opcional)</label><input value={mailgunReplyToName} onChange={(event) => setMailgunReplyToName(event.target.value)} /></div>
-                      <div className="admin-form-group">
-                        <label>MAILGUN_API_KEY</label>
-                        <input type="password" value={mailgunApiKeyInput} onChange={(event) => setMailgunApiKeyInput(event.target.value)} placeholder={hasMailgunApiKey ? 'Chave já configurada. Preencha apenas se quiser substituir.' : 'Cole a API key do Mailgun'} />
-                        <div className="admin-muted">Atual: {hasMailgunApiKey ? mailgunApiKeyMasked || 'Configurada' : 'Não configurada'}</div>
-                        <label style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 400 }}><input type="checkbox" checked={removeMailgunApiKey} onChange={(event) => setRemoveMailgunApiKey(event.target.checked)} />Remover chave salva</label>
-                      </div>
-                    </>
-                  )}
+                    {provider === 'mailgun' && (
+                      <>
+                        <div className="admin-form-group"><label>MAILGUN_DOMAIN</label><input value={mailgunDomain} onChange={(event) => setMailgunDomain(event.target.value)} placeholder="mg.seu-dominio.com" /></div>
+                        <div className="admin-form-group"><label>MAILGUN_BASE_URL</label><input value={mailgunBaseUrl} onChange={(event) => setMailgunBaseUrl(event.target.value)} placeholder="https://api.mailgun.net" /></div>
+                        <div className="admin-form-group"><label>MAILGUN_FROM_EMAIL</label><input value={mailgunFromEmail} onChange={(event) => setMailgunFromEmail(event.target.value)} placeholder="no-reply@seu-dominio.com" /></div>
+                        <div className="admin-form-group"><label>MAILGUN_FROM_NAME</label><input value={mailgunFromName} onChange={(event) => setMailgunFromName(event.target.value)} placeholder="ZapVender" /></div>
+                        <div className="admin-form-group"><label>MAILGUN_REPLY_TO_EMAIL (opcional)</label><input value={mailgunReplyToEmail} onChange={(event) => setMailgunReplyToEmail(event.target.value)} placeholder="suporte@seu-dominio.com" /></div>
+                        <div className="admin-form-group"><label>MAILGUN_REPLY_TO_NAME (opcional)</label><input value={mailgunReplyToName} onChange={(event) => setMailgunReplyToName(event.target.value)} /></div>
+                        <div className="admin-form-group">
+                          <label>MAILGUN_API_KEY</label>
+                          <input type="password" value={mailgunApiKeyInput} onChange={(event) => setMailgunApiKeyInput(event.target.value)} placeholder={hasMailgunApiKey ? 'Chave já configurada. Preencha apenas se quiser substituir.' : 'Cole a API key do Mailgun'} />
+                          <div className="admin-muted">Atual: {hasMailgunApiKey ? mailgunApiKeyMasked || 'Configurada' : 'Não configurada'}</div>
+                          <label style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 400 }}><input type="checkbox" checked={removeMailgunApiKey} onChange={(event) => setRemoveMailgunApiKey(event.target.checked)} />Remover chave salva</label>
+                        </div>
+                      </>
+                    )}
 
-                  {provider === 'sendgrid' && (
-                    <>
-                      <div className="admin-form-group"><label>SendGrid FROM email</label><input value={sendgridFromEmail} onChange={(event) => setSendgridFromEmail(event.target.value)} placeholder="no-reply@seu-dominio.com" /></div>
-                      <div className="admin-form-group"><label>SendGrid FROM nome</label><input value={sendgridFromName} onChange={(event) => setSendgridFromName(event.target.value)} placeholder="ZapVender" /></div>
-                      <div className="admin-form-group"><label>Reply-To email (opcional)</label><input value={sendgridReplyToEmail} onChange={(event) => setSendgridReplyToEmail(event.target.value)} placeholder="suporte@seu-dominio.com" /></div>
-                      <div className="admin-form-group"><label>Reply-To nome (opcional)</label><input value={sendgridReplyToName} onChange={(event) => setSendgridReplyToName(event.target.value)} /></div>
-                      <div className="admin-form-group">
-                        <label>SENDGRID_API_KEY</label>
-                        <input type="password" value={sendgridApiKeyInput} onChange={(event) => setSendgridApiKeyInput(event.target.value)} placeholder={hasSendgridApiKey ? 'Chave já configurada. Preencha apenas se quiser substituir.' : 'Cole a API key do SendGrid'} />
-                        <div className="admin-muted">Atual: {hasSendgridApiKey ? sendgridApiKeyMasked || 'Configurada' : 'Não configurada'}</div>
-                        <label style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 400 }}><input type="checkbox" checked={removeSendgridApiKey} onChange={(event) => setRemoveSendgridApiKey(event.target.checked)} />Remover chave salva</label>
-                      </div>
-                    </>
-                  )}
+                    {provider === 'sendgrid' && (
+                      <>
+                        <div className="admin-form-group"><label>SendGrid FROM email</label><input value={sendgridFromEmail} onChange={(event) => setSendgridFromEmail(event.target.value)} placeholder="no-reply@seu-dominio.com" /></div>
+                        <div className="admin-form-group"><label>SendGrid FROM nome</label><input value={sendgridFromName} onChange={(event) => setSendgridFromName(event.target.value)} placeholder="ZapVender" /></div>
+                        <div className="admin-form-group"><label>Reply-To email (opcional)</label><input value={sendgridReplyToEmail} onChange={(event) => setSendgridReplyToEmail(event.target.value)} placeholder="suporte@seu-dominio.com" /></div>
+                        <div className="admin-form-group"><label>Reply-To nome (opcional)</label><input value={sendgridReplyToName} onChange={(event) => setSendgridReplyToName(event.target.value)} /></div>
+                        <div className="admin-form-group">
+                          <label>SENDGRID_API_KEY</label>
+                          <input type="password" value={sendgridApiKeyInput} onChange={(event) => setSendgridApiKeyInput(event.target.value)} placeholder={hasSendgridApiKey ? 'Chave já configurada. Preencha apenas se quiser substituir.' : 'Cole a API key do SendGrid'} />
+                          <div className="admin-muted">Atual: {hasSendgridApiKey ? sendgridApiKeyMasked || 'Configurada' : 'Não configurada'}</div>
+                          <label style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 400 }}><input type="checkbox" checked={removeSendgridApiKey} onChange={(event) => setRemoveSendgridApiKey(event.target.checked)} />Remover chave salva</label>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                <div className="admin-form-group"><label>Template - Assunto</label><input value={subjectTemplate} onChange={(event) => setSubjectTemplate(event.target.value)} /></div>
-                <div className="admin-form-group"><label>Template - HTML</label><textarea value={htmlTemplate} onChange={(event) => setHtmlTemplate(event.target.value)} /></div>
-                <div className="admin-form-group"><label>Template - Texto</label><textarea value={textTemplate} onChange={(event) => setTextTemplate(event.target.value)} /></div>
-                <div className="admin-muted">Variáveis disponíveis: {'{{name}}'}, {'{{email}}'}, {'{{confirmation_url}}'}, {'{{app_name}}'}, {'{{expires_in_text}}'}, {'{{app_url}}'}, {'{{logo_url}}'}, {'{{company_name}}'}, {'{{company_website}}'}, {'{{company_email}}'}</div>
+                <div className="admin-email-block">
+                  <h3>Template de confirmação</h3>
+                  <p>Edite o assunto e o conteúdo do e-mail de cadastro.</p>
+                  <div className="admin-form-group"><label>Template - Assunto</label><input value={subjectTemplate} onChange={(event) => setSubjectTemplate(event.target.value)} /></div>
+                  <div className="admin-form-group"><label>Template - HTML</label><textarea value={htmlTemplate} onChange={(event) => setHtmlTemplate(event.target.value)} /></div>
+                  <div className="admin-form-group"><label>Template - Texto</label><textarea value={textTemplate} onChange={(event) => setTextTemplate(event.target.value)} /></div>
+                  <div className="admin-muted">Variáveis: {'{{name}}'}, {'{{email}}'}, {'{{confirmation_url}}'}, {'{{app_name}}'}, {'{{expires_in_text}}'}, {'{{app_url}}'}, {'{{logo_url}}'}, {'{{company_name}}'}, {'{{company_website}}'}, {'{{company_email}}'}</div>
 
-                <div className="admin-actions">
-                  <input type="text" className="form-input" style={{ maxWidth: 220 }} placeholder="Nome para preview" value={previewName} onChange={(event) => setPreviewName(event.target.value)} />
-                  <input type="email" className="form-input" style={{ maxWidth: 320 }} placeholder="email para preview" value={previewEmail} onChange={(event) => setPreviewEmail(event.target.value)} />
-                  <button type="button" className="btn btn-outline" onClick={previewEmailTemplate} disabled={loadingEmailPreview}>{loadingEmailPreview ? 'Gerando preview...' : 'Pre-visualizar'}</button>
+                  <div className="admin-actions">
+                    <input type="text" className="form-input" style={{ maxWidth: 220 }} placeholder="Nome para preview" value={previewName} onChange={(event) => setPreviewName(event.target.value)} />
+                    <input type="email" className="form-input" style={{ maxWidth: 320 }} placeholder="email para preview" value={previewEmail} onChange={(event) => setPreviewEmail(event.target.value)} />
+                    <button type="button" className="btn btn-outline" onClick={previewEmailTemplate} disabled={loadingEmailPreview}>{loadingEmailPreview ? 'Gerando preview...' : 'Pre-visualizar'}</button>
+                  </div>
                 </div>
 
-                <div className="admin-actions">
-                  <button type="button" className="btn btn-primary" onClick={saveEmailSettings} disabled={savingEmailSettings}>{savingEmailSettings ? 'Salvando...' : 'Salvar configurações'}</button>
-                  <input type="email" className="form-input" style={{ maxWidth: 320 }} placeholder="email@destino.com" value={testEmail} onChange={(event) => setTestEmail(event.target.value)} />
-                  <button type="button" className="btn btn-outline" onClick={sendTestEmail} disabled={sendingTestEmail}>{sendingTestEmail ? 'Enviando teste...' : 'Enviar teste'}</button>
+                <div className="admin-email-block">
+                  <h3>Ações rápidas</h3>
+                  <p>Salve as configurações e valide com envio de teste.</p>
+                  <div className="admin-actions">
+                    <button type="button" className="btn btn-primary" onClick={saveEmailSettings} disabled={savingEmailSettings}>{savingEmailSettings ? 'Salvando...' : 'Salvar configurações'}</button>
+                    <input type="email" className="form-input" style={{ maxWidth: 320 }} placeholder="email@destino.com" value={testEmail} onChange={(event) => setTestEmail(event.target.value)} />
+                    <button type="button" className="btn btn-outline" onClick={sendTestEmail} disabled={sendingTestEmail}>{sendingTestEmail ? 'Enviando teste...' : 'Enviar teste'}</button>
+                  </div>
                 </div>
 
                 {emailError && <div className="admin-alert admin-alert-error" style={{ marginTop: 12 }}>{emailError}</div>}
                 {emailSuccess && <div className="admin-alert admin-alert-success" style={{ marginTop: 12 }}>{emailSuccess}</div>}
+              </>
+            ))}
+
+            {emailSection === 'inbox' && (
+              <>
+                <div className="admin-email-block">
+                  <h3>Caixa de entrada - suporte@zapvender.com</h3>
+                  <p>Mensagens recebidas pelo webhook de entrada de e-mail.</p>
+                  <div className="admin-muted">Endpoint de entrada: <code>/webhooks/support-inbox/incoming</code></div>
+                  <div className="admin-actions">
+                    <button type="button" className="btn btn-outline" onClick={() => loadSupportInbox()} disabled={loadingSupportInbox}>
+                      {loadingSupportInbox ? 'Atualizando...' : 'Atualizar caixa'}
+                    </button>
+                    <span className="admin-muted">Não lidas: {supportInboxUnreadCount}</span>
+                  </div>
+                </div>
+
+                {supportInboxError && <div className="admin-alert admin-alert-error">{supportInboxError}</div>}
+
+                {loadingSupportInbox ? (
+                  <div className="admin-muted">Carregando caixa de entrada...</div>
+                ) : supportInboxMessages.length === 0 ? (
+                  <div className="admin-inbox-empty">Nenhum e-mail recebido em suporte@zapvender.com até agora.</div>
+                ) : (
+                  <div className="admin-inbox-layout">
+                    <div className="admin-inbox-list">
+                      {supportInboxMessages.map((item) => {
+                        const itemId = Number(item.id || 0);
+                        const isActive = Number(selectedSupportMessageId || 0) === itemId;
+                        const isUnread = Number(item.is_read || 0) <= 0;
+                        const sender = String(item.from_name || '').trim() || String(item.from_email || '-');
+                        return (
+                          <button
+                            key={itemId}
+                            type="button"
+                            className={`admin-inbox-item ${isActive ? 'active' : ''}`}
+                            onClick={() => setSelectedSupportMessageId(itemId)}
+                          >
+                            <div className="admin-inbox-item-subject">{String(item.subject || '(Sem assunto)')}</div>
+                            <div className="admin-inbox-item-meta">
+                              <span>{sender}</span>
+                              <span>{formatDateTime(item.received_at)}</span>
+                            </div>
+                            {isUnread && <span className="admin-inbox-item-unread">nova</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="admin-inbox-detail">
+                      {selectedSupportMessage ? (
+                        <>
+                          <div className="admin-inbox-header">
+                            <div>
+                              <h4 className="admin-inbox-subject">{String(selectedSupportMessage.subject || '(Sem assunto)')}</h4>
+                              <div className="admin-muted">
+                                De: {String(selectedSupportMessage.from_name || '').trim() || '-'} &lt;{String(selectedSupportMessage.from_email || '-')}&gt; | Para: {String(selectedSupportMessage.to_email || 'support@zapvender.com')}
+                              </div>
+                              <div className="admin-muted">Recebido em: {formatDateTime(selectedSupportMessage.received_at)}</div>
+                            </div>
+                            <div className="admin-actions">
+                              {Number(selectedSupportMessage.is_read || 0) > 0 ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => markSupportMessageRead(Number(selectedSupportMessage.id), false)}
+                                  disabled={updatingSupportMessageId === Number(selectedSupportMessage.id)}
+                                >
+                                  Marcar como não lida
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => markSupportMessageRead(Number(selectedSupportMessage.id), true)}
+                                  disabled={updatingSupportMessageId === Number(selectedSupportMessage.id)}
+                                >
+                                  Marcar como lida
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {String(selectedSupportMessage.body_text || '').trim() ? (
+                            <div className="admin-inbox-body">{String(selectedSupportMessage.body_text || '')}</div>
+                          ) : String(selectedSupportMessage.body_html || '').trim() ? (
+                            <iframe
+                              title={`support-inbox-${selectedSupportMessage.id}`}
+                              srcDoc={String(selectedSupportMessage.body_html || '')}
+                              sandbox="allow-popups allow-popups-to-escape-sandbox"
+                              referrerPolicy="no-referrer"
+                              style={{
+                                width: '100%',
+                                minHeight: 280,
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 10,
+                                background: '#fff'
+                              }}
+                            />
+                          ) : (
+                            <div className="admin-inbox-empty">Mensagem sem conteúdo disponível.</div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="admin-inbox-empty">Selecione um e-mail para visualizar.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -1108,6 +1359,8 @@ export default function AdminDashboard() {
                 <iframe
                   title="Email preview"
                   srcDoc={String(emailPreview.html || '')}
+                  sandbox="allow-popups allow-popups-to-escape-sandbox"
+                  referrerPolicy="no-referrer"
                   style={{
                     width: '100%',
                     minHeight: 360,
@@ -1309,5 +1562,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
-

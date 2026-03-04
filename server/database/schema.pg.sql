@@ -304,6 +304,22 @@ CREATE TABLE IF NOT EXISTS webhook_delivery_queue (
     UNIQUE (webhook_id, dedupe_key)
 );
 
+CREATE TABLE IF NOT EXISTS support_inbox_messages (
+    id SERIAL PRIMARY KEY,
+    external_message_id TEXT,
+    provider TEXT DEFAULT 'unknown',
+    from_name TEXT,
+    from_email TEXT NOT NULL,
+    to_email TEXT NOT NULL DEFAULT 'support@zapvender.com',
+    subject TEXT,
+    body_text TEXT,
+    body_html TEXT,
+    raw_payload TEXT,
+    received_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    is_read INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS whatsapp_sessions (
     id SERIAL PRIMARY KEY,
     session_id TEXT UNIQUE NOT NULL,
@@ -507,6 +523,9 @@ CREATE INDEX IF NOT EXISTS idx_queue_session ON message_queue(session_id);
 CREATE INDEX IF NOT EXISTS idx_webhook_delivery_queue_status ON webhook_delivery_queue(status);
 CREATE INDEX IF NOT EXISTS idx_webhook_delivery_queue_next_attempt ON webhook_delivery_queue(next_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_webhook_delivery_queue_webhook ON webhook_delivery_queue(webhook_id);
+CREATE INDEX IF NOT EXISTS idx_support_inbox_messages_received_at ON support_inbox_messages(received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_support_inbox_messages_is_read ON support_inbox_messages(is_read);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_support_inbox_messages_external_id_unique ON support_inbox_messages(external_message_id) WHERE external_message_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_campaign ON campaign_sender_accounts(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_session ON campaign_sender_accounts(session_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_sessions_created_by ON whatsapp_sessions(created_by);

@@ -56,7 +56,8 @@ const {
     Tag,
     Settings,
     User,
-    WhatsAppSession
+    WhatsAppSession,
+    SupportInboxMessage
 } = require('./database/models');
 
 
@@ -14477,6 +14478,163 @@ async function buildApplicationAdminOverview() {
     };
 }
 
+function parseSupportInboxIdentity(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return { name: '', email: '' };
+
+    const bracketMatch = raw.match(/^(.*)<([^>]+)>$/);
+    if (bracketMatch) {
+        return {
+            name: String(bracketMatch[1] || '').replace(/["']/g, '').trim(),
+            email: String(bracketMatch[2] || '').trim().toLowerCase()
+        };
+    }
+
+    return {
+        name: '',
+        email: raw.toLowerCase()
+    };
+}
+
+function parseSupportInboxEnvelope(value) {
+    if (!value) return null;
+    if (typeof value === 'object' && !Array.isArray(value)) return value;
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return parsed;
+        }
+        return null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function normalizeSupportInboxReceivedAt(rawTimestamp) {
+    if (rawTimestamp === undefined || rawTimestamp === null || rawTimestamp === '') {
+        return new Date().toISOString();
+    }
+
+    const numeric = Number(rawTimestamp);
+    if (Number.isFinite(numeric) && numeric > 0) {
+        const asMs = numeric > 1000000000000 ? numeric : (numeric * 1000);
+        const parsed = new Date(asMs);
+        if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+    }
+
+    const parsed = new Date(String(rawTimestamp));
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+    return new Date().toISOString();
+}
+
+function normalizeSupportInboxIncomingPayload(body = {}, options = {}) {
+    const envelope = parseSupportInboxEnvelope(body?.envelope);
+    const fromRaw = String(
+        body?.from
+        || body?.sender
+        || body?.from_email
+        || envelope?.from
+        || ''
+    ).trim();
+    const toRaw = String(
+        body?.recipient
+        || body?.to
+        || body?.to_email
+        || (Array.isArray(envelope?.to) ? envelope.to[0] : envelope?.to)
+        || 'support@zapvender.com'
+    ).trim();
+    const identity = parseSupportInboxIdentity(fromRaw);
+    const toIdentity = parseSupportInboxIdentity(toRaw);
+    const subject = String(body?.subject || '').trim() || '(Sem assunto)';
+
+    const messageIdCandidates = [
+        body?.messageId,
+        body?.message_id,
+        body?.['Message-Id'],
+        body?.['message-id'],
+        body?.['Message-ID'],
+        body?.['X-Message-Id'],
+        body?.['X-Message-ID'],
+        body?.sg_message_id
+    ];
+    const externalMessageId = messageIdCandidates
+        .map((candidate) => String(candidate || '').trim())
+        .find(Boolean) || null;
+
+    const bodyText = String(
+        body?.['stripped-text']
+        || body?.['body-plain']
+        || body?.text
+        || body?.body
+        || body?.plain
+        || ''
+    );
+    const bodyHtml = String(
+        body?.['body-html']
+        || body?.['stripped-html']
+        || body?.html
+        || ''
+    );
+
+    return {
+        external_message_id: externalMessageId,
+        provider: String(options?.provider || body?.provider || 'unknown').trim().toLowerCase() || 'unknown',
+        from_name: identity.name || null,
+        from_email: identity.email,
+        to_email: toIdentity.email || 'support@zapvender.com',
+        subject,
+        body_text: bodyText || null,
+        body_html: bodyHtml || null,
+        received_at: normalizeSupportInboxReceivedAt(body?.timestamp || body?.received_at || body?.receivedAt || body?.Date || null),
+        raw_payload: body
+    };
+}
+
+app.post('/webhooks/support-inbox/incoming', upload.none(), async (req, res) => {
+    try {
+        const expectedSecret = String(process.env.SUPPORT_INBOX_WEBHOOK_SECRET || '').trim();
+        const providedSecret = String(
+            req.headers['x-support-inbox-secret']
+            || req.body?.secret
+            || req.query?.secret
+            || ''
+        ).trim();
+
+        if (expectedSecret && providedSecret !== expectedSecret) {
+            return res.status(401).json({
+                success: false,
+                error: 'Unauthorized'
+            });
+        }
+
+        const payload = normalizeSupportInboxIncomingPayload(req.body || {}, {
+            provider: req.query?.provider
+        });
+
+        if (!payload.from_email || !isValidEmailAddress(payload.from_email)) {
+            return res.status(400).json({
+                success: false,
+                error: 'from_email invalido'
+            });
+        }
+
+        const saved = await SupportInboxMessage.upsert(payload);
+        return res.json({
+            success: true,
+            id: Number(saved?.id || 0) || null,
+            created: saved?.created === true
+        });
+    } catch (error) {
+        console.error('[support-inbox:incoming] falha:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Falha ao processar email de suporte'
+        });
+    }
+});
+
 app.get('/api/admin/dashboard/overview', authenticate, async (req, res) => {
     if (!ensureApplicationAdmin(req, res)) return;
 
@@ -14671,6 +14829,74 @@ app.post('/api/admin/dashboard/email-settings/test', authenticate, async (req, r
         res.status(500).json({
             success: false,
             error: 'Falha ao enviar email de teste'
+        });
+    }
+});
+
+app.get('/api/admin/dashboard/email-support-inbox', authenticate, async (req, res) => {
+    if (!ensureApplicationAdmin(req, res)) return;
+
+    try {
+        const limit = Math.max(1, Math.min(100, Number(req.query?.limit || 30) || 30));
+        const offset = Math.max(0, Number(req.query?.offset || 0) || 0);
+        const unreadOnly = ['1', 'true', 'yes', 'sim', 'on'].includes(
+            String(req.query?.unread_only ?? req.query?.unreadOnly ?? '').trim().toLowerCase()
+        );
+
+        const [messages, unreadCount] = await Promise.all([
+            SupportInboxMessage.list({
+                limit,
+                offset,
+                unread_only: unreadOnly
+            }),
+            SupportInboxMessage.count({
+                unread_only: true
+            })
+        ]);
+
+        res.json({
+            success: true,
+            inbox: {
+                messages,
+                unreadCount
+            }
+        });
+    } catch (error) {
+        console.error('[admin/dashboard/email-support-inbox:get] falha:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Falha ao carregar caixa de entrada de suporte'
+        });
+    }
+});
+
+app.post('/api/admin/dashboard/email-support-inbox/:id/read', authenticate, async (req, res) => {
+    if (!ensureApplicationAdmin(req, res)) return;
+
+    try {
+        const messageId = parseInt(String(req.params?.id || ''), 10);
+        if (!Number.isInteger(messageId) || messageId <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Mensagem invalida'
+            });
+        }
+
+        const isRead = req.body?.isRead === false || req.body?.is_read === 0 || req.body?.is_read === false
+            ? false
+            : true;
+        await SupportInboxMessage.markRead(messageId, isRead);
+        const message = await SupportInboxMessage.findById(messageId);
+
+        res.json({
+            success: true,
+            supportMessage: message
+        });
+    } catch (error) {
+        console.error('[admin/dashboard/email-support-inbox:read] falha:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Falha ao atualizar status da mensagem'
         });
     }
 });
