@@ -28,6 +28,7 @@ const CONFIG = {
     QR_REFRESH_INTERVAL: 30000
 };
 const LEGACY_DEFAULT_SESSION_ID = 'self_whatsapp_session';
+const QR_IDLE_PLACEHOLDER_TEXT = 'Clique no bot&atilde;o abaixo para gerar QR Code de acesso';
 
 // Estado
 let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
@@ -638,14 +639,34 @@ function displayQRCode(qrData: string) {
     if (connectBtn) connectBtn.style.display = 'none';
 }
 
+function isIdleQrLoadingMessage(message: string) {
+    const normalized = String(message || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+    return normalized.startsWith('aguardando conexao');
+}
+
 // Mostrar loading do QR
 function showQRLoading(message: string) {
     const qrContainer = document.getElementById('qr-code') as HTMLElement | null;
     if (!qrContainer) return;
+
+    if (isIdleQrLoadingMessage(message)) {
+        qrContainer.innerHTML = `
+            <div class="qr-loading qr-loading-idle">
+                <div class="qr-idle-arrow" aria-hidden="true">&darr;</div>
+                <p>${QR_IDLE_PLACEHOLDER_TEXT}</p>
+            </div>
+        `;
+        return;
+    }
+
     qrContainer.innerHTML = `
         <div class="qr-loading">
             <div class="spinner"></div>
-            <p>${message}</p>
+            <p>${escapeHtml(message)}</p>
         </div>
     `;
 }

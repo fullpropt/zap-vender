@@ -77,6 +77,8 @@ export default function Configuracoes() {
   }, []);
 
   const globals = window as Window & ConfiguracoesGlobals;
+  const SHOW_AI_TAB = false;
+  const SHOW_NOTIFICATIONS_TAB = true;
 
   return (
     <div className="configuracoes-react">
@@ -309,8 +311,12 @@ export default function Configuracoes() {
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('labels')}><span className="icon icon-tag icon-sm"></span> Etiquetas</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('quick')}><span className="icon icon-bolt icon-sm"></span> Respostas rápidas</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('hours')}><span className="icon icon-clock icon-sm"></span> Horários</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('ai')}><span className="icon icon-automation icon-sm"></span> Inteligencia Artificial</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('notifications')}><span className="icon icon-bell icon-sm"></span> Notificações</div>
+                      {SHOW_AI_TAB && (
+                        <div className="settings-nav-item" onClick={() => globals.showPanel?.('ai')}><span className="icon icon-automation icon-sm"></span> Inteligencia Artificial</div>
+                      )}
+                      {SHOW_NOTIFICATIONS_TAB && (
+                        <div className="settings-nav-item" onClick={() => globals.showPanel?.('notifications')}><span className="icon icon-bell icon-sm"></span> Notificações</div>
+                      )}
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('users')}><span className="icon icon-user icon-sm"></span> Usuários</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('plan')}><span className="icon icon-dashboard icon-sm"></span> Plano</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('api')}><span className="icon icon-plug icon-sm"></span> API e Webhooks</div>
@@ -475,7 +481,8 @@ export default function Configuracoes() {
                           </div>
                           <button className="btn btn-primary" onClick={() => globals.saveCopysSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar respostas rápidas</button>
                       </div>
-                      <div className="settings-panel" id="panel-ai">
+                      {SHOW_AI_TAB && (
+                        <div className="settings-panel" id="panel-ai">
                           <div className="settings-section">
                               <h3 className="settings-section-title"><span className="icon icon-automation icon-sm"></span> Inteligencia Artificial</h3>
                               <p className="text-muted mb-3">
@@ -548,7 +555,8 @@ export default function Configuracoes() {
                                   <span className="icon icon-save icon-sm"></span> Salvar Inteligencia Artificial
                               </button>
                           </div>
-                      </div>
+                        </div>
+                      )}
 
                       <div className="settings-panel" id="panel-hours">
                           <div className="settings-section">
@@ -675,33 +683,35 @@ export default function Configuracoes() {
                           <button className="btn btn-primary" onClick={() => globals.saveFunnelSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Funil</button>
                       </div>
       
-                      <div className="settings-panel" id="panel-notifications">
-                          <div className="settings-section">
-                              <h3 className="settings-section-title"><span className="icon icon-bell icon-sm"></span> Preferências de Notificação</h3>
-                              <div className="form-group">
-                                  <label className="checkbox-wrapper">
-                                      <input type="checkbox" id="notifyNewLead" defaultChecked />
-                                      <span className="checkbox-custom"></span>
-                                      Notificar novos leads
-                                  </label>
-                              </div>
-                              <div className="form-group">
-                                  <label className="checkbox-wrapper">
-                                      <input type="checkbox" id="notifyNewMessage" defaultChecked />
-                                      <span className="checkbox-custom"></span>
-                                      Notificar novas mensagens
-                                  </label>
-                              </div>
-                              <div className="form-group">
-                                  <label className="checkbox-wrapper">
-                                      <input type="checkbox" id="notifySound" defaultChecked />
-                                      <span className="checkbox-custom"></span>
-                                      Som de notificação
-                                  </label>
-                              </div>
-                          </div>
-                          <button className="btn btn-primary" onClick={() => globals.saveNotificationSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Notificações</button>
-                      </div>
+                      {SHOW_NOTIFICATIONS_TAB && (
+                        <div className="settings-panel" id="panel-notifications">
+                            <div className="settings-section">
+                                <h3 className="settings-section-title"><span className="icon icon-bell icon-sm"></span> Preferências de Notificação</h3>
+                                <div className="form-group">
+                                    <label className="checkbox-wrapper">
+                                        <input type="checkbox" id="notifyNewLead" defaultChecked />
+                                        <span className="checkbox-custom"></span>
+                                        Notificar novos leads
+                                    </label>
+                                </div>
+                                <div className="form-group">
+                                    <label className="checkbox-wrapper">
+                                        <input type="checkbox" id="notifyNewMessage" defaultChecked />
+                                        <span className="checkbox-custom"></span>
+                                        Notificar novas mensagens
+                                    </label>
+                                </div>
+                                <div className="form-group">
+                                    <label className="checkbox-wrapper">
+                                        <input type="checkbox" id="notifySound" defaultChecked />
+                                        <span className="checkbox-custom"></span>
+                                        Som de notificação
+                                    </label>
+                                </div>
+                            </div>
+                            <button className="btn btn-primary" onClick={() => globals.saveNotificationSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Notificações</button>
+                        </div>
+                      )}
       
                       <div className="settings-panel" id="panel-users">
                           <div className="settings-section">
