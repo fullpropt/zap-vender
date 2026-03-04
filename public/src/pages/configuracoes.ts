@@ -788,7 +788,7 @@ function renderSettingsTags() {
     if (!settingsTagsCache.length) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="4" class="table-empty">
+                <td colspan="3" class="table-empty">
                     <div class="table-empty-icon icon icon-empty icon-lg"></div>
                     <p>Nenhuma etiqueta encontrada</p>
                 </td>
@@ -800,7 +800,6 @@ function renderSettingsTags() {
     tbody.innerHTML = settingsTagsCache.map((tag) => `
         <tr data-tag-id="${tag.id}">
             <td><input type="text" class="form-input settings-tag-name" value="${escapeHtml(tag.name || '')}" /></td>
-            <td style="width: 110px;"><input type="color" class="form-input settings-tag-color" value="${escapeHtml(tag.color || '#5a2a6b')}" style="height: 40px; min-width: 70px;" /></td>
             <td><input type="text" class="form-input settings-tag-description" value="${escapeHtml(tag.description || '')}" placeholder="Opcional" /></td>
             <td style="width: 180px;">
                 <div style="display: flex; gap: 8px;">
@@ -814,11 +813,9 @@ function renderSettingsTags() {
 
 async function createSettingsTag() {
     const nameInput = document.getElementById('newTagName') as HTMLInputElement | null;
-    const colorInput = document.getElementById('newTagColor') as HTMLInputElement | null;
     const descriptionInput = document.getElementById('newTagDescription') as HTMLInputElement | null;
 
     const name = (nameInput?.value || '').trim();
-    const color = (colorInput?.value || '#5a2a6b').trim();
     const description = (descriptionInput?.value || '').trim();
 
     if (!name) {
@@ -828,10 +825,9 @@ async function createSettingsTag() {
     }
 
     try {
-        await api.post('/api/tags', { name, color, description });
+        await api.post('/api/tags', { name, description });
         if (nameInput) nameInput.value = '';
         if (descriptionInput) descriptionInput.value = '';
-        if (colorInput) colorInput.value = '#5a2a6b';
         await loadSettingsTags();
         showToast('success', 'Sucesso', 'Etiqueta criada!');
     } catch (error: any) {
@@ -853,7 +849,6 @@ async function updateSettingsTag(id: number) {
     if (!row) return;
 
     const name = ((row.querySelector('.settings-tag-name') as HTMLInputElement | null)?.value || '').trim();
-    const color = ((row.querySelector('.settings-tag-color') as HTMLInputElement | null)?.value || '#5a2a6b').trim();
     const description = ((row.querySelector('.settings-tag-description') as HTMLInputElement | null)?.value || '').trim();
 
     if (!name) {
@@ -862,7 +857,7 @@ async function updateSettingsTag(id: number) {
     }
 
     try {
-        await api.put(`/api/tags/${id}`, { name, color, description });
+        await api.put(`/api/tags/${id}`, { name, description });
         await loadSettingsTags();
         showToast('success', 'Sucesso', 'Etiqueta atualizada!');
     } catch (error: any) {
