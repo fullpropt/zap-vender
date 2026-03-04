@@ -48,6 +48,7 @@ export default function FlowBuilder() {
   }, []);
 
   const globals = window as Window & FlowBuilderGlobals;
+  const showFlowAiAssistantLaunch = false;
   const toggleSidebar = () => {
     document.querySelector('.sidebar')?.classList.toggle('open');
     document.querySelector('.sidebar-overlay')?.classList.toggle('active');
@@ -2005,14 +2006,16 @@ export default function FlowBuilder() {
                       </div>
 
                       <div className="flow-ai-assistant-dock" id="flowAiAssistantDock">
-                          <button
-                              className="toolbar-btn ai-highlight flow-ai-assistant-launch"
-                              id="flowAiAssistantLaunchBtn"
-                              type="button"
-                              onClick={() => globals.toggleFlowAiAssistant?.(true)}
-                          >
-                              <span className="icon icon-spark icon-sm"></span> <span id="flowAiAssistantLaunchLabel">Gerar com IA</span>
-                          </button>
+                          {showFlowAiAssistantLaunch ? (
+                              <button
+                                  className="toolbar-btn ai-highlight flow-ai-assistant-launch"
+                                  id="flowAiAssistantLaunchBtn"
+                                  type="button"
+                                  onClick={() => globals.toggleFlowAiAssistant?.(true)}
+                              >
+                                  <span className="icon icon-spark icon-sm"></span> <span id="flowAiAssistantLaunchLabel">Gerar com IA</span>
+                              </button>
+                          ) : null}
 
                           <div className="flow-ai-assistant-panel" id="flowAiAssistantPanel" hidden>
                               <div className="flow-ai-assistant-header">

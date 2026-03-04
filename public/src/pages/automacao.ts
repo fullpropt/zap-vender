@@ -907,7 +907,7 @@ function updateActionOptions() {
                 <label class="form-label">Mensagem</label>
                 <textarea class="form-textarea" id="actionMessage" rows="4" placeholder="Olá {{nome}}! Seja bem-vindo...
 
-Variáveis: {{nome}}, {{veiculo}}, {{placa}}"></textarea>
+Variáveis: {{nome}}"></textarea>
             `;
             break;
         case 'change_status':
