@@ -310,7 +310,6 @@ export default function Configuracoes() {
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('quick')}><span className="icon icon-bolt icon-sm"></span> Respostas rápidas</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('hours')}><span className="icon icon-clock icon-sm"></span> Horários</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('ai')}><span className="icon icon-automation icon-sm"></span> Inteligencia Artificial</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('funnel')}><span className="icon icon-funnel icon-sm"></span> Funil de Vendas</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('notifications')}><span className="icon icon-bell icon-sm"></span> Notificações</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('users')}><span className="icon icon-user icon-sm"></span> Usuários</div>
                       <div className="settings-nav-item" onClick={() => globals.showPanel?.('plan')}><span className="icon icon-dashboard icon-sm"></span> Plano</div>
