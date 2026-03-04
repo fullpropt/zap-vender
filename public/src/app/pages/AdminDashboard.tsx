@@ -935,6 +935,10 @@ export default function AdminDashboard() {
         .admin-dashboard-react .admin-form-group { margin-bottom: 12px; }
         .admin-dashboard-react .admin-form-group label { display: block; margin-bottom: 6px; font-weight: 600; color: var(--gray-700); }
         .admin-dashboard-react .admin-form-group input, .admin-dashboard-react .admin-form-group select, .admin-dashboard-react .admin-form-group textarea { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--surface-muted); color: var(--gray-900); }
+        .admin-dashboard-react .admin-form-group input[type="checkbox"],
+        .admin-dashboard-react .admin-form-group input[type="radio"] { width: auto; padding: 0; border: none; background: transparent; }
+        .admin-dashboard-react .admin-form-group label.admin-inline-check { margin-top: 8px; margin-bottom: 0; display: inline-flex; align-items: center; gap: 8px; font-weight: 400; color: var(--gray-700); cursor: pointer; user-select: none; white-space: nowrap; }
+        .admin-dashboard-react .admin-inline-check input[type="checkbox"] { margin: 0; accent-color: rgb(var(--primary-rgb)); }
         .admin-dashboard-react .admin-form-group textarea { min-height: 120px; resize: vertical; font-family: monospace; font-size: 12px; }
         .admin-dashboard-react .admin-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
         .admin-dashboard-react .admin-email-sections { display: inline-flex; gap: 8px; margin-bottom: 14px; padding: 4px; border: 1px solid var(--border-color); border-radius: 999px; background: rgba(15, 23, 42, 0.36); }
@@ -1180,7 +1184,7 @@ export default function AdminDashboard() {
                           <label>MAILGUN_API_KEY</label>
                           <input type="password" value={mailgunApiKeyInput} onChange={(event) => setMailgunApiKeyInput(event.target.value)} placeholder={hasMailgunApiKey ? 'Chave já configurada. Preencha apenas se quiser substituir.' : 'Cole a API key do Mailgun'} />
                           <div className="admin-muted">Atual: {hasMailgunApiKey ? mailgunApiKeyMasked || 'Configurada' : 'Não configurada'}</div>
-                          <label style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 400 }}><input type="checkbox" checked={removeMailgunApiKey} onChange={(event) => setRemoveMailgunApiKey(event.target.checked)} />Remover chave salva</label>
+                          <label className="admin-inline-check"><input type="checkbox" checked={removeMailgunApiKey} onChange={(event) => setRemoveMailgunApiKey(event.target.checked)} />Remover chave salva</label>
                         </div>
                       </>
                     )}
@@ -1195,7 +1199,7 @@ export default function AdminDashboard() {
                           <label>SENDGRID_API_KEY</label>
                           <input type="password" value={sendgridApiKeyInput} onChange={(event) => setSendgridApiKeyInput(event.target.value)} placeholder={hasSendgridApiKey ? 'Chave já configurada. Preencha apenas se quiser substituir.' : 'Cole a API key do SendGrid'} />
                           <div className="admin-muted">Atual: {hasSendgridApiKey ? sendgridApiKeyMasked || 'Configurada' : 'Não configurada'}</div>
-                          <label style={{ marginTop: 8, display: 'inline-flex', gap: 8, alignItems: 'center', fontWeight: 400 }}><input type="checkbox" checked={removeSendgridApiKey} onChange={(event) => setRemoveSendgridApiKey(event.target.checked)} />Remover chave salva</label>
+                          <label className="admin-inline-check"><input type="checkbox" checked={removeSendgridApiKey} onChange={(event) => setRemoveSendgridApiKey(event.target.checked)} />Remover chave salva</label>
                         </div>
                       </>
                     )}
