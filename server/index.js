@@ -978,10 +978,15 @@ const sessionReconnectCatchupTimers = new Map();
 const sessionReconnectCatchupInFlight = new Set();
 const sessionHistorySyncQueues = new Map();
 const reconnectInFlight = new Set();
+let isServerShuttingDown = false;
 let inboxReconciliationIntervalId = null;
 let inboxReconciliationBootstrapTimeoutId = null;
 let inboxReconciliationIsRunning = false;
 let inboxReconciliationLastSummary = null;
+let flowAwaitingInputRecoveryIntervalId = null;
+let flowAwaitingInputRecoveryBootstrapTimeoutId = null;
+let flowAwaitingInputRecoveryIsRunning = false;
+let flowAwaitingInputRecoveryLastSummary = null;
 const FLOW_RECOVERY_DELAY_MS = parseInt(process.env.FLOW_RECOVERY_DELAY_MS || '', 10) || 2500;
 const FLOW_RECOVERY_WINDOW_MS = parseInt(process.env.FLOW_RECOVERY_WINDOW_MS || '', 10) || (5 * 60 * 1000);
 const FLOW_RECOVERY_TRACKER_LIMIT = 4000;
@@ -1048,6 +1053,32 @@ const INBOX_RECONCILIATION_MAX_RUNTIME_MS = parsePositiveIntInRange(
     3000,
     WHATSAPP_RECONNECT_CATCHUP_MAX_RUNTIME_HARD_LIMIT_MS
 );
+const FLOW_AWAITING_INPUT_RECOVERY_ENABLED = parseBooleanEnv(
+    process.env.FLOW_AWAITING_INPUT_RECOVERY_ENABLED,
+    true
+);
+const FLOW_AWAITING_INPUT_RECOVERY_INTERVAL_MS = parsePositiveIntEnv(
+    process.env.FLOW_AWAITING_INPUT_RECOVERY_INTERVAL_MS,
+    12000
+);
+const FLOW_AWAITING_INPUT_RECOVERY_MAX_EXECUTIONS = parsePositiveIntInRange(
+    process.env.FLOW_AWAITING_INPUT_RECOVERY_MAX_EXECUTIONS,
+    40,
+    1,
+    500
+);
+const FLOW_AWAITING_INPUT_RECOVERY_BACKFILL_LIMIT = parsePositiveIntInRange(
+    process.env.FLOW_AWAITING_INPUT_RECOVERY_BACKFILL_LIMIT,
+    40,
+    10,
+    250
+);
+const FLOW_AWAITING_INPUT_RECOVERY_MAX_MESSAGES_PER_EXECUTION = parsePositiveIntInRange(
+    process.env.FLOW_AWAITING_INPUT_RECOVERY_MAX_MESSAGES_PER_EXECUTION,
+    2,
+    1,
+    20
+);
 
 senderAllocatorService.setRuntimeSessionsGetter(() => sessions);
 senderAllocatorService.setDefaultSessionId(DEFAULT_WHATSAPP_SESSION_ID);
@@ -1110,6 +1141,12 @@ function setRuntimeSessionDispatchBackoff(session, backoffMs = WHATSAPP_SESSION_
 function clearRuntimeSessionDispatchBackoff(session) {
     if (!session) return;
     session.dispatchBlockedUntilMs = 0;
+}
+
+function clearRuntimeSessionReconnectTimer(session) {
+    if (!session || !session.reconnectScheduleTimer) return;
+    clearTimeout(session.reconnectScheduleTimer);
+    session.reconnectScheduleTimer = null;
 }
 
 function getSessionDispatchState(sessionId) {
@@ -1200,6 +1237,7 @@ function buildSessionUnavailableError(sessionState, fallbackMessage = 'Sessao na
 function scheduleRuntimeSessionReconnect(sessionId, session = null) {
     const normalizedSessionId = sanitizeSessionId(sessionId);
     if (!normalizedSessionId) return;
+    if (isServerShuttingDown) return;
 
     const runtimeSession = session || sessions.get(normalizedSessionId);
     if (!runtimeSession) return;
@@ -1207,9 +1245,13 @@ function scheduleRuntimeSessionReconnect(sessionId, session = null) {
     if (sessionInitLocks.has(normalizedSessionId)) return;
     if (reconnectInFlight.has(normalizedSessionId)) return;
 
+    clearRuntimeSessionReconnectTimer(runtimeSession);
     runtimeSession.reconnecting = true;
 
-    setTimeout(() => {
+    runtimeSession.reconnectScheduleTimer = setTimeout(() => {
+        runtimeSession.reconnectScheduleTimer = null;
+        if (isServerShuttingDown) return;
+
         const latestSession = sessions.get(normalizedSessionId);
         if (!latestSession) return;
         if (sessionInitLocks.has(normalizedSessionId)) return;
@@ -2814,6 +2856,7 @@ async function cleanupBrokenLeadNames() {
     }
 }
 async function persistWhatsappSession(sessionId, status, options = {}) {
+    if (isServerShuttingDown) return;
 
     try {
 
@@ -3220,6 +3263,7 @@ async function requestSessionPairingCode(sessionId, clientSocket, phoneNumber, o
 }
 
 async function createSession(sessionId, socket, attempt = 0, options = {}) {
+    if (isServerShuttingDown) return null;
 
     const clientSocket = socket || { emit: () => {} };
     const pairingPhone = normalizePairingPhoneNumber(options.pairingPhone || options.phoneNumber);
@@ -3261,6 +3305,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
     const sessionPath = path.join(SESSIONS_DIR, sessionId);
 
     const previousSession = sessions.get(sessionId);
+    clearRuntimeSessionReconnectTimer(previousSession);
     clearSessionReconnectCatchupTimer(sessionId);
     if (previousSession?.socket) {
         stopSessionHealthMonitor(previousSession);
@@ -3446,7 +3491,8 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
             sendReadyAtMs: 0,
             dispatchBlockedUntilMs: 0,
             lastDisconnectReason: null,
-            lastDisconnectAt: null
+            lastDisconnectAt: null,
+            reconnectScheduleTimer: null
 
         });
 
@@ -3563,7 +3609,13 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 session.isConnected = false;
                 session.sendReadyAtMs = 0;
+                clearRuntimeSessionReconnectTimer(session);
                 stopSessionHealthMonitor(session);
+
+                if (isServerShuttingDown) {
+                    session.reconnecting = false;
+                    return;
+                }
 
                 
 
@@ -3637,6 +3689,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                             });
 
                             await delay(RECONNECT_DELAY);
+                            if (isServerShuttingDown) return;
 
                             const reconnectOptions = session?.pairingMode
                                 ? { ...options, requestPairingCode: false }
@@ -6461,6 +6514,354 @@ function stopInboxReconciliationWorker() {
     }
 }
 
+function isFlowNodeAwaitingInput(flow, nodeId) {
+    const normalizedNodeId = String(nodeId || '').trim();
+    if (!normalizedNodeId) return false;
+    if (!flow || !Array.isArray(flow.nodes)) return false;
+
+    const currentNode = flow.nodes.find((node) => String(node?.id || '').trim() === normalizedNodeId);
+    if (!currentNode) return false;
+
+    const nodeType = String(currentNode?.type || '').trim().toLowerCase();
+    const nodeSubtype = String(currentNode?.subtype || '').trim().toLowerCase();
+
+    if (nodeType === 'intent' || nodeType === 'wait' || nodeType === 'condition') {
+        return true;
+    }
+
+    if (nodeType === 'trigger' && (nodeSubtype === 'keyword' || nodeSubtype === 'intent')) {
+        return true;
+    }
+
+    return false;
+}
+
+function resolveStoredMessageTextForFlow(messageRow = {}) {
+    let text = messageRow?.content_encrypted
+        ? decryptMessage(messageRow.content_encrypted)
+        : messageRow?.content;
+
+    if ((!text || !String(text).trim()) && messageRow?.media_type && messageRow.media_type !== 'text') {
+        text = previewForMedia(messageRow.media_type);
+    }
+
+    return normalizeText(text);
+}
+
+async function isExecutionStillAwaitingInput(executionId, expectedCurrentNode = '') {
+    const normalizedExecutionId = Number(executionId);
+    if (!Number.isFinite(normalizedExecutionId) || normalizedExecutionId <= 0) {
+        return true;
+    }
+
+    const rows = await query(`
+        SELECT status, current_node
+        FROM flow_executions
+        WHERE id = ?
+        LIMIT 1
+    `, [normalizedExecutionId]);
+    const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+    if (!row) return false;
+
+    const normalizedStatus = String(row.status || '').trim().toLowerCase();
+    if (normalizedStatus !== 'running') return false;
+
+    const normalizedExpectedNode = String(expectedCurrentNode || '').trim();
+    if (normalizedExpectedNode) {
+        const currentNode = String(row.current_node || '').trim();
+        if (currentNode !== normalizedExpectedNode) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+async function processRecoveredStoreBackfillMessages(options = {}) {
+    const sessionId = sanitizeSessionId(options.sessionId);
+    const conversation = options.conversation || null;
+    const lead = options.lead || null;
+    const expectedExecutionId = Number(options.expectedExecutionId);
+    const expectedCurrentNode = String(options.expectedCurrentNode || '').trim();
+    const requireStoreBackfillSource = options.requireStoreBackfillSource !== false;
+    const maxToProcess = Math.max(1, Number(options.maxToProcess) || 1);
+    const sinceMessageId = Math.max(0, Number(options.sinceMessageId) || 0);
+    const logSource = String(options.logSource || 'flow-recovery').trim() || 'flow-recovery';
+    const scanLimit = Math.max(8, Math.min(80, maxToProcess * 6));
+
+    if (!sessionId || !conversation?.id || !lead?.id) {
+        return { scanned: 0, processed: 0 };
+    }
+
+    const candidates = await query(`
+        SELECT id, message_id, content, content_encrypted, media_type, metadata, sent_at, created_at
+        FROM messages
+        WHERE conversation_id = ?
+          AND is_from_me = 0
+          AND id > ?
+        ORDER BY id ASC
+        LIMIT ?
+    `, [conversation.id, sinceMessageId, scanLimit]);
+
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+        return { scanned: 0, processed: 0 };
+    }
+
+    const now = Date.now();
+    let scanned = 0;
+    let processed = 0;
+
+    for (const candidate of candidates) {
+        scanned += 1;
+
+        const messageId = String(candidate?.message_id || '').trim();
+        if (!messageId || hasRecoveredFlowMessage(messageId)) continue;
+
+        if (requireStoreBackfillSource) {
+            const metadata = parseJsonSafe(candidate?.metadata, {});
+            if (String(metadata?.source || '').trim() !== 'store_backfill') continue;
+        }
+
+        const rawTimestamp = candidate?.sent_at || candidate?.created_at;
+        const sentAtMs = Date.parse(String(rawTimestamp || ''));
+        if (!Number.isFinite(sentAtMs) || (now - sentAtMs) > FLOW_RECOVERY_WINDOW_MS) continue;
+
+        if (Number.isFinite(expectedExecutionId) && expectedExecutionId > 0) {
+            const stillAwaiting = await isExecutionStillAwaitingInput(expectedExecutionId, expectedCurrentNode);
+            if (!stillAwaiting) {
+                break;
+            }
+        }
+
+        const text = resolveStoredMessageTextForFlow(candidate);
+        if (!text) continue;
+
+        const refreshedConversation = await Conversation.findById(conversation.id) || conversation;
+        await flowService.processIncomingMessage(
+            { text, mediaType: candidate.media_type || 'text' },
+            lead,
+            refreshedConversation
+        );
+        rememberRecoveredFlowMessage(messageId);
+        processed += 1;
+        console.log(`[${sessionId}] ${logSource} processou mensagem recuperada (${messageId}) para continuar fluxo`);
+
+        if (processed >= maxToProcess) break;
+    }
+
+    return { scanned, processed };
+}
+
+async function recoverAwaitingInputFlowExecution(executionRow = {}, flowCache = new Map()) {
+    const executionId = Number(executionRow?.execution_id || 0);
+    const flowId = Number(executionRow?.flow_id || 0);
+    const conversationId = Number(executionRow?.conversation_id || 0);
+    const rowLeadId = Number(executionRow?.lead_id || 0);
+    const currentNode = String(executionRow?.current_node || '').trim();
+    const sessionId = sanitizeSessionId(executionRow?.session_id);
+
+    if (!Number.isFinite(executionId) || executionId <= 0) return { skipped: 'invalid_execution' };
+    if (!Number.isFinite(flowId) || flowId <= 0) return { skipped: 'invalid_flow' };
+    if (!Number.isFinite(conversationId) || conversationId <= 0) return { skipped: 'invalid_conversation' };
+    if (!sessionId) return { skipped: 'invalid_session' };
+    if (!currentNode) return { skipped: 'invalid_node' };
+
+    const runtimeSession = sessions.get(sessionId);
+    const runtimeStore = resolveRuntimeSessionStore(sessionId, runtimeSession);
+    if (!runtimeStore || typeof runtimeStore.loadMessages !== 'function') {
+        return { skipped: 'runtime_store_unavailable' };
+    }
+
+    let flow = flowCache.get(flowId);
+    if (flow === undefined) {
+        flow = await Flow.findById(flowId);
+        flowCache.set(flowId, flow || null);
+    }
+    if (!flow) return { skipped: 'flow_not_found' };
+    if (!isFlowNodeAwaitingInput(flow, currentNode)) return { skipped: 'node_not_waiting' };
+
+    let conversation = await Conversation.findById(conversationId);
+    if (!conversation?.id) return { skipped: 'conversation_not_found' };
+    if (!conversation.is_bot_active) return { skipped: 'bot_inactive' };
+
+    const resolvedLeadId = Number.isFinite(rowLeadId) && rowLeadId > 0
+        ? rowLeadId
+        : Number(conversation?.lead_id || 0);
+    if (!Number.isFinite(resolvedLeadId) || resolvedLeadId <= 0) {
+        return { skipped: 'invalid_lead' };
+    }
+
+    const lead = await Lead.findById(resolvedLeadId);
+    if (!lead?.id) return { skipped: 'lead_not_found' };
+
+    const baselineMessageId = Math.max(
+        0,
+        Number(executionRow?.last_message_id || conversation?.last_message_id || 0) || 0
+    );
+
+    const backfillResult = await backfillConversationMessagesFromStore({
+        sessionId,
+        conversation,
+        lead,
+        contactJid: lead?.jid || lead?.phone || '',
+        limit: FLOW_AWAITING_INPUT_RECOVERY_BACKFILL_LIMIT
+    });
+
+    if ((backfillResult?.inserted || 0) <= 0) {
+        return { skipped: 'no_backfill' };
+    }
+
+    conversation = await Conversation.findById(conversationId) || conversation;
+    const processedResult = await processRecoveredStoreBackfillMessages({
+        sessionId,
+        conversation,
+        lead,
+        sinceMessageId: baselineMessageId,
+        maxToProcess: FLOW_AWAITING_INPUT_RECOVERY_MAX_MESSAGES_PER_EXECUTION,
+        expectedExecutionId: executionId,
+        expectedCurrentNode: currentNode,
+        requireStoreBackfillSource: true,
+        logSource: 'flow-awaiting-input-recovery'
+    });
+
+    if ((processedResult?.processed || 0) <= 0) {
+        return { skipped: 'no_message_processed' };
+    }
+
+    return {
+        recovered: Math.max(0, Number(processedResult.processed || 0)),
+        backfillInserted: Math.max(0, Number(backfillResult.inserted || 0))
+    };
+}
+
+async function runFlowAwaitingInputRecoveryCycle(options = {}) {
+    const trigger = String(options.trigger || 'flow-awaiting-input-worker').trim() || 'flow-awaiting-input-worker';
+    const force = options.force === true;
+
+    if (!FLOW_AWAITING_INPUT_RECOVERY_ENABLED && !force) {
+        return { skipped: 'disabled', trigger };
+    }
+    if (flowAwaitingInputRecoveryIsRunning) {
+        return { skipped: 'in_flight', trigger };
+    }
+
+    flowAwaitingInputRecoveryIsRunning = true;
+    const startedAtMs = Date.now();
+    const summary = {
+        trigger,
+        executionsScanned: 0,
+        executionsRecovered: 0,
+        messagesRecovered: 0,
+        backfillInserted: 0,
+        skippedByReason: {},
+        elapsedMs: 0
+    };
+
+    try {
+        const maxExecutions = parsePositiveIntInRange(
+            options.maxExecutions,
+            FLOW_AWAITING_INPUT_RECOVERY_MAX_EXECUTIONS,
+            1,
+            500
+        );
+
+        const runningExecutions = await query(`
+            SELECT
+                fe.id AS execution_id,
+                fe.flow_id,
+                fe.current_node,
+                fe.conversation_id,
+                fe.lead_id,
+                c.session_id,
+                c.last_message_id
+            FROM flow_executions fe
+            JOIN conversations c ON c.id = fe.conversation_id
+            WHERE fe.status = 'running'
+            ORDER BY fe.id DESC
+            LIMIT ?
+        `, [maxExecutions]);
+
+        if (!Array.isArray(runningExecutions) || runningExecutions.length === 0) {
+            summary.skippedByReason.no_running_executions = 1;
+            return summary;
+        }
+
+        summary.executionsScanned = runningExecutions.length;
+        const flowCache = new Map();
+
+        for (const executionRow of runningExecutions) {
+            try {
+                const recoveryResult = await recoverAwaitingInputFlowExecution(executionRow, flowCache);
+                const recovered = Math.max(0, Number(recoveryResult?.recovered || 0));
+                if (recovered > 0) {
+                    summary.executionsRecovered += 1;
+                    summary.messagesRecovered += recovered;
+                    summary.backfillInserted += Math.max(0, Number(recoveryResult?.backfillInserted || 0));
+                } else {
+                    const skippedReason = String(recoveryResult?.skipped || '').trim() || 'not_recovered';
+                    summary.skippedByReason[skippedReason] = Number(summary.skippedByReason[skippedReason] || 0) + 1;
+                }
+            } catch (executionError) {
+                summary.skippedByReason.error = Number(summary.skippedByReason.error || 0) + 1;
+                console.warn(
+                    `[FlowAwaitingRecovery] Falha ao recuperar execucao ${Number(executionRow?.execution_id || 0) || 'n/a'}:`,
+                    executionError.message
+                );
+            }
+        }
+
+        return summary;
+    } finally {
+        summary.elapsedMs = Math.max(0, Date.now() - startedAtMs);
+        flowAwaitingInputRecoveryLastSummary = {
+            ...summary,
+            completedAt: new Date().toISOString()
+        };
+        flowAwaitingInputRecoveryIsRunning = false;
+    }
+}
+
+function startFlowAwaitingInputRecoveryWorker() {
+    if (flowAwaitingInputRecoveryIntervalId) return;
+
+    if (!FLOW_AWAITING_INPUT_RECOVERY_ENABLED) {
+        console.log('[FlowAwaitingRecovery] worker desabilitado por configuracao');
+        return;
+    }
+
+    const runCycle = () => {
+        runFlowAwaitingInputRecoveryCycle({
+            trigger: 'flow-awaiting-input-worker'
+        }).catch((error) => {
+            console.error('[FlowAwaitingRecovery] Falha no ciclo periodico:', error.message);
+        });
+    };
+
+    flowAwaitingInputRecoveryIntervalId = setInterval(runCycle, FLOW_AWAITING_INPUT_RECOVERY_INTERVAL_MS);
+
+    const bootstrapDelayMs = Math.max(
+        4000,
+        Math.min(15000, Math.floor(FLOW_AWAITING_INPUT_RECOVERY_INTERVAL_MS / 2))
+    );
+    flowAwaitingInputRecoveryBootstrapTimeoutId = setTimeout(() => {
+        flowAwaitingInputRecoveryBootstrapTimeoutId = null;
+        runCycle();
+    }, bootstrapDelayMs);
+
+    console.log(`[FlowAwaitingRecovery] worker ativo (intervalo=${FLOW_AWAITING_INPUT_RECOVERY_INTERVAL_MS}ms)`);
+}
+
+function stopFlowAwaitingInputRecoveryWorker() {
+    if (flowAwaitingInputRecoveryBootstrapTimeoutId) {
+        clearTimeout(flowAwaitingInputRecoveryBootstrapTimeoutId);
+        flowAwaitingInputRecoveryBootstrapTimeoutId = null;
+    }
+    if (flowAwaitingInputRecoveryIntervalId) {
+        clearInterval(flowAwaitingInputRecoveryIntervalId);
+        flowAwaitingInputRecoveryIntervalId = null;
+    }
+}
+
 function normalizeHistorySyncMessageBatch(messages, limit = WHATSAPP_HISTORY_SYNC_MESSAGES_LIMIT) {
     if (!Array.isArray(messages) || messages.length === 0) return [];
 
@@ -6803,6 +7204,7 @@ async function runCiphertextRecovery(sessionId, rawMessage = {}, attempt = 1) {
 
     let conversation = await Conversation.findByLeadId(lead.id, sessionId);
     if (!conversation?.id) return false;
+    const baselineMessageId = Math.max(0, Number(conversation?.last_message_id || 0) || 0);
 
     const backfillResult = await backfillConversationMessagesFromStore({
         sessionId,
@@ -6813,52 +7215,17 @@ async function runCiphertextRecovery(sessionId, rawMessage = {}, attempt = 1) {
     });
 
     if ((backfillResult?.inserted || 0) <= 0) return false;
+    const recoveredMessages = await processRecoveredStoreBackfillMessages({
+        sessionId,
+        conversation,
+        lead,
+        sinceMessageId: baselineMessageId,
+        maxToProcess: 1,
+        requireStoreBackfillSource: true,
+        logSource: 'ciphertext-recovery'
+    });
 
-    const recentIncoming = await query(`
-        SELECT id, message_id, content, content_encrypted, media_type, metadata, sent_at, created_at, is_from_me
-        FROM messages
-        WHERE conversation_id = ?
-          AND is_from_me = 0
-        ORDER BY COALESCE(sent_at, created_at) DESC, id DESC
-        LIMIT 12
-    `, [conversation.id]);
-    if (!Array.isArray(recentIncoming) || recentIncoming.length === 0) return false;
-
-    const now = Date.now();
-    let recovered = false;
-    for (const candidate of recentIncoming) {
-        const messageId = String(candidate?.message_id || '').trim();
-        if (!messageId || hasRecoveredFlowMessage(messageId)) continue;
-
-        const metadata = parseJsonSafe(candidate?.metadata, {});
-        if (String(metadata?.source || '').trim() !== 'store_backfill') continue;
-
-        const rawTimestamp = candidate?.sent_at || candidate?.created_at;
-        const sentAtMs = Date.parse(String(rawTimestamp || ''));
-        if (!Number.isFinite(sentAtMs) || (now - sentAtMs) > FLOW_RECOVERY_WINDOW_MS) continue;
-
-        let text = candidate?.content_encrypted
-            ? decryptMessage(candidate.content_encrypted)
-            : candidate?.content;
-        if ((!text || !String(text).trim()) && candidate?.media_type && candidate.media_type !== 'text') {
-            text = previewForMedia(candidate.media_type);
-        }
-        text = normalizeText(text);
-        if (!text) continue;
-
-        conversation = await Conversation.findById(conversation.id) || conversation;
-        await flowService.processIncomingMessage(
-            { text, mediaType: candidate.media_type || 'text' },
-            lead,
-            conversation
-        );
-        rememberRecoveredFlowMessage(messageId);
-        console.log(`[${sessionId}] Recuperacao automatica processou mensagem cifrada (${messageId}) para continuar fluxo`);
-        recovered = true;
-        break;
-    }
-
-    return recovered;
+    return (recoveredMessages?.processed || 0) > 0;
 }
 
 
@@ -7852,6 +8219,7 @@ function sessionExists(sessionId) {
     startScheduledAutomationsWorker();
     startTenantIntegrityAuditWorker();
     startInboxReconciliationWorker();
+    startFlowAwaitingInputRecoveryWorker();
 })().catch((error) => {
     console.error('Erro ao inicializar servicos apos migracao:', error.message);
 });
@@ -16138,17 +16506,26 @@ process.on('uncaughtException', (error) => {
     // Graceful shutdown (referências em closure)
 
     process.on('SIGTERM', async () => {
+        if (isServerShuttingDown) return;
+        isServerShuttingDown = true;
 
         console.log('??  SIGTERM recebido, encerrando servidor...');
 
         queueService.stopProcessing();
         stopInboxReconciliationWorker();
+        stopFlowAwaitingInputRecoveryWorker();
         await webhookQueueService.shutdown();
 
-        for (const [sessionId, session] of sessions.entries()) {
+        for (const [sessionId] of sessions.entries()) {
+            clearSessionReconnectCatchupTimer(sessionId);
+        }
+        for (const session of sessions.values()) {
+            clearRuntimeSessionReconnectTimer(session);
+        }
+        reconnectInFlight.clear();
 
+        for (const [, session] of sessions.entries()) {
             try { await session.socket.end(); } catch (e) {}
-
         }
 
         await closeDatabase();
@@ -16160,12 +16537,27 @@ process.on('uncaughtException', (error) => {
 
 
     process.on('SIGINT', async () => {
+        if (isServerShuttingDown) return;
+        isServerShuttingDown = true;
 
         console.log('??  SIGINT recebido, encerrando servidor...');
 
         queueService.stopProcessing();
         stopInboxReconciliationWorker();
+        stopFlowAwaitingInputRecoveryWorker();
         await webhookQueueService.shutdown();
+
+        for (const [sessionId] of sessions.entries()) {
+            clearSessionReconnectCatchupTimer(sessionId);
+        }
+        for (const session of sessions.values()) {
+            clearRuntimeSessionReconnectTimer(session);
+        }
+        reconnectInFlight.clear();
+
+        for (const [, session] of sessions.entries()) {
+            try { await session.socket.end(); } catch (e) {}
+        }
 
         await closeDatabase();
 
