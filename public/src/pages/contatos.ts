@@ -225,12 +225,20 @@ function parseLeadCustomFields(value: unknown) {
     if (!value) return {};
     if (typeof value === 'object') return Array.isArray(value) ? {} : { ...(value as Record<string, any>) };
     if (typeof value !== 'string') return {};
-    try {
-        const parsed = JSON.parse(value);
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-        return {};
+    let current: unknown = value;
+    for (let depth = 0; depth < 3; depth += 1) {
+        if (typeof current !== 'string') break;
+        const trimmed = current.trim();
+        if (!trimmed) return {};
+        try {
+            current = JSON.parse(trimmed);
+        } catch {
+            return {};
+        }
     }
+    return current && typeof current === 'object' && !Array.isArray(current)
+        ? { ...(current as Record<string, any>) }
+        : {};
 }
 
 function extractLeadNotesFromCustomFields(customFields: Record<string, any>) {

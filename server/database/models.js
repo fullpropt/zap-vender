@@ -54,15 +54,23 @@ function parseLeadCustomFields(value) {
 
     if (typeof value !== 'string') return {};
 
-    try {
-        const parsed = JSON.parse(value);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    let current = value;
+    for (let depth = 0; depth < 3; depth += 1) {
+        if (typeof current !== 'string') break;
+        const trimmed = current.trim();
+        if (!trimmed) return {};
+        try {
+            current = JSON.parse(trimmed);
+        } catch (_) {
             return {};
         }
-        return parsed;
-    } catch (_) {
+    }
+
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
         return {};
     }
+
+    return { ...current };
 }
 
 function mergeLeadCustomFields(baseValue, overrideValue) {
