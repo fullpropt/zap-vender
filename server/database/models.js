@@ -2655,6 +2655,39 @@ const MessageQueue = {
         return await query(sql, params);
     },
 
+    async listLeadIdsWithQueuedOrSentForCampaign(campaignId, leadIds = []) {
+        const normalizedCampaignId = Number(campaignId || 0);
+        if (!Number.isInteger(normalizedCampaignId) || normalizedCampaignId <= 0) {
+            return [];
+        }
+
+        const normalizedLeadIds = Array.from(
+            new Set(
+                (Array.isArray(leadIds) ? leadIds : [])
+                    .map((value) => Number(value))
+                    .filter((value) => Number.isInteger(value) && value > 0)
+            )
+        );
+
+        const params = [normalizedCampaignId];
+        let sql = `
+            SELECT DISTINCT lead_id
+            FROM message_queue
+            WHERE campaign_id = ?
+              AND status IN ('pending', 'processing', 'sent')
+        `;
+
+        if (normalizedLeadIds.length > 0) {
+            sql += ' AND lead_id = ANY(?::int[])';
+            params.push(normalizedLeadIds);
+        }
+
+        const rows = await query(sql, params);
+        return (rows || [])
+            .map((row) => Number(row?.lead_id || 0))
+            .filter((value) => Number.isInteger(value) && value > 0);
+    },
+
     async hasQueuedOrSentForCampaignLead(campaignId, leadId) {
         const row = await queryOne(`
             SELECT id

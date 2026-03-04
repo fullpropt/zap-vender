@@ -118,6 +118,7 @@ let campaignsRealtimeRefreshInFlight = false;
 let activeCampaignDetailsId: number | null = null;
 let activeCampaignDetailsTab: 'overview' | 'messages' | 'recipients' = 'overview';
 let campaignRecipientsRefreshInFlight = false;
+let campaignRecipientsRequestToken = 0;
 let campaignMessageVariationsDrafts: string[] = [];
 let campaignMessageVariationEditingIndex: number | null = null;
 let campaignMessageVariationsUiBound = false;
@@ -1337,7 +1338,7 @@ function syncCampaignDetailsModal(campaign: Campaign, options: { refreshRecipien
 
     if (options.refreshRecipients && !campaignRecipientsRefreshInFlight) {
         campaignRecipientsRefreshInFlight = true;
-        void loadCampaignRecipients(campaign).finally(() => {
+        void loadCampaignRecipients(campaign, { preserveContent: true }).finally(() => {
             campaignRecipientsRefreshInFlight = false;
         });
     }
@@ -1395,14 +1396,21 @@ function bindCampaignsRealtimeUpdates() {
     });
 }
 
-async function loadCampaignRecipients(campaign: Campaign) {
+async function loadCampaignRecipients(campaign: Campaign, options: { preserveContent?: boolean } = {}) {
     const campaignRecipients = document.getElementById('campaignRecipients') as HTMLElement | null;
     if (!campaignRecipients) return;
 
-    campaignRecipients.innerHTML = '<p style="color: var(--gray-500);">Carregando destinatários...</p>';
+    const requestToken = ++campaignRecipientsRequestToken;
+    const preserveContent = options.preserveContent === true;
+    const hasRenderedContent = campaignRecipients.innerHTML.trim().length > 0;
+    const shouldShowLoadingState = !preserveContent || !hasRenderedContent;
+    if (shouldShowLoadingState) {
+        campaignRecipients.innerHTML = '<p style="color: var(--gray-500);">Carregando destinatários...</p>';
+    }
 
     try {
         const response: CampaignRecipientsResponse = await api.get(`/api/campaigns/${campaign.id}/recipients?limit=200`);
+        if (requestToken !== campaignRecipientsRequestToken) return;
         const recipients = response.recipients || [];
         const total = Number(response.total || recipients.length);
         const segmentLabel = getCampaignSegmentLabel(response.segment || campaign.segment);
@@ -1455,7 +1463,10 @@ async function loadCampaignRecipients(campaign: Campaign) {
             ${total > recipients.length ? `<p style="color: var(--gray-500); margin-top: 8px;">Mostrando ${formatNumber(recipients.length)} de ${formatNumber(total)} contatos.</p>` : ''}
         `;
     } catch (error) {
-        campaignRecipients.innerHTML = '<p style="color: var(--danger);">Não foi possível carregar os destinatários.</p>';
+        if (requestToken !== campaignRecipientsRequestToken) return;
+        if (shouldShowLoadingState || !hasRenderedContent) {
+            campaignRecipients.innerHTML = '<p style="color: var(--danger);">Não foi possível carregar os destinatários.</p>';
+        }
     }
 }
 

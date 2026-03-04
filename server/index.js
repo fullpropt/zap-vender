@@ -13802,6 +13802,34 @@ async function queueCampaignMessages(campaign, options = {}) {
 
     }
 
+    const totalRecipients = leadIds.length;
+    let queueCandidateLeadIds = [...leadIds];
+    let skippedAlreadyQueuedOrSent = 0;
+
+    if (campaignType === 'broadcast') {
+        const existingLeadIds = new Set(
+            await MessageQueue.listLeadIdsWithQueuedOrSentForCampaign(campaign.id, leadIds)
+        );
+        if (existingLeadIds.size > 0) {
+            queueCandidateLeadIds = leadIds.filter((leadId) => !existingLeadIds.has(Number(leadId)));
+            skippedAlreadyQueuedOrSent = leadIds.length - queueCandidateLeadIds.length;
+        }
+    }
+
+    if (!queueCandidateLeadIds.length) {
+        return {
+            queued: 0,
+            recipients: totalRecipients,
+            eligible_recipients: 0,
+            skipped_already_queued_or_sent: skippedAlreadyQueuedOrSent,
+            steps: steps.length,
+            distribution: {
+                strategy: normalizeCampaignDistributionStrategy(campaign?.distribution_strategy, 'single'),
+                by_session: {}
+            }
+        };
+    }
+
     const senderAccounts = await CampaignSenderAccount.listByCampaignId(campaign.id, { onlyActive: true });
     const distributionStrategy = normalizeCampaignDistributionStrategy(
         campaign?.distribution_strategy,
@@ -13810,7 +13838,7 @@ async function queueCampaignMessages(campaign, options = {}) {
     let distributionPlan;
     try {
         distributionPlan = await senderAllocatorService.buildDistributionPlan({
-            leadIds,
+            leadIds: queueCandidateLeadIds,
             campaignId: campaign.id,
             senderAccounts,
             strategy: distributionStrategy,
@@ -13834,7 +13862,7 @@ async function queueCampaignMessages(campaign, options = {}) {
     const delayMinMs = Math.max(250, delayMinMsRaw || 0);
     const delayMaxMs = Math.max(delayMinMs, delayMaxMsRaw || 0);
     const scheduledAtByLead = buildCampaignScheduledAtByLead(
-        leadIds,
+        queueCandidateLeadIds,
         assignmentMetaByLead,
         baseStartMs,
         delayMinMs,
@@ -13855,9 +13883,9 @@ async function queueCampaignMessages(campaign, options = {}) {
             );
             const nextLeadAtMsByDayOffset = new Map();
 
-            for (let leadIndex = 0; leadIndex < leadIds.length; leadIndex++) {
+            for (let leadIndex = 0; leadIndex < queueCandidateLeadIds.length; leadIndex++) {
 
-                const leadId = leadIds[leadIndex];
+                const leadId = queueCandidateLeadIds[leadIndex];
                 const assignmentMeta = assignmentMetaByLead[String(leadId)] || null;
                 const leadDayOffsetRaw = Number(assignmentMeta?.day_offset);
                 const leadDayOffset = Number.isFinite(leadDayOffsetRaw) && leadDayOffsetRaw > 0
@@ -13914,13 +13942,13 @@ async function queueCampaignMessages(campaign, options = {}) {
         const startAt = new Date(baseStartMs).toISOString();
         const broadcastMessagePool = buildBroadcastCampaignMessagePool(campaign);
         const contentByLead = broadcastMessagePool.length > 1
-            ? leadIds.reduce((acc, leadId) => {
+            ? queueCandidateLeadIds.reduce((acc, leadId) => {
                 acc[String(leadId)] = pickRandomCampaignMessagePoolEntry(broadcastMessagePool, steps[0]);
                 return acc;
             }, {})
             : null;
 
-        const results = await queueService.addBulk(leadIds, steps[0], {
+        const results = await queueService.addBulk(queueCandidateLeadIds, steps[0], {
 
             startAt,
 
@@ -13956,7 +13984,9 @@ async function queueCampaignMessages(campaign, options = {}) {
 
     return {
         queued: queuedCount,
-        recipients: leadIds.length,
+        recipients: totalRecipients,
+        eligible_recipients: queueCandidateLeadIds.length,
+        skipped_already_queued_or_sent: skippedAlreadyQueuedOrSent,
         steps: steps.length,
         distribution: {
             strategy: distributionPlan.strategyUsed || distributionStrategy,
