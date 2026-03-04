@@ -11304,9 +11304,12 @@ app.put('/api/leads/:id', authenticate, async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(updateData, 'name')) {
         const manualName = sanitizeAutoName(updateData.name);
         if (manualName) {
+            updateData.name = manualName;
             updateData.custom_fields = lockLeadNameAsManual(
                 mergeLeadCustomFields(lead.custom_fields, updateData.custom_fields)
             );
+        } else {
+            delete updateData.name;
         }
     }
 
