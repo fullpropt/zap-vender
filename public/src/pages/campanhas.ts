@@ -1898,7 +1898,6 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         await loadCampaigns();
         showToast('success', 'Sucesso', campaignId ? 'Campanha atualizada com sucesso!' : 'Campanha criada com sucesso!');
     } catch (error) {
-        hideLoading();
         if (!shouldUseLocalCampaignFallback(error)) {
             showToast('error', 'Erro', (error as Error)?.message || 'Não foi possível salvar a campanha');
             return;
@@ -1930,6 +1929,8 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         resetCampaignForm();
         renderCampaigns();
         updateStats();
+    } finally {
+        hideLoading();
     }
 }
 

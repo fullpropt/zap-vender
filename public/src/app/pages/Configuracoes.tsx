@@ -422,15 +422,9 @@ export default function Configuracoes() {
                                   <div className="copy-card-header">
                                       <span className="copy-card-title">Nova etiqueta</span>
                                   </div>
-                                  <div className="form-row">
-                                      <div className="form-group">
-                                          <label className="form-label required">Nome</label>
-                                          <input type="text" className="form-input" id="newTagName" placeholder="Ex.: Lead quente" />
-                                      </div>
-                                      <div className="form-group" style={{ maxWidth: '140px' }}>
-                                          <label className="form-label">Cor</label>
-                                          <input type="color" className="form-input" id="newTagColor" defaultValue="#5a2a6b" style={{ height: '45px' }} />
-                                      </div>
+                                  <div className="form-group">
+                                      <label className="form-label required">Nome</label>
+                                      <input type="text" className="form-input" id="newTagName" placeholder="Ex.: Lead quente" />
                                   </div>
                                   <div className="form-group">
                                       <label className="form-label">{'Descrição'}</label>
@@ -446,14 +440,13 @@ export default function Configuracoes() {
                                       <thead>
                                           <tr>
                                               <th>Nome</th>
-                                              <th>Cor</th>
                                               <th>{'Descrição'}</th>
                                               <th>{'Ações'}</th>
                                           </tr>
                                       </thead>
                                       <tbody id="settingsTagsTableBody">
                                           <tr>
-                                              <td colSpan={4} className="table-empty">
+                                              <td colSpan={3} className="table-empty">
                                                   <div className="table-empty-icon icon icon-empty icon-lg"></div>
                                                   <p>Carregando etiquetas...</p>
                                               </td>

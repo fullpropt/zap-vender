@@ -403,6 +403,22 @@ export default function Contatos() {
                     </select>
                   </div>
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Tags</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    id="editContactTags"
+                    list="editContactTagsOptions"
+                    placeholder="Ex.: VIP, Renovacao"
+                  />
+                  <datalist id="editContactTagsOptions"></datalist>
+                  <div
+                    id="editContactTagsSuggestions"
+                    style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}
+                  ></div>
+                  <p className="form-help">Use as etiquetas cadastradas abaixo ou separe multiplas tags por virgula.</p>
+                </div>
                 <div className="form-row" id="editContactCustomFields"></div>
                 <div className="form-group">
                   <label className="form-label">Observações</label>
