@@ -90,6 +90,15 @@ export default function Configuracoes() {
         }
         @media (max-width: 768px) {
             .settings-container { grid-template-columns: 1fr; }
+            .settings-nav {
+                position: static;
+                top: auto;
+                margin-bottom: 14px;
+            }
+            .settings-nav .settings-nav-item { display: none; }
+            .settings-nav .settings-nav-item[data-panel="conexao"],
+            .settings-nav .settings-nav-item[data-panel="users"],
+            .settings-nav .settings-nav-item[data-panel="plan"] { display: flex; }
         }
         .settings-nav {
             background: var(--surface);
@@ -136,6 +145,22 @@ export default function Configuracoes() {
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+        .settings-users-table {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .settings-users-table .data-table {
+            min-width: 640px;
+        }
+        .settings-users-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 16px;
+        }
+        .settings-users-actions .btn {
+            margin: 0 !important;
         }
         .copy-card {
             background: var(--gray-50);
@@ -240,11 +265,35 @@ export default function Configuracoes() {
             height: 16px;
         }
         @media (max-width: 768px) {
+            .configuracoes-react .settings-nav {
+                position: static !important;
+                top: auto !important;
+                z-index: auto !important;
+                margin-bottom: 14px;
+            }
             .connection-account-body {
                 grid-template-columns: 1fr;
             }
             .connection-account-body .btn {
                 width: 100%;
+            }
+            .settings-panel {
+                padding: 18px;
+            }
+            .settings-section-title {
+                font-size: 16px;
+                margin-bottom: 14px;
+            }
+            .settings-users-table .data-table {
+                min-width: 560px;
+            }
+            .settings-users-table th,
+            .settings-users-table td {
+                padding: 12px 14px;
+            }
+            .settings-users-actions .btn {
+                width: 100%;
+                margin-left: 0 !important;
             }
         }
       `}</style>
@@ -305,21 +354,21 @@ export default function Configuracoes() {
       
               <div className="settings-container">
                   <nav className="settings-nav">
-                      <div className="settings-nav-item active" onClick={() => globals.showPanel?.('conexao')}><span className="icon icon-whatsapp icon-sm"></span> Contas</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('general')}><span className="icon icon-building icon-sm"></span> Campos</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('contact-fields')}><span className="icon icon-contacts icon-sm"></span> Campos Dinâmicos</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('labels')}><span className="icon icon-tag icon-sm"></span> Etiquetas</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('quick')}><span className="icon icon-bolt icon-sm"></span> Respostas rápidas</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('hours')}><span className="icon icon-clock icon-sm"></span> Horários</div>
+                      <div className="settings-nav-item active" data-panel="conexao" onClick={() => globals.showPanel?.('conexao')}><span className="icon icon-whatsapp icon-sm"></span> Contas</div>
+                      <div className="settings-nav-item" data-panel="general" onClick={() => globals.showPanel?.('general')}><span className="icon icon-building icon-sm"></span> Campos</div>
+                      <div className="settings-nav-item" data-panel="contact-fields" onClick={() => globals.showPanel?.('contact-fields')}><span className="icon icon-contacts icon-sm"></span> Campos Dinâmicos</div>
+                      <div className="settings-nav-item" data-panel="labels" onClick={() => globals.showPanel?.('labels')}><span className="icon icon-tag icon-sm"></span> Etiquetas</div>
+                      <div className="settings-nav-item" data-panel="quick" onClick={() => globals.showPanel?.('quick')}><span className="icon icon-bolt icon-sm"></span> Respostas rápidas</div>
+                      <div className="settings-nav-item" data-panel="hours" onClick={() => globals.showPanel?.('hours')}><span className="icon icon-clock icon-sm"></span> Horários</div>
                       {SHOW_AI_TAB && (
-                        <div className="settings-nav-item" onClick={() => globals.showPanel?.('ai')}><span className="icon icon-automation icon-sm"></span> Inteligencia Artificial</div>
+                        <div className="settings-nav-item" data-panel="ai" onClick={() => globals.showPanel?.('ai')}><span className="icon icon-automation icon-sm"></span> Inteligência Artificial</div>
                       )}
                       {SHOW_NOTIFICATIONS_TAB && (
-                        <div className="settings-nav-item" onClick={() => globals.showPanel?.('notifications')}><span className="icon icon-bell icon-sm"></span> Notificações</div>
+                        <div className="settings-nav-item" data-panel="notifications" onClick={() => globals.showPanel?.('notifications')}><span className="icon icon-bell icon-sm"></span> Notificações</div>
                       )}
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('users')}><span className="icon icon-user icon-sm"></span> Usuários</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('plan')}><span className="icon icon-dashboard icon-sm"></span> Plano</div>
-                      <div className="settings-nav-item" onClick={() => globals.showPanel?.('api')}><span className="icon icon-plug icon-sm"></span> API e Webhooks</div>
+                      <div className="settings-nav-item" data-panel="users" onClick={() => globals.showPanel?.('users')}><span className="icon icon-user icon-sm"></span> Usuários</div>
+                      <div className="settings-nav-item" data-panel="plan" onClick={() => globals.showPanel?.('plan')}><span className="icon icon-dashboard icon-sm"></span> Plano</div>
+                      <div className="settings-nav-item" data-panel="api" onClick={() => globals.showPanel?.('api')}><span className="icon icon-plug icon-sm"></span> API e Webhooks</div>
                   </nav>
       
                   <div className="settings-panels">
@@ -484,7 +533,7 @@ export default function Configuracoes() {
                       {SHOW_AI_TAB && (
                         <div className="settings-panel" id="panel-ai">
                           <div className="settings-section">
-                              <h3 className="settings-section-title"><span className="icon icon-automation icon-sm"></span> Inteligencia Artificial</h3>
+                              <h3 className="settings-section-title"><span className="icon icon-automation icon-sm"></span> Inteligência Artificial</h3>
                               <p className="text-muted mb-3">
                                   Configure o contexto do seu negocio para a IA gerar rascunhos de fluxos mais alinhados ao seu atendimento.
                               </p>
@@ -495,7 +544,7 @@ export default function Configuracoes() {
                                           <input type="checkbox" id="aiEnabled" />
                                           <span className="checkbox-custom"></span>
                                       </label>
-                                      <label className="form-label" htmlFor="aiEnabled" style={{ margin: 0 }}>Ativar Inteligencia Artificial para geracao de fluxos</label>
+                                      <label className="form-label" htmlFor="aiEnabled" style={{ margin: 0 }}>Ativar Inteligência Artificial para geração de fluxos</label>
                                   </div>
 
                                   <div className="form-group">
@@ -511,7 +560,7 @@ export default function Configuracoes() {
                                   <div className="form-row">
                                       <div className="form-group">
                                           <label className="form-label">Publico-alvo</label>
-                                          <textarea className="form-textarea" id="aiTargetAudience" rows={3} placeholder="Quem voce atende? Perfil, necessidades, regiao, etc."></textarea>
+                                          <textarea className="form-textarea" id="aiTargetAudience" rows={3} placeholder="Quem você atende? Perfil, necessidades, região, etc."></textarea>
                                       </div>
                                       <div className="form-group">
                                           <label className="form-label">Tom de voz</label>
@@ -552,7 +601,7 @@ export default function Configuracoes() {
                               </div>
 
                               <button className="btn btn-primary" onClick={() => globals.saveAiSettings?.()}>
-                                  <span className="icon icon-save icon-sm"></span> Salvar Inteligencia Artificial
+                                  <span className="icon icon-save icon-sm"></span> Salvar Inteligência Artificial
                               </button>
                           </div>
                         </div>
@@ -716,7 +765,7 @@ export default function Configuracoes() {
                       <div className="settings-panel" id="panel-users">
                           <div className="settings-section">
                               <h3 className="settings-section-title"><span className="icon icon-user icon-sm"></span> Gerenciar Usuários</h3>
-                              <div className="table-container">
+                              <div className="table-container settings-users-table">
                                   <table className="data-table">
                                       <thead>
                                           <tr>
@@ -737,8 +786,10 @@ export default function Configuracoes() {
                                       </tbody>
                                   </table>
                               </div>
-                              <button id="addUserButton" className="btn btn-primary mt-4" onClick={() => globals.openModal?.('addUserModal')}><span className="icon icon-add icon-sm"></span> Adicionar Usuário</button>
-                              <button id="deleteAccountButton" className="btn btn-outline-danger mt-4 ml-2" onClick={() => globals.deleteAccount?.()}><span className="icon icon-delete icon-sm"></span> Excluir conta</button>
+                              <div className="settings-users-actions">
+                                  <button id="addUserButton" className="btn btn-primary" onClick={() => globals.openModal?.('addUserModal')}><span className="icon icon-add icon-sm"></span> Adicionar Usuário</button>
+                                  <button id="deleteAccountButton" className="btn btn-outline-danger" onClick={() => globals.deleteAccount?.()}><span className="icon icon-delete icon-sm"></span> Excluir conta</button>
+                              </div>
                           </div>
       
                           <div className="settings-section">
@@ -807,7 +858,7 @@ export default function Configuracoes() {
               <div className="modal">
                   <div className="modal-header">
                       <h3 className="modal-title"><span className="icon icon-add icon-sm"></span> Adicionar Usuário</h3>
-                      <button className="modal-close" onClick={() => globals.closeModal?.('addUserModal')}>×</button>
+                      <button className="modal-close" onClick={() => globals.closeModal?.('addUserModal')}>{'\u00D7'}</button>
                   </div>
                   <div className="modal-body">
                       <div className="form-group">
@@ -930,7 +981,7 @@ export default function Configuracoes() {
               <div className="modal">
                   <div className="modal-header">
                       <h3 className="modal-title"><span className="icon icon-add icon-sm"></span> Nova resposta rápida</h3>
-                      <button className="modal-close" onClick={() => globals.closeModal?.('addTemplateModal')}>×</button>
+                      <button className="modal-close" onClick={() => globals.closeModal?.('addTemplateModal')}>{'\u00D7'}</button>
                   </div>
                   <div className="modal-body">
                       <div className="form-group">

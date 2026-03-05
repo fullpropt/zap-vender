@@ -807,10 +807,10 @@ function renderFlowVariableTags() {
 
 async function loadFlowVariableFields() {
     try {
-        const response = await fetch('/api/contact-fields', {
+        const response = await fetch(buildFlowApiUrl('/api/contact-fields'), {
             headers: buildAuthHeaders(false)
         });
-        const result = await response.json();
+        const result = await readFlowJsonResponse<any>(response, {});
         const fields = sanitizeContactFields(Array.isArray(result?.fields) ? result.fields : []);
         contactFieldsCache = fields.length ? fields : [...DEFAULT_CONTACT_FIELDS];
     } catch (error) {
@@ -877,10 +877,10 @@ function syncEventNodeData(node?: FlowNode | null) {
 
 async function loadCustomEventsCatalog(options: { silent?: boolean } = {}) {
     try {
-        const response = await fetch('/api/custom-events?active=1', {
+        const response = await fetch(buildFlowApiUrl('/api/custom-events?active=1'), {
             headers: buildAuthHeaders(false)
         });
-        const result = await response.json();
+        const result = await readFlowJsonResponse<any>(response, {});
         const list = Array.isArray(result?.events) ? result.events : [];
         customEventsCache = list
             .map((item: any) => normalizeCustomEventOption(item))
@@ -947,6 +947,11 @@ function getSessionToken() {
     return sessionStorage.getItem('selfDashboardToken');
 }
 
+function isFlowMobileListMode() {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
 function readLastOpenFlowId() {
     try {
         const raw = localStorage.getItem(LAST_OPEN_FLOW_ID_STORAGE_KEY);
@@ -967,6 +972,43 @@ function persistLastOpenFlowId(flowId: number | null) {
         }
     } catch (_) {
         // ignore storage failure
+    }
+}
+
+function getFlowApiBaseUrl() {
+    const appBaseUrl = String((window as any).APP?.socketUrl || '').trim();
+    if (appBaseUrl) {
+        return appBaseUrl.replace(/\/+$/, '');
+    }
+
+    const location = window.location;
+    const hostname = String(location.hostname || '').trim();
+    const port = String(location.port || '').trim();
+
+    if (port === '5173' || port === '4173') {
+        return `${location.protocol}//${hostname}:3001`;
+    }
+
+    const normalizedHost = hostname.toLowerCase();
+    if (normalizedHost === 'localhost' || normalizedHost === '127.0.0.1' || normalizedHost === '::1') {
+        return `${location.protocol}//${hostname}:3001`;
+    }
+
+    return location.origin;
+}
+
+function buildFlowApiUrl(path: string) {
+    const normalizedPath = String(path || '').startsWith('/') ? path : `/${path}`;
+    return `${getFlowApiBaseUrl()}${normalizedPath}`;
+}
+
+async function readFlowJsonResponse<T>(response: Response, fallback: T): Promise<T> {
+    try {
+        const raw = await response.text();
+        if (!raw) return fallback;
+        return JSON.parse(raw) as T;
+    } catch {
+        return fallback;
     }
 }
 
@@ -1064,10 +1106,10 @@ function updateFlowSessionScopeFromSelect() {
 
 async function loadFlowWhatsappSessions(options: { silent?: boolean } = {}) {
     try {
-        const response = await fetch('/api/whatsapp/sessions?includeDisabled=true', {
+        const response = await fetch(buildFlowApiUrl('/api/whatsapp/sessions?includeDisabled=true'), {
             headers: buildAuthHeaders(false)
         });
-        const result = await response.json();
+        const result = await readFlowJsonResponse<any>(response, {});
         if (response.ok && result?.success) {
             flowWhatsappSessionsCache = (Array.isArray(result.sessions) ? result.sessions : [])
                 .map((item) => normalizeFlowWhatsappSessionOption(item))
@@ -1168,6 +1210,11 @@ function toggleFlowActive() {
 }
 
 async function restoreLastFlowOrOpenModal() {
+    if (isFlowMobileListMode()) {
+        openFlowsModal();
+        return;
+    }
+
     const fallbackFlowId = currentFlowId || readLastOpenFlowId();
     if (!fallbackFlowId) {
         openFlowsModal();
@@ -2523,7 +2570,9 @@ async function saveFlow() {
     };
 
     try {
-        const url = currentFlowId ? `/api/flows/${currentFlowId}` : '/api/flows';
+        const url = currentFlowId
+            ? buildFlowApiUrl(`/api/flows/${currentFlowId}`)
+            : buildFlowApiUrl('/api/flows');
         const method = currentFlowId ? 'PUT' : 'POST';
 
         const response = await fetch(url, {
@@ -2532,7 +2581,7 @@ async function saveFlow() {
             body: JSON.stringify(flowData)
         });
 
-        const result = await response.json();
+        const result = await readFlowJsonResponse<any>(response, {});
 
         if (result.success) {
             currentFlowId = result.flow.id;
@@ -2559,10 +2608,10 @@ async function loadFlows() {
     }
 
     try {
-        const response = await fetch('/api/flows', {
+        const response = await fetch(buildFlowApiUrl('/api/flows'), {
             headers: buildAuthHeaders(false)
         });
-        const result = await response.json();
+        const result = await readFlowJsonResponse<any>(response, {});
 
         if (result.success) {
             renderFlowsList(result.flows as FlowSummary[]);
@@ -2585,14 +2634,22 @@ function renderFlowsList(flows: FlowSummary[]) {
     const container = document.getElementById('flowsList') as HTMLElement | null;
     if (!container) return;
     flowsCache = Array.isArray(flows) ? [...flows] : [];
+    const mobileListMode = isFlowMobileListMode();
 
     if (renamingFlowId !== null && !flowsCache.some((flow) => Number(flow.id) === Number(renamingFlowId))) {
         renamingFlowId = null;
         renamingFlowDraft = '';
     }
 
+    if (mobileListMode && renamingFlowId !== null) {
+        renamingFlowId = null;
+        renamingFlowDraft = '';
+    }
+
     if (flows.length === 0) {
-        container.innerHTML = '<p class="flow-list-empty">Nenhum fluxo criado ainda. Crie um novo para começar.</p>';
+        container.innerHTML = mobileListMode
+            ? '<p class="flow-list-empty">Nenhum fluxo disponível no momento.</p>'
+            : '<p class="flow-list-empty">Nenhum fluxo criado ainda. Crie um novo para começar.</p>';
         return;
     }
 
@@ -2613,17 +2670,35 @@ function renderFlowsList(flows: FlowSummary[]) {
     container.innerHTML = flows.map(flow => {
         const isActive = toBoolean(flow.is_active, true);
         const isCurrent = Number(flow.id) === Number(currentFlowId);
-        const isRenaming = Number(flow.id) === Number(renamingFlowId);
+        const isRenaming = !mobileListMode && Number(flow.id) === Number(renamingFlowId);
         const flowName = String(flow.name || '').trim() || 'Sem nome';
         const escapedFlowName = escapeHtml(flowName);
         const encodedName = encodeURIComponent(flowName);
         const inputValue = escapeHtml(renamingFlowDraft);
+        const itemClasses = [
+            'flow-list-item',
+            isCurrent ? 'is-current' : '',
+            isRenaming ? 'is-renaming' : '',
+            mobileListMode ? 'is-readonly' : ''
+        ].filter(Boolean).join(' ');
+        const itemClick = mobileListMode ? '' : ` onclick="loadFlow(${flow.id})"`;
+
         return `
-        <div class="flow-list-item ${isCurrent ? 'is-current' : ''} ${isRenaming ? 'is-renaming' : ''}" onclick="loadFlow(${flow.id})">
+        <div class="${itemClasses}"${itemClick}>
             <div class="icon icon-flows"></div>
             <div class="info">
-                ${isRenaming
+                ${(mobileListMode || !isRenaming)
                     ? `
+                        <div class="name-row">
+                            <div class="name">${escapedFlowName}</div>
+                            ${mobileListMode ? '' : `
+                                <button class="flow-inline-icon" title="Editar nome" onclick="renameFlow(${flow.id}, decodeURIComponent('${encodedName}'), event)">
+                                    <span class="icon icon-edit icon-sm"></span>
+                                </button>
+                            `}
+                        </div>
+                    `
+                    : `
                         <div class="name-row name-row-editing" onclick="event.stopPropagation()">
                             <input
                                 type="text"
@@ -2640,14 +2715,6 @@ function renderFlowsList(flows: FlowSummary[]) {
                             </div>
                         </div>
                     `
-                    : `
-                        <div class="name-row">
-                            <div class="name">${escapedFlowName}</div>
-                            <button class="flow-inline-icon" title="Editar nome" onclick="renameFlow(${flow.id}, decodeURIComponent('${encodedName}'), event)">
-                                <span class="icon icon-edit icon-sm"></span>
-                            </button>
-                        </div>
-                    `
                 }
                 <div class="meta">Gatilho: ${getTriggerLabel(flow.trigger_type)} | Conta: ${escapeHtml(getFlowSessionScopeLabel(flow.session_id))} | ${flow.nodes?.length || 0} blocos | ${isActive ? 'Ativo' : 'Inativo'}</div>
             </div>
@@ -2655,12 +2722,14 @@ function renderFlowsList(flows: FlowSummary[]) {
                 <button class="flow-list-btn flow-list-toggle ${isActive ? 'is-active' : 'is-inactive'}" title="${isActive ? 'Desativar fluxo' : 'Ativar fluxo'}" onclick="toggleFlowActivation(${flow.id}, event)">
                     ${isActive ? 'Desativar' : 'Ativar'}
                 </button>
-                <button class="flow-list-btn flow-list-icon-btn flow-list-duplicate" title="Duplicar fluxo" onclick="duplicateFlow(${flow.id}, event)">
-                    <span class="icon icon-templates icon-sm"></span>
-                </button>
-                <button class="flow-list-btn flow-list-icon-btn flow-list-delete" title="Descartar fluxo" onclick="discardFlow(${flow.id}, event)">
-                    <span class="icon icon-delete icon-sm"></span>
-                </button>
+                ${mobileListMode ? '' : `
+                    <button class="flow-list-btn flow-list-icon-btn flow-list-duplicate" title="Duplicar fluxo" onclick="duplicateFlow(${flow.id}, event)">
+                        <span class="icon icon-templates icon-sm"></span>
+                    </button>
+                    <button class="flow-list-btn flow-list-icon-btn flow-list-delete" title="Descartar fluxo" onclick="discardFlow(${flow.id}, event)">
+                        <span class="icon icon-delete icon-sm"></span>
+                    </button>
+                `}
             </div>
         </div>
     `;
@@ -2737,12 +2806,12 @@ async function saveFlowRenameInline(id: number, event?: Event) {
     }
 
     try {
-        const response = await fetch(`/api/flows/${flowId}`, {
+        const response = await fetch(buildFlowApiUrl(`/api/flows/${flowId}`), {
             method: 'PUT',
             headers: buildAuthHeaders(true),
             body: JSON.stringify({ name: nextName })
         });
-        const result = await response.json();
+        const result = await readFlowJsonResponse<any>(response, {});
 
         if (!result.success) {
             await showFlowAlertDialog('Erro ao renomear fluxo: ' + (result.error || 'Falha inesperada'), 'Renomear fluxo');
@@ -2768,10 +2837,10 @@ async function toggleFlowActivation(id: number, event?: Event) {
 
     const targetFlow = (await (async () => {
         try {
-            const response = await fetch(`/api/flows/${id}`, {
+            const response = await fetch(buildFlowApiUrl(`/api/flows/${id}`), {
                 headers: buildAuthHeaders(false)
             });
-            const result = await response.json();
+            const result = await readFlowJsonResponse<any>(response, {});
             if (!result.success) return null;
             return result.flow as FlowSummary | null;
         } catch {
@@ -2787,12 +2856,12 @@ async function toggleFlowActivation(id: number, event?: Event) {
     const nextActive = !toBoolean(targetFlow.is_active, true);
 
     try {
-        const response = await fetch(`/api/flows/${id}`, {
+        const response = await fetch(buildFlowApiUrl(`/api/flows/${id}`), {
             method: 'PUT',
             headers: buildAuthHeaders(true),
             body: JSON.stringify({ is_active: nextActive ? 1 : 0 })
         });
-        const result = await response.json();
+        const result = await readFlowJsonResponse<any>(response, {});
 
         if (!result.success) {
             await showFlowAlertDialog('Erro ao atualizar status: ' + (result.error || 'Falha inesperada'), 'Status do fluxo');
@@ -2814,10 +2883,10 @@ async function duplicateFlow(id: number, event?: Event) {
     event?.stopPropagation();
 
     try {
-        const response = await fetch(`/api/flows/${id}`, {
+        const response = await fetch(buildFlowApiUrl(`/api/flows/${id}`), {
             headers: buildAuthHeaders(false)
         });
-        const result = await response.json();
+        const result = await readFlowJsonResponse<any>(response, {});
 
         if (!result.success) {
             await showFlowAlertDialog('Erro ao duplicar fluxo: ' + (result.error || 'Falha inesperada'), 'Duplicar fluxo');
@@ -2852,11 +2921,11 @@ async function discardFlow(id: number, event?: Event) {
     if (!await showFlowConfirmDialog('Descartar este fluxo? Esta ação não pode ser desfeita.', 'Descartar fluxo')) return;
 
     try {
-        const response = await fetch(`/api/flows/${id}`, {
+        const response = await fetch(buildFlowApiUrl(`/api/flows/${id}`), {
             method: 'DELETE',
             headers: buildAuthHeaders(false)
         });
-        const result = await response.json();
+        const result = await readFlowJsonResponse<any>(response, {});
 
         if (!result.success) {
             await showFlowAlertDialog('Erro ao descartar fluxo: ' + (result.error || 'Falha inesperada'), 'Descartar fluxo');
@@ -2882,10 +2951,10 @@ type LoadFlowOptions = {
 // Carregar fluxo
 async function loadFlow(id: number, options: LoadFlowOptions = {}): Promise<boolean> {
     try {
-        const response = await fetch(`/api/flows/${id}`, {
+        const response = await fetch(buildFlowApiUrl(`/api/flows/${id}`), {
             headers: buildAuthHeaders(false)
         });
-        const result = await response.json();
+        const result = await readFlowJsonResponse<any>(response, {});
         
         if (result.success) {
             resetEditorState();
@@ -3013,14 +3082,14 @@ async function runGenerateFlowWithAiPrompt(promptText: string, options: AiFlowGe
     }
 
     notify('info', 'IA', 'Gerando rascunho de fluxo...');
-    const response = await fetch('/api/ai/flows/generate', {
+    const response = await fetch(buildFlowApiUrl('/api/ai/flows/generate'), {
         method: 'POST',
         headers: buildAuthHeaders(true),
         body: JSON.stringify({
             prompt: normalizedPrompt
         })
     });
-    const result = await response.json() as AiGenerateFlowResponse;
+    const result = await readFlowJsonResponse<AiGenerateFlowResponse>(response, {} as AiGenerateFlowResponse);
 
     if (!response.ok || !result?.success || !result?.draft) {
         throw new Error(result?.error || 'Nao foi possivel gerar o fluxo com IA');
@@ -3070,6 +3139,9 @@ function openFlowsModal() {
 }
 
 function closeFlowsModal() {
+    if (isFlowMobileListMode()) {
+        return;
+    }
     renamingFlowId = null;
     renamingFlowDraft = '';
     document.getElementById('flowsModal')?.classList.remove('active');

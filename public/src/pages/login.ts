@@ -66,6 +66,38 @@ function getDashboardUrl(isApplicationAdmin = false) {
     return isApplicationAdmin ? '#/admin-dashboard' : '#/dashboard';
 }
 
+function getAuthApiBaseUrl() {
+    const location = window.location;
+    const hostname = String(location.hostname || '').trim();
+    const port = String(location.port || '').trim();
+
+    // In Vite dev/preview, backend API runs on port 3001 on the same host.
+    if (port === '5173' || port === '4173') {
+        return `${location.protocol}//${hostname}:3001`;
+    }
+
+    const normalizedHost = hostname.toLowerCase();
+    if (normalizedHost === 'localhost' || normalizedHost === '127.0.0.1' || normalizedHost === '::1') {
+        return `${location.protocol}//${hostname}:3001`;
+    }
+
+    return location.origin;
+}
+
+function buildAuthApiUrl(path: string) {
+    return `${getAuthApiBaseUrl()}${path}`;
+}
+
+async function readJsonResponse<T>(response: Response, fallback: T): Promise<T> {
+    try {
+        const raw = await response.text();
+        if (!raw) return fallback;
+        return JSON.parse(raw) as T;
+    } catch {
+        return fallback;
+    }
+}
+
 function getInputValue(id: string): string {
     const input = document.getElementById(id) as HTMLInputElement | null;
     return input?.value ?? '';
@@ -286,7 +318,7 @@ async function handleLogin(e: Event) {
     setResendConfirmationVisible(false);
 
     try {
-        const response = await fetch(`${window.location.origin}/api/auth/login`, {
+        const response = await fetch(buildAuthApiUrl('/api/auth/login'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -297,7 +329,7 @@ async function handleLogin(e: Event) {
             })
         });
 
-        const data: LoginResponse = await response.json();
+        const data = await readJsonResponse<LoginResponse>(response, {} as LoginResponse);
 
         if (!response.ok || !data?.token) {
             const errorCode = String(data?.code || '').trim().toUpperCase();
@@ -346,7 +378,7 @@ async function handleRegister(e: Event) {
     }
 
     try {
-        const response = await fetch(`${window.location.origin}/api/auth/register`, {
+        const response = await fetch(buildAuthApiUrl('/api/auth/register'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -359,7 +391,7 @@ async function handleRegister(e: Event) {
             })
         });
 
-        const data: RegisterResponse = await response.json();
+        const data = await readJsonResponse<RegisterResponse>(response, {} as RegisterResponse);
 
         if (!response.ok) {
             throw new Error(data?.error || 'Falha ao criar conta');
@@ -416,7 +448,7 @@ async function resendEmailConfirmation() {
     setResendConfirmationLoading(true);
 
     try {
-        const response = await fetch(`${window.location.origin}/api/auth/resend-confirmation`, {
+        const response = await fetch(buildAuthApiUrl('/api/auth/resend-confirmation'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -424,7 +456,7 @@ async function resendEmailConfirmation() {
             body: JSON.stringify({ email })
         });
 
-        const data: RegisterResponse = await response.json().catch(() => ({} as RegisterResponse));
+        const data = await readJsonResponse<RegisterResponse>(response, {} as RegisterResponse);
 
         if (!response.ok) {
             throw new Error(data?.error || 'Não foi possível reenviar o e-mail de confirmação');
@@ -471,11 +503,11 @@ async function handleConfirmEmailFromRoute() {
         setInfoMessage(infoMsg, 'Confirmando seu email...', true);
 
         const response = await fetch(
-            `${window.location.origin}/api/auth/confirm-email?token=${encodeURIComponent(confirmEmailToken)}`,
+            `${buildAuthApiUrl('/api/auth/confirm-email')}?token=${encodeURIComponent(confirmEmailToken)}`,
             { method: 'GET' }
         );
 
-        const data = await response.json().catch(() => ({} as RegisterResponse));
+        const data = await readJsonResponse<RegisterResponse>(response, {} as RegisterResponse);
 
         if (!response.ok) {
             setInfoMessage(infoMsg, String(data?.error || 'Falha ao confirmar email'), false);

@@ -208,6 +208,16 @@ body {
     border: 1px solid rgba(var(--primary-rgb), 0.3);
 }
 
+/* Hide sidebar WhatsApp menu entry only on mobile */
+@media (max-width: 768px) {
+    .sidebar .nav-link[href="/whatsapp"],
+    .sidebar .nav-link[href="#/whatsapp"],
+    .sidebar .nav-link[href$="/whatsapp"],
+    .sidebar .nav-link[href$="#/whatsapp"] {
+        display: none !important;
+    }
+}
+
 .nav-link .icon {
     width: 18px;
     height: 18px;
@@ -895,6 +905,40 @@ tr:last-child td {
     opacity: 0.5;
 }
 
+.contacts-cell-main-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.contacts-main-meta {
+    min-width: 0;
+}
+
+.contacts-main-name {
+    font-weight: 600;
+    color: var(--dark);
+}
+
+.contacts-main-email {
+    font-size: 12px;
+    color: var(--gray-500);
+    margin-top: 2px;
+}
+
+.contacts-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.contacts-actions-mobile {
+    display: none;
+}
+
+.contacts-row-chevron {
+    display: none;
+}
+
 /* ============================================
    FORMULÁRIOS
    ============================================ */
@@ -1484,28 +1528,40 @@ tr:last-child td {
 .mobile-menu-toggle {
     display: none;
     position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 12px);
-    left: calc(env(safe-area-inset-left, 0px) + 12px);
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    left: calc(env(safe-area-inset-left, 0px) + 10px);
+    right: calc(env(safe-area-inset-right, 0px) + 10px);
     z-index: 5000;
-    background: var(--primary);
+    background: linear-gradient(90deg, rgba(25, 195, 125, 0.96) 0%, rgba(16, 148, 98, 0.96) 100%);
     color: white;
     border: none;
-    border-radius: var(--border-radius);
-    width: 50px;
-    height: 50px;
-    padding: 0;
-    font-size: 20px;
+    border-radius: 12px;
+    width: auto;
+    height: 48px;
+    padding: 0 14px;
+    font-size: 22px;
+    font-weight: 700;
     cursor: pointer;
     box-shadow: var(--shadow);
     align-items: center;
     justify-content: center;
+    gap: 10px;
     pointer-events: auto;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
+    transition: transform var(--transition-fast), opacity var(--transition-fast), background var(--transition-fast);
+}
+
+.mobile-menu-toggle::after {
+    content: "Menu";
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
 }
 
 .mobile-menu-toggle:active {
-    transform: scale(0.97);
+    transform: translateY(1px);
 }
 
 .sidebar-overlay {
@@ -1526,8 +1582,16 @@ body.sidebar-open {
     overflow: hidden;
 }
 
+body.mobile-menu-hidden-by-scroll .mobile-menu-toggle {
+    transform: translateY(calc(-100% - 20px));
+    opacity: 0;
+    pointer-events: none;
+}
+
 body.sidebar-open .mobile-menu-toggle {
-    background: rgba(15, 23, 42, 0.95);
+    transform: translateY(calc(-100% - 20px));
+    opacity: 0;
+    pointer-events: none;
 }
 
 @media (max-width: 1024px) {
@@ -1537,6 +1601,10 @@ body.sidebar-open .mobile-menu-toggle {
         width: min(86vw, 320px);
         box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35);
     }
+
+    body.sidebar-open .sidebar .sidebar-header {
+        padding-top: calc(env(safe-area-inset-top, 0px) + 74px) !important;
+    }
     
     .sidebar.open {
         transform: translateX(0);
@@ -1545,7 +1613,7 @@ body.sidebar-open .mobile-menu-toggle {
     .main-content {
         margin-left: 0;
         padding: 20px 15px;
-        padding-top: 70px;
+        padding-top: 86px;
     }
     
     .mobile-menu-toggle {
@@ -1723,6 +1791,209 @@ body.sidebar-open .mobile-menu-toggle {
         width: 100%;
         min-width: 0;
         max-width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .contatos-react .contacts-table-filters {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        width: 100%;
+        max-width: 100%;
+        align-items: stretch;
+    }
+
+    .contatos-react .contacts-table-filters .contacts-search-box {
+        grid-column: 1 / -1;
+        min-width: 0;
+        max-width: 100%;
+        width: 100%;
+    }
+
+    .contatos-react .contacts-table-filters .contacts-filter-select,
+    .contatos-react .contacts-table-filters .form-select {
+        min-width: 0;
+        max-width: none;
+        width: 100%;
+        flex: 1 1 auto;
+    }
+
+    .contatos-react .contacts-table-filters .form-select {
+        height: 36px;
+        padding-left: 8px;
+        padding-right: 18px;
+        font-size: 11px;
+        line-height: 1.1;
+        letter-spacing: -0.01em;
+        background-position: right 6px center;
+        background-size: 9px;
+    }
+
+    .contatos-react .table-wrapper {
+        overflow: visible;
+        padding: 10px;
+    }
+
+    .contatos-react .table-wrapper table {
+        min-width: 0;
+    }
+
+    .contatos-react .table-wrapper table,
+    .contatos-react .table-wrapper thead,
+    .contatos-react .table-wrapper tbody,
+    .contatos-react .table-wrapper tr,
+    .contatos-react .table-wrapper th,
+    .contatos-react .table-wrapper td {
+        display: block;
+        width: 100%;
+    }
+
+    .contatos-react .table-wrapper thead {
+        display: none;
+    }
+
+    .contatos-react .table-wrapper tr[data-id] {
+        margin-bottom: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.48);
+        overflow: hidden;
+        box-shadow: 0 10px 24px rgba(2, 6, 23, 0.2);
+    }
+
+    .contatos-react .table-wrapper tr[data-id] td {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+        text-align: right;
+    }
+
+    .contatos-react .table-wrapper tr[data-id] td:last-child {
+        border-bottom: none;
+    }
+
+    .contatos-react .table-wrapper tr[data-id] td::before {
+        content: attr(data-label);
+        min-width: 108px;
+        flex-shrink: 0;
+        text-align: left;
+        color: var(--gray-600);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .contatos-react .table-wrapper tr[data-id] .contact-cell-main {
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .contatos-react .table-wrapper tr[data-id] .contact-cell-main::before {
+        display: none;
+    }
+
+    .contatos-react .table-wrapper tr[data-id] .contacts-cell-main-wrap {
+        width: 100%;
+    }
+
+    .contatos-react .table-wrapper tr[data-id] .contacts-main-meta {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .contatos-react .table-wrapper tr[data-id] .contacts-main-name {
+        font-size: 14px;
+        line-height: 1.2;
+    }
+
+    .contatos-react .table-wrapper tr[data-id] .contacts-main-email {
+        word-break: break-word;
+    }
+
+    .contatos-react .contacts-row-chevron {
+        display: block;
+        width: 16px;
+        height: 16px;
+        margin-left: auto;
+        position: relative;
+        opacity: 0.75;
+        transition: transform var(--transition-fast), opacity var(--transition-fast);
+    }
+
+    .contatos-react .contacts-row-chevron::before {
+        content: '';
+        display: block;
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid var(--gray-600);
+        border-bottom: 2px solid var(--gray-600);
+        transform: rotate(45deg);
+        margin: 3px auto 0;
+    }
+
+    .contatos-react tr.is-mobile-expanded .contacts-row-chevron {
+        transform: rotate(180deg);
+        opacity: 1;
+    }
+
+    .contatos-react .contacts-actions-desktop {
+        display: none;
+    }
+
+    .contatos-react .table-wrapper tr[data-id] .contact-cell-actions {
+        display: none;
+    }
+
+    .contatos-react .table-wrapper tr.is-mobile-expanded .contact-cell-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: stretch;
+        text-align: left;
+    }
+
+    .contatos-react .table-wrapper tr.is-mobile-expanded .contact-cell-actions::before {
+        display: none;
+    }
+
+    .contatos-react .contacts-actions-mobile {
+        display: flex;
+        width: 100%;
+        gap: 8px;
+    }
+
+    .contatos-react .contacts-actions-mobile .btn {
+        flex: 1 1 0;
+        width: 100%;
+        height: 36px;
+        justify-content: center;
+    }
+
+    .contatos-react .table-wrapper tr:hover td {
+        background: transparent;
+    }
+
+    .contatos-react .table-wrapper .table-empty::before {
+        display: none;
+    }
+
+    .contatos-react .table-wrapper .table-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 180px;
+        text-align: center;
+    }
+
+    .campaign-empty-create-btn,
+    .automation-empty-create-btn {
+        display: none !important;
     }
 }
 

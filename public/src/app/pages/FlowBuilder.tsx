@@ -90,6 +90,9 @@ export default function FlowBuilder() {
             height: 100dvh;
             overflow: hidden;
             padding: 18px 24px 14px;
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr);
+            gap: 12px;
         }
 
         .flow-builder-react .header {
@@ -652,9 +655,8 @@ export default function FlowBuilder() {
         .flow-container {
             display: grid;
             grid-template-columns: 280px minmax(0, 1fr) 320px;
-            height: calc(100vh - 156px);
-            height: calc(100dvh - 156px);
-            min-height: 420px;
+            height: 100%;
+            min-height: 0;
             gap: 0;
             background: white;
             border-radius: 16px;
@@ -1691,6 +1693,10 @@ export default function FlowBuilder() {
             background: rgba(var(--primary-rgb), 0.08);
         }
 
+        .flow-list-item.is-readonly {
+            cursor: default;
+        }
+
         .flow-list-item.is-current {
             border-color: rgba(var(--primary-rgb), 0.58);
             background: linear-gradient(
@@ -1948,7 +1954,7 @@ export default function FlowBuilder() {
 
         @media (max-width: 1024px) {
             .flow-builder-react .main-content {
-                padding: 16px 14px 12px;
+                padding: calc(env(safe-area-inset-top, 0px) + 72px) 14px 12px;
             }
             .flow-builder-react .header-title {
                 flex: 1 1 100%;
@@ -1986,11 +1992,29 @@ export default function FlowBuilder() {
         
         @media (max-width: 768px) {
             .flow-builder-react .main-content {
-                height: auto;
-                min-height: 100vh;
-                min-height: 100dvh;
-                overflow: auto;
-                padding: 14px 10px calc(10px + env(safe-area-inset-bottom));
+                height: 100vh;
+                height: 100dvh;
+                min-height: 0;
+                overflow: hidden;
+                padding: calc(env(safe-area-inset-top, 0px) + 72px) 10px calc(10px + env(safe-area-inset-bottom));
+                gap: 8px;
+            }
+            .flow-builder-react .header {
+                margin-bottom: 0;
+                gap: 8px;
+            }
+            .flow-builder-react .header-title h1 {
+                font-size: clamp(24px, 5vw, 30px);
+            }
+            .flow-builder-react .header-title {
+                padding-left: 0;
+                min-height: 0;
+            }
+            .flow-builder-react .header-title p {
+                display: none;
+            }
+            .flow-builder-react .header-flow-row {
+                display: none;
             }
             .flow-builder-react .flow-name-highlight {
                 padding: 8px 10px;
@@ -2032,17 +2056,71 @@ export default function FlowBuilder() {
             }
             .flow-container {
                 grid-template-columns: 1fr;
-                grid-template-rows: auto 1fr;
-                height: calc(100vh - 168px);
-                height: calc(100dvh - 168px);
-                min-height: 380px;
+                grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+                height: 100%;
+                min-height: 0;
+            }
+            .flow-builder-react .flow-container {
+                display: none;
+            }
+            .flow-builder-react #flowsModal.modal-overlay {
+                display: flex;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                min-height: 0;
+                padding: calc(118px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom));
+                background: transparent;
+                backdrop-filter: none;
+                z-index: 3;
+                align-items: flex-start;
+                justify-content: center;
+            }
+            .flow-builder-react #flowsModal .modal {
+                width: 100%;
+                max-height: none;
+                height: auto;
+                max-width: 760px;
+                border-radius: 16px;
+                box-shadow: 0 6px 24px rgba(2, 6, 23, 0.3);
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+                max-height: calc(100vh - 136px - env(safe-area-inset-bottom));
+                max-height: calc(100dvh - 136px - env(safe-area-inset-bottom));
+            }
+            .flow-builder-react #flowsModal .modal-close {
+                display: none;
+            }
+            .flow-builder-react #flowsModal .modal-header {
+                padding: 14px;
+            }
+            .flow-builder-react #flowsModal .modal-header h2 {
+                font-size: 16px;
+            }
+            .flow-builder-react #flowsModal .modal-body {
+                max-height: none;
+                flex: 1;
+                min-height: 0;
+                padding: 12px;
+            }
+            .flow-builder-react #flowsModal .modal-footer {
+                display: none;
+            }
+            .flow-canvas {
+                order: 1;
+                min-height: 0;
             }
             .nodes-panel {
+                order: 2;
                 border-right: none;
-                border-bottom: 1px solid var(--border);
+                border-top: 1px solid var(--border);
+                border-bottom: none;
                 padding: 12px;
-                max-height: 36vh;
-                min-height: 150px;
+                max-height: none;
+                min-height: 0;
             }
             .node-item {
                 padding: 10px 12px;
@@ -2060,10 +2138,7 @@ export default function FlowBuilder() {
                 padding-right: 0;
             }
             .flow-builder-react .header-flow-row {
-                display: grid;
-                grid-template-columns: 1fr;
-                gap: 8px;
-                padding-right: 0;
+                display: none;
             }
             .flow-builder-react .header-flow-row .flow-name-highlight {
                 min-width: 0;
@@ -2185,7 +2260,7 @@ export default function FlowBuilder() {
                 display: none;
             }
             .nodes-panel {
-                max-height: 42vh;
+                max-height: none;
             }
             .node-item .info .desc {
                 display: none;

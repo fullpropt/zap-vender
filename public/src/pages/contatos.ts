@@ -626,6 +626,33 @@ function clearContactIdFromUrl() {
     window.history.replaceState({}, '', nextUrl);
 }
 
+function isContactsMobileViewport() {
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function bindContactsMobileCascadeBehavior() {
+    const tbody = document.getElementById('contactsTableBody') as HTMLElement | null;
+    if (!tbody || tbody.dataset.mobileCascadeBound === '1') return;
+
+    tbody.dataset.mobileCascadeBound = '1';
+    tbody.addEventListener('click', (event) => {
+        if (!isContactsMobileViewport()) return;
+
+        const target = event.target as HTMLElement | null;
+        if (!target) return;
+        if (target.closest('button, a, input, label, select, textarea')) return;
+
+        const row = target.closest('tr[data-id]') as HTMLElement | null;
+        if (!row) return;
+
+        const shouldExpand = !row.classList.contains('is-mobile-expanded');
+        tbody.querySelectorAll('tr.is-mobile-expanded').forEach((item) => {
+            if (item !== row) item.classList.remove('is-mobile-expanded');
+        });
+        row.classList.toggle('is-mobile-expanded', shouldExpand);
+    });
+}
+
 function initContacts() {
     if (!isContactsRouteActive()) {
         return;
@@ -639,6 +666,7 @@ function initContacts() {
         return;
     }
     bindContactsPaginationControls();
+    bindContactsMobileCascadeBehavior();
     loadContactFields();
     void loadContactsSessionFilters().finally(() => {
         void loadContacts({
@@ -1089,45 +1117,57 @@ function renderContacts() {
         tbody.innerHTML = `<tr><td colspan="${getContactsTableColumnCount()}" class="table-empty"><div class="table-empty-icon icon icon-empty icon-lg"></div><p>Nenhum contato encontrado</p></td></tr>`;
     } else {
         const dynamicColumns = getContactsVisibleCustomColumns();
-        tbody.innerHTML = pageContacts.map(c => `
-            <tr data-id="${c.id}">
-                <td><label class="checkbox-wrapper"><input type="checkbox" class="contact-checkbox" value="${c.id}" onchange="updateSelection()" ${selectedIds.has(c.id) ? 'checked' : ''}><span class="checkbox-custom"></span></label></td>
-                <td>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div class="avatar" style="background: ${getAvatarColor(c.name)}">${getInitials(c.name)}</div>
-                        <div>
-                            <div style="font-weight: 600;">${c.name || 'Sem nome'}</div>
-                            <div style="font-size: 12px; color: var(--gray-500);">${c.email || ''}</div>
+        tbody.innerHTML = pageContacts.map((c) => {
+            const parsedCustomFields = parseLeadCustomFields(c.custom_fields);
+            const whatsappLink = buildWhatsappLinkFromPhone(c.phone);
+            const phoneLabel = formatContactPhoneForDisplay(c.phone) || '-';
+            const whatsappMarkup = whatsappLink
+                ? `<a href="${whatsappLink}" target="_blank" rel="noopener noreferrer" style="color: var(--whatsapp);">${phoneLabel}</a>`
+                : '-';
+            const dynamicCells = dynamicColumns
+                .map((field) => {
+                    const value = resolveContactCustomFieldDisplayValue(c, field.key, parsedCustomFields);
+                    return `<td data-label="${escapeHtml(field.label || field.key)}">${value ? escapeHtml(value) : '-'}</td>`;
+                })
+                .join('');
+
+            return `
+                <tr data-id="${c.id}" class="contacts-row-item">
+                    <td data-label="Selecionar" class="contact-cell-select">
+                        <label class="checkbox-wrapper">
+                            <input type="checkbox" class="contact-checkbox" value="${c.id}" onchange="updateSelection()" ${selectedIds.has(c.id) ? 'checked' : ''}>
+                            <span class="checkbox-custom"></span>
+                        </label>
+                    </td>
+                    <td data-label="Contato" class="contact-cell-main">
+                        <div class="contacts-cell-main-wrap">
+                            <div class="avatar" style="background: ${getAvatarColor(c.name)}">${getInitials(c.name)}</div>
+                            <div class="contacts-main-meta">
+                                <div class="contacts-main-name">${escapeHtml(c.name || 'Sem nome')}</div>
+                                <div class="contacts-main-email">${escapeHtml(c.email || '')}</div>
+                            </div>
+                            <span class="contacts-row-chevron" aria-hidden="true"></span>
                         </div>
-                    </div>
-                </td>
-                <td>${(() => {
-                    const whatsappLink = buildWhatsappLinkFromPhone(c.phone);
-                    const phoneLabel = formatContactPhoneForDisplay(c.phone) || '-';
-                    if (!whatsappLink) return '-';
-                    return `<a href="${whatsappLink}" target="_blank" style="color: var(--whatsapp);">${phoneLabel}</a>`;
-                })()}</td>
-                ${(() => {
-                    const parsedCustomFields = parseLeadCustomFields(c.custom_fields);
-                    return dynamicColumns
-                        .map((field) => {
-                            const value = resolveContactCustomFieldDisplayValue(c, field.key, parsedCustomFields);
-                            return `<td>${value ? escapeHtml(value) : '-'}</td>`;
-                        })
-                        .join('');
-                })()}
-                <td>${getStatusBadge(c.status)}</td>
-                <td>${renderContactTagChips(c)}</td>
-                <td>${c.last_message_at ? timeAgo(c.last_message_at) : '-'}</td>
-                <td>
-                    <div style="display: flex; gap: 5px;">
-                        <button class="btn btn-sm btn-whatsapp btn-icon" onclick="quickMessage(${c.id})" title="Mensagem"><span class="icon icon-message icon-sm"></span></button>
-                        <button class="btn btn-sm btn-outline btn-icon" onclick="editContact(${c.id})" title="Editar"><span class="icon icon-edit icon-sm"></span></button>
-                        <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteContact(${c.id})" title="Excluir"><span class="icon icon-delete icon-sm"></span></button>
-                    </div>
-                </td>
-            </tr>
-        `).join('');
+                    </td>
+                    <td data-label="WhatsApp">${whatsappMarkup}</td>
+                    ${dynamicCells}
+                    <td data-label="Status">${getStatusBadge(c.status)}</td>
+                    <td data-label="Tags">${renderContactTagChips(c)}</td>
+                    <td data-label="Ultima interacao">${c.last_message_at ? timeAgo(c.last_message_at) : '-'}</td>
+                    <td data-label="Acoes" class="contact-cell-actions">
+                        <div class="contacts-actions contacts-actions-desktop">
+                            <button class="btn btn-sm btn-whatsapp btn-icon" onclick="quickMessage(${c.id})" title="Mensagem"><span class="icon icon-message icon-sm"></span></button>
+                            <button class="btn btn-sm btn-outline btn-icon" onclick="editContact(${c.id})" title="Editar"><span class="icon icon-edit icon-sm"></span></button>
+                            <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteContact(${c.id})" title="Excluir"><span class="icon icon-delete icon-sm"></span></button>
+                        </div>
+                        <div class="contacts-actions contacts-actions-mobile">
+                            <button class="btn btn-sm btn-outline" onclick="viewContactInfo(${c.id})"><span class="icon icon-info icon-sm"></span> Informacoes</button>
+                            <button class="btn btn-sm btn-primary" onclick="editContact(${c.id})"><span class="icon icon-edit icon-sm"></span> Editar</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
     }
 
     // Paginação
@@ -1284,6 +1324,11 @@ function editContact(id: number) {
     }
 
     openModal('editContactModal');
+}
+
+function viewContactInfo(id: number) {
+    editContact(id);
+    switchTab('info');
 }
 
 async function updateContact() {
@@ -1854,6 +1899,7 @@ const windowAny = window as Window & {
     clearSelection?: () => void;
     saveContact?: () => Promise<void>;
     editContact?: (id: number) => void;
+    viewContactInfo?: (id: number) => void;
     updateContact?: () => Promise<void>;
     deleteContact?: (id: number) => Promise<void>;
     quickMessage?: (id: number) => void;
@@ -1880,6 +1926,7 @@ windowAny.updateSelection = updateSelection;
 windowAny.clearSelection = clearSelection;
 windowAny.saveContact = saveContact;
 windowAny.editContact = editContact;
+windowAny.viewContactInfo = viewContactInfo;
 windowAny.updateContact = updateContact;
 windowAny.deleteContact = deleteContact;
 windowAny.quickMessage = quickMessage;

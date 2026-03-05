@@ -21,6 +21,12 @@ import Whatsapp from './pages/Whatsapp';
 export default function App() {
   const location = useLocation();
 
+  function syncMobileMenuVisibilityByScroll() {
+    const isMobileViewport = window.matchMedia('(max-width: 1024px)').matches;
+    const shouldHideMenu = isMobileViewport && window.scrollY > 2 && !document.body.classList.contains('sidebar-open');
+    document.body.classList.toggle('mobile-menu-hidden-by-scroll', shouldHideMenu);
+  }
+
   const closeSidebar = () => {
     const sidebar = document.querySelector('.sidebar') as HTMLElement | null;
     const overlay = document.querySelector('.sidebar-overlay') as HTMLElement | null;
@@ -28,6 +34,7 @@ export default function App() {
     sidebar?.classList.remove('open');
     overlay?.classList.remove('active');
     document.body.classList.remove('sidebar-open');
+    syncMobileMenuVisibilityByScroll();
   };
 
   const syncSidebarAccessibility = () => {
@@ -43,6 +50,7 @@ export default function App() {
     });
 
     document.body.classList.toggle('sidebar-open', isOpen);
+    syncMobileMenuVisibilityByScroll();
   };
 
   const syncApplicationAdminSidebarShortcut = () => {
@@ -94,7 +102,23 @@ export default function App() {
     closeSidebar();
     syncSidebarAccessibility();
     syncApplicationAdminSidebarShortcut();
+    syncMobileMenuVisibilityByScroll();
   }, [location.pathname, location.search, location.hash]);
+
+  useEffect(() => {
+    const onScrollOrResize = () => {
+      syncMobileMenuVisibilityByScroll();
+    };
+
+    onScrollOrResize();
+    window.addEventListener('scroll', onScrollOrResize, { passive: true });
+    window.addEventListener('resize', onScrollOrResize);
+
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, []);
 
   useEffect(() => {
     const onDocumentClick = (event: MouseEvent) => {

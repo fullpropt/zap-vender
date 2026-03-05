@@ -155,6 +155,7 @@ const DEFAULT_AI_SETTINGS: AiSettingsConfig = {
     documentsNotes: '',
     internalNotes: ''
 };
+const MOBILE_VISIBLE_SETTINGS_PANELS = new Set(['conexao', 'users', 'plan']);
 
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -162,6 +163,18 @@ function onReady(callback: () => void) {
     } else {
         callback();
     }
+}
+
+function isConfiguracoesMobileMode() {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function normalizePanelForMobile(panelId: string | null | undefined) {
+    const normalized = String(panelId || '').trim();
+    if (!isConfiguracoesMobileMode()) return normalized;
+    if (MOBILE_VISIBLE_SETTINGS_PANELS.has(normalized)) return normalized;
+    return 'conexao';
 }
 
 
@@ -196,13 +209,9 @@ function initConfiguracoes() {
     }
     const panelFromUrl = getPanelFromLocation();
     if (panelFromUrl) {
-        const panel = document.getElementById(`panel-${panelFromUrl}`);
-        if (panel) {
-            document.querySelectorAll('.settings-nav-item').forEach(i => i.classList.remove('active'));
-            document.querySelector(`[onclick="showPanel('${panelFromUrl}')"]`)?.classList.add('active');
-            document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
-            panel.classList.add('active');
-        }
+        showPanel(panelFromUrl);
+    } else if (isConfiguracoesMobileMode()) {
+        showPanel('conexao');
     }
     clearBusinessHoursMessageField();
     setTimeout(clearBusinessHoursMessageField, 250);
@@ -212,18 +221,27 @@ function initConfiguracoes() {
 onReady(initConfiguracoes);
 
 function showPanel(panelId: string) {
+    let nextPanelId = normalizePanelForMobile(panelId) || 'conexao';
+    let nextPanel = document.getElementById(`panel-${nextPanelId}`) as HTMLElement | null;
+    if (!nextPanel) {
+        nextPanelId = 'conexao';
+        nextPanel = document.getElementById('panel-conexao') as HTMLElement | null;
+    }
+    if (!nextPanel) return;
+
     document.querySelectorAll('.settings-nav-item').forEach(item => item.classList.remove('active'));
-    const target = (window as any).event?.target as HTMLElement | undefined;
-    target?.closest('.settings-nav-item')?.classList.add('active');
+    const navTarget = document.querySelector(`.settings-nav-item[data-panel="${nextPanelId}"]`) as HTMLElement | null;
+    navTarget?.classList.add('active');
     document.querySelectorAll('.settings-panel').forEach(panel => panel.classList.remove('active'));
-    document.getElementById(`panel-${panelId}`).classList.add('active');
-    if (panelId === 'conexao') {
+    nextPanel.classList.add('active');
+
+    if (nextPanelId === 'conexao') {
         refreshWhatsAppAccounts();
-    } else if (panelId === 'users') {
+    } else if (nextPanelId === 'users') {
         loadUsers();
-    } else if (panelId === 'plan') {
+    } else if (nextPanelId === 'plan') {
         loadPlanStatus();
-    } else if (panelId === 'hours') {
+    } else if (nextPanelId === 'hours') {
         clearBusinessHoursMessageField();
         setTimeout(clearBusinessHoursMessageField, 150);
     }
@@ -545,7 +563,7 @@ function normalizePlanStatus(status: unknown) {
     return allowed.has(normalized) ? normalized : 'unknown';
 }
 
-function getPlanStatusLabel(status: string, fallback = 'Nao configurado') {
+function getPlanStatusLabel(status: string, fallback = 'Não configurado') {
     const normalized = normalizePlanStatus(status);
     const labels: Record<string, string> = {
         active: 'Ativo',
@@ -605,10 +623,10 @@ function buildFallbackPlanStatus(): PlanStatusViewModel {
         statusLabel: 'Ativo',
         renewalDate: null,
         lastVerifiedAt: null,
-        provider: 'API nao configurada',
+        provider: 'API não configurada',
         source: 'local',
         apiConfigured: false,
-        message: 'A confirmacao automatica do plano via API sera habilitada apos configurar a integracao.'
+        message: 'A confirmação automática do plano via API será habilitada após configurar a integração.'
     };
 }
 
@@ -678,7 +696,7 @@ function renderPlanStatus() {
                     <input type="text" class="form-input" value="${escapeHtml(formatPlanDateTime(data.renewalDate))}" readonly />
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Ultima confirmacao</label>
+                    <label class="form-label">Última confirmação</label>
                     <input type="text" class="form-input" value="${escapeHtml(formatPlanDateTime(data.lastVerifiedAt))}" readonly />
                 </div>
             </div>
@@ -701,7 +719,7 @@ async function loadPlanStatus(options: { silent?: boolean } = {}) {
             planStatusCache = buildFallbackPlanStatus();
         }
         if (shouldShowLoading) {
-            showToast('warning', 'Aviso', 'Nao foi possivel carregar o status do plano');
+            showToast('warning', 'Aviso', 'Não foi possível carregar o status do plano');
         }
     } finally {
         planStatusLoading = false;
@@ -718,7 +736,7 @@ async function refreshPlanStatus() {
         showToast('success', 'Sucesso', 'Situacao do plano atualizada');
     } catch (error) {
         await loadPlanStatus({ silent: true });
-        showToast('warning', 'Aviso', 'Nao foi possivel confirmar o plano via API');
+        showToast('warning', 'Aviso', 'Não foi possível confirmar o plano via API');
     } finally {
         planStatusLoading = false;
         renderPlanStatus();
@@ -1577,7 +1595,7 @@ async function saveWhatsAppSessionName(sessionToken: string) {
         showToast('success', 'Sucesso', 'Configurações da conta atualizadas.');
         await refreshWhatsAppAccounts();
     } catch (error) {
-        showToast('error', 'Erro', 'Nao foi possivel atualizar a conta.');
+        showToast('error', 'Erro', 'Não foi possível atualizar a conta.');
     }
 }
 
@@ -1597,7 +1615,7 @@ async function removeWhatsAppSession(sessionToken: string) {
         showToast('success', 'Sucesso', 'Conta removida.');
         await refreshWhatsAppAccounts();
     } catch (error) {
-        showToast('error', 'Erro', 'Nao foi possivel remover a conta.');
+        showToast('error', 'Erro', 'Não foi possível remover a conta.');
     }
 }
 
@@ -1642,9 +1660,9 @@ async function saveAiSettings() {
         await api.put('/api/settings', {
             ai_assistant: ai
         });
-        showToast('success', 'Sucesso', 'Configuracoes de Inteligencia Artificial salvas!');
+        showToast('success', 'Sucesso', 'Configurações de Inteligência Artificial salvas!');
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas nao foi possivel sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
     }
 }
 
@@ -1663,7 +1681,7 @@ async function saveNotificationSettings() {
         });
         showToast('success', 'Sucesso', 'Notificacoes salvas!');
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas nao foi possivel sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
     }
 }
 
@@ -1986,13 +2004,13 @@ async function deleteUser(id: number) {
 
     const userId = Number(id);
     if (!Number.isFinite(userId) || userId <= 0) {
-        showToast('error', 'Erro', 'Usuario invalido');
+        showToast('error', 'Erro', 'Usuário inválido');
         return;
     }
 
     const user = usersCache.find((item) => Number(item.id) === userId);
     if (isManagedUserPrimaryAdmin(user)) {
-        showToast('warning', 'Aviso', 'Nao e permitido remover o admin principal da conta');
+        showToast('warning', 'Aviso', 'Não é permitido remover o admin principal da conta');
         return;
     }
     const name = String(user?.name || 'este usuario');
@@ -2012,14 +2030,14 @@ async function confirmDeleteUser() {
     const confirmDeleteUserId = document.getElementById('confirmDeleteUserId') as HTMLInputElement | null;
     const userId = Number(confirmDeleteUserId?.value || 0);
     if (!Number.isFinite(userId) || userId <= 0) {
-        showToast('error', 'Erro', 'Usuario invalido');
+        showToast('error', 'Erro', 'Usuário inválido');
         return;
     }
     const user = usersCache.find((item) => Number(item.id) === userId);
     if (isManagedUserPrimaryAdmin(user)) {
         closeModal('confirmDeleteUserModal');
         if (confirmDeleteUserId) confirmDeleteUserId.value = '';
-        showToast('warning', 'Aviso', 'Nao e permitido remover o admin principal da conta');
+        showToast('warning', 'Aviso', 'Não é permitido remover o admin principal da conta');
         return;
     }
 
@@ -2028,9 +2046,9 @@ async function confirmDeleteUser() {
         closeModal('confirmDeleteUserModal');
         if (confirmDeleteUserId) confirmDeleteUserId.value = '';
         await loadUsers();
-        showToast('success', 'Sucesso', 'Usuario removido!');
+        showToast('success', 'Sucesso', 'Usuário removido!');
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'Nao foi possivel remover o usuario');
+        showToast('error', 'Erro', error?.message || 'Não foi possível remover o usuário');
     }
 }
 
@@ -2071,7 +2089,7 @@ async function confirmDeleteAccount() {
             window.location.reload();
         }, 400);
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'Nao foi possivel excluir a conta');
+        showToast('error', 'Erro', error?.message || 'Não foi possível excluir a conta');
     }
 }
 

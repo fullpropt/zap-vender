@@ -408,7 +408,7 @@ function renderCustomEventsEmptyState() {
             <span class="events-empty-emoji icon icon-target"></span>
             <p><strong>Nenhum evento personalizado ainda</strong></p>
             <p class="text-muted">Crie eventos e use o bloco "Registrar Evento" nos seus fluxos para medir resultados.</p>
-            <button class="btn btn-primary btn-sm mt-3" onclick="openCustomEventModal()">Criar primeiro evento</button>
+            <button class="btn btn-primary btn-sm mt-3 events-empty-create-btn" onclick="openCustomEventModal()">Criar primeiro evento</button>
         </div>
     `;
 }

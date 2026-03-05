@@ -64,6 +64,11 @@ function DashboardStyles() {
         .custom-event-status { font-size: 11px; border-radius: 999px; padding: 3px 8px; border: 1px solid rgba(var(--primary-rgb), 0.25); color: var(--gray-500); background: rgba(15, 23, 42, 0.24); white-space: nowrap; }
         .custom-event-status.active { border-color: rgba(var(--primary-rgb), 0.45); color: #d8f4e6; background: rgba(var(--primary-rgb), 0.13); }
         .custom-event-status.inactive { border-color: rgba(148, 163, 184, 0.4); color: #cbd5e1; }
+        @media (max-width: 768px) {
+          .events-create-btn,
+          .events-empty-create-btn,
+          .dashboard-fab-add-lead { display: none !important; }
+        }
         @media (max-width: 640px) {
           .dashboard-botconversa { gap: 14px; margin-bottom: 16px; }
           .stats-period-card, .stats-general-card, .events-personalized-card { padding: 12px; border-radius: 12px; }
@@ -170,7 +175,7 @@ function EventsCard() {
             <option value="year">Ano</option>
             <option value="last_30_days">Últimos 30 dias</option>
           </select>
-          <button className="btn btn-primary btn-sm" type="button" onClick={() => globals.openCustomEventModal?.()}>
+          <button className="btn btn-primary btn-sm events-create-btn" type="button" onClick={() => globals.openCustomEventModal?.()}>
             Criar
           </button>
         </div>
@@ -546,7 +551,7 @@ function FloatingAddLeadButton() {
   return (
     <button
       type="button"
-      className="btn btn-whatsapp btn-icon"
+      className="btn btn-whatsapp btn-icon dashboard-fab-add-lead"
       style={{
         position: 'fixed',
         bottom: '30px',

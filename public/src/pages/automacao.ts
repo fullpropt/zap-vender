@@ -728,7 +728,7 @@ function renderAutomations() {
             <div class="empty-state" style="grid-column: 1 / -1;">
                 <div class="empty-state-icon icon icon-empty icon-lg"></div>
                 <p>Nenhuma automação criada</p>
-                <button class="btn btn-primary mt-3" onclick="openAutomationModal()"><span class="icon icon-add icon-sm"></span> Criar Automação</button>
+                <button class="btn btn-primary mt-3 automation-empty-create-btn" onclick="openAutomationModal()"><span class="icon icon-add icon-sm"></span> Criar Automação</button>
             </div>
         `;
         return;

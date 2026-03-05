@@ -89,6 +89,7 @@ let funnelLoadInFlight: Promise<void> | null = null;
 let funilInitialized = false;
 let dragAndDropInitialized = false;
 const pendingLeadStatusUpdates = new Set<number>();
+let selectedFunnelStage: LeadStatus | null = null;
 
 function wait(ms: number) {
     return new Promise<void>((resolve) => {
@@ -101,6 +102,49 @@ function onReady(callback: () => void) {
         document.addEventListener('DOMContentLoaded', callback);
     } else {
         callback();
+    }
+}
+
+function parseLeadStatus(value: unknown): LeadStatus | null {
+    const normalized = Number(value);
+    if (!Number.isFinite(normalized)) return null;
+    if (!VALID_LEAD_STATUS.has(normalized as LeadStatus)) return null;
+    return normalized as LeadStatus;
+}
+
+function isFunnelMobileMode() {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function getContatosUrl(stage: number | string) {
+    return `#/contatos?status=${stage}`;
+}
+
+function applySelectedFunnelStage() {
+    const isMobile = isFunnelMobileMode();
+    const selected = isMobile ? selectedFunnelStage : null;
+
+    const stageCards = Array.from(document.querySelectorAll('#funnelVisual .funnel-stage-visual')) as HTMLElement[];
+    for (const card of stageCards) {
+        const stage = parseLeadStatus(card.dataset.stage);
+        const isActive = selected !== null && stage === selected;
+        card.classList.toggle('is-active', isActive);
+        card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    }
+
+    const columns = Array.from(document.querySelectorAll('#kanbanView .kanban-column')) as HTMLElement[];
+    let hasVisibleStage = false;
+    for (const column of columns) {
+        const stage = parseLeadStatus(column.dataset.stage);
+        const shouldShow = !isMobile || (selected !== null && stage === selected);
+        column.classList.toggle('is-hidden', !shouldShow);
+        if (shouldShow) hasVisibleStage = true;
+    }
+
+    const hint = document.getElementById('kanbanStageHint') as HTMLElement | null;
+    if (hint) {
+        hint.hidden = !isMobile || hasVisibleStage;
     }
 }
 
@@ -235,9 +279,6 @@ function applyFunnelSnapshot(nextLeads: Lead[]) {
     funnelStageCounts = buildStageCounts(leads);
     updateFunnelStats();
     renderKanban();
-}
-function getContatosUrl(stage: number | string) {
-    return `#/contatos?status=${stage}`;
 }
 
 function normalizeFunnelStageName(value: unknown, fallback: string) {
@@ -388,6 +429,7 @@ async function loadFunnelStageConfig() {
 
 function initFunil() {
     if (funilInitialized) {
+        applySelectedFunnelStage();
         void loadFunnel({ silent: true });
         return;
     }
@@ -396,6 +438,7 @@ function initFunil() {
     void loadFunnelStageConfig();
     void loadFunnel();
     initDragAndDrop();
+    applySelectedFunnelStage();
 }
 
 onReady(initFunil);
@@ -568,6 +611,7 @@ function renderKanban() {
     for (let stage = 1; stage <= 4; stage++) {
         renderKanbanStage(stage as LeadStatus);
     }
+    applySelectedFunnelStage();
 }
 
 function clearKanbanDropActiveState() {
@@ -763,7 +807,16 @@ function toggleView() {
 }
 
 function filterByStage(stage: number | string) {
-    window.location.href = getContatosUrl(stage);
+    const parsed = parseLeadStatus(stage);
+    if (!parsed) return;
+
+    if (!isFunnelMobileMode()) {
+        window.location.href = getContatosUrl(parsed);
+        return;
+    }
+
+    selectedFunnelStage = parsed;
+    applySelectedFunnelStage();
 }
 
 async function saveStagesConfig() {

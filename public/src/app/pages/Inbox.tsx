@@ -158,14 +158,17 @@ export default function Inbox() {
         .conversations-header {
             padding: 20px;
             border-bottom: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
         .conversations-header h2 {
-            margin: 0 0 15px;
+            margin: 0;
             font-size: 20px;
             color: var(--dark);
         }
         .inbox-session-filter {
-            margin-bottom: 12px;
+            margin-bottom: 0;
         }
         .inbox-session-filter .form-label {
             display: block;
@@ -184,40 +187,45 @@ export default function Inbox() {
             padding: 9px 10px;
         }
         .inbox-session-highlight {
-            margin-bottom: 12px;
-            padding: 10px 12px;
-            border-radius: 12px;
-            border: 1px solid rgba(var(--primary-rgb), 0.28);
-            border-left: 3px solid rgba(var(--primary-rgb), 0.85);
+            margin-bottom: 0;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid rgba(var(--primary-rgb), 0.32);
+            border-left: 2px solid rgba(var(--primary-rgb), 0.78);
             background: linear-gradient(
                 90deg,
-                rgba(var(--primary-rgb), 0.08) 0%,
-                rgba(15, 23, 42, 0.22) 38%,
-                rgba(15, 23, 42, 0.2) 100%
+                rgba(var(--primary-rgb), 0.12) 0%,
+                rgba(15, 23, 42, 0.3) 44%,
+                rgba(15, 23, 42, 0.24) 100%
             );
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 10px;
+            box-shadow:
+                inset 0 1px 0 rgba(var(--primary-rgb), 0.2),
+                0 10px 22px rgba(2, 8, 20, 0.2),
+                0 0 0 1px rgba(var(--primary-rgb), 0.06),
+                0 0 18px rgba(var(--primary-rgb), 0.12);
         }
         .inbox-session-highlight-label {
-            font-size: 10px;
+            font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.06em;
             color: rgba(var(--primary-rgb), 0.9);
             font-weight: 700;
-            margin-bottom: 2px;
+            margin-bottom: 4px;
         }
         .inbox-session-highlight-name {
-            font-size: 14px;
+            font-size: 15px;
             color: var(--dark);
             font-weight: 700;
             line-height: 1.2;
         }
         .inbox-session-highlight-meta {
-            font-size: 11px;
-            color: var(--gray-600);
-            margin-top: 3px;
+            font-size: 12px;
+            color: rgba(192, 203, 219, 0.88);
+            margin-top: 5px;
             line-height: 1.3;
         }
         .inbox-session-highlight-status {
@@ -248,7 +256,7 @@ export default function Inbox() {
         .inbox-session-highlight-actions {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 8px;
             align-items: flex-end;
             flex-shrink: 0;
         }
@@ -257,7 +265,8 @@ export default function Inbox() {
             border: 1px solid rgba(var(--primary-rgb), 0.45);
             background: rgba(var(--primary-rgb), 0.14);
             color: var(--primary);
-            padding: 4px 12px;
+            padding: 0 14px;
+            min-height: 36px;
             font-size: 11px;
             font-weight: 700;
             line-height: 1.2;
@@ -268,6 +277,7 @@ export default function Inbox() {
         .inbox-session-resync-btn:hover:not(:disabled) {
             background: rgba(var(--primary-rgb), 0.2);
             border-color: rgba(var(--primary-rgb), 0.62);
+            transform: translateY(-1px);
         }
         .inbox-session-resync-btn:disabled {
             opacity: 0.55;
@@ -279,28 +289,95 @@ export default function Inbox() {
         .conversations-tabs {
             display: flex;
             gap: 10px;
-            margin-bottom: 15px;
+            margin-bottom: 0;
             flex-wrap: wrap;
         }
         .conversations-tabs button {
-            padding: 8px 16px;
-            border: 1px solid var(--border-color);
-            background: var(--gray-100);
+            min-height: 38px;
+            padding: 0 16px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: rgba(28, 42, 63, 0.75);
             color: var(--gray-800);
-            border-radius: 20px;
+            border-radius: 999px;
             cursor: pointer;
             font-size: 13px;
-            transition: all 0.2s;
+            font-weight: 600;
+            transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
             flex-shrink: 0;
         }
+        .conversations-tabs button:hover {
+            border-color: rgba(var(--primary-rgb), 0.4);
+            background: rgba(var(--primary-rgb), 0.12);
+            color: var(--dark);
+            transform: translateY(-1px);
+        }
         .conversations-tabs button.active {
-            background: var(--primary);
+            border-color: rgba(var(--primary-rgb), 0.75);
+            background: linear-gradient(90deg, rgba(var(--primary-rgb), 0.95) 0%, rgba(16, 148, 98, 0.95) 100%);
             color: white;
+            box-shadow: 0 8px 18px rgba(var(--primary-rgb), 0.26);
+        }
+        .conversations-header .search-box {
+            width: 100%;
+            max-width: 100%;
+        }
+        .conversations-header .search-box input {
+            height: 42px;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(22, 35, 54, 0.82);
+            color: var(--dark);
+            padding: 0 14px 0 40px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+        }
+        .conversations-header .search-box .search-icon {
+            left: 13px;
+            width: 14px;
+            height: 14px;
+            opacity: 0.76;
+        }
+        .conversations-header .search-box input::placeholder {
+            color: rgba(176, 190, 210, 0.86);
+        }
+        .conversations-header .search-box input:focus {
+            border-color: rgba(var(--primary-rgb), 0.52);
+            box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.16);
+            background: rgba(19, 33, 51, 0.92);
         }
         .conversations-list {
             flex: 1;
             overflow-y: auto;
             background: var(--surface);
+        }
+        .conversations-list .empty-state {
+            min-height: 320px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            text-align: center;
+            padding: 48px 20px !important;
+        }
+        .conversations-list .empty-state-icon {
+            width: 56px;
+            height: 56px;
+            margin: 0;
+            opacity: 0.76;
+        }
+        .conversations-list .empty-state p {
+            margin: 0;
+            color: var(--dark);
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1.3;
+        }
+        .conversations-list .empty-state .empty-state-subtext {
+            font-size: 13px;
+            font-weight: 500;
+            color: rgba(173, 187, 206, 0.8);
+            max-width: 280px;
+            line-height: 1.45;
         }
         .conversation-item {
             display: flex;
@@ -1387,7 +1464,32 @@ export default function Inbox() {
 
         @media (max-width: 768px) {
             .inbox-react { --inbox-main-pad-y: 8px; }
-            .inbox-main-content { padding: 8px !important; }
+            .inbox-main-content {
+                padding: calc(env(safe-area-inset-top, 0px) + 72px) 10px 10px !important;
+            }
+            .inbox-react .mobile-menu-toggle {
+                top: calc(env(safe-area-inset-top, 0px) + 8px);
+                left: 10px;
+                right: 10px;
+                height: 58px;
+                padding: 0 16px;
+                border-radius: 14px;
+                justify-content: center;
+                align-items: center;
+                gap: 10px;
+                font-size: 23px;
+                font-weight: 700;
+                color: #f7fffb;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                box-shadow:
+                    0 10px 22px rgba(2, 8, 20, 0.34),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+                    0 1px 0 rgba(5, 10, 18, 0.5);
+            }
+            .inbox-react .mobile-menu-toggle::after {
+                font-size: 12px;
+                letter-spacing: 0.08em;
+            }
             .inbox-container {
                 grid-template-columns: 1fr !important;
                 border-radius: 12px;
@@ -1512,43 +1614,84 @@ export default function Inbox() {
                 height: 32px;
             }
             .conversations-header {
-                padding: 14px 12px;
+                padding: 16px 14px;
+                gap: 14px;
             }
             .conversations-header h2 {
                 font-size: 18px;
-                margin-bottom: 10px;
+                margin-bottom: 0;
+            }
+            .inbox-session-filter .form-label {
+                margin-bottom: 8px;
+                font-size: 11px;
+                letter-spacing: 0.06em;
+            }
+            .inbox-session-filter .form-select {
+                min-height: 42px;
+                border-radius: 12px;
+                padding: 0 12px;
             }
             .inbox-session-highlight {
-                padding: 8px 10px;
-                gap: 8px;
+                padding: 12px;
+                gap: 10px;
                 flex-direction: column;
                 align-items: flex-start;
+                border-radius: 14px;
             }
             .inbox-session-highlight-name {
-                font-size: 13px;
+                font-size: 14px;
             }
             .inbox-session-highlight-status {
-                font-size: 10px;
-                padding: 3px 8px;
+                font-size: 11px;
+                padding: 0 10px;
+                min-height: 32px;
+                display: inline-flex;
+                align-items: center;
             }
             .inbox-session-highlight-actions {
                 width: 100%;
                 align-items: flex-start;
                 flex-direction: row;
                 flex-wrap: wrap;
+                gap: 8px;
             }
             .inbox-session-resync-btn {
-                font-size: 10px;
-                padding: 3px 9px;
+                min-height: 34px;
+                font-size: 11px;
+                padding: 0 12px;
             }
             .conversations-tabs {
-                margin-bottom: 10px;
+                margin-bottom: 0;
+                gap: 8px;
                 overflow-x: auto;
                 flex-wrap: nowrap;
                 -webkit-overflow-scrolling: touch;
             }
+            .conversations-tabs button {
+                min-height: 40px;
+                padding: 0 16px;
+            }
+            .conversations-header .search-box input {
+                height: 42px;
+            }
             .conversations-list .conversation-item {
                 padding: 12px;
+            }
+            .conversations-list .empty-state {
+                min-height: 52vh;
+                gap: 14px;
+                padding: 56px 18px !important;
+            }
+            .conversations-list .empty-state-icon {
+                width: 60px;
+                height: 60px;
+                opacity: 0.84;
+            }
+            .conversations-list .empty-state p {
+                font-size: 20px;
+            }
+            .conversations-list .empty-state .empty-state-subtext {
+                font-size: 13px;
             }
             .contact-card-actions {
                 grid-template-columns: 1fr;

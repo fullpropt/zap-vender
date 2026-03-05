@@ -1203,6 +1203,7 @@ function renderConversations() {
             <div class="empty-state" style="padding: 40px;">
                 <div class="empty-state-icon icon icon-empty icon-lg"></div>
                 <p>Nenhuma conversa</p>
+                <p class="empty-state-subtext">Quando houver mensagens, elas aparecerao aqui.</p>
             </div>
         `;
         return;
@@ -1249,7 +1250,13 @@ function renderFilteredConversations(filtered: Conversation[]) {
     const list = document.getElementById('conversationsList') as HTMLElement | null;
     if (!list) return;
     if (filtered.length === 0) {
-        list.innerHTML = `<div class="empty-state" style="padding: 40px;"><p>Nenhuma conversa encontrada</p></div>`;
+        list.innerHTML = `
+            <div class="empty-state" style="padding: 40px;">
+                <div class="empty-state-icon icon icon-empty icon-lg"></div>
+                <p>Nenhuma conversa encontrada</p>
+                <p class="empty-state-subtext">Tente ajustar a busca ou trocar o filtro.</p>
+            </div>
+        `;
         return;
     }
     // Usar mesma lógica de renderConversations
