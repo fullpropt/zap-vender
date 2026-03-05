@@ -6,6 +6,7 @@ type FlowBuilderGlobals = {
   initFlowBuilder?: () => void;
   openFlowsModal?: () => void;
   createNewFlow?: () => Promise<void>;
+  addIntentBlock?: () => void;
   clearCanvas?: () => void;
   saveFlow?: () => void;
   generateFlowWithAi?: () => Promise<void>;
@@ -654,7 +655,7 @@ export default function FlowBuilder() {
         
         .flow-container {
             display: grid;
-            grid-template-columns: 280px minmax(0, 1fr) 380px;
+            grid-template-columns: minmax(0, 1fr) 380px;
             height: 100%;
             min-height: 0;
             gap: 0;
@@ -2418,7 +2419,7 @@ export default function FlowBuilder() {
         
         @media (max-width: 1200px) {
             .flow-container {
-                grid-template-columns: minmax(220px, 240px) minmax(0, 1fr);
+                grid-template-columns: 1fr;
             }
             .properties-panel {
                 display: none;
@@ -2459,7 +2460,7 @@ export default function FlowBuilder() {
                 width: 100%;
             }
             .flow-container {
-                grid-template-columns: minmax(220px, 240px) minmax(0, 1fr);
+                grid-template-columns: 1fr;
             }
         }
         
@@ -2833,88 +2834,14 @@ export default function FlowBuilder() {
               </div>
               
               <div className="flow-container">
-                  <div className="nodes-panel">
-                      <div className="node-category">
-                          <h3>Gatilhos</h3>
-                          <div className="node-item" draggable="true" data-type="trigger" data-subtype="new_contact">
-                              <div className="icon trigger icon-user"></div>
-                              <div className="info">
-                                  <div className="name">Novo Contato</div>
-                                  <div className="desc">Inicia quando um novo lead entra</div>
-                              </div>
-                          </div>
-                          <div className="node-item" draggable="true" data-type="trigger" data-subtype="keyword">
-                              <div className="icon trigger icon-lock"></div>
-                              <div className="info">
-                                  <div className="name">Intenção</div>
-                                  <div className="desc">Inicia pela intenção detectada</div>
-                              </div>
-                          </div>
-                      </div>
-                      
-                      <div className="node-category">
-                          <h3>Mensagens</h3>
-                          <div className="node-item" draggable="true" data-type="message">
-                              <div className="icon message icon-message"></div>
-                              <div className="info">
-                                  <div className="name">Enviar Mensagem</div>
-                                  <div className="desc">Envia texto ou mídia (opcionalmente única)</div>
-                              </div>
-                          </div>
-                          <div className="node-item" draggable="true" data-type="wait">
-                              <div className="icon message icon-clock"></div>
-                              <div className="info">
-                                  <div className="name">Aguardar Resposta</div>
-                                  <div className="desc">Espera input do usuário</div>
-                              </div>
-                          </div>
-                      </div>
-                      
-                      <div className="node-category">
-                          <h3>Lógica</h3>
-                          <div className="node-item" draggable="true" data-type="intent">
-                              <div className="icon condition icon-bolt"></div>
-                              <div className="info">
-                                  <div className="name">Intenção</div>
-                                  <div className="desc">Aguarda resposta e ramifica por intenção</div>
-                              </div>
-                          </div>
-                          <div className="node-item" draggable="true" data-type="delay">
-                              <div className="icon delay icon-clock"></div>
-                              <div className="info">
-                                  <div className="name">Delay</div>
-                                  <div className="desc">Aguarda tempo específico</div>
-                              </div>
-                          </div>
-                      </div>
-                      
-                      <div className="node-category">
-                          <h3>Ações</h3>
-                          <div className="node-item" draggable="true" data-type="transfer">
-                              <div className="icon action icon-user"></div>
-                              <div className="info">
-                                  <div className="name">Transferir</div>
-                                  <div className="desc">Passa para atendente</div>
-                              </div>
-                          </div>
-                          <div className="node-item" draggable="true" data-type="end">
-                              <div className="icon action icon-check"></div>
-                              <div className="info">
-                                  <div className="name">Finalizar</div>
-                                  <div className="desc">Encerra o fluxo</div>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-                  
-                      <div className="flow-canvas" id="flowCanvas">
+                  <div className="flow-canvas" id="flowCanvas">
                       <svg className="connections-svg" id="connectionsSvg"></svg>
                       
                       <div className="canvas-container" id="canvasContainer">
                           <div className="empty-canvas" id="emptyCanvas">
                               <div className="icon icon-flows"></div>
-                              <h3>Arraste os blocos para começar</h3>
-                              <p>Crie seu fluxo de automação visual</p>
+                              <h3>Comece criando seu fluxo</h3>
+                              <p>Use + Novo Bloco para adicionar uma intenção</p>
                           </div>
                       </div>
                       
@@ -2923,9 +2850,9 @@ export default function FlowBuilder() {
                               <span className="icon icon-save icon-sm"></span>
                               <span className="toolbar-btn-label">Salvar</span>
                           </button>
-                          <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
+                          <button className="toolbar-btn primary" onClick={() => globals.addIntentBlock?.()}>
                               <span className="icon icon-add icon-sm"></span>
-                              <span className="toolbar-btn-label">Novo Fluxo</span>
+                              <span className="toolbar-btn-label">Novo Bloco</span>
                           </button>
                       </div>
 

@@ -1521,6 +1521,77 @@ function addNode(type: NodeType, subtype: string, x: number, y: number) {
     markFlowDirty();
 }
 
+function buildFlowNodeId(prefix = 'node') {
+    return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+}
+
+function getIntentNodeInsertPosition() {
+    if (nodes.length > 0) {
+        const reference = nodes.reduce((acc, node) => (node.position.x > acc.position.x ? node : acc), nodes[0]);
+        const preferred = selectedNode && selectedNode.position.x >= reference.position.x
+            ? selectedNode
+            : reference;
+        return {
+            x: Math.max(20, preferred.position.x + 280),
+            y: Math.max(20, preferred.position.y)
+        };
+    }
+
+    return { x: 180, y: 180 };
+}
+
+function addIntentBlock() {
+    if (isFlowReadOnlyMode()) return;
+    const nextPosition = getIntentNodeInsertPosition();
+    addNode('intent', '', nextPosition.x, nextPosition.y);
+}
+
+function initializeDefaultIntentFlowSkeleton(options: { selectTrigger?: boolean; markDirty?: boolean } = {}) {
+    const selectTrigger = options.selectTrigger !== false;
+    const markDirty = options.markDirty !== false;
+    const triggerNodeId = buildFlowNodeId('trigger');
+    const endNodeId = buildFlowNodeId('end');
+
+    const triggerNode: FlowNode = {
+        id: triggerNodeId,
+        type: 'trigger',
+        subtype: 'keyword',
+        position: { x: 170, y: 180 },
+        data: getDefaultNodeData('trigger', 'keyword')
+    };
+
+    const endNode: FlowNode = {
+        id: endNodeId,
+        type: 'end',
+        subtype: '',
+        position: { x: 560, y: 180 },
+        data: getDefaultNodeData('end')
+    };
+
+    nodes = [triggerNode, endNode];
+    edges = [{
+        source: triggerNodeId,
+        target: endNodeId,
+        sourceHandle: DEFAULT_HANDLE,
+        targetHandle: DEFAULT_HANDLE
+    }];
+
+    const canvasContainer = document.getElementById('canvasContainer') as HTMLElement | null;
+    const connectionsSvg = document.getElementById('connectionsSvg') as HTMLElement | null;
+    if (canvasContainer) canvasContainer.innerHTML = '';
+    if (connectionsSvg) connectionsSvg.innerHTML = '';
+    document.getElementById('emptyCanvas')?.remove();
+
+    nodes.forEach((node) => renderNode(node));
+    renderConnections();
+    if (selectTrigger) {
+        selectNode(triggerNodeId);
+    }
+    if (markDirty) {
+        markFlowDirty();
+    }
+}
+
 // Dados padrao do no
 function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
     const defaults = {
@@ -3631,6 +3702,7 @@ function applyZoom() {
 async function clearCanvas() {
     if (!await showFlowConfirmDialog('Limpar todo o fluxo?', 'Limpar fluxo')) return;
     resetEditorState();
+    initializeDefaultIntentFlowSkeleton({ selectTrigger: true, markDirty: true });
 }
 
 function resetEditorState() {
@@ -3652,8 +3724,8 @@ function resetEditorState() {
         canvasContainer.innerHTML = `
         <div class="empty-canvas" id="emptyCanvas">
             <div class="icon icon-flows"></div>
-            <h3>Arraste os blocos para começar</h3>
-            <p>Crie seu fluxo de automação visual</p>
+            <h3>Comece criando seu fluxo</h3>
+            <p>Use + Novo Bloco para adicionar uma intencao</p>
         </div>
     `;
     }
@@ -4303,6 +4375,7 @@ async function createNewFlow() {
     persistLastOpenFlowId(null);
     currentFlowName = nextName;
     renderCurrentFlowName();
+    initializeDefaultIntentFlowSkeleton({ selectTrigger: true, markDirty: true });
 }
 
 function applyAiDraftToEditor(draft: AiGeneratedFlowDraft) {
@@ -4427,6 +4500,7 @@ const windowAny = window as Window & {
     initFlowBuilder?: () => void;
     openFlowsModal?: () => void;
     createNewFlow?: () => Promise<void>;
+    addIntentBlock?: () => void;
     clearCanvas?: () => void;
     saveFlow?: () => Promise<void>;
     generateFlowWithAi?: () => Promise<void>;
@@ -4483,6 +4557,7 @@ const windowAny = window as Window & {
 windowAny.initFlowBuilder = initFlowBuilder;
 windowAny.openFlowsModal = openFlowsModal;
 windowAny.createNewFlow = createNewFlow;
+windowAny.addIntentBlock = addIntentBlock;
 windowAny.clearCanvas = clearCanvas;
 windowAny.saveFlow = saveFlow;
 windowAny.generateFlowWithAi = generateFlowWithAi;
