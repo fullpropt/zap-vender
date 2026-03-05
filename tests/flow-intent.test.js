@@ -588,4 +588,73 @@ describe('FlowService intent routing compatibility', () => {
 
         leadUpdateSpy.mockRestore();
     });
+
+    test('message_once with hourly repeat allows resend after cooldown per lead', () => {
+        const service = new FlowService();
+        const node = {
+            id: 'welcome_once',
+            type: 'message_once',
+            data: {
+                onceRepeatMode: 'hours',
+                onceRepeatValue: 1
+            }
+        };
+
+        const now = Date.now();
+        const staleTimestamp = new Date(now - (2 * 60 * 60 * 1000)).toISOString();
+        const freshTimestamp = new Date(now - (20 * 60 * 1000)).toISOString();
+
+        const staleExecution = {
+            flow: { id: 21 },
+            lead: {
+                custom_fields: JSON.stringify({
+                    __system: {
+                        flow_once_message_nodes: {
+                            'flow:21:node:welcome_once': staleTimestamp
+                        }
+                    }
+                })
+            }
+        };
+
+        const freshExecution = {
+            flow: { id: 21 },
+            lead: {
+                custom_fields: JSON.stringify({
+                    __system: {
+                        flow_once_message_nodes: {
+                            'flow:21:node:welcome_once': freshTimestamp
+                        }
+                    }
+                })
+            }
+        };
+
+        expect(service.hasLeadSeenOnceMessageNode(staleExecution, node)).toBe(false);
+        expect(service.hasLeadSeenOnceMessageNode(freshExecution, node)).toBe(true);
+    });
+
+    test('message_once keeps legacy always behavior by default', () => {
+        const service = new FlowService();
+        const node = {
+            id: 'welcome_once',
+            type: 'message_once',
+            data: {}
+        };
+
+        const execution = {
+            flow: { id: 21 },
+            lead: {
+                custom_fields: JSON.stringify({
+                    __system: {
+                        flow_once_message_nodes: {
+                            'flow:21:node:welcome_once': new Date().toISOString()
+                        }
+                    }
+                })
+            }
+        };
+
+        expect(service.hasLeadSeenOnceMessageNode(execution, node)).toBe(true);
+    });
 });

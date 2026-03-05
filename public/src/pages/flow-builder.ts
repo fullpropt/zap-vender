@@ -9,6 +9,8 @@ type NodeData = {
     intentRoutes?: Array<{ id: string; label: string; phrases: string }>;
     content?: string;
     delaySeconds?: number;
+    onceRepeatMode?: string;
+    onceRepeatValue?: number;
     timeout?: number;
     conditions?: Array<{ value: string; next?: string }>;
     seconds?: number;
@@ -1416,7 +1418,14 @@ function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
         trigger: { label: subtype === 'keyword' || subtype === 'intent' ? 'Intenção' : 'Novo Contato', collapsed: false, keyword: '', intentRoutes: [] },
         intent: { label: 'Intenção', collapsed: false, keyword: '', intentRoutes: [] },
         message: { label: 'Mensagem', collapsed: false, content: 'Olá! Como posso ajudar?', delaySeconds: 0 },
-        message_once: { label: 'Mensagem Única', collapsed: false, content: 'Olá! Como posso ajudar?', delaySeconds: 0 },
+        message_once: {
+            label: 'Mensagem Única',
+            collapsed: false,
+            content: 'Olá! Como posso ajudar?',
+            delaySeconds: 0,
+            onceRepeatMode: 'always',
+            onceRepeatValue: 1
+        },
         wait: { label: 'Aguardar Resposta', collapsed: false, timeout: 300 },
         condition: { label: 'Condição', collapsed: false, conditions: [] },
         delay: { label: 'Delay', collapsed: false, seconds: 5 },
@@ -1819,11 +1828,18 @@ function renderProperties() {
                 ? Math.max(0, Number(selectedNode.data.delaySeconds))
                 : 0;
             const isOnceMessageNode = selectedNode.type === 'message_once';
+            const onceRepeatModeRaw = String(selectedNode.data.onceRepeatMode || 'always').trim().toLowerCase();
+            const onceRepeatMode = ['always', 'hours', 'days'].includes(onceRepeatModeRaw)
+                ? onceRepeatModeRaw
+                : 'always';
+            const onceRepeatValue = Number.isFinite(Number(selectedNode.data.onceRepeatValue))
+                ? Math.max(1, Math.trunc(Number(selectedNode.data.onceRepeatValue)))
+                : 1;
             html += `
                 <div class="property-group">
                     <label>${isOnceMessageNode ? 'Conteúdo da Mensagem Única' : 'Conteúdo da Mensagem'}</label>
                     <textarea id="messageContent" onchange="updateNodeProperty('content', this.value)">${selectedNode.data.content || ''}</textarea>
-                    <div class="hint">${isOnceMessageNode ? 'Este bloco envia apenas uma vez por lead; nas próximas ativações ele é ignorado.' : 'Use as variáveis de Campos Dinâmicos para personalizar'}</div>
+                    <div class="hint">${isOnceMessageNode ? 'Controle por lead: você define por quanto tempo a mensagem não pode ser reenviada.' : 'Use as variáveis de Campos Dinâmicos para personalizar'}</div>
                 </div>
                 <div class="property-group">
                     <label>Delay antes de enviar (segundos)</label>
@@ -1831,6 +1847,28 @@ function renderProperties() {
                     <div class="hint">Use 0 para envio imediato</div>
                 </div>
             `;
+            if (isOnceMessageNode) {
+                html += `
+                    <div class="property-group">
+                        <label>Tempo sem reenviar</label>
+                        <select onchange="updateNodeProperty('onceRepeatMode', this.value)">
+                            <option value="always" ${onceRepeatMode === 'always' ? 'selected' : ''}>Sempre (não reenviar)</option>
+                            <option value="hours" ${onceRepeatMode === 'hours' ? 'selected' : ''}>Em horas</option>
+                            <option value="days" ${onceRepeatMode === 'days' ? 'selected' : ''}>Em dias</option>
+                        </select>
+                        <div class="hint">Aplica individualmente por lead.</div>
+                    </div>
+                `;
+                if (onceRepeatMode !== 'always') {
+                    html += `
+                        <div class="property-group">
+                            <label>${onceRepeatMode === 'hours' ? 'Quantidade de horas' : 'Quantidade de dias'}</label>
+                            <input type="number" min="1" step="1" value="${onceRepeatValue}" onchange="updateNodeProperty('onceRepeatValue', Math.max(1, parseInt(this.value || '1', 10) || 1))">
+                            <div class="hint">Ex.: 1 = só permite novo envio após ${onceRepeatMode === 'hours' ? '1 hora' : '1 dia'}.</div>
+                        </div>
+                    `;
+                }
+            }
             break;
             
         case 'wait':
@@ -1961,6 +1999,9 @@ function updateNodeProperty(key: keyof NodeData, value: any) {
     }
 
     rerenderNode(selectedNode.id);
+    if (key === 'onceRepeatMode') {
+        renderProperties();
+    }
     markFlowDirty();
 }
 
@@ -2536,6 +2577,16 @@ function normalizeLoadedFlowData() {
         if (node.type === 'message' || node.type === 'message_once') {
             const rawDelay = Number(node.data?.delaySeconds);
             node.data.delaySeconds = Number.isFinite(rawDelay) ? Math.max(0, rawDelay) : 0;
+            if (node.type === 'message_once') {
+                const modeRaw = String((node.data as any)?.onceRepeatMode || '').trim().toLowerCase();
+                node.data.onceRepeatMode = ['always', 'hours', 'days'].includes(modeRaw)
+                    ? modeRaw
+                    : 'always';
+                const valueRaw = Number((node.data as any)?.onceRepeatValue);
+                node.data.onceRepeatValue = Number.isFinite(valueRaw) && valueRaw > 0
+                    ? Math.max(1, Math.trunc(valueRaw))
+                    : 1;
+            }
         }
 
         if (node.type === 'event') {

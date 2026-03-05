@@ -213,7 +213,11 @@ function normalizeFlowOnceMessageMap(value) {
     for (const [rawKey, rawTimestamp] of Object.entries(value)) {
         const key = String(rawKey || '').trim();
         if (!key) continue;
-        const timestamp = String(rawTimestamp || '').trim();
+        const timestamp = String(
+            (rawTimestamp && typeof rawTimestamp === 'object' && !Array.isArray(rawTimestamp))
+                ? (rawTimestamp.seenAt || rawTimestamp.sentAt || rawTimestamp.timestamp || '')
+                : rawTimestamp || ''
+        ).trim();
         normalized[key] = timestamp || new Date().toISOString();
     }
     return normalized;
@@ -1345,6 +1349,31 @@ class FlowService extends EventEmitter {
         return `node:${nodeId}`;
     }
 
+    resolveOnceMessageRepeatConfig(node = null) {
+        const modeRaw = String(node?.data?.onceRepeatMode || 'always').trim().toLowerCase();
+        const mode = ['always', 'hours', 'days'].includes(modeRaw)
+            ? modeRaw
+            : 'always';
+
+        const rawValue = Number(node?.data?.onceRepeatValue);
+        const value = Number.isFinite(rawValue) && rawValue > 0
+            ? Math.max(1, Math.trunc(rawValue))
+            : 1;
+
+        return { mode, value };
+    }
+
+    resolveOnceMessageCooldownMs(node = null) {
+        const config = this.resolveOnceMessageRepeatConfig(node);
+        if (config.mode === 'hours') {
+            return config.value * 60 * 60 * 1000;
+        }
+        if (config.mode === 'days') {
+            return config.value * 24 * 60 * 60 * 1000;
+        }
+        return Number.POSITIVE_INFINITY;
+    }
+
     readLeadOnceMessageMap(lead) {
         const customFields = parseLeadCustomFields(lead?.custom_fields);
         const systemMetadata = normalizeSystemMetadataObject(customFields.__system);
@@ -1355,7 +1384,22 @@ class FlowService extends EventEmitter {
         const onceKey = this.resolveOnceMessageNodeKey(execution, node);
         if (!onceKey) return false;
         const onceMap = this.readLeadOnceMessageMap(execution?.lead);
-        return Boolean(onceMap[onceKey]);
+        const seenAtRaw = String(onceMap[onceKey] || '').trim();
+        if (!seenAtRaw) return false;
+
+        const repeatConfig = this.resolveOnceMessageRepeatConfig(node);
+        if (repeatConfig.mode === 'always') {
+            return true;
+        }
+
+        const seenAtTime = new Date(seenAtRaw).getTime();
+        if (!Number.isFinite(seenAtTime) || seenAtTime <= 0) {
+            return true;
+        }
+
+        const cooldownMs = this.resolveOnceMessageCooldownMs(node);
+        const elapsedMs = Date.now() - seenAtTime;
+        return elapsedMs < cooldownMs;
     }
 
     async markLeadOnceMessageNodeSeen(execution, node) {
@@ -1365,9 +1409,8 @@ class FlowService extends EventEmitter {
         const customFields = parseLeadCustomFields(execution.lead.custom_fields);
         const systemMetadata = normalizeSystemMetadataObject(customFields.__system);
         const onceMap = normalizeFlowOnceMessageMap(systemMetadata[LEAD_ONCE_MESSAGE_FLAG_KEY]);
-        if (onceMap[onceKey]) return false;
-
-        onceMap[onceKey] = new Date().toISOString();
+        const nowIso = new Date().toISOString();
+        onceMap[onceKey] = nowIso;
         customFields.__system = {
             ...systemMetadata,
             [LEAD_ONCE_MESSAGE_FLAG_KEY]: onceMap
@@ -1376,6 +1419,7 @@ class FlowService extends EventEmitter {
         await Lead.update(execution.lead.id, { custom_fields: customFields });
         execution.lead.custom_fields = JSON.stringify(customFields);
         this.ensureExecutionVariables(execution).last_once_message_key = onceKey;
+        this.ensureExecutionVariables(execution).last_once_message_seen_at = nowIso;
         return true;
     }
     
