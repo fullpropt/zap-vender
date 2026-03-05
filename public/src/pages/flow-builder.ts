@@ -2267,7 +2267,6 @@ function renderProperties() {
                                         `).join('')}
                                     </select>
                                 </div>
-                                <button class="add-condition-btn" type="button" onclick="reloadCustomEventsCatalog()">Atualizar lista</button>
                             `;
                         }
 
@@ -2655,7 +2654,6 @@ function renderProperties() {
                             </option>
                         `).join('')}
                     </select>
-                    <button class="add-condition-btn" style="margin-top: 8px;" onclick="reloadCustomEventsCatalog()">Atualizar lista</button>
                 </div>
             `;
             break;
