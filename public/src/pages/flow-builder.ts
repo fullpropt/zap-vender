@@ -1090,11 +1090,13 @@ function setFlowMobileModalOpenState(isOpen: boolean) {
 
 function setFlowBuilderScreen(screen: 'selector' | 'builder') {
     const selectorScreen = document.getElementById('flowSelectorScreen') as HTMLElement | null;
+    const builderBackBtn = document.getElementById('flowBuilderBackBtn') as HTMLButtonElement | null;
     const builderFlowInfoRow = document.getElementById('flowBuilderFlowInfoRow') as HTMLElement | null;
     const builderContainer = document.getElementById('flowBuilderContainer') as HTMLElement | null;
     const showSelector = screen === 'selector';
 
     selectorScreen?.toggleAttribute('hidden', !showSelector);
+    builderBackBtn?.toggleAttribute('hidden', showSelector);
     builderFlowInfoRow?.toggleAttribute('hidden', showSelector);
     builderContainer?.toggleAttribute('hidden', showSelector);
 

@@ -110,6 +110,40 @@ export default function FlowBuilder() {
             flex: 1 1 520px;
         }
 
+        .flow-builder-react .header-title-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .flow-builder-react .flow-builder-back-btn {
+            width: 34px;
+            min-width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.34);
+            background: rgba(15, 23, 42, 0.45);
+            color: #d7e2f0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .flow-builder-react .flow-builder-back-btn:hover {
+            border-color: rgba(var(--primary-rgb), 0.6);
+            background: rgba(var(--primary-rgb), 0.18);
+            color: #ecfff4;
+        }
+
+        .flow-builder-react #flowBuilderBackBtn[hidden] {
+            display: none !important;
+        }
+
         .flow-builder-react .header-title h1 {
             color: #e7edf7;
             font-size: clamp(28px, 4vw, 40px);
@@ -2856,7 +2890,20 @@ export default function FlowBuilder() {
           <main className="main-content">
               <div className="header" id="flowBuilderHeader">
                   <div className="header-title">
-                      <h1><span className="icon icon-flows icon-sm"></span> Construtor de Fluxos</h1>
+                      <div className="header-title-row">
+                          <button
+                              type="button"
+                              id="flowBuilderBackBtn"
+                              className="flow-builder-back-btn"
+                              title="Voltar para lista de fluxos"
+                              aria-label="Voltar para lista de fluxos"
+                              hidden
+                              onClick={() => globals.openFlowsModal?.()}
+                          >
+                              ←
+                          </button>
+                          <h1><span className="icon icon-flows icon-sm"></span> Construtor de Fluxos</h1>
+                      </div>
                       <p>Crie automações visuais para suas conversas</p>
                   </div>
                   <div className="header-flow-row" id="flowBuilderFlowInfoRow" hidden>
@@ -2883,10 +2930,6 @@ export default function FlowBuilder() {
                                       </button>
                                   </div>
                               </div>
-                              <button className="flow-name-highlight-link" type="button" onClick={() => globals.openFlowsModal?.()}>
-                                  <span className="icon icon-list icon-sm"></span>
-                                  <span className="flow-name-highlight-link-label">Meus Fluxos</span>
-                              </button>
                           </div>
                       </div>
                   </div>
