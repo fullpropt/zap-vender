@@ -1513,6 +1513,9 @@ export default function Inbox() {
             .inbox-main-content {
                 padding: calc(env(safe-area-inset-top, 0px) + 72px) 10px 10px !important;
             }
+            body.inbox-mobile-chat-lock .inbox-react .inbox-main-content {
+                padding-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+            }
             .inbox-react .mobile-menu-toggle {
                 top: calc(env(safe-area-inset-top, 0px) + 8px);
                 left: 10px;
@@ -1535,6 +1538,11 @@ export default function Inbox() {
             .inbox-react .mobile-menu-toggle::after {
                 font-size: 12px;
                 letter-spacing: 0.08em;
+            }
+            body.inbox-mobile-chat-lock .inbox-react .mobile-menu-toggle {
+                opacity: 0;
+                pointer-events: none;
+                transform: translateY(calc(-100% - 20px));
             }
             .inbox-container {
                 grid-template-columns: 1fr !important;
