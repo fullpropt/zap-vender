@@ -1937,9 +1937,10 @@ class FlowService extends EventEmitter {
                     const label = String(route?.label || '').trim() || `Intencao ${index + 1}`;
                     const phrases = String(route?.phrases || '').trim();
                     const response = String(route?.response || '').trim();
+                    const followupResponse = String(route?.followupResponse || '').trim();
                     const normalizedPhrases = parseIntentPhrases(phrases);
                     if (!id || normalizedPhrases.length === 0) return null;
-                    return { id, label, phrases, response, normalizedPhrases };
+                    return { id, label, phrases, response, followupResponse, normalizedPhrases };
                 })
                 .filter(Boolean);
         }
@@ -1950,6 +1951,7 @@ class FlowService extends EventEmitter {
             label: `Intencao ${index + 1}`,
             phrases: phrase,
             response: '',
+            followupResponse: '',
             normalizedPhrases: [phrase]
         }));
     }
@@ -2064,38 +2066,43 @@ class FlowService extends EventEmitter {
         }) || null;
     }
 
-    resolveIntentResponseText(node = null, selectedHandle = null) {
+    resolveIntentResponseTexts(node = null, selectedHandle = null) {
         const normalizedHandle = this.normalizeFlowHandle(selectedHandle);
         if (normalizedHandle === 'default') {
-            return String(node?.data?.intentDefaultResponse || '').trim();
+            const defaultMessage = String(node?.data?.intentDefaultResponse || '').trim();
+            return defaultMessage ? [defaultMessage] : [];
         }
 
         const matchedRoute = this.resolveTriggerIntentRouteByHandle(node, normalizedHandle);
-        return String(matchedRoute?.response || '').trim();
+        const primaryMessage = String(matchedRoute?.response || '').trim();
+        const secondaryMessage = String(matchedRoute?.followupResponse || '').trim();
+        return [primaryMessage, secondaryMessage].filter(Boolean);
     }
 
     async sendIntentRouteResponse(execution, node = null, selectedHandle = null) {
-        const rawResponse = this.resolveIntentResponseText(node, selectedHandle);
-        if (!rawResponse) return;
-
-        const content = sanitizeOutgoingFlowText(
-            this.replaceVariables(rawResponse, this.ensureExecutionVariables(execution))
-        );
-        if (!content) return;
+        const messages = this.resolveIntentResponseTexts(node, selectedHandle);
+        if (messages.length === 0) return;
         if (!this.sendFunction) return;
 
-        const delayMs = this.resolveIntentResponseDelayMs(node);
-        if (delayMs > 0) {
-            await this.delay(delayMs);
-        }
+        for (const rawMessage of messages) {
+            const content = sanitizeOutgoingFlowText(
+                this.replaceVariables(rawMessage, this.ensureExecutionVariables(execution))
+            );
+            if (!content) continue;
 
-        await this.sendFunction({
-            to: execution.lead?.phone,
-            jid: execution.lead?.jid,
-            sessionId: execution.conversation?.session_id || null,
-            conversationId: execution.conversation?.id || null,
-            content
-        });
+            const delayMs = this.resolveIntentResponseDelayMs(node);
+            if (delayMs > 0) {
+                await this.delay(delayMs);
+            }
+
+            await this.sendFunction({
+                to: execution.lead?.phone,
+                jid: execution.lead?.jid,
+                sessionId: execution.conversation?.session_id || null,
+                conversationId: execution.conversation?.id || null,
+                content
+            });
+        }
     }
 
     resolveTriggerWelcomeConfig(node = null) {

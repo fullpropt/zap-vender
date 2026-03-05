@@ -115,6 +115,53 @@ describe('FlowService intent routing compatibility', () => {
         goToNextSpy.mockRestore();
     });
 
+    test('goToNextNode on intent envia segunda mensagem opcional apos a primeira', async () => {
+        const service = new FlowService();
+        const sendMock = jest.fn().mockResolvedValue();
+        service.init(sendMock);
+
+        const intentNode = {
+            id: 'intent-mid',
+            type: 'intent',
+            data: {
+                intentRoutes: [
+                    {
+                        id: 'route-store',
+                        label: 'Loja Fisica',
+                        phrases: 'loja fisica, showroom',
+                        response: 'Temos um showroom em Cocal.',
+                        followupResponse: 'Quer que eu te envie o endereco completo?'
+                    }
+                ],
+                intentResponseDelaySeconds: 0
+            }
+        };
+
+        const execution = {
+            flow: {
+                id: 37,
+                nodes: [intentNode],
+                edges: [
+                    { source: 'intent-mid', target: 'next-node', sourceHandle: 'route-store', targetHandle: 'default' }
+                ]
+            },
+            conversation: { id: 54, session_id: 'session-1' },
+            lead: { id: 25, phone: '5511966666666', jid: '5511966666666@s.whatsapp.net' },
+            variables: {}
+        };
+
+        const executeSpy = jest.spyOn(service, 'executeNode').mockResolvedValue();
+
+        await service.goToNextNode(execution, intentNode, 'route-store');
+
+        expect(sendMock).toHaveBeenCalledTimes(2);
+        expect(sendMock.mock.calls[0][0].content).toBe('Temos um showroom em Cocal.');
+        expect(sendMock.mock.calls[1][0].content).toBe('Quer que eu te envie o endereco completo?');
+        expect(executeSpy).toHaveBeenCalledWith(execution, 'next-node', 'default');
+
+        executeSpy.mockRestore();
+    });
+
         test('goToNextNode on intent envia resposta configurada com delay unico', async () => {
         const service = new FlowService();
         const sendMock = jest.fn().mockResolvedValue();

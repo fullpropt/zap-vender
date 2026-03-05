@@ -18,6 +18,7 @@ type IntentRoute = {
     label: string;
     phrases: string;
     response?: string;
+    followupResponse?: string;
 };
 type NodeData = {
     label: string;
@@ -643,7 +644,8 @@ function getIntentRoutes(node?: FlowNode | null) {
                 id,
                 label: buildRouteLabel(route, index),
                 phrases: String(route.phrases || '').trim(),
-                response: String(route.response || '').trim()
+                response: String(route.response || '').trim(),
+                followupResponse: String(route.followupResponse || '').trim()
             };
         });
     }
@@ -653,7 +655,8 @@ function getIntentRoutes(node?: FlowNode | null) {
         id: normalizeRouteId(`intent-${index + 1}`),
         label: phrase,
         phrases: phrase,
-        response: ''
+        response: '',
+        followupResponse: ''
     }));
 }
 
@@ -699,6 +702,14 @@ function isPathPassThroughNode(node?: FlowNode | null) {
 
 function getInputHandles(node: FlowNode) {
     if (node.type === 'trigger') return [];
+    if (node.type === 'intent') {
+        return [{
+            handle: DEFAULT_HANDLE,
+            label: '',
+            isConnected: true,
+            isExtra: false
+        }];
+    }
 
     const connectedIndices = getConnectedTargetPathIndices(node);
     const highestConnected = connectedIndices.length > 0
@@ -1990,10 +2001,10 @@ function deselectNode() {
     selectedNode = null;
     resetPendingNodeDraft();
     clearSelectedOutputActionContext();
-    setPropertiesPanelTitle('Ação');
+    setPropertiesPanelTitle('Propriedade');
     const propertiesContent = document.getElementById('propertiesContent') as HTMLElement | null;
     if (propertiesContent) {
-        propertiesContent.innerHTML = '<p style="color: var(--gray); font-size: 14px;">Selecione um bloco para editar ou clique no círculo "+" de uma saída para configurar ações.</p>';
+        propertiesContent.innerHTML = '<p style="color: var(--gray); font-size: 14px;">Selecione um bloco para editar suas propriedades.</p>';
     }
 }
 
@@ -2097,7 +2108,7 @@ function renderProperties() {
         && selectedOutputActionContext.nodeId === selectedNode.id
     );
 
-    setPropertiesPanelTitle('Ação');
+    setPropertiesPanelTitle(isOutputActionMode ? 'Ação' : 'Propriedade');
 
     if (isOutputActionMode && selectedOutputActionContext) {
         const selectedHandle = getSelectedOutputActionHandle();
@@ -2214,7 +2225,6 @@ function renderProperties() {
     html += `
         <div class="property-type-summary">
             <h4 class="property-type-summary-value">${escapeHtml(selectedTypeLabel)}</h4>
-            <p class="hint" style="margin-top: 6px;">Clique no círculo "+" ao lado de uma saída para configurar ações.</p>
         </div>
         <div class="property-group">
             <label>Nome do Bloco</label>
@@ -2255,6 +2265,10 @@ function renderProperties() {
                                     <div class="intent-route-field">
                                         <label>Mensagem de resposta</label>
                                         <textarea class="intent-route-response-input" placeholder="Mensagem enviada quando esta intenção for identificada" onchange="updateIntentRoute(${index}, 'response', this.value)">${escapeHtml(String(route.response || ''))}</textarea>
+                                    </div>
+                                    <div class="intent-route-field">
+                                        <label>Mensagem após a primeira (opcional)</label>
+                                        <textarea class="intent-route-response-input" placeholder="Mensagem complementar opcional, enviada após a resposta principal" onchange="updateIntentRoute(${index}, 'followupResponse', this.value)">${escapeHtml(String(route.followupResponse || ''))}</textarea>
                                     </div>
                                 </div>
                             `).join('')}
@@ -2648,7 +2662,8 @@ function confirmNodePropertyChanges() {
                 id: normalizeRouteId(`intent-${index + 1}`),
                 label: phrase,
                 phrases: phrase,
-                response: ''
+                response: '',
+                followupResponse: ''
             }));
         }
     }
@@ -2833,7 +2848,8 @@ function addIntentRoute() {
         id: String(route?.id || normalizeRouteId(`intent-${index + 1}`)),
         label: String(route?.label || ''),
         phrases: String(route?.phrases || ''),
-        response: String(route?.response || '')
+        response: String(route?.response || ''),
+        followupResponse: String(route?.followupResponse || '')
     }));
 
     const nextIndex = routes.length + 1;
@@ -2841,7 +2857,8 @@ function addIntentRoute() {
         id: normalizeRouteId(`intent-${Date.now()}-${nextIndex}`),
         label: `Intenção ${nextIndex}`,
         phrases: '',
-        response: ''
+        response: '',
+        followupResponse: ''
     };
 
     const nextRoutes = [...routes, nextRoute];
@@ -2852,7 +2869,7 @@ function addIntentRoute() {
     renderProperties();
 }
 
-function updateIntentRoute(index: number, key: 'label' | 'phrases' | 'response', value: string) {
+function updateIntentRoute(index: number, key: 'label' | 'phrases' | 'response' | 'followupResponse', value: string) {
     if (isFlowReadOnlyMode()) return;
     if (!selectedNode || !isIntentTrigger(selectedNode)) return;
     const existingDraft = getNodePropValue('intentRoutes', null as any);
@@ -2863,7 +2880,8 @@ function updateIntentRoute(index: number, key: 'label' | 'phrases' | 'response',
         id: String(route?.id || normalizeRouteId(`intent-${routeIndex + 1}`)),
         label: String(route?.label || ''),
         phrases: String(route?.phrases || ''),
-        response: String(route?.response || '')
+        response: String(route?.response || ''),
+        followupResponse: String(route?.followupResponse || '')
     }));
 
     if (!routes[index]) return;
@@ -2886,7 +2904,8 @@ function removeIntentRoute(index: number) {
         id: String(route?.id || normalizeRouteId(`intent-${routeIndex + 1}`)),
         label: String(route?.label || ''),
         phrases: String(route?.phrases || ''),
-        response: String(route?.response || '')
+        response: String(route?.response || ''),
+        followupResponse: String(route?.followupResponse || '')
     }));
     if (!routes[index]) return;
 
@@ -3023,10 +3042,14 @@ function endConnection(nodeId: string, portType: string, targetHandle = DEFAULT_
         label: connectionStart.label || undefined
     };
     const sourceNode = nodes.find((node) => node.id === newEdge.source);
+    const targetNode = nodes.find((node) => node.id === newEdge.target);
     const sourceIsIntentTrigger = isIntentTrigger(sourceNode);
+    const allowMultipleIncomingOnHandle = targetNode?.type === 'intent';
 
     edges = edges.filter((edge) => {
         if (
+            !allowMultipleIncomingOnHandle
+            &&
             edge.target === newEdge.target
             && edgeHandle(edge.targetHandle) === normalizedTargetHandle
         ) {
@@ -3358,11 +3381,17 @@ function normalizeLoadedFlowData() {
         return node;
     });
 
-    edges = (edges || []).map((edge) => ({
-        ...edge,
-        sourceHandle: edgeHandle(edge.sourceHandle),
-        targetHandle: edgeHandle(edge.targetHandle)
-    }));
+    const nodeMap = new Map(nodes.map((node) => [String(node.id || '').trim(), node]));
+    edges = (edges || []).map((edge) => {
+        const targetNode = nodeMap.get(String(edge?.target || '').trim());
+        return {
+            ...edge,
+            sourceHandle: edgeHandle(edge.sourceHandle),
+            targetHandle: targetNode?.type === 'intent'
+                ? DEFAULT_HANDLE
+                : edgeHandle(edge.targetHandle)
+        };
+    });
 }
 
 // Salvar fluxo
@@ -4019,7 +4048,7 @@ const windowAny = window as Window & {
     reloadFlowSessionOptions?: () => void;
     updateFlowSessionScopeFromSelect?: () => void;
     addIntentRoute?: () => void;
-    updateIntentRoute?: (index: number, key: 'label' | 'phrases' | 'response', value: string) => void;
+    updateIntentRoute?: (index: number, key: 'label' | 'phrases' | 'response' | 'followupResponse', value: string) => void;
     removeIntentRoute?: (index: number) => void;
     toggleNodeCollapsed?: (id: string, event?: Event) => void;
     duplicateNode?: (id: string, event?: Event) => void;

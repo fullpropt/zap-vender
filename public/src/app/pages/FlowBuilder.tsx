@@ -2730,9 +2730,9 @@ export default function FlowBuilder() {
                   </div>
                   
                   <div className="properties-panel" id="propertiesPanel">
-                      <h3 id="propertiesPanelTitle">Ação</h3>
+                      <h3 id="propertiesPanelTitle">Propriedade</h3>
                       <div id="propertiesContent">
-                          <p style={{ color: 'var(--gray)', fontSize: '14px' }}>Selecione um bloco para editar ou clique no círculo "+" de uma saída para configurar ações.</p>
+                          <p style={{ color: 'var(--gray)', fontSize: '14px' }}>Selecione um bloco para editar suas propriedades.</p>
                       </div>
                       
                       <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
