@@ -1038,7 +1038,7 @@ export default function FlowBuilder() {
 
         .node-input-port {
             display: flex;
-            align-items: center;
+            align-items: flex-end;
             gap: 6px;
             min-height: 14px;
         }

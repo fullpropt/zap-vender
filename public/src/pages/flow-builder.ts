@@ -745,7 +745,7 @@ function getEdgeInputLabel(edge?: Edge | null) {
         if (mapLabel) return mapLabel;
     }
 
-    return String(edge.label || '').trim();
+    return '';
 }
 
 function getIncomingEdgeLabels(node: FlowNode, targetHandle: string) {
@@ -1630,6 +1630,12 @@ function getNodeInputPortsMarkup(node: FlowNode) {
         <div class="node-input-ports">
             ${handles.map((item) => `
                 <div class="node-input-port${item.isExtra ? ' is-extra' : ''}">
+                    <div
+                        class="port input${item.isExtra ? ' is-extra-input' : ''}"
+                        data-port="input"
+                        data-handle="${escapeHtml(item.handle)}"
+                        title="${escapeHtml(item.label)}"
+                    ></div>
                     ${
                         Array.isArray((item as any).incomingLabels) && (item as any).incomingLabels.length > 0
                             ? `
@@ -1641,12 +1647,6 @@ function getNodeInputPortsMarkup(node: FlowNode) {
                             `
                             : ''
                     }
-                    <div
-                        class="port input${item.isExtra ? ' is-extra-input' : ''}"
-                        data-port="input"
-                        data-handle="${escapeHtml(item.handle)}"
-                        title="${escapeHtml(item.label)}"
-                    ></div>
                 </div>
             `).join('')}
         </div>
@@ -2033,9 +2033,7 @@ function getSelectedOutputEntryLabel() {
     const handle = getSelectedOutputActionHandle();
     const mapRaw = getNodePropValue('outputEntryLabels', selectedNode.data.outputEntryLabels || {});
     const map = sanitizeOutputEntryLabelsMap(mapRaw);
-    const currentValue = String(map[handle] || '').trim();
-    if (currentValue) return currentValue;
-    return String(selectedOutputActionContext?.label || '').trim();
+    return String(map[handle] || '').trim();
 }
 
 function getSelectedOutputActionHandle() {
@@ -2294,7 +2292,7 @@ function renderProperties() {
             </div>
             <div class="property-group">
                 <label>Título no bloco seguinte</label>
-                <input type="text" value="${escapeHtml(outputEntryLabel)}" placeholder="Ex.: Cliente quer metal" onchange="updateSelectedOutputEntryLabel(this.value)">
+                <input type="text" value="${escapeHtml(outputEntryLabel)}" placeholder="Opcional" onchange="updateSelectedOutputEntryLabel(this.value)">
             </div>
             <div class="property-group">
                 <div class="output-action-toolbar">
@@ -3415,9 +3413,7 @@ function endConnection(nodeId: string, portType: string, targetHandle = DEFAULT_
     const sourceNode = nodes.find((node) => node.id === connectionStart.nodeId) || null;
     const sourceEntryLabelMap = getOutputEntryLabelsMapForNode(sourceNode);
     const sourceEntryLabel = String(
-        sourceEntryLabelMap[edgeHandle(connectionStart.handle)]
-        || connectionStart.label
-        || ''
+        sourceEntryLabelMap[edgeHandle(connectionStart.handle)] || ''
     ).trim();
     const newEdge: Edge = {
         source: connectionStart.nodeId,
