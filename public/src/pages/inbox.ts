@@ -1638,7 +1638,10 @@ async function sendQuickReplyAudio(quickReply: TemplateItem) {
             to: currentConversation.phone,
             message: mediaUrl,
             type: 'audio',
-            options: { url: mediaUrl }
+            options: {
+                url: mediaUrl,
+                conversationId: currentConversation.id
+            }
         });
         if (response?.messageId) {
             (newMessage as Record<string, any>).message_id = String(response.messageId);
@@ -2089,7 +2092,8 @@ async function handleMediaInputChange(event: Event) {
                 mimetype: uploadedFile.mimetype || file.type || '',
                 fileName: uploadedFile.originalname || file.name || 'arquivo',
                 caption,
-                ptt: false
+                ptt: false,
+                conversationId: activeConversation.id
             }
         });
         if (response?.messageId) {
@@ -2414,7 +2418,10 @@ async function sendMessage() {
             sessionId,
             to: activeConversation.phone,
             message: content,
-            type: 'text'
+            type: 'text',
+            options: {
+                conversationId: activeConversation.id
+            }
         });
         if (response?.messageId) {
             (newMessage as Record<string, any>).message_id = String(response.messageId);

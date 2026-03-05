@@ -44,6 +44,7 @@ const INTENT_CONTEXT_HISTORY_KEY = 'intent_node_history_by_node';
 const INTENT_NO_MATCH_COUNTERS_KEY = 'intent_no_match_count_by_node';
 const LEAD_ONCE_MESSAGE_FLAG_KEY = 'flow_once_message_nodes';
 const NODE_ENTRY_HANDLE_MAP_KEY = 'node_entry_handle_by_node';
+const PENDING_INCOMING_MESSAGES_KEY = 'pending_incoming_messages';
 
 async function resolveOwnerScopeUserIdFromAssignee(...assignees) {
     for (const value of assignees) {
@@ -1067,6 +1068,101 @@ class FlowService extends EventEmitter {
         delete variables.intent_no_match_count;
     }
 
+    resolvePendingIncomingQueueLimit() {
+        return Math.trunc(
+            readIntentNumberEnv('FLOW_PENDING_INPUT_QUEUE_LIMIT', 6, 1, 20)
+        );
+    }
+
+    readPendingIncomingMessages(execution) {
+        const variables = this.ensureExecutionVariables(execution);
+        const value = variables[PENDING_INCOMING_MESSAGES_KEY];
+        if (!Array.isArray(value)) return [];
+
+        return value
+            .map((entry) => {
+                const text = String(entry?.text || '').trim();
+                if (!text) return null;
+                return {
+                    text,
+                    mediaType: String(entry?.mediaType || 'text').trim().toLowerCase() || 'text',
+                    receivedAt: String(entry?.receivedAt || '').trim() || new Date().toISOString()
+                };
+            })
+            .filter(Boolean);
+    }
+
+    enqueuePendingIncomingMessage(execution, message = {}) {
+        const text = String(message?.text || '').trim();
+        if (!text) return 0;
+
+        const variables = this.ensureExecutionVariables(execution);
+        const queue = this.readPendingIncomingMessages(execution);
+        const normalizedText = normalizeIntentText(text);
+        const lastEntry = queue[queue.length - 1] || null;
+        const lastText = normalizeIntentText(lastEntry?.text || '');
+        if (normalizedText && normalizedText === lastText) {
+            return queue.length;
+        }
+
+        queue.push({
+            text,
+            mediaType: String(message?.mediaType || 'text').trim().toLowerCase() || 'text',
+            receivedAt: new Date().toISOString()
+        });
+
+        const maxQueueSize = this.resolvePendingIncomingQueueLimit();
+        const boundedQueue = queue.slice(-maxQueueSize);
+        variables[PENDING_INCOMING_MESSAGES_KEY] = boundedQueue;
+        return boundedQueue.length;
+    }
+
+    dequeuePendingIncomingMessage(execution) {
+        const variables = this.ensureExecutionVariables(execution);
+        const queue = this.readPendingIncomingMessages(execution);
+        if (queue.length === 0) return null;
+
+        const [nextMessage, ...remaining] = queue;
+        if (remaining.length === 0) {
+            delete variables[PENDING_INCOMING_MESSAGES_KEY];
+        } else {
+            variables[PENDING_INCOMING_MESSAGES_KEY] = remaining;
+        }
+
+        return nextMessage;
+    }
+
+    isNodeAwaitingInput(node = null) {
+        const nodeType = String(node?.type || '').trim().toLowerCase();
+        const nodeSubtype = String(node?.subtype || '').trim().toLowerCase();
+
+        if (nodeType === 'wait' || nodeType === 'condition' || nodeType === 'intent') {
+            return true;
+        }
+
+        if (nodeType === 'trigger' && (nodeSubtype === 'keyword' || nodeSubtype === 'intent')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    async drainPendingIncomingMessages(execution) {
+        let guard = 0;
+        while (guard < 8) {
+            guard += 1;
+
+            const currentNode = this.findNode(execution?.flow, execution?.currentNode);
+            if (!this.isNodeAwaitingInput(currentNode)) break;
+
+            const queuedMessage = this.dequeuePendingIncomingMessage(execution);
+            if (!queuedMessage) break;
+
+            await this.persistExecutionVariables(execution);
+            await this.continueFlow(execution, queuedMessage);
+        }
+    }
+
     async persistExecutionVariables(execution) {
         await run(`
             UPDATE flow_executions
@@ -1341,6 +1437,18 @@ class FlowService extends EventEmitter {
             } else {
                 await this.endFlow(execution, 'completed');
             }
+
+            return execution;
+        }
+
+        const queuedCount = this.enqueuePendingIncomingMessage(execution, message);
+        if (queuedCount > 0) {
+            await this.persistExecutionVariables(execution);
+            console.info(
+                `[flow-intent] Mensagem recebida antes de um no de entrada ` +
+                `(fluxo ${execution?.flow?.id || 'n/a'}, conversa ${execution?.conversation?.id || 'n/a'}, ` +
+                `no ${currentNode?.id || 'desconhecido'}). Fila pendente: ${queuedCount}.`
+            );
         }
 
         return execution;
@@ -1430,14 +1538,17 @@ class FlowService extends EventEmitter {
                 case 'wait':
                     // Aguarda resposta do usuario
                     // O fluxo sera continuado quando chegar nova mensagem
+                    await this.drainPendingIncomingMessages(execution);
                     break;
 
                 case 'intent':
                     // Aguarda resposta para classificar a intencao no meio do fluxo
+                    await this.drainPendingIncomingMessages(execution);
                     break;
 
                 case 'condition':
                     // Aguardar resposta para avaliar condição
+                    await this.drainPendingIncomingMessages(execution);
                     break;
                     
                 case 'delay':

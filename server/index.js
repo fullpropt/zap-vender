@@ -7937,21 +7937,31 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
     // Buscar ou criar conversa
     let conversation = null;
 
-    if (options.conversationId) {
-        const existingConversation = await Conversation.findById(options.conversationId);
-        if (existingConversation && Number(existingConversation.lead_id) === Number(lead.id)) {
-            const existingConversationSessionId = sanitizeSessionId(existingConversation.session_id);
-            if (existingConversationSessionId && existingConversationSessionId !== sessionId) {
-                throw new Error('Conversa informada pertence a outra conta WhatsApp');
-            }
-            if (sessionOwnerUserId && lead?.owner_user_id && Number(lead.owner_user_id) !== Number(sessionOwnerUserId)) {
-                throw new Error('Lead nao pertence ao mesmo owner da sessao informada');
-            }
-            if (assignedTo && existingConversation.assigned_to && Number(existingConversation.assigned_to) !== assignedTo) {
-                throw new Error('Sem permissao para enviar nesta conversa');
-            }
-            conversation = existingConversation;
+    const requestedConversationId = Number(options?.conversationId);
+    if (Number.isInteger(requestedConversationId) && requestedConversationId > 0) {
+        const existingConversation = await Conversation.findById(requestedConversationId);
+        if (!existingConversation) {
+            throw new Error('Conversa informada nao encontrada');
         }
+
+        if (Number(existingConversation.lead_id) !== Number(lead.id)) {
+            throw new Error('Conversa informada nao corresponde ao contato de destino');
+        }
+
+        const existingConversationSessionId = sanitizeSessionId(existingConversation.session_id);
+        if (existingConversationSessionId && existingConversationSessionId !== sessionId) {
+            throw new Error('Conversa informada pertence a outra conta WhatsApp');
+        }
+
+        if (sessionOwnerUserId && lead?.owner_user_id && Number(lead.owner_user_id) !== Number(sessionOwnerUserId)) {
+            throw new Error('Lead nao pertence ao mesmo owner da sessao informada');
+        }
+
+        if (assignedTo && existingConversation.assigned_to && Number(existingConversation.assigned_to) !== assignedTo) {
+            throw new Error('Sem permissao para enviar nesta conversa');
+        }
+
+        conversation = existingConversation;
     }
 
     if (!conversation) {

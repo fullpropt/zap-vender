@@ -258,6 +258,60 @@ describe('FlowService intent routing compatibility', () => {
         goToNextSpy.mockRestore();
     });
 
+    test('queues inbound messages that arrive before a wait/intent node and replays them', async () => {
+        const service = new FlowService();
+        const messageNode = {
+            id: 'intro-message',
+            type: 'message',
+            data: {}
+        };
+        const intentNode = {
+            id: 'intent-mid',
+            type: 'intent',
+            data: {
+                intentRoutes: [
+                    { id: 'route-classic', label: 'Linha classica', phrases: 'gostei da linha classica' }
+                ]
+            }
+        };
+
+        const execution = {
+            id: 501,
+            flow: {
+                id: 10,
+                nodes: [messageNode, intentNode],
+                edges: []
+            },
+            conversation: { id: 18 },
+            lead: { id: 32 },
+            currentNode: 'intro-message',
+            variables: {}
+        };
+
+        const persistSpy = jest.spyOn(service, 'persistExecutionVariables').mockResolvedValue();
+
+        await service.continueFlow(execution, { text: 'Gostei da linha clássica' });
+
+        expect(Array.isArray(execution.variables.pending_incoming_messages)).toBe(true);
+        expect(execution.variables.pending_incoming_messages).toHaveLength(1);
+        expect(execution.variables.pending_incoming_messages[0].text).toBe('Gostei da linha clássica');
+
+        const continueSpy = jest.spyOn(service, 'continueFlow').mockResolvedValue(execution);
+        execution.currentNode = 'intent-mid';
+
+        await service.drainPendingIncomingMessages(execution);
+
+        expect(continueSpy).toHaveBeenCalledWith(
+            execution,
+            expect.objectContaining({ text: 'Gostei da linha clássica' })
+        );
+        expect(execution.variables.pending_incoming_messages).toBeUndefined();
+        expect(persistSpy).toHaveBeenCalledTimes(2);
+
+        continueSpy.mockRestore();
+        persistSpy.mockRestore();
+    });
+
     test('message_once stores delivery flag per lead and node', async () => {
         const service = new FlowService();
         const execution = {
