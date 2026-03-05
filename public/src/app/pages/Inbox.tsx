@@ -1514,6 +1514,7 @@ export default function Inbox() {
             .inbox-react { --inbox-main-pad-y: 8px; }
             .inbox-main-content {
                 padding: calc(env(safe-area-inset-top, 0px) + 72px) 10px 10px !important;
+                min-height: 100svh;
             }
             body.inbox-mobile-chat-lock .inbox-react .inbox-main-content {
                 padding-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
@@ -1549,6 +1550,8 @@ export default function Inbox() {
             .inbox-container {
                 grid-template-columns: 1fr !important;
                 border-radius: 12px;
+                height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px) !important;
+                max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px) !important;
             }
             .conversations-panel {
                 display: flex !important;
@@ -1562,6 +1565,7 @@ export default function Inbox() {
             }
             .chat-panel.active {
                 display: flex !important;
+                min-height: 0;
             }
             .chat-header {
                 padding: 10px 12px;
@@ -1591,15 +1595,17 @@ export default function Inbox() {
                 font-size: 13px;
             }
             .chat-input {
-                padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+                padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
                 gap: 6px;
+                align-items: center;
             }
             .chat-input textarea {
-                min-height: 42px;
-                max-height: 42px;
-                padding: 10px 12px;
+                min-height: 44px;
+                max-height: 88px;
+                padding: 11px 12px;
                 font-size: 13px;
-                line-height: 1.2;
+                line-height: 1.3;
+                overflow-y: auto;
             }
             .chat-scroll-bottom-btn {
                 right: 12px;
