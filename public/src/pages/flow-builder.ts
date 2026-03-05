@@ -1396,6 +1396,9 @@ function renderNode(node: FlowNode) {
     const nodeEl = document.createElement('div');
     const isCollapsed = Boolean(node.data?.collapsed);
     const isEventCircle = node.type === 'event';
+    const eventDisplayName = node.type === 'event'
+        ? String(node.data.eventName || node.data.eventKey || '').trim()
+        : '';
     nodeEl.className = `flow-node${isCollapsed ? ' is-collapsed' : ''}${isEventCircle ? ' event-circle' : ''}`;
     nodeEl.id = node.id;
     nodeEl.style.left = node.position.x + 'px';
@@ -1423,6 +1426,7 @@ function renderNode(node: FlowNode) {
             <div class="title-group">
                 <span class="node-kind">${escapeHtml(getNodeTypeLabel(node))}</span>
                 <span class="title">${escapeHtml(String(node.data.label || '').trim() || getNodeTypeLabel(node))}</span>
+                ${eventDisplayName ? `<span class="node-subtitle" title="${escapeHtml(eventDisplayName)}">${escapeHtml(truncateLabel(eventDisplayName, 22))}</span>` : ''}
             </div>
             <button class="duplicate-btn" title="Duplicar bloco" onclick="duplicateNode('${node.id}', event)">Copiar</button>
             <button class="collapse-btn" title="${isCollapsed ? 'Expandir bloco' : 'Recolher bloco'}" onclick="toggleNodeCollapsed('${node.id}', event)">

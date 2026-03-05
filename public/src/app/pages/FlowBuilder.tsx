@@ -881,6 +881,18 @@ export default function FlowBuilder() {
             text-align: center;
         }
 
+        .flow-node.event-circle .flow-node-header .node-subtitle {
+            font-size: 9px;
+            line-height: 1.2;
+            color: #64748b;
+            font-weight: 600;
+            max-width: 88px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+        }
+
         .flow-node-header .duplicate-btn,
         .flow-node-header .collapse-btn,
         .flow-node-header .delete-btn {
