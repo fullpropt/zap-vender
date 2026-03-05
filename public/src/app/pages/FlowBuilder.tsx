@@ -1653,6 +1653,12 @@ export default function FlowBuilder() {
             min-width: 0;
         }
 
+        .intent-route-response-input {
+            min-width: 0;
+            min-height: 72px;
+            resize: vertical;
+        }
+
         .intent-route-field-hint {
             margin-top: 2px;
             font-size: 11px;

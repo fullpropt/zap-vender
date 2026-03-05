@@ -115,6 +115,49 @@ describe('FlowService intent routing compatibility', () => {
         goToNextSpy.mockRestore();
     });
 
+    test('continueFlow on intent node envia resposta configurada com delay unico', async () => {
+        const service = new FlowService();
+        const sendMock = jest.fn().mockResolvedValue();
+        service.init(sendMock);
+
+        const node = {
+            id: 'intent-mid',
+            type: 'intent',
+            data: {
+                intentRoutes: [
+                    { id: 'route-hours', label: 'Horários', phrases: 'horario, funcionamento', response: 'Nosso horário é de 8h às 18h, {{nome}}.' }
+                ],
+                intentResponseDelaySeconds: 2
+            }
+        };
+
+        const execution = {
+            id: 111,
+            flow: { id: 33, nodes: [node], edges: [] },
+            conversation: { id: 51, session_id: 'session-1' },
+            lead: { id: 22, phone: '5511999999999', jid: '5511999999999@s.whatsapp.net' },
+            currentNode: 'intent-mid',
+            variables: { nome: 'Carlos' }
+        };
+
+        const pickSpy = jest.spyOn(service, 'pickTriggerIntentHandle').mockResolvedValue('route-hours');
+        const delaySpy = jest.spyOn(service, 'delay').mockResolvedValue();
+        const goToNextSpy = jest.spyOn(service, 'goToNextNode').mockResolvedValue();
+
+        await service.continueFlow(execution, { text: 'qual horario?' });
+
+        expect(delaySpy).toHaveBeenCalledWith(2000);
+        expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({
+            content: 'Nosso horário é de 8h às 18h, Carlos.'
+        }));
+        expect(goToNextSpy).toHaveBeenCalledWith(execution, node, 'route-hours');
+        expect(sendMock.mock.invocationCallOrder[0]).toBeLessThan(goToNextSpy.mock.invocationCallOrder[0]);
+
+        pickSpy.mockRestore();
+        delaySpy.mockRestore();
+        goToNextSpy.mockRestore();
+    });
+
     test('goToNextNode falls back to edge label when sourceHandle is stale', async () => {
         const service = new FlowService();
         const currentNode = {

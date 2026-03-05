@@ -13,11 +13,18 @@ type OutputActionItem = {
     eventKey?: string;
     eventName?: string;
 };
+type IntentRoute = {
+    id: string;
+    label: string;
+    phrases: string;
+    response?: string;
+};
 type NodeData = {
     label: string;
     collapsed?: boolean;
     keyword?: string;
-    intentRoutes?: Array<{ id: string; label: string; phrases: string }>;
+    intentRoutes?: IntentRoute[];
+    intentResponseDelaySeconds?: number;
     content?: string;
     delaySeconds?: number;
     isOnceMessage?: boolean;
@@ -629,7 +636,8 @@ function getIntentRoutes(node?: FlowNode | null) {
             return {
                 id,
                 label: buildRouteLabel(route, index),
-                phrases: String(route.phrases || '').trim()
+                phrases: String(route.phrases || '').trim(),
+                response: String(route.response || '').trim()
             };
         });
     }
@@ -638,7 +646,8 @@ function getIntentRoutes(node?: FlowNode | null) {
     return fallbackPhrases.map((phrase, index) => ({
         id: normalizeRouteId(`intent-${index + 1}`),
         label: phrase,
-        phrases: phrase
+        phrases: phrase,
+        response: ''
     }));
 }
 
@@ -1441,8 +1450,22 @@ function addNode(type: NodeType, subtype: string, x: number, y: number) {
 // Dados padrao do no
 function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
     const defaults = {
-        trigger: { label: subtype === 'keyword' || subtype === 'intent' ? 'Intenção' : 'Novo Contato', collapsed: false, keyword: '', intentRoutes: [], outputActions: {} },
-        intent: { label: 'Intenção', collapsed: false, keyword: '', intentRoutes: [], outputActions: {} },
+        trigger: {
+            label: subtype === 'keyword' || subtype === 'intent' ? 'Intenção' : 'Novo Contato',
+            collapsed: false,
+            keyword: '',
+            intentRoutes: [],
+            intentResponseDelaySeconds: 0,
+            outputActions: {}
+        },
+        intent: {
+            label: 'Intenção',
+            collapsed: false,
+            keyword: '',
+            intentRoutes: [],
+            intentResponseDelaySeconds: 0,
+            outputActions: {}
+        },
         message: {
             label: 'Mensagem',
             collapsed: false,
@@ -2194,6 +2217,9 @@ function renderProperties() {
                 const routes = Array.isArray(draftRoutes) && draftRoutes.length > 0
                     ? draftRoutes
                     : getIntentRoutes(selectedNode);
+                const intentResponseDelaySeconds = Number.isFinite(Number(getNodePropValue('intentResponseDelaySeconds', selectedNode.data.intentResponseDelaySeconds)))
+                    ? Math.max(0, Number(getNodePropValue('intentResponseDelaySeconds', selectedNode.data.intentResponseDelaySeconds)))
+                    : 0;
                 html += `
                     <div class="property-group">
                         <label>Intenções</label>
@@ -2212,10 +2238,19 @@ function renderProperties() {
                                         <label>Frases que ativam esta intenção</label>
                                         <input class="intent-route-phrases-input" type="text" value="${escapeHtml(route.phrases)}" title="${escapeHtml(route.phrases)}" placeholder="Ex.: onde posso comprar, como comprar óculos" onchange="updateIntentRoute(${index}, 'phrases', this.value)">
                                     </div>
+                                    <div class="intent-route-field">
+                                        <label>Mensagem de resposta</label>
+                                        <textarea class="intent-route-response-input" placeholder="Mensagem enviada quando esta intenção for identificada" onchange="updateIntentRoute(${index}, 'response', this.value)">${escapeHtml(String(route.response || ''))}</textarea>
+                                    </div>
                                 </div>
                             `).join('')}
                         </div>
                         <button class="add-condition-btn" onclick="addIntentRoute()">+ Adicionar Intenção</button>
+                    </div>
+                    <div class="property-group">
+                        <label>Delay da resposta (segundos)</label>
+                        <input type="number" min="0" step="1" value="${intentResponseDelaySeconds}" onchange="updateNodeProperty('intentResponseDelaySeconds', Math.max(0, parseInt(this.value || '0', 10) || 0))">
+                        <div class="hint">Esse delay será aplicado em todas as mensagens de resposta das intenções deste bloco.</div>
                     </div>
                 `;
             }
@@ -2527,7 +2562,8 @@ function confirmNodePropertyChanges() {
             selectedNode.data.intentRoutes = parsePhraseList(String(value || '')).map((phrase, index) => ({
                 id: normalizeRouteId(`intent-${index + 1}`),
                 label: phrase,
-                phrases: phrase
+                phrases: phrase,
+                response: ''
             }));
         }
     }
@@ -2711,14 +2747,16 @@ function addIntentRoute() {
     const routes = baseRoutes.map((route: any, index: number) => ({
         id: String(route?.id || normalizeRouteId(`intent-${index + 1}`)),
         label: String(route?.label || ''),
-        phrases: String(route?.phrases || '')
+        phrases: String(route?.phrases || ''),
+        response: String(route?.response || '')
     }));
 
     const nextIndex = routes.length + 1;
     const nextRoute = {
         id: normalizeRouteId(`intent-${Date.now()}-${nextIndex}`),
         label: `Intenção ${nextIndex}`,
-        phrases: ''
+        phrases: '',
+        response: ''
     };
 
     const nextRoutes = [...routes, nextRoute];
@@ -2729,7 +2767,7 @@ function addIntentRoute() {
     renderProperties();
 }
 
-function updateIntentRoute(index: number, key: 'label' | 'phrases', value: string) {
+function updateIntentRoute(index: number, key: 'label' | 'phrases' | 'response', value: string) {
     if (isFlowReadOnlyMode()) return;
     if (!selectedNode || !isIntentTrigger(selectedNode)) return;
     const existingDraft = getNodePropValue('intentRoutes', null as any);
@@ -2739,7 +2777,8 @@ function updateIntentRoute(index: number, key: 'label' | 'phrases', value: strin
     const routes = baseRoutes.map((route: any, routeIndex: number) => ({
         id: String(route?.id || normalizeRouteId(`intent-${routeIndex + 1}`)),
         label: String(route?.label || ''),
-        phrases: String(route?.phrases || '')
+        phrases: String(route?.phrases || ''),
+        response: String(route?.response || '')
     }));
 
     if (!routes[index]) return;
@@ -2761,7 +2800,8 @@ function removeIntentRoute(index: number) {
     const routes = baseRoutes.map((route: any, routeIndex: number) => ({
         id: String(route?.id || normalizeRouteId(`intent-${routeIndex + 1}`)),
         label: String(route?.label || ''),
-        phrases: String(route?.phrases || '')
+        phrases: String(route?.phrases || ''),
+        response: String(route?.response || '')
     }));
     if (!routes[index]) return;
 
@@ -3206,6 +3246,10 @@ function normalizeLoadedFlowData() {
             if (!node.data.label || node.data.label.toLowerCase() === 'palavra-chave') {
                 node.data.label = 'Intenção';
             }
+            const rawIntentDelay = Number(node.data?.intentResponseDelaySeconds);
+            node.data.intentResponseDelaySeconds = Number.isFinite(rawIntentDelay)
+                ? Math.max(0, Math.trunc(rawIntentDelay))
+                : 0;
             syncIntentRoutesFromNode(node);
         }
         return node;
@@ -3872,7 +3916,7 @@ const windowAny = window as Window & {
     reloadFlowSessionOptions?: () => void;
     updateFlowSessionScopeFromSelect?: () => void;
     addIntentRoute?: () => void;
-    updateIntentRoute?: (index: number, key: 'label' | 'phrases', value: string) => void;
+    updateIntentRoute?: (index: number, key: 'label' | 'phrases' | 'response', value: string) => void;
     removeIntentRoute?: (index: number) => void;
     toggleNodeCollapsed?: (id: string, event?: Event) => void;
     duplicateNode?: (id: string, event?: Event) => void;

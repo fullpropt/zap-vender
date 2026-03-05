@@ -1666,6 +1666,7 @@ class FlowService extends EventEmitter {
                 this.clearIntentHistory(execution, currentNode.id);
             }
 
+            await this.sendIntentRouteResponse(execution, currentNode, selectedHandle);
             await this.goToNextNode(execution, currentNode, selectedHandle);
             return execution;
         }
@@ -1935,9 +1936,10 @@ class FlowService extends EventEmitter {
                     const id = String(route?.id || `intent-${index + 1}`).trim();
                     const label = String(route?.label || '').trim() || `Intencao ${index + 1}`;
                     const phrases = String(route?.phrases || '').trim();
+                    const response = String(route?.response || '').trim();
                     const normalizedPhrases = parseIntentPhrases(phrases);
                     if (!id || normalizedPhrases.length === 0) return null;
-                    return { id, label, phrases, normalizedPhrases };
+                    return { id, label, phrases, response, normalizedPhrases };
                 })
                 .filter(Boolean);
         }
@@ -1947,6 +1949,7 @@ class FlowService extends EventEmitter {
             id: `intent-${index + 1}`,
             label: `Intencao ${index + 1}`,
             phrases: phrase,
+            response: '',
             normalizedPhrases: [phrase]
         }));
     }
@@ -2031,6 +2034,61 @@ class FlowService extends EventEmitter {
         return fuzzyMatch?.routeId || null;
     }
 
+    resolveIntentResponseDelayMs(node = null) {
+        const rawSeconds = Number(node?.data?.intentResponseDelaySeconds);
+        if (!Number.isFinite(rawSeconds) || rawSeconds <= 0) return 0;
+        return Math.max(0, Math.trunc(rawSeconds)) * 1000;
+    }
+
+    resolveTriggerIntentRouteByHandle(node = null, selectedHandle = null) {
+        const routes = this.resolveTriggerIntentRoutes(node);
+        if (routes.length === 0 || !selectedHandle) return null;
+
+        const rawHandle = String(selectedHandle || '').trim() || 'default';
+        const canonicalHandle = rawHandle === 'default'
+            ? 'default'
+            : normalizeIntentRouteHandle(rawHandle);
+
+        return routes.find((route) => {
+            const aliases = [
+                route?.id,
+                route?.label
+            ];
+
+            return aliases.some((alias) => {
+                const aliasRaw = String(alias || '').trim();
+                if (!aliasRaw) return false;
+                const aliasCanonical = normalizeIntentRouteHandle(aliasRaw);
+                return aliasRaw === rawHandle || aliasCanonical === canonicalHandle;
+            });
+        }) || null;
+    }
+
+    async sendIntentRouteResponse(execution, node = null, selectedHandle = null) {
+        const matchedRoute = this.resolveTriggerIntentRouteByHandle(node, selectedHandle);
+        const rawResponse = String(matchedRoute?.response || '').trim();
+        if (!rawResponse) return;
+
+        const content = sanitizeOutgoingFlowText(
+            this.replaceVariables(rawResponse, this.ensureExecutionVariables(execution))
+        );
+        if (!content) return;
+        if (!this.sendFunction) return;
+
+        const delayMs = this.resolveIntentResponseDelayMs(node);
+        if (delayMs > 0) {
+            await this.delay(delayMs);
+        }
+
+        await this.sendFunction({
+            to: execution.lead?.phone,
+            jid: execution.lead?.jid,
+            sessionId: execution.conversation?.session_id || null,
+            conversationId: execution.conversation?.id || null,
+            content
+        });
+    }
+
     async executeTriggerNode(execution, node) {
         const selectedHandle = await this.pickTriggerIntentHandle(execution, node);
 
@@ -2045,6 +2103,8 @@ class FlowService extends EventEmitter {
             SET variables = ?
             WHERE id = ?
         `, [JSON.stringify(execution.variables), execution.id]);
+
+        await this.sendIntentRouteResponse(execution, node, selectedHandle);
 
         await this.goToNextNode(execution, node, selectedHandle);
     }
