@@ -197,6 +197,96 @@ describe('FlowService intent routing compatibility', () => {
         endSpy.mockRestore();
     });
 
+    test('goToNextNode marks trigger default -> message_once edge as intent reentry bridge', async () => {
+        const service = new FlowService();
+        const currentNode = {
+            id: 'trigger-intent',
+            type: 'trigger',
+            subtype: 'intent',
+            data: {
+                intentRoutes: [
+                    { id: 'route-buy', label: 'Comprar', phrases: 'comprar' }
+                ]
+            }
+        };
+        const onceNode = {
+            id: 'welcome-once',
+            type: 'message_once',
+            data: {}
+        };
+
+        const execution = {
+            flow: {
+                id: 13,
+                nodes: [currentNode, onceNode],
+                edges: [
+                    { source: 'trigger-intent', target: 'welcome-once', sourceHandle: 'default', targetHandle: 'path-2' }
+                ]
+            },
+            conversation: { id: 80 },
+            variables: {}
+        };
+
+        const executeSpy = jest.spyOn(service, 'executeNode').mockResolvedValue();
+
+        await service.goToNextNode(execution, currentNode);
+
+        expect(executeSpy).toHaveBeenCalledWith(execution, 'welcome-once', 'path-2');
+        expect(execution.variables.intent_default_message_once_reentry).toEqual({
+            triggerNodeId: 'trigger-intent',
+            messageOnceNodeId: 'welcome-once',
+            targetHandle: 'path-2'
+        });
+
+        executeSpy.mockRestore();
+    });
+
+    test('goToNextNode clears stale intent reentry bridge on non-bridge edge', async () => {
+        const service = new FlowService();
+        const currentNode = {
+            id: 'trigger-intent',
+            type: 'trigger',
+            subtype: 'intent',
+            data: {
+                intentRoutes: [
+                    { id: 'route-buy', label: 'Comprar', phrases: 'comprar' }
+                ]
+            }
+        };
+        const routeNode = {
+            id: 'route-answer',
+            type: 'message',
+            data: {}
+        };
+
+        const execution = {
+            flow: {
+                id: 14,
+                nodes: [currentNode, routeNode],
+                edges: [
+                    { source: 'trigger-intent', target: 'route-answer', sourceHandle: 'route-buy', targetHandle: 'default' }
+                ]
+            },
+            conversation: { id: 81 },
+            variables: {
+                intent_default_message_once_reentry: {
+                    triggerNodeId: 'old-trigger',
+                    messageOnceNodeId: 'old-once',
+                    targetHandle: 'default'
+                }
+            }
+        };
+
+        const executeSpy = jest.spyOn(service, 'executeNode').mockResolvedValue();
+
+        await service.goToNextNode(execution, currentNode, 'route-buy');
+
+        expect(executeSpy).toHaveBeenCalledWith(execution, 'route-answer', 'default');
+        expect(execution.variables.intent_default_message_once_reentry).toBeUndefined();
+
+        executeSpy.mockRestore();
+    });
+
     test('flow session scope matches only the configured WhatsApp account', () => {
         const service = new FlowService();
 

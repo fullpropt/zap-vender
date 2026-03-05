@@ -1151,6 +1151,11 @@ export default function FlowBuilder() {
             stroke-width: 2;
             pointer-events: none;
         }
+
+        .connection-line.connection-line-intent-default-once {
+            stroke: #0ea5e9;
+            stroke-width: 2.5;
+        }
         
         .connection-line.is-hover {
             stroke: var(--danger);

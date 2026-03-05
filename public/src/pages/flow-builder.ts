@@ -730,6 +730,21 @@ function isSameEdge(a: Edge, b: Edge) {
     );
 }
 
+function isIntentDefaultToMessageOnceEdge(edge: Edge) {
+    const sourceNode = nodes.find((node) => node.id === edge.source);
+    const targetNode = nodes.find((node) => node.id === edge.target);
+    if (!sourceNode || !targetNode) return false;
+
+    const sourceType = String(sourceNode.type || '').trim().toLowerCase();
+    const sourceSubtype = String(sourceNode.subtype || '').trim().toLowerCase();
+    const targetType = String(targetNode.type || '').trim().toLowerCase();
+
+    if (sourceType !== 'trigger') return false;
+    if (sourceSubtype !== 'keyword' && sourceSubtype !== 'intent') return false;
+    if (targetType !== 'message_once') return false;
+    return edgeHandle(edge.sourceHandle) === DEFAULT_HANDLE;
+}
+
 function findPortByHandle(nodeEl: Element, selector: string, handle?: string) {
     const normalizedHandle = edgeHandle(handle);
     const ports = Array.from(nodeEl.querySelectorAll(selector)) as HTMLElement[];
@@ -2298,7 +2313,11 @@ function renderConnections() {
 
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('d', pathData);
-        path.setAttribute('class', 'connection-line');
+        const classes = ['connection-line'];
+        if (isIntentDefaultToMessageOnceEdge(edge)) {
+            classes.push('connection-line-intent-default-once');
+        }
+        path.setAttribute('class', classes.join(' '));
 
         const hitPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         hitPath.setAttribute('d', pathData);

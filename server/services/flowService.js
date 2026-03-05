@@ -45,6 +45,7 @@ const INTENT_NO_MATCH_COUNTERS_KEY = 'intent_no_match_count_by_node';
 const LEAD_ONCE_MESSAGE_FLAG_KEY = 'flow_once_message_nodes';
 const NODE_ENTRY_HANDLE_MAP_KEY = 'node_entry_handle_by_node';
 const PENDING_INCOMING_MESSAGES_KEY = 'pending_incoming_messages';
+const INTENT_DEFAULT_MESSAGE_ONCE_REENTRY_KEY = 'intent_default_message_once_reentry';
 
 async function resolveOwnerScopeUserIdFromAssignee(...assignees) {
     for (const value of assignees) {
@@ -928,6 +929,82 @@ class FlowService extends EventEmitter {
         variables.last_node_entry_handle = map[normalizedNodeId];
     }
 
+    readIntentDefaultMessageOnceReentry(execution) {
+        const variables = this.ensureExecutionVariables(execution);
+        const value = variables[INTENT_DEFAULT_MESSAGE_ONCE_REENTRY_KEY];
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return null;
+        }
+
+        const triggerNodeId = String(value?.triggerNodeId || '').trim();
+        const messageOnceNodeId = String(value?.messageOnceNodeId || '').trim();
+        const targetHandle = this.normalizeFlowHandle(value?.targetHandle);
+        if (!triggerNodeId || !messageOnceNodeId) {
+            return null;
+        }
+
+        return {
+            triggerNodeId,
+            messageOnceNodeId,
+            targetHandle
+        };
+    }
+
+    setIntentDefaultMessageOnceReentry(execution, payload = {}) {
+        const triggerNodeId = String(payload?.triggerNodeId || '').trim();
+        const messageOnceNodeId = String(payload?.messageOnceNodeId || '').trim();
+        if (!triggerNodeId || !messageOnceNodeId) {
+            this.clearIntentDefaultMessageOnceReentry(execution);
+            return null;
+        }
+
+        const normalized = {
+            triggerNodeId,
+            messageOnceNodeId,
+            targetHandle: this.normalizeFlowHandle(payload?.targetHandle)
+        };
+
+        const variables = this.ensureExecutionVariables(execution);
+        variables[INTENT_DEFAULT_MESSAGE_ONCE_REENTRY_KEY] = normalized;
+        return normalized;
+    }
+
+    clearIntentDefaultMessageOnceReentry(execution) {
+        const variables = this.ensureExecutionVariables(execution);
+        delete variables[INTENT_DEFAULT_MESSAGE_ONCE_REENTRY_KEY];
+    }
+
+    resolveIntentDefaultMessageOnceReentryForNode(execution, node = null) {
+        const context = this.readIntentDefaultMessageOnceReentry(execution);
+        if (!context) return null;
+
+        const nodeId = String(node?.id || '').trim();
+        if (!nodeId || context.messageOnceNodeId !== nodeId) {
+            return null;
+        }
+
+        return context;
+    }
+
+    isIntentTriggerNode(node = null) {
+        const nodeType = String(node?.type || '').trim().toLowerCase();
+        const subtype = String(node?.subtype || '').trim().toLowerCase();
+        return nodeType === 'trigger' && (subtype === 'keyword' || subtype === 'intent');
+    }
+
+    isIntentDefaultToMessageOnceBridge(flow, currentNode, edge) {
+        if (!this.isIntentTriggerNode(currentNode)) {
+            return false;
+        }
+        if (this.normalizeFlowHandle(edge?.sourceHandle) !== 'default') {
+            return false;
+        }
+
+        const targetNode = this.findNode(flow, edge?.target);
+        const targetType = String(targetNode?.type || '').trim().toLowerCase();
+        return targetType === 'message_once';
+    }
+
     resolveIntentContextWindowSize() {
         return Math.trunc(
             readIntentNumberEnv('FLOW_INTENT_CONTEXT_WINDOW_MESSAGES', 4, 1, 8)
@@ -1499,8 +1576,14 @@ class FlowService extends EventEmitter {
                 case 'message':
                 case 'message_once': {
                     const isOnceMessage = node.type === 'message_once';
+                    const onceReentryContext = isOnceMessage
+                        ? this.resolveIntentDefaultMessageOnceReentryForNode(execution, node)
+                        : null;
                     const alreadySent = isOnceMessage && this.hasLeadSeenOnceMessageNode(execution, node);
                     if (alreadySent) {
+                        if (onceReentryContext) {
+                            this.clearIntentDefaultMessageOnceReentry(execution);
+                        }
                         await this.goToNextNode(execution, node);
                         break;
                     }
@@ -1540,6 +1623,26 @@ class FlowService extends EventEmitter {
 
                     if (isOnceMessage && sentSuccessfully) {
                         await this.markLeadOnceMessageNodeSeen(execution, node);
+                    }
+
+                    if (onceReentryContext) {
+                        execution.currentNode = onceReentryContext.triggerNodeId;
+                        this.setNodeEntryHandle(
+                            execution,
+                            onceReentryContext.triggerNodeId,
+                            onceReentryContext.targetHandle
+                        );
+
+                        await run(`
+                            UPDATE flow_executions
+                            SET current_node = ?, variables = ?
+                            WHERE id = ?
+                        `, [onceReentryContext.triggerNodeId, JSON.stringify(execution.variables), execution.id]);
+                        break;
+                    }
+
+                    if (isOnceMessage) {
+                        this.clearIntentDefaultMessageOnceReentry(execution);
                     }
 
                     // Ir para o proximo no
@@ -1916,6 +2019,15 @@ class FlowService extends EventEmitter {
 
         if (edge) {
             const nextTargetHandle = rawHandle(edge.targetHandle);
+            if (this.isIntentDefaultToMessageOnceBridge(execution.flow, currentNode, edge)) {
+                this.setIntentDefaultMessageOnceReentry(execution, {
+                    triggerNodeId: currentNode?.id,
+                    messageOnceNodeId: edge.target,
+                    targetHandle: nextTargetHandle
+                });
+            } else {
+                this.clearIntentDefaultMessageOnceReentry(execution);
+            }
             this.setNodeEntryHandle(execution, edge.target, nextTargetHandle);
             await this.executeNode(execution, edge.target, nextTargetHandle);
         } else {
