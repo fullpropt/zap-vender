@@ -1766,6 +1766,37 @@ export default function FlowBuilder() {
             resize: vertical;
         }
 
+        .intent-followup-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 2px;
+        }
+
+        .intent-followup-item {
+            position: relative;
+        }
+
+        .intent-followup-item .intent-route-response-input {
+            padding-right: 36px;
+        }
+
+        .intent-followup-remove-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px !important;
+            height: 24px !important;
+            border-radius: 6px !important;
+            font-size: 13px !important;
+            line-height: 1 !important;
+            padding: 0 !important;
+        }
+
+        .intent-followup-add-btn {
+            margin-top: 8px;
+        }
+
         .intent-config-body .property-group {
             margin-bottom: 10px;
         }
@@ -1776,6 +1807,44 @@ export default function FlowBuilder() {
 
         .intent-welcome-toggle-row {
             margin-bottom: 8px;
+        }
+
+        .intent-welcome-inline-group {
+            margin-bottom: 0;
+        }
+
+        .intent-welcome-inline-grid {
+            display: grid;
+            grid-template-columns: minmax(90px, 120px) minmax(0, 1fr);
+            gap: 10px;
+            align-items: end;
+        }
+
+        .intent-welcome-inline-item label {
+            margin-bottom: 6px;
+        }
+
+        .intent-welcome-repeat-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .intent-welcome-repeat-value {
+            width: 84px;
+            flex: 0 0 84px;
+            text-align: center;
+        }
+
+        .intent-welcome-repeat-controls select {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        @media (max-width: 440px) {
+            .intent-welcome-inline-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         .condition-row {

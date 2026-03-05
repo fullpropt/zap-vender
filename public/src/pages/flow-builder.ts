@@ -19,6 +19,7 @@ type IntentRoute = {
     phrases: string;
     response?: string;
     followupResponse?: string;
+    followupResponses?: string[];
 };
 type NodeData = {
     label: string;
@@ -28,6 +29,7 @@ type NodeData = {
     intentResponseDelaySeconds?: number;
     intentDefaultResponse?: string;
     intentDefaultFollowupResponse?: string;
+    intentDefaultFollowupResponses?: string[];
     triggerWelcomeEnabled?: boolean;
     triggerWelcomeContent?: string;
     triggerWelcomeDelaySeconds?: number;
@@ -619,6 +621,26 @@ function parsePhraseList(value: string) {
         .filter(Boolean);
 }
 
+function coerceIntentMessageListForEditor(value: unknown, fallbackValue: unknown = '') {
+    if (Array.isArray(value)) {
+        return value.map((item) => String(item ?? ''));
+    }
+
+    const fallbackText = String(fallbackValue ?? '').trim();
+    return fallbackText ? [fallbackText] : [];
+}
+
+function normalizeIntentMessageList(value: unknown, fallbackValue: unknown = '') {
+    return coerceIntentMessageListForEditor(value, fallbackValue)
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+function resolveIntentLegacyFollowupMessage(value: unknown, fallbackValue: unknown = '') {
+    const messages = normalizeIntentMessageList(value, fallbackValue);
+    return messages[0] || '';
+}
+
 function buildRouteLabel(route: { label?: string; phrases?: string }, index: number) {
     const explicitLabel = String(route.label || '').trim();
     if (explicitLabel) return explicitLabel;
@@ -642,12 +664,17 @@ function getIntentRoutes(node?: FlowNode | null) {
                 suffix += 1;
             }
             usedIds.add(id);
+            const followupResponses = normalizeIntentMessageList(
+                (route as any)?.followupResponses,
+                route?.followupResponse
+            );
             return {
                 id,
                 label: buildRouteLabel(route, index),
                 phrases: String(route.phrases || '').trim(),
                 response: String(route.response || '').trim(),
-                followupResponse: String(route.followupResponse || '').trim()
+                followupResponse: followupResponses[0] || '',
+                followupResponses
             };
         });
     }
@@ -658,7 +685,8 @@ function getIntentRoutes(node?: FlowNode | null) {
         label: phrase,
         phrases: phrase,
         response: '',
-        followupResponse: ''
+        followupResponse: '',
+        followupResponses: []
     }));
 }
 
@@ -1477,6 +1505,7 @@ function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
             intentResponseDelaySeconds: 0,
             intentDefaultResponse: '',
             intentDefaultFollowupResponse: '',
+            intentDefaultFollowupResponses: [],
             triggerWelcomeEnabled: false,
             triggerWelcomeContent: '',
             triggerWelcomeDelaySeconds: 0,
@@ -1492,6 +1521,7 @@ function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
             intentResponseDelaySeconds: 0,
             intentDefaultResponse: '',
             intentDefaultFollowupResponse: '',
+            intentDefaultFollowupResponses: [],
             outputActions: {}
         },
         message: {
@@ -2292,6 +2322,10 @@ function renderProperties() {
                     : 0;
                 const intentDefaultResponse = String(getNodePropValue('intentDefaultResponse', selectedNode.data.intentDefaultResponse || ''));
                 const intentDefaultFollowupResponse = String(getNodePropValue('intentDefaultFollowupResponse', selectedNode.data.intentDefaultFollowupResponse || ''));
+                const intentDefaultFollowupResponses = coerceIntentMessageListForEditor(
+                    getNodePropValue('intentDefaultFollowupResponses', (selectedNode.data as any).intentDefaultFollowupResponses || []),
+                    intentDefaultFollowupResponse
+                );
                 const isIntentTriggerNode = selectedNode.type === 'trigger';
                 const triggerWelcomeEnabled = isIntentTriggerNode
                     ? Boolean(getNodePropValue('triggerWelcomeEnabled', selectedNode.data.triggerWelcomeEnabled))
@@ -2328,6 +2362,10 @@ function renderProperties() {
                                 const routeTitle = String(route.label || '').trim() || `Intenção ${index + 1}`;
                                 const sectionKey = `route:${index}`;
                                 const sectionExpanded = isIntentPropertySectionExpanded(sectionKey, false);
+                                const routeFollowupResponses = coerceIntentMessageListForEditor(
+                                    (route as any)?.followupResponses,
+                                    (route as any)?.followupResponse
+                                );
                                 return `
                                     <div class="intent-config-card intent-config-card-intent ${sectionExpanded ? 'is-expanded' : ''}">
                                         <div class="intent-config-header" role="button" tabindex="0" onclick="toggleIntentPropertySection('${sectionKey}', event)" onkeydown="if(event.key==='Enter'||event.key===' '){toggleIntentPropertySection('${sectionKey}', event);}">
@@ -2355,8 +2393,16 @@ function renderProperties() {
                                                     <textarea class="intent-route-response-input" onchange="updateIntentRoute(${index}, 'response', this.value)">${escapeHtml(String(route.response || ''))}</textarea>
                                                 </div>
                                                 <div class="intent-route-field">
-                                                    <label>Mensagem após a primeira</label>
-                                                    <textarea class="intent-route-response-input" onchange="updateIntentRoute(${index}, 'followupResponse', this.value)">${escapeHtml(String(route.followupResponse || ''))}</textarea>
+                                                    <label>Mensagens após a primeira</label>
+                                                    <div class="intent-followup-list">
+                                                        ${routeFollowupResponses.map((messageText, followupIndex) => `
+                                                            <div class="intent-followup-item">
+                                                                <textarea class="intent-route-response-input" onchange="updateIntentRouteFollowupMessage(${index}, ${followupIndex}, this.value)">${escapeHtml(String(messageText || ''))}</textarea>
+                                                                <button class="remove-btn intent-followup-remove-btn" type="button" title="Remover mensagem extra" onclick="removeIntentRouteFollowupMessage(${index}, ${followupIndex})">×</button>
+                                                            </div>
+                                                        `).join('')}
+                                                    </div>
+                                                    <button class="add-condition-btn intent-followup-add-btn" type="button" onclick="addIntentRouteFollowupMessage(${index})">+ Adicionar mensagem extra</button>
                                                 </div>
                                             </div>
                                         ` : ''}
@@ -2381,8 +2427,16 @@ function renderProperties() {
                                             <textarea class="intent-route-response-input" onchange="updateNodeProperty('intentDefaultResponse', this.value)">${escapeHtml(intentDefaultResponse)}</textarea>
                                         </div>
                                         <div class="intent-route-field">
-                                            <label>Mensagem após a primeira</label>
-                                            <textarea class="intent-route-response-input" onchange="updateNodeProperty('intentDefaultFollowupResponse', this.value)">${escapeHtml(intentDefaultFollowupResponse)}</textarea>
+                                            <label>Mensagens após a primeira</label>
+                                            <div class="intent-followup-list">
+                                                ${intentDefaultFollowupResponses.map((messageText, followupIndex) => `
+                                                    <div class="intent-followup-item">
+                                                        <textarea class="intent-route-response-input" onchange="updateIntentDefaultFollowupMessage(${followupIndex}, this.value)">${escapeHtml(String(messageText || ''))}</textarea>
+                                                        <button class="remove-btn intent-followup-remove-btn" type="button" title="Remover mensagem extra" onclick="removeIntentDefaultFollowupMessage(${followupIndex})">×</button>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                            <button class="add-condition-btn intent-followup-add-btn" type="button" onclick="addIntentDefaultFollowupMessage()">+ Adicionar mensagem extra</button>
                                         </div>
                                     </div>
                                 ` : ''}
@@ -2413,24 +2467,27 @@ function renderProperties() {
                                                     <label>Mensagem</label>
                                                     <textarea onchange="updateNodeProperty('triggerWelcomeContent', this.value)">${escapeHtml(triggerWelcomeContent)}</textarea>
                                                 </div>
-                                                <div class="property-group">
-                                                    <label>Delay (segundos)</label>
-                                                    <input type="number" min="0" step="1" value="${triggerWelcomeDelaySeconds}" onchange="updateNodeProperty('triggerWelcomeDelaySeconds', Math.max(0, parseInt(this.value || '0', 10) || 0))">
-                                                </div>
-                                                <div class="property-group">
-                                                    <label>Reenvio</label>
-                                                    <select onchange="updateNodeProperty('triggerWelcomeRepeatMode', this.value)">
-                                                        <option value="always" ${triggerWelcomeRepeatMode === 'always' ? 'selected' : ''}>Sempre (não reenviar)</option>
-                                                        <option value="hours" ${triggerWelcomeRepeatMode === 'hours' ? 'selected' : ''}>Em horas</option>
-                                                        <option value="days" ${triggerWelcomeRepeatMode === 'days' ? 'selected' : ''}>Em dias</option>
-                                                    </select>
-                                                </div>
-                                                ${triggerWelcomeRepeatMode !== 'always' ? `
-                                                    <div class="property-group">
-                                                        <label>${triggerWelcomeRepeatMode === 'hours' ? 'Quantidade de horas' : 'Quantidade de dias'}</label>
-                                                        <input type="number" min="1" step="1" value="${triggerWelcomeRepeatValue}" onchange="updateNodeProperty('triggerWelcomeRepeatValue', Math.max(1, parseInt(this.value || '1', 10) || 1))">
+                                                <div class="property-group intent-welcome-inline-group">
+                                                    <div class="intent-welcome-inline-grid">
+                                                        <div class="intent-welcome-inline-item intent-welcome-delay-item">
+                                                            <label>Delay</label>
+                                                            <input type="number" min="0" step="1" value="${triggerWelcomeDelaySeconds}" onchange="updateNodeProperty('triggerWelcomeDelaySeconds', Math.max(0, parseInt(this.value || '0', 10) || 0))">
+                                                        </div>
+                                                        <div class="intent-welcome-inline-item intent-welcome-repeat-item">
+                                                            <label>Não enviar novamente até</label>
+                                                            <div class="intent-welcome-repeat-controls">
+                                                                ${triggerWelcomeRepeatMode !== 'always' ? `
+                                                                    <input class="intent-welcome-repeat-value" type="number" min="1" step="1" value="${triggerWelcomeRepeatValue}" onchange="updateNodeProperty('triggerWelcomeRepeatValue', Math.max(1, parseInt(this.value || '1', 10) || 1))">
+                                                                ` : ''}
+                                                                <select onchange="updateNodeProperty('triggerWelcomeRepeatMode', this.value)">
+                                                                    <option value="always" ${triggerWelcomeRepeatMode === 'always' ? 'selected' : ''}>Nunca enviar</option>
+                                                                    <option value="hours" ${triggerWelcomeRepeatMode === 'hours' ? 'selected' : ''}>Horas</option>
+                                                                    <option value="days" ${triggerWelcomeRepeatMode === 'days' ? 'selected' : ''}>Dias</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                ` : ''}
+                                                </div>
                                             ` : ''}
                                         </div>
                                     ` : ''}
@@ -2757,7 +2814,8 @@ function confirmNodePropertyChanges() {
                 label: phrase,
                 phrases: phrase,
                 response: '',
-                followupResponse: ''
+                followupResponse: '',
+                followupResponses: []
             }));
         }
     }
@@ -2931,20 +2989,71 @@ function cleanupInvalidEdgesForNode(nodeId: string) {
     });
 }
 
-function addIntentRoute() {
-    if (isFlowReadOnlyMode()) return;
-    if (!selectedNode || !isIntentTrigger(selectedNode)) return;
+function getEditableIntentRoutesDraft() {
+    if (!selectedNode || !isIntentTrigger(selectedNode)) return [];
     const existingDraft = getNodePropValue('intentRoutes', null as any);
     const baseRoutes = Array.isArray(existingDraft) && existingDraft.length > 0
         ? existingDraft
         : getIntentRoutes(selectedNode);
-    const routes = baseRoutes.map((route: any, index: number) => ({
-        id: String(route?.id || normalizeRouteId(`intent-${index + 1}`)),
-        label: String(route?.label || ''),
-        phrases: String(route?.phrases || ''),
-        response: String(route?.response || ''),
-        followupResponse: String(route?.followupResponse || '')
-    }));
+
+    return baseRoutes.map((route: any, routeIndex: number) => {
+        const followupResponses = coerceIntentMessageListForEditor(
+            route?.followupResponses,
+            route?.followupResponse
+        );
+        return {
+            id: String(route?.id || normalizeRouteId(`intent-${routeIndex + 1}`)),
+            label: String(route?.label || ''),
+            phrases: String(route?.phrases || ''),
+            response: String(route?.response || ''),
+            followupResponse: resolveIntentLegacyFollowupMessage(followupResponses),
+            followupResponses
+        };
+    });
+}
+
+function commitIntentRoutesDraft(routes: Array<{
+    id: string;
+    label: string;
+    phrases: string;
+    response: string;
+    followupResponse?: string;
+    followupResponses?: string[];
+}>) {
+    const normalizedRoutes = routes.map((route) => {
+        const followupResponses = coerceIntentMessageListForEditor(
+            route.followupResponses,
+            route.followupResponse
+        );
+        return {
+            ...route,
+            followupResponses,
+            followupResponse: resolveIntentLegacyFollowupMessage(followupResponses)
+        };
+    });
+    const allPhrases = normalizedRoutes.flatMap((route) => parsePhraseList(route.phrases || ''));
+    const uniquePhrases = Array.from(new Set(allPhrases));
+    updateNodeProperty('intentRoutes', normalizedRoutes);
+    updateNodeProperty('keyword', uniquePhrases.join(', '));
+}
+
+function getIntentDefaultFollowupMessagesDraft() {
+    if (!selectedNode || !isIntentTrigger(selectedNode)) return [];
+    const draftList = getNodePropValue('intentDefaultFollowupResponses', (selectedNode.data as any).intentDefaultFollowupResponses || []);
+    const draftLegacy = getNodePropValue('intentDefaultFollowupResponse', selectedNode.data.intentDefaultFollowupResponse || '');
+    return coerceIntentMessageListForEditor(draftList, draftLegacy);
+}
+
+function commitIntentDefaultFollowupMessagesDraft(messages: string[]) {
+    const nextMessages = coerceIntentMessageListForEditor(messages, '');
+    updateNodeProperty('intentDefaultFollowupResponses', nextMessages);
+    updateNodeProperty('intentDefaultFollowupResponse', resolveIntentLegacyFollowupMessage(nextMessages));
+}
+
+function addIntentRoute() {
+    if (isFlowReadOnlyMode()) return;
+    if (!selectedNode || !isIntentTrigger(selectedNode)) return;
+    const routes = getEditableIntentRoutesDraft();
 
     const nextIndex = routes.length + 1;
     const nextRoute = {
@@ -2952,14 +3061,12 @@ function addIntentRoute() {
         label: `Intenção ${nextIndex}`,
         phrases: '',
         response: '',
-        followupResponse: ''
+        followupResponse: '',
+        followupResponses: []
     };
 
     const nextRoutes = [...routes, nextRoute];
-    const allPhrases = nextRoutes.flatMap((route) => parsePhraseList(route.phrases || ''));
-    const uniquePhrases = Array.from(new Set(allPhrases));
-    updateNodeProperty('intentRoutes', nextRoutes);
-    updateNodeProperty('keyword', uniquePhrases.join(', '));
+    commitIntentRoutesDraft(nextRoutes);
     setIntentPropertySectionExpanded(`route:${nextRoutes.length - 1}`, true);
     renderProperties();
 }
@@ -2967,48 +3074,107 @@ function addIntentRoute() {
 function updateIntentRoute(index: number, key: 'label' | 'phrases' | 'response' | 'followupResponse', value: string) {
     if (isFlowReadOnlyMode()) return;
     if (!selectedNode || !isIntentTrigger(selectedNode)) return;
-    const existingDraft = getNodePropValue('intentRoutes', null as any);
-    const baseRoutes = Array.isArray(existingDraft) && existingDraft.length > 0
-        ? existingDraft
-        : getIntentRoutes(selectedNode);
-    const routes = baseRoutes.map((route: any, routeIndex: number) => ({
-        id: String(route?.id || normalizeRouteId(`intent-${routeIndex + 1}`)),
-        label: String(route?.label || ''),
-        phrases: String(route?.phrases || ''),
-        response: String(route?.response || ''),
-        followupResponse: String(route?.followupResponse || '')
-    }));
-
+    const routes = getEditableIntentRoutesDraft();
     if (!routes[index]) return;
-    routes[index][key] = String(value || '');
-    const allPhrases = routes.flatMap((route) => parsePhraseList(route.phrases || ''));
-    const uniquePhrases = Array.from(new Set(allPhrases));
-    updateNodeProperty('intentRoutes', routes);
-    updateNodeProperty('keyword', uniquePhrases.join(', '));
+
+    if (key === 'followupResponse') {
+        routes[index].followupResponses = [String(value || '')];
+        routes[index].followupResponse = String(value || '');
+    } else {
+        (routes[index] as any)[key] = String(value || '');
+    }
+
+    commitIntentRoutesDraft(routes);
+    renderProperties();
+}
+
+function addIntentRouteFollowupMessage(routeIndex: number) {
+    if (isFlowReadOnlyMode()) return;
+    if (!selectedNode || !isIntentTrigger(selectedNode)) return;
+    const routes = getEditableIntentRoutesDraft();
+    if (!routes[routeIndex]) return;
+
+    const followupResponses = coerceIntentMessageListForEditor(
+        routes[routeIndex].followupResponses,
+        routes[routeIndex].followupResponse
+    );
+    followupResponses.push('');
+    routes[routeIndex].followupResponses = followupResponses;
+    commitIntentRoutesDraft(routes);
+    renderProperties();
+}
+
+function updateIntentRouteFollowupMessage(routeIndex: number, followupIndex: number, value: string) {
+    if (isFlowReadOnlyMode()) return;
+    if (!selectedNode || !isIntentTrigger(selectedNode)) return;
+    const routes = getEditableIntentRoutesDraft();
+    if (!routes[routeIndex]) return;
+
+    const followupResponses = coerceIntentMessageListForEditor(
+        routes[routeIndex].followupResponses,
+        routes[routeIndex].followupResponse
+    );
+    if (followupIndex < 0 || followupIndex >= followupResponses.length) return;
+
+    followupResponses[followupIndex] = String(value || '');
+    routes[routeIndex].followupResponses = followupResponses;
+    commitIntentRoutesDraft(routes);
+}
+
+function removeIntentRouteFollowupMessage(routeIndex: number, followupIndex: number) {
+    if (isFlowReadOnlyMode()) return;
+    if (!selectedNode || !isIntentTrigger(selectedNode)) return;
+    const routes = getEditableIntentRoutesDraft();
+    if (!routes[routeIndex]) return;
+
+    const followupResponses = coerceIntentMessageListForEditor(
+        routes[routeIndex].followupResponses,
+        routes[routeIndex].followupResponse
+    );
+    if (followupIndex < 0 || followupIndex >= followupResponses.length) return;
+
+    followupResponses.splice(followupIndex, 1);
+    routes[routeIndex].followupResponses = followupResponses;
+    commitIntentRoutesDraft(routes);
+    renderProperties();
+}
+
+function addIntentDefaultFollowupMessage() {
+    if (isFlowReadOnlyMode()) return;
+    if (!selectedNode || !isIntentTrigger(selectedNode)) return;
+    const messages = getIntentDefaultFollowupMessagesDraft();
+    messages.push('');
+    commitIntentDefaultFollowupMessagesDraft(messages);
+    renderProperties();
+}
+
+function updateIntentDefaultFollowupMessage(index: number, value: string) {
+    if (isFlowReadOnlyMode()) return;
+    if (!selectedNode || !isIntentTrigger(selectedNode)) return;
+    const messages = getIntentDefaultFollowupMessagesDraft();
+    if (index < 0 || index >= messages.length) return;
+    messages[index] = String(value || '');
+    commitIntentDefaultFollowupMessagesDraft(messages);
+}
+
+function removeIntentDefaultFollowupMessage(index: number) {
+    if (isFlowReadOnlyMode()) return;
+    if (!selectedNode || !isIntentTrigger(selectedNode)) return;
+    const messages = getIntentDefaultFollowupMessagesDraft();
+    if (index < 0 || index >= messages.length) return;
+    messages.splice(index, 1);
+    commitIntentDefaultFollowupMessagesDraft(messages);
     renderProperties();
 }
 
 function removeIntentRoute(index: number) {
     if (isFlowReadOnlyMode()) return;
     if (!selectedNode || !isIntentTrigger(selectedNode)) return;
-    const existingDraft = getNodePropValue('intentRoutes', null as any);
-    const baseRoutes = Array.isArray(existingDraft) && existingDraft.length > 0
-        ? existingDraft
-        : getIntentRoutes(selectedNode);
-    const routes = baseRoutes.map((route: any, routeIndex: number) => ({
-        id: String(route?.id || normalizeRouteId(`intent-${routeIndex + 1}`)),
-        label: String(route?.label || ''),
-        phrases: String(route?.phrases || ''),
-        response: String(route?.response || ''),
-        followupResponse: String(route?.followupResponse || '')
-    }));
+    const routes = getEditableIntentRoutesDraft();
     if (!routes[index]) return;
 
     routes.splice(index, 1);
-    const allPhrases = routes.flatMap((route) => parsePhraseList(route.phrases || ''));
-    const uniquePhrases = Array.from(new Set(allPhrases));
-    updateNodeProperty('intentRoutes', routes);
-    updateNodeProperty('keyword', uniquePhrases.join(', '));
+    commitIntentRoutesDraft(routes);
     clearIntentRouteSectionExpandedStateForSelectedNode();
     if (routes.length > 0) {
         const fallbackIndex = Math.max(0, Math.min(index, routes.length - 1));
@@ -3459,7 +3625,12 @@ function normalizeLoadedFlowData() {
                 ? Math.max(0, Math.trunc(rawIntentDelay))
                 : 0;
             node.data.intentDefaultResponse = String(node.data?.intentDefaultResponse || '').trim();
-            node.data.intentDefaultFollowupResponse = String(node.data?.intentDefaultFollowupResponse || '').trim();
+            const intentDefaultFollowupResponses = coerceIntentMessageListForEditor(
+                (node.data as any)?.intentDefaultFollowupResponses,
+                node.data?.intentDefaultFollowupResponse
+            );
+            node.data.intentDefaultFollowupResponses = intentDefaultFollowupResponses;
+            node.data.intentDefaultFollowupResponse = resolveIntentLegacyFollowupMessage(intentDefaultFollowupResponses);
 
             if (node.type === 'trigger') {
                 node.data.triggerWelcomeEnabled = Boolean(node.data?.triggerWelcomeEnabled);
@@ -4150,6 +4321,12 @@ const windowAny = window as Window & {
     updateFlowSessionScopeFromSelect?: () => void;
     addIntentRoute?: () => void;
     updateIntentRoute?: (index: number, key: 'label' | 'phrases' | 'response' | 'followupResponse', value: string) => void;
+    addIntentRouteFollowupMessage?: (routeIndex: number) => void;
+    updateIntentRouteFollowupMessage?: (routeIndex: number, followupIndex: number, value: string) => void;
+    removeIntentRouteFollowupMessage?: (routeIndex: number, followupIndex: number) => void;
+    addIntentDefaultFollowupMessage?: () => void;
+    updateIntentDefaultFollowupMessage?: (index: number, value: string) => void;
+    removeIntentDefaultFollowupMessage?: (index: number) => void;
     removeIntentRoute?: (index: number) => void;
     toggleIntentPropertySection?: (sectionKey: string, event?: Event) => void;
     toggleNodeCollapsed?: (id: string, event?: Event) => void;
@@ -4199,6 +4376,12 @@ windowAny.reloadFlowSessionOptions = reloadFlowSessionOptions;
 windowAny.updateFlowSessionScopeFromSelect = updateFlowSessionScopeFromSelect;
 windowAny.addIntentRoute = addIntentRoute;
 windowAny.updateIntentRoute = updateIntentRoute;
+windowAny.addIntentRouteFollowupMessage = addIntentRouteFollowupMessage;
+windowAny.updateIntentRouteFollowupMessage = updateIntentRouteFollowupMessage;
+windowAny.removeIntentRouteFollowupMessage = removeIntentRouteFollowupMessage;
+windowAny.addIntentDefaultFollowupMessage = addIntentDefaultFollowupMessage;
+windowAny.updateIntentDefaultFollowupMessage = updateIntentDefaultFollowupMessage;
+windowAny.removeIntentDefaultFollowupMessage = removeIntentDefaultFollowupMessage;
 windowAny.removeIntentRoute = removeIntentRoute;
 windowAny.toggleIntentPropertySection = toggleIntentPropertySection;
 windowAny.toggleNodeCollapsed = toggleNodeCollapsed;

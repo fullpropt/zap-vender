@@ -162,6 +162,57 @@ describe('FlowService intent routing compatibility', () => {
         executeSpy.mockRestore();
     });
 
+    test('goToNextNode on intent envia varias mensagens extras configuradas em lista', async () => {
+        const service = new FlowService();
+        const sendMock = jest.fn().mockResolvedValue();
+        service.init(sendMock);
+
+        const intentNode = {
+            id: 'intent-mid',
+            type: 'intent',
+            data: {
+                intentRoutes: [
+                    {
+                        id: 'route-store',
+                        label: 'Loja Fisica',
+                        phrases: 'loja fisica, showroom',
+                        response: 'Temos um showroom em Cocal.',
+                        followupResponses: [
+                            'Quer que eu te envie o endereco completo?',
+                            'Posso te mandar a localizacao agora.'
+                        ]
+                    }
+                ],
+                intentResponseDelaySeconds: 0
+            }
+        };
+
+        const execution = {
+            flow: {
+                id: 38,
+                nodes: [intentNode],
+                edges: [
+                    { source: 'intent-mid', target: 'next-node', sourceHandle: 'route-store', targetHandle: 'default' }
+                ]
+            },
+            conversation: { id: 55, session_id: 'session-1' },
+            lead: { id: 26, phone: '5511966666666', jid: '5511966666666@s.whatsapp.net' },
+            variables: {}
+        };
+
+        const executeSpy = jest.spyOn(service, 'executeNode').mockResolvedValue();
+
+        await service.goToNextNode(execution, intentNode, 'route-store');
+
+        expect(sendMock).toHaveBeenCalledTimes(3);
+        expect(sendMock.mock.calls[0][0].content).toBe('Temos um showroom em Cocal.');
+        expect(sendMock.mock.calls[1][0].content).toBe('Quer que eu te envie o endereco completo?');
+        expect(sendMock.mock.calls[2][0].content).toBe('Posso te mandar a localizacao agora.');
+        expect(executeSpy).toHaveBeenCalledWith(execution, 'next-node', 'default');
+
+        executeSpy.mockRestore();
+    });
+
         test('goToNextNode on intent envia resposta configurada com delay unico', async () => {
         const service = new FlowService();
         const sendMock = jest.fn().mockResolvedValue();
@@ -287,6 +338,52 @@ describe('FlowService intent routing compatibility', () => {
         expect(sendMock).toHaveBeenCalledTimes(2);
         expect(sendMock.mock.calls[0][0].content).toBe('Nao entendi, pode me explicar melhor?');
         expect(sendMock.mock.calls[1][0].content).toBe('Se preferir, posso te mostrar as opcoes principais.');
+        expect(executeSpy).toHaveBeenCalledWith(execution, 'fallback-node', 'default');
+
+        executeSpy.mockRestore();
+    });
+
+    test('goToNextNode on intent envia varias respostas extras default configuradas em lista', async () => {
+        const service = new FlowService();
+        const sendMock = jest.fn().mockResolvedValue();
+        service.init(sendMock);
+
+        const intentNode = {
+            id: 'intent-mid',
+            type: 'intent',
+            data: {
+                intentRoutes: [
+                    { id: 'route-buy', label: 'Comprar', phrases: 'comprar', response: 'Vamos falar de compra.' }
+                ],
+                intentDefaultResponse: 'Nao entendi, pode me explicar melhor?',
+                intentDefaultFollowupResponses: [
+                    'Se preferir, posso te mostrar as opcoes principais.',
+                    'Tambem posso encaminhar para um atendente.'
+                ]
+            }
+        };
+
+        const execution = {
+            flow: {
+                id: 39,
+                nodes: [intentNode],
+                edges: [
+                    { source: 'intent-mid', target: 'fallback-node', sourceHandle: 'default', targetHandle: 'default' }
+                ]
+            },
+            conversation: { id: 56, session_id: 'session-1' },
+            lead: { id: 27, phone: '5511977777777', jid: '5511977777777@s.whatsapp.net' },
+            variables: {}
+        };
+
+        const executeSpy = jest.spyOn(service, 'executeNode').mockResolvedValue();
+
+        await service.goToNextNode(execution, intentNode, null);
+
+        expect(sendMock).toHaveBeenCalledTimes(3);
+        expect(sendMock.mock.calls[0][0].content).toBe('Nao entendi, pode me explicar melhor?');
+        expect(sendMock.mock.calls[1][0].content).toBe('Se preferir, posso te mostrar as opcoes principais.');
+        expect(sendMock.mock.calls[2][0].content).toBe('Tambem posso encaminhar para um atendente.');
         expect(executeSpy).toHaveBeenCalledWith(execution, 'fallback-node', 'default');
 
         executeSpy.mockRestore();

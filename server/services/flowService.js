@@ -171,6 +171,17 @@ function sanitizeOutgoingFlowText(value = '') {
         .trim();
 }
 
+function parseIntentResponseList(value = null, fallbackValue = '') {
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => sanitizeOutgoingFlowText(item))
+            .filter(Boolean);
+    }
+
+    const fallback = sanitizeOutgoingFlowText(value || fallbackValue || '');
+    return fallback ? [fallback] : [];
+}
+
 function parseLeadCustomFields(value) {
     if (!value) return {};
 
@@ -1937,10 +1948,14 @@ class FlowService extends EventEmitter {
                     const label = String(route?.label || '').trim() || `Intencao ${index + 1}`;
                     const phrases = String(route?.phrases || '').trim();
                     const response = String(route?.response || '').trim();
-                    const followupResponse = String(route?.followupResponse || '').trim();
+                    const followupResponses = parseIntentResponseList(
+                        route?.followupResponses,
+                        route?.followupResponse
+                    );
+                    const followupResponse = followupResponses[0] || '';
                     const normalizedPhrases = parseIntentPhrases(phrases);
                     if (!id || normalizedPhrases.length === 0) return null;
-                    return { id, label, phrases, response, followupResponse, normalizedPhrases };
+                    return { id, label, phrases, response, followupResponse, followupResponses, normalizedPhrases };
                 })
                 .filter(Boolean);
         }
@@ -1952,6 +1967,7 @@ class FlowService extends EventEmitter {
             phrases: phrase,
             response: '',
             followupResponse: '',
+            followupResponses: [],
             normalizedPhrases: [phrase]
         }));
     }
@@ -2070,14 +2086,20 @@ class FlowService extends EventEmitter {
         const normalizedHandle = this.normalizeFlowHandle(selectedHandle);
         if (normalizedHandle === 'default') {
             const defaultMessage = String(node?.data?.intentDefaultResponse || '').trim();
-            const defaultFollowupMessage = String(node?.data?.intentDefaultFollowupResponse || '').trim();
-            return [defaultMessage, defaultFollowupMessage].filter(Boolean);
+            const defaultFollowupMessages = parseIntentResponseList(
+                node?.data?.intentDefaultFollowupResponses,
+                node?.data?.intentDefaultFollowupResponse
+            );
+            return [defaultMessage, ...defaultFollowupMessages].filter(Boolean);
         }
 
         const matchedRoute = this.resolveTriggerIntentRouteByHandle(node, normalizedHandle);
         const primaryMessage = String(matchedRoute?.response || '').trim();
-        const secondaryMessage = String(matchedRoute?.followupResponse || '').trim();
-        return [primaryMessage, secondaryMessage].filter(Boolean);
+        const followupMessages = parseIntentResponseList(
+            matchedRoute?.followupResponses,
+            matchedRoute?.followupResponse
+        );
+        return [primaryMessage, ...followupMessages].filter(Boolean);
     }
 
     async sendIntentRouteResponse(execution, node = null, selectedHandle = null) {
