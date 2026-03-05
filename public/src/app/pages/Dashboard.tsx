@@ -90,20 +90,39 @@ function DashboardStyles() {
             border-radius: 12px;
             box-sizing: border-box;
             font-variant-numeric: tabular-nums;
+            overflow: hidden;
           }
           .stats-period-controls input[type="date"] {
-            padding-right: 34px;
+            padding-left: 8px;
+            padding-right: 24px;
+            font-size: 11px;
+            letter-spacing: -0.01em;
+          }
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding: 0;
+          }
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-text,
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-day-field,
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-month-field,
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-year-field {
+            padding: 0;
           }
           .stats-period-controls input[type="date"]::-webkit-calendar-picker-indicator {
             opacity: 0.9;
             cursor: pointer;
-            margin-left: 6px;
+            margin-left: 4px;
           }
           .stats-period-controls .form-select {
-            padding-right: 30px;
+            padding-left: 8px;
+            padding-right: 24px;
+            font-size: 11px;
             text-overflow: ellipsis;
-            background-position: right 10px center;
-            background-size: 10px;
+            background-position: right 8px center;
+            background-size: 9px;
           }
           .stats-period-controls .chart-type-toggle {
             grid-column: 1 / -1;
