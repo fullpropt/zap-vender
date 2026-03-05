@@ -107,6 +107,7 @@ let inboxAvailableSessions: WhatsappSessionItem[] = [];
 let inboxHistoryResyncInFlight = false;
 let mediaUploadInProgress = false;
 let inboxLifecycleBound = false;
+let inboxViewportSyncRaf: number | null = null;
 const stickerMediaRehydrateAttempts = new Set<string>();
 let activeChatScrollContainer: HTMLElement | null = null;
 let chatMediaPreviewBindingsBound = false;
@@ -721,6 +722,7 @@ function getContatosUrl(id: string | number) {
 
 function initInbox() {
     bindInboxLifecycle();
+    syncInboxMobileViewportState();
     bindQuickReplyDismiss();
     bindEmojiPickerDismiss();
     bindChatMediaPreviewModal();
@@ -745,6 +747,29 @@ function isTabletOrMobileView() {
     return window.matchMedia('(max-width: 1024px)').matches;
 }
 
+function syncInboxMobileViewportHeight() {
+    const root = document.documentElement;
+    const visualViewport = window.visualViewport;
+    const rawHeight = visualViewport && Number.isFinite(visualViewport.height) && visualViewport.height > 0
+        ? visualViewport.height
+        : window.innerHeight;
+    const viewportHeight = Math.max(320, Math.round(rawHeight));
+    root.style.setProperty('--inbox-mobile-vh', `${viewportHeight}px`);
+}
+
+function syncInboxMobileViewportState() {
+    syncInboxMobileViewportHeight();
+    syncInboxBodyScrollLock();
+}
+
+function scheduleInboxMobileViewportStateSync() {
+    if (inboxViewportSyncRaf !== null) return;
+    inboxViewportSyncRaf = window.requestAnimationFrame(() => {
+        inboxViewportSyncRaf = null;
+        syncInboxMobileViewportState();
+    });
+}
+
 function syncInboxBodyScrollLock() {
     const chatPanel = document.getElementById('chatPanel') as HTMLElement | null;
     const chatOpenOnMobile = isMobileInboxView() && Boolean(chatPanel?.classList.contains('active'));
@@ -759,7 +784,7 @@ function setMobileConversationMode(chatOpen: boolean) {
     if (!isMobileInboxView()) {
         conversationsPanel.classList.remove('hidden');
         chatPanel.classList.remove('active');
-        syncInboxBodyScrollLock();
+        syncInboxMobileViewportState();
         return;
     }
 
@@ -770,7 +795,7 @@ function setMobileConversationMode(chatOpen: boolean) {
         conversationsPanel.classList.remove('hidden');
         chatPanel.classList.remove('active');
     }
-    syncInboxBodyScrollLock();
+    syncInboxMobileViewportState();
 }
 
 function isCurrentChatVisible() {
@@ -1198,6 +1223,10 @@ function startInboxAutoRefresh() {
 function bindInboxLifecycle() {
     if (inboxLifecycleBound) return;
     inboxLifecycleBound = true;
+    const handleViewportChange = () => {
+        scheduleInboxMobileViewportStateSync();
+    };
+
     window.addEventListener('app:logout', () => {
         stopInboxAutoRefresh();
         document.body.classList.remove('inbox-mobile-chat-lock');
@@ -1209,9 +1238,13 @@ function bindInboxLifecycle() {
             document.body.classList.remove('inbox-mobile-chat-lock');
             return;
         }
-        syncInboxBodyScrollLock();
+        scheduleInboxMobileViewportStateSync();
     });
-    window.addEventListener('resize', syncInboxBodyScrollLock);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
+    window.visualViewport?.addEventListener('resize', handleViewportChange);
+    window.visualViewport?.addEventListener('scroll', handleViewportChange);
+    scheduleInboxMobileViewportStateSync();
 }
 
 function renderConversations() {
