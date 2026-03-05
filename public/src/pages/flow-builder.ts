@@ -700,7 +700,7 @@ function getOutputHandles(node: FlowNode) {
         label: route.label || route.phrases || 'Intenção'
     }));
 
-    return [...routeHandles, { handle: DEFAULT_HANDLE, label: 'Padrão' }];
+    return [...routeHandles, { handle: DEFAULT_HANDLE, label: 'Outra resposta' }];
 }
 
 function edgeHandle(handle?: string) {
@@ -1603,7 +1603,7 @@ function renderProperties() {
                             `).join('')}
                         </div>
                         <button class="add-condition-btn" onclick="addIntentRoute()">+ Adicionar Intenção</button>
-                        <div class="hint">Conecte cada saída do bloco para o caminho correspondente. A saída "Padrão" cobre casos sem match.</div>
+                        <div class="hint">Conecte cada saída do bloco para o caminho correspondente. A saída "Outra resposta" cobre casos sem match.</div>
                     </div>
                 `;
             }
