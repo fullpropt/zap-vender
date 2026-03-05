@@ -107,6 +107,7 @@ let inboxAvailableSessions: WhatsappSessionItem[] = [];
 let inboxHistoryResyncInFlight = false;
 let mediaUploadInProgress = false;
 let inboxLifecycleBound = false;
+let inboxViewportSyncRaf: number | null = null;
 const stickerMediaRehydrateAttempts = new Set<string>();
 let activeChatScrollContainer: HTMLElement | null = null;
 let chatMediaPreviewBindingsBound = false;
@@ -721,6 +722,7 @@ function getContatosUrl(id: string | number) {
 
 function initInbox() {
     bindInboxLifecycle();
+    syncInboxMobileViewportState();
     bindQuickReplyDismiss();
     bindEmojiPickerDismiss();
     bindChatMediaPreviewModal();
@@ -745,10 +747,58 @@ function isTabletOrMobileView() {
     return window.matchMedia('(max-width: 1024px)').matches;
 }
 
+function syncInboxMobileViewportHeight() {
+    const root = document.documentElement;
+    const visualViewport = window.visualViewport;
+    const rawHeight = visualViewport && Number.isFinite(visualViewport.height) && visualViewport.height > 0
+        ? visualViewport.height
+        : window.innerHeight;
+    const viewportHeight = Math.max(320, Math.round(rawHeight));
+    root.style.setProperty('--inbox-mobile-vh', `${viewportHeight}px`);
+}
+
+function syncInboxRouteScrollLock() {
+    const hash = String(window.location.hash || '').toLowerCase();
+    const isInboxRoute = hash.startsWith('#/inbox');
+    document.body.classList.toggle('inbox-route-lock', isInboxRoute);
+    document.documentElement.classList.toggle('inbox-route-lock', isInboxRoute);
+
+    if (isInboxRoute) {
+        if ((window.scrollY || 0) > 0) {
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        }
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+    }
+}
+
+function syncInboxMobileViewportState() {
+    syncInboxMobileViewportHeight();
+    syncInboxRouteScrollLock();
+    syncInboxBodyScrollLock();
+}
+
+function scheduleInboxMobileViewportStateSync() {
+    if (inboxViewportSyncRaf !== null) return;
+    inboxViewportSyncRaf = window.requestAnimationFrame(() => {
+        inboxViewportSyncRaf = null;
+        syncInboxMobileViewportState();
+    });
+}
+
 function syncInboxBodyScrollLock() {
     const chatPanel = document.getElementById('chatPanel') as HTMLElement | null;
     const chatOpenOnMobile = isMobileInboxView() && Boolean(chatPanel?.classList.contains('active'));
     document.body.classList.toggle('inbox-mobile-chat-lock', chatOpenOnMobile);
+    document.documentElement.classList.toggle('inbox-mobile-chat-lock', chatOpenOnMobile);
+
+    if (chatOpenOnMobile) {
+        if ((window.scrollY || 0) > 0) {
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        }
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+    }
 }
 
 function setMobileConversationMode(chatOpen: boolean) {
@@ -759,18 +809,26 @@ function setMobileConversationMode(chatOpen: boolean) {
     if (!isMobileInboxView()) {
         conversationsPanel.classList.remove('hidden');
         chatPanel.classList.remove('active');
-        syncInboxBodyScrollLock();
+        syncInboxMobileViewportState();
         return;
     }
 
     if (chatOpen) {
         conversationsPanel.classList.add('hidden');
         chatPanel.classList.add('active');
+        window.requestAnimationFrame(() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            scheduleInboxMobileViewportStateSync();
+        });
+        window.setTimeout(() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            scheduleInboxMobileViewportStateSync();
+        }, 120);
     } else {
         conversationsPanel.classList.remove('hidden');
         chatPanel.classList.remove('active');
     }
-    syncInboxBodyScrollLock();
+    syncInboxMobileViewportState();
 }
 
 function isCurrentChatVisible() {
@@ -1198,20 +1256,34 @@ function startInboxAutoRefresh() {
 function bindInboxLifecycle() {
     if (inboxLifecycleBound) return;
     inboxLifecycleBound = true;
+    const handleViewportChange = () => {
+        scheduleInboxMobileViewportStateSync();
+    };
+
     window.addEventListener('app:logout', () => {
         stopInboxAutoRefresh();
+        document.body.classList.remove('inbox-route-lock');
+        document.documentElement.classList.remove('inbox-route-lock');
         document.body.classList.remove('inbox-mobile-chat-lock');
+        document.documentElement.classList.remove('inbox-mobile-chat-lock');
     });
     window.addEventListener('beforeunload', stopInboxAutoRefresh);
     window.addEventListener('hashchange', () => {
         const hash = String(window.location.hash || '').toLowerCase();
         if (!hash.startsWith('#/inbox')) {
+            document.body.classList.remove('inbox-route-lock');
+            document.documentElement.classList.remove('inbox-route-lock');
             document.body.classList.remove('inbox-mobile-chat-lock');
+            document.documentElement.classList.remove('inbox-mobile-chat-lock');
             return;
         }
-        syncInboxBodyScrollLock();
+        scheduleInboxMobileViewportStateSync();
     });
-    window.addEventListener('resize', syncInboxBodyScrollLock);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
+    window.visualViewport?.addEventListener('resize', handleViewportChange);
+    window.visualViewport?.addEventListener('scroll', handleViewportChange);
+    scheduleInboxMobileViewportStateSync();
 }
 
 function renderConversations() {

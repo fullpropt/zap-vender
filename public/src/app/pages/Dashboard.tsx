@@ -73,6 +73,41 @@ function DashboardStyles() {
           .dashboard-botconversa { gap: 14px; margin-bottom: 16px; }
           .stats-period-card, .stats-general-card, .events-personalized-card { padding: 12px; border-radius: 12px; }
           .stats-period-card h3, .stats-general-card h3, .events-personalized-card h3 { margin-bottom: 12px; font-size: 15px; }
+          .dashboard-react .stats-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+          }
+          .dashboard-react .stats-grid .stat-card {
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: flex-start;
+            gap: 8px;
+            min-width: 0;
+            padding: 12px;
+            border-radius: 12px;
+          }
+          .dashboard-react .stats-grid .stat-icon {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+          }
+          .dashboard-react .stats-grid .stat-icon .icon {
+            width: 16px;
+            height: 16px;
+          }
+          .dashboard-react .stats-grid .stat-content {
+            width: 100%;
+            min-width: 0;
+            text-align: left;
+          }
+          .dashboard-react .stats-grid .stat-value { font-size: 20px; }
+          .dashboard-react .stats-grid .stat-label { font-size: 11px; line-height: 1.2; }
+          .dashboard-react .stats-grid .stat-change {
+            margin-top: 6px;
+            font-size: 10px;
+            padding: 2px 6px;
+          }
           .stats-period-controls {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -90,20 +125,39 @@ function DashboardStyles() {
             border-radius: 12px;
             box-sizing: border-box;
             font-variant-numeric: tabular-nums;
+            overflow: hidden;
           }
           .stats-period-controls input[type="date"] {
-            padding-right: 34px;
+            padding-left: 8px;
+            padding-right: 24px;
+            font-size: 11px;
+            letter-spacing: -0.01em;
+          }
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding: 0;
+          }
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-text,
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-day-field,
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-month-field,
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-year-field {
+            padding: 0;
           }
           .stats-period-controls input[type="date"]::-webkit-calendar-picker-indicator {
             opacity: 0.9;
             cursor: pointer;
-            margin-left: 6px;
+            margin-left: 4px;
           }
           .stats-period-controls .form-select {
-            padding-right: 30px;
+            padding-left: 8px;
+            padding-right: 24px;
+            font-size: 11px;
             text-overflow: ellipsis;
-            background-position: right 10px center;
-            background-size: 10px;
+            background-position: right 8px center;
+            background-size: 9px;
           }
           .stats-period-controls .chart-type-toggle {
             grid-column: 1 / -1;

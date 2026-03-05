@@ -70,6 +70,40 @@ export default function Contatos() {
 
   return (
     <div className="contatos-react">
+      <style>{`
+        @media (max-width: 640px) {
+          .contatos-react .stats-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+          }
+          .contatos-react .stats-grid .stat-card {
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: flex-start;
+            gap: 8px;
+            min-width: 0;
+            padding: 12px;
+            border-radius: 12px;
+          }
+          .contatos-react .stats-grid .stat-icon {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+          }
+          .contatos-react .stats-grid .stat-icon .icon {
+            width: 16px;
+            height: 16px;
+          }
+          .contatos-react .stats-grid .stat-content {
+            width: 100%;
+            min-width: 0;
+            text-align: left;
+          }
+          .contatos-react .stats-grid .stat-value { font-size: 20px; }
+          .contatos-react .stats-grid .stat-label { font-size: 11px; line-height: 1.2; }
+        }
+      `}</style>
       <button
         className="mobile-menu-toggle"
         onClick={() => {
