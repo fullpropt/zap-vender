@@ -84,8 +84,26 @@ function DashboardStyles() {
             width: 100%;
             min-width: 0;
             height: 42px;
-            padding: 0 10px;
+            padding: 0 12px;
             font-size: 12px;
+            line-height: 1.2;
+            border-radius: 12px;
+            box-sizing: border-box;
+            font-variant-numeric: tabular-nums;
+          }
+          .stats-period-controls input[type="date"] {
+            padding-right: 34px;
+          }
+          .stats-period-controls input[type="date"]::-webkit-calendar-picker-indicator {
+            opacity: 0.9;
+            cursor: pointer;
+            margin-left: 6px;
+          }
+          .stats-period-controls .form-select {
+            padding-right: 30px;
+            text-overflow: ellipsis;
+            background-position: right 10px center;
+            background-size: 10px;
           }
           .stats-period-controls .chart-type-toggle {
             grid-column: 1 / -1;
