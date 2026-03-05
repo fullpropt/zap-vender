@@ -1292,6 +1292,38 @@ export default function FlowBuilder() {
         .property-group {
             margin-bottom: 20px;
         }
+
+        .property-group.property-group-compact {
+            margin-bottom: 0;
+        }
+
+        .property-inline-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 130px;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 14px;
+        }
+
+        .property-input-with-unit {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .property-input-with-unit input {
+            flex: 1 1 auto;
+            min-width: 0;
+            text-align: right;
+        }
+
+        .property-unit {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--gray);
+            min-width: 10px;
+            text-align: center;
+        }
         
         .property-group label {
             display: block;
@@ -1322,6 +1354,13 @@ export default function FlowBuilder() {
         .property-group textarea {
             min-height: 100px;
             resize: vertical;
+        }
+
+        @media (max-width: 480px) {
+            .property-inline-row {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
         }
         
         .output-action-toolbar {
@@ -1705,60 +1744,60 @@ export default function FlowBuilder() {
         }
 
         .intent-config-card-intent {
-            border-color: rgba(59, 130, 246, 0.35);
-            background: rgba(239, 246, 255, 0.7);
+            border-color: rgba(var(--primary-rgb), 0.32);
+            background: rgba(var(--primary-rgb), 0.08);
         }
 
         .intent-config-card-intent .intent-config-header {
-            background: rgba(191, 219, 254, 0.26);
+            background: rgba(var(--primary-rgb), 0.14);
         }
 
         .intent-config-card-intent .intent-config-header:hover {
-            background: rgba(147, 197, 253, 0.34);
+            background: rgba(var(--primary-rgb), 0.2);
         }
 
         .intent-config-kind-intent {
-            color: #1d4ed8;
-            border-color: rgba(59, 130, 246, 0.3);
-            background: rgba(219, 234, 254, 0.9);
+            color: var(--primary);
+            border-color: rgba(var(--primary-rgb), 0.36);
+            background: rgba(var(--primary-rgb), 0.16);
         }
 
         .intent-config-card-default {
-            border-color: rgba(245, 158, 11, 0.36);
-            background: rgba(255, 247, 237, 0.85);
+            border-color: rgba(148, 163, 184, 0.45);
+            background: rgba(248, 250, 252, 0.95);
         }
 
         .intent-config-card-default .intent-config-header {
-            background: rgba(254, 215, 170, 0.3);
+            background: rgba(226, 232, 240, 0.58);
         }
 
         .intent-config-card-default .intent-config-header:hover {
-            background: rgba(253, 186, 116, 0.34);
+            background: rgba(203, 213, 225, 0.62);
         }
 
         .intent-config-kind-default {
-            color: #b45309;
-            border-color: rgba(245, 158, 11, 0.35);
-            background: rgba(255, 237, 213, 0.95);
+            color: #475569;
+            border-color: rgba(148, 163, 184, 0.5);
+            background: rgba(241, 245, 249, 0.95);
         }
 
         .intent-config-card-welcome {
-            border-color: rgba(20, 184, 166, 0.35);
-            background: rgba(240, 253, 250, 0.9);
+            border-color: rgba(var(--primary-rgb), 0.28);
+            background: rgba(var(--primary-rgb), 0.06);
         }
 
         .intent-config-card-welcome .intent-config-header {
-            background: rgba(153, 246, 228, 0.28);
+            background: rgba(var(--primary-rgb), 0.12);
         }
 
         .intent-config-card-welcome .intent-config-header:hover {
-            background: rgba(94, 234, 212, 0.34);
+            background: rgba(var(--primary-rgb), 0.18);
         }
 
         .intent-config-kind-welcome {
-            color: #0f766e;
-            border-color: rgba(20, 184, 166, 0.35);
-            background: rgba(204, 251, 241, 0.95);
+            color: var(--primary);
+            border-color: rgba(var(--primary-rgb), 0.32);
+            background: rgba(var(--primary-rgb), 0.14);
         }
 
         .intent-route-field {

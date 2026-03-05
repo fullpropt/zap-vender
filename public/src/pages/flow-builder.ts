@@ -2273,6 +2273,7 @@ function renderProperties() {
     let html = '';
     const selectedTypeLabel = getNodeTypeLabel(selectedNode);
     const nodeLabelValue = String(getNodePropValue('label', selectedNode.data.label || ''));
+    const isIntentPropertiesMode = isIntentTrigger(selectedNode);
     const isOutputActionMode = Boolean(
         selectedOutputActionContext
         && selectedOutputActionContext.nodeId === selectedNode.id
@@ -2399,11 +2400,16 @@ function renderProperties() {
         <div class="property-type-summary">
             <h4 class="property-type-summary-value">${escapeHtml(selectedTypeLabel)}</h4>
         </div>
-        <div class="property-group">
-            <label>Nome do Bloco</label>
-            <input type="text" value="${escapeHtml(nodeLabelValue)}" onchange="updateNodeProperty('label', this.value)">
-        </div>
     `;
+
+    if (!isIntentPropertiesMode) {
+        html += `
+            <div class="property-group">
+                <label>Nome do Bloco</label>
+                <input type="text" value="${escapeHtml(nodeLabelValue)}" onchange="updateNodeProperty('label', this.value)">
+            </div>
+        `;
+    }
     
     switch (selectedNode.type) {
         case 'trigger':
@@ -2447,9 +2453,18 @@ function renderProperties() {
                     : false;
 
                 html += `
-                    <div class="property-group">
-                        <label>Delay único das respostas (segundos)</label>
-                        <input type="number" min="0" step="1" value="${intentResponseDelaySeconds}" onchange="updateNodeProperty('intentResponseDelaySeconds', Math.max(0, parseInt(this.value || '0', 10) || 0))">
+                    <div class="property-inline-row">
+                        <div class="property-group property-group-compact">
+                            <label>Nome do Bloco</label>
+                            <input type="text" value="${escapeHtml(nodeLabelValue)}" onchange="updateNodeProperty('label', this.value)">
+                        </div>
+                        <div class="property-group property-group-compact">
+                            <label>Delay</label>
+                            <div class="property-input-with-unit">
+                                <input type="number" min="0" step="1" value="${intentResponseDelaySeconds}" onchange="updateNodeProperty('intentResponseDelaySeconds', Math.max(0, parseInt(this.value || '0', 10) || 0))">
+                                <span class="property-unit">s</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="property-group">
                         <label>Intenções</label>
