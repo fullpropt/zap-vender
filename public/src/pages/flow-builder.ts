@@ -145,6 +145,7 @@ type FlowAiAssistantMessage = {
 };
 
 const DEFAULT_HANDLE = 'default';
+const EXTRA_INPUT_PORT_MIN = 2;
 const LAST_OPEN_FLOW_ID_STORAGE_KEY = 'flow_builder:last_open_flow_id';
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', source: 'name', is_default: true, required: true, placeholder: 'Nome completo' },
@@ -610,7 +611,85 @@ function syncIntentRoutesFromNode(node?: FlowNode | null) {
     node!.data.keyword = Array.from(new Set(allPhrases)).join(', ');
 }
 
+function normalizePathHandleIndex(handle?: string) {
+    const normalized = edgeHandle(handle);
+    if (normalized === DEFAULT_HANDLE) return 1;
+
+    const match = normalized.match(/^path-(\d+)$/i);
+    if (!match) return null;
+    const parsed = Number.parseInt(match[1], 10);
+    if (!Number.isFinite(parsed) || parsed < 1) return null;
+    return parsed;
+}
+
+function pathHandleFromIndex(index: number) {
+    const normalizedIndex = Number.isFinite(index) ? Math.max(1, Math.trunc(index)) : 1;
+    return normalizedIndex <= 1 ? DEFAULT_HANDLE : `path-${normalizedIndex}`;
+}
+
+function getConnectedTargetPathIndices(node: FlowNode) {
+    const used = new Set<number>();
+    edges.forEach((edge) => {
+        if (edge.target !== node.id) return;
+        const index = normalizePathHandleIndex(edge.targetHandle);
+        if (!index) return;
+        used.add(index);
+    });
+    return Array.from(used).sort((a, b) => a - b);
+}
+
+function isPathPassThroughNode(node?: FlowNode | null) {
+    if (!node) return false;
+    return node.type !== 'trigger' && node.type !== 'intent' && node.type !== 'end';
+}
+
+function getInputHandles(node: FlowNode) {
+    if (node.type === 'trigger') return [];
+
+    const connectedIndices = getConnectedTargetPathIndices(node);
+    const highestConnected = connectedIndices.length > 0
+        ? connectedIndices[connectedIndices.length - 1]
+        : 1;
+    const totalInputs = Math.max(EXTRA_INPUT_PORT_MIN, highestConnected + 1);
+    const connectedSet = new Set(connectedIndices);
+
+    return Array.from({ length: totalInputs }, (_, offset) => {
+        const index = offset + 1;
+        const isConnected = connectedSet.has(index);
+        const isLast = index === totalInputs;
+        return {
+            handle: pathHandleFromIndex(index),
+            label: `Entrada ${index}`,
+            isConnected,
+            isExtra: isLast && !isConnected && index > 1
+        };
+    });
+}
+
+function getPassThroughOutputHandles(node: FlowNode) {
+    const connectedIndices = getConnectedTargetPathIndices(node);
+    const highestConnected = connectedIndices.length > 0
+        ? connectedIndices[connectedIndices.length - 1]
+        : 1;
+    const totalOutputs = Math.max(1, highestConnected);
+    const showLabels = totalOutputs > 1;
+
+    return Array.from({ length: totalOutputs }, (_, offset) => {
+        const index = offset + 1;
+        return {
+            handle: pathHandleFromIndex(index),
+            label: showLabels ? `Caminho ${index}` : ''
+        };
+    });
+}
+
 function getOutputHandles(node: FlowNode) {
+    if (node.type === 'end') return [];
+
+    if (isPathPassThroughNode(node)) {
+        return getPassThroughOutputHandles(node);
+    }
+
     if (!isIntentTrigger(node)) {
         return [{ handle: DEFAULT_HANDLE, label: '' }];
     }
@@ -1170,6 +1249,26 @@ function getNodeOutputPortsMarkup(node: FlowNode) {
     `;
 }
 
+function getNodeInputPortsMarkup(node: FlowNode) {
+    if (node.type === 'trigger') return '<div></div>';
+    const handles = getInputHandles(node);
+
+    return `
+        <div class="node-input-ports">
+            ${handles.map((item) => `
+                <div class="node-input-port${item.isExtra ? ' is-extra' : ''}">
+                    <div
+                        class="port input${item.isExtra ? ' is-extra-input' : ''}"
+                        data-port="input"
+                        data-handle="${escapeHtml(item.handle)}"
+                        title="${escapeHtml(item.label)}"
+                    ></div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
 // Renderizar no
 function renderNode(node: FlowNode) {
     const container = document.getElementById('canvasContainer') as HTMLElement | null;
@@ -1216,7 +1315,7 @@ function renderNode(node: FlowNode) {
             ${escapeHtml(getNodePreview(node))}
         </div>
         <div class="flow-node-ports">
-            ${node.type !== 'trigger' ? '<div class="port input" data-port="input" data-handle="default"></div>' : '<div></div>'}
+            ${getNodeInputPortsMarkup(node)}
             ${getNodeOutputPortsMarkup(node)}
         </div>
     `;
@@ -1326,7 +1425,7 @@ function handleDocumentMouseUp(e: MouseEvent) {
     const targetNode = targetPort?.closest('.flow-node') as HTMLElement | null;
 
     if (targetPort && targetNode?.id) {
-        endConnection(targetNode.id, targetPort.dataset.port || '');
+        endConnection(targetNode.id, targetPort.dataset.port || '', targetPort.dataset.handle || DEFAULT_HANDLE);
         return;
     }
 
@@ -1807,10 +1906,19 @@ function cleanupInvalidEdgesForNode(nodeId: string) {
     const node = nodes.find((item) => item.id === nodeId);
     if (!node) return;
 
-    const validHandles = new Set(getOutputHandles(node).map((item) => edgeHandle(item.handle)));
+    const validSourceHandles = new Set(getOutputHandles(node).map((item) => edgeHandle(item.handle)));
+    const validTargetHandles = new Set(getInputHandles(node).map((item) => edgeHandle(item.handle)));
     edges = edges.filter((edge) => {
-        if (edge.source !== nodeId) return true;
-        return validHandles.has(edgeHandle(edge.sourceHandle));
+        if (edge.source === nodeId) {
+            return validSourceHandles.has(edgeHandle(edge.sourceHandle));
+        }
+
+        if (edge.target === nodeId) {
+            if (node.type === 'trigger') return false;
+            return validTargetHandles.has(edgeHandle(edge.targetHandle));
+        }
+
+        return true;
     });
 }
 
@@ -1937,7 +2045,7 @@ function startConnection(
     svg.appendChild(connectionPreviewPath);
 }
 
-function endConnection(nodeId: string, portType: string) {
+function endConnection(nodeId: string, portType: string, targetHandle = DEFAULT_HANDLE) {
     if (!isConnecting || !connectionStart) return;
 
     if (portType !== 'input' || connectionStart.nodeId === nodeId) {
@@ -1945,26 +2053,39 @@ function endConnection(nodeId: string, portType: string) {
         return;
     }
 
+    const normalizedTargetHandle = edgeHandle(targetHandle);
     const newEdge: Edge = {
         source: connectionStart.nodeId,
         target: nodeId,
         sourceHandle: edgeHandle(connectionStart.handle),
-        targetHandle: DEFAULT_HANDLE,
+        targetHandle: normalizedTargetHandle,
         label: connectionStart.label || undefined
     };
+    const sourceNode = nodes.find((node) => node.id === newEdge.source);
+    const sourceIsIntentTrigger = isIntentTrigger(sourceNode);
+
+    edges = edges.filter((edge) => {
+        if (
+            edge.target === newEdge.target
+            && edgeHandle(edge.targetHandle) === normalizedTargetHandle
+        ) {
+            return false;
+        }
+        if (
+            sourceIsIntentTrigger
+            && edge.source === newEdge.source
+            && edgeHandle(edge.sourceHandle) === edgeHandle(newEdge.sourceHandle)
+        ) {
+            return false;
+        }
+        return true;
+    });
+
     const exists = edges.some((edge) => isSameEdge(edge, newEdge));
     if (!exists) {
-        const sourceNode = nodes.find((node) => node.id === newEdge.source);
-        if (isIntentTrigger(sourceNode)) {
-            edges = edges.filter((edge) => !(
-                edge.source === newEdge.source
-                && edgeHandle(edge.sourceHandle) === edgeHandle(newEdge.sourceHandle)
-            ));
-        }
-
         edges.push(newEdge);
-        renderConnections();
-        if (selectedNode?.id === newEdge.source) {
+        rerenderNode(newEdge.target);
+        if (selectedNode?.id === newEdge.source || selectedNode?.id === newEdge.target) {
             renderProperties();
         }
         markFlowDirty();

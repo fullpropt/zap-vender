@@ -43,6 +43,7 @@ const INTENT_TOKEN_CANONICAL_PREFIXES = [
 const INTENT_CONTEXT_HISTORY_KEY = 'intent_node_history_by_node';
 const INTENT_NO_MATCH_COUNTERS_KEY = 'intent_no_match_count_by_node';
 const LEAD_ONCE_MESSAGE_FLAG_KEY = 'flow_once_message_nodes';
+const NODE_ENTRY_HANDLE_MAP_KEY = 'node_entry_handle_by_node';
 
 async function resolveOwnerScopeUserIdFromAssignee(...assignees) {
     for (const value of assignees) {
@@ -876,6 +877,39 @@ class FlowService extends EventEmitter {
         return execution.variables;
     }
 
+    normalizeFlowHandle(value = '') {
+        const normalized = String(value || '').trim();
+        return normalized || 'default';
+    }
+
+    readNodeEntryHandleMap(execution) {
+        const variables = this.ensureExecutionVariables(execution);
+        const mapValue = variables[NODE_ENTRY_HANDLE_MAP_KEY];
+        if (!mapValue || typeof mapValue !== 'object' || Array.isArray(mapValue)) {
+            return {};
+        }
+        return { ...mapValue };
+    }
+
+    getNodeEntryHandle(execution, nodeId = '') {
+        const normalizedNodeId = String(nodeId || '').trim();
+        if (!normalizedNodeId) return 'default';
+
+        const map = this.readNodeEntryHandleMap(execution);
+        return this.normalizeFlowHandle(map[normalizedNodeId]);
+    }
+
+    setNodeEntryHandle(execution, nodeId = '', handle = 'default') {
+        const normalizedNodeId = String(nodeId || '').trim();
+        if (!normalizedNodeId) return;
+
+        const variables = this.ensureExecutionVariables(execution);
+        const map = this.readNodeEntryHandleMap(execution);
+        map[normalizedNodeId] = this.normalizeFlowHandle(handle);
+        variables[NODE_ENTRY_HANDLE_MAP_KEY] = map;
+        variables.last_node_entry_handle = map[normalizedNodeId];
+    }
+
     resolveIntentContextWindowSize() {
         return Math.trunc(
             readIntentNumberEnv('FLOW_INTENT_CONTEXT_WINDOW_MESSAGES', 4, 1, 8)
@@ -1274,10 +1308,13 @@ class FlowService extends EventEmitter {
         if (currentNode.type === 'wait' || currentNode.type === 'condition') {
             execution.variables.last_response = messageText;
 
-            const nextNodeId = this.evaluateCondition(execution.flow, currentNode, messageText);
+            const currentEntryHandle = this.getNodeEntryHandle(execution, currentNode.id);
+            const nextEdge = this.evaluateConditionEdge(execution.flow, currentNode, messageText, currentEntryHandle);
+            const nextNodeId = nextEdge?.target || null;
+            const nextTargetHandle = this.normalizeFlowHandle(nextEdge?.targetHandle);
 
             if (nextNodeId) {
-                await this.executeNode(execution, nextNodeId);
+                await this.executeNode(execution, nextNodeId, nextTargetHandle);
             } else {
                 await this.endFlow(execution, 'completed');
             }
@@ -1289,12 +1326,16 @@ class FlowService extends EventEmitter {
     /**
      * Executar um nó do fluxo
      */
-    async executeNode(execution, nodeId) {
+    async executeNode(execution, nodeId, incomingTargetHandle = null) {
         const node = this.findNode(execution.flow, nodeId);
         
         if (!node) {
             await this.endFlow(execution, 'completed');
             return;
+        }
+
+        if (incomingTargetHandle !== null && incomingTargetHandle !== undefined) {
+            this.setNodeEntryHandle(execution, nodeId, incomingTargetHandle);
         }
         
         execution.currentNode = nodeId;
@@ -1703,23 +1744,34 @@ class FlowService extends EventEmitter {
             });
         }
 
-        if (!edge) {
-            edge = outgoingEdges.find((item) => rawHandle(item.sourceHandle) === 'default');
-        }
+        if (isIntentNode) {
+            if (!edge) {
+                edge = outgoingEdges.find((item) => rawHandle(item.sourceHandle) === 'default');
+            }
 
-        if (!edge && isIntentNode) {
-            const intentSpecificEdges = outgoingEdges.filter((item) => rawHandle(item.sourceHandle) !== 'default');
-            if (intentSpecificEdges.length === 1) {
-                edge = intentSpecificEdges[0];
+            if (!edge) {
+                const intentSpecificEdges = outgoingEdges.filter((item) => rawHandle(item.sourceHandle) !== 'default');
+                if (intentSpecificEdges.length === 1) {
+                    edge = intentSpecificEdges[0];
+                }
+            }
+        } else {
+            const entryHandle = this.getNodeEntryHandle(execution, currentNode?.id);
+            edge = outgoingEdges.find((item) => rawHandle(item.sourceHandle) === entryHandle);
+
+            if (!edge) {
+                edge = outgoingEdges.find((item) => rawHandle(item.sourceHandle) === 'default');
+            }
+
+            if (!edge) {
+                edge = outgoingEdges[0];
             }
         }
 
-        if (!edge && !isIntentNode) {
-            edge = outgoingEdges[0];
-        }
-
         if (edge) {
-            await this.executeNode(execution, edge.target);
+            const nextTargetHandle = rawHandle(edge.targetHandle);
+            this.setNodeEntryHandle(execution, edge.target, nextTargetHandle);
+            await this.executeNode(execution, edge.target, nextTargetHandle);
         } else {
             if (isIntentNode) {
                 const availableHandles = outgoingEdges.map((item) => rawHandle(item.sourceHandle)).join(', ');
@@ -1736,30 +1788,54 @@ class FlowService extends EventEmitter {
     /**
      * Avaliar condição e retornar próximo nó
      */
-    evaluateCondition(flow, node, response) {
+    evaluateConditionEdge(flow, node, response, preferredSourceHandle = 'default') {
         const text = response?.toLowerCase().trim() || '';
-        
-        // Verificar condições definidas no nó
-        if (node.data.conditions) {
+
+        if (node?.data?.conditions) {
             for (const condition of node.data.conditions) {
-                if (text === condition.value.toLowerCase() || text.includes(condition.value.toLowerCase())) {
-                    return condition.next;
+                const conditionValue = String(condition?.value || '').toLowerCase().trim();
+                if (!conditionValue) continue;
+                if (text === conditionValue || text.includes(conditionValue)) {
+                    const explicitNext = String(condition?.next || '').trim();
+                    if (explicitNext) {
+                        return {
+                            source: node?.id,
+                            target: explicitNext,
+                            sourceHandle: 'default',
+                            targetHandle: 'default'
+                        };
+                    }
                 }
             }
         }
-        
-        // Procurar nas edges
-        const edges = flow.edges.filter(e => e.source === node.id);
-        
+
+        const edges = (flow?.edges || []).filter((edge) => edge.source === node?.id);
+        if (edges.length === 0) return null;
+
+        const normalizedPreferredHandle = this.normalizeFlowHandle(preferredSourceHandle);
+
         for (const edge of edges) {
-            if (edge.label && (text === edge.label.toLowerCase() || text.includes(edge.label.toLowerCase()))) {
-                return edge.target;
+            const edgeLabel = String(edge?.label || '').toLowerCase().trim();
+            if (!edgeLabel) continue;
+            if (text === edgeLabel || text.includes(edgeLabel)) {
+                return edge;
             }
         }
-        
-        // Retornar edge padrão (sem label)
-        const defaultEdge = edges.find(e => !e.label);
-        return defaultEdge?.target;
+
+        const unlabeledEdges = edges.filter((edge) => !String(edge?.label || '').trim());
+        const preferredEdge = unlabeledEdges.find((edge) => this.normalizeFlowHandle(edge?.sourceHandle) === normalizedPreferredHandle);
+        if (preferredEdge) return preferredEdge;
+
+        const defaultEdge = unlabeledEdges.find((edge) => this.normalizeFlowHandle(edge?.sourceHandle) === 'default');
+        if (defaultEdge) return defaultEdge;
+
+        if (unlabeledEdges.length > 0) return unlabeledEdges[0];
+        return edges[0] || null;
+    }
+
+    evaluateCondition(flow, node, response) {
+        const edge = this.evaluateConditionEdge(flow, node, response, 'default');
+        return edge?.target || null;
     }
     
     /**

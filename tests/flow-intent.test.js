@@ -154,7 +154,43 @@ describe('FlowService intent routing compatibility', () => {
 
         await service.goToNextNode(execution, currentNode, 'route-buy');
 
-        expect(executeSpy).toHaveBeenCalledWith(execution, 'message-buy');
+        expect(executeSpy).toHaveBeenCalledWith(execution, 'message-buy', 'default');
+        expect(endSpy).not.toHaveBeenCalled();
+
+        executeSpy.mockRestore();
+        endSpy.mockRestore();
+    });
+
+    test('goToNextNode reuses non-intent entry handle for path-aligned nodes', async () => {
+        const service = new FlowService();
+        const currentNode = {
+            id: 'message-once',
+            type: 'message_once',
+            data: {}
+        };
+
+        const execution = {
+            flow: {
+                id: 12,
+                edges: [
+                    { source: 'message-once', target: 'default-next', sourceHandle: 'default', targetHandle: 'default' },
+                    { source: 'message-once', target: 'path-two-next', sourceHandle: 'path-2', targetHandle: 'path-2' }
+                ]
+            },
+            conversation: { id: 78 },
+            variables: {
+                node_entry_handle_by_node: {
+                    'message-once': 'path-2'
+                }
+            }
+        };
+
+        const executeSpy = jest.spyOn(service, 'executeNode').mockResolvedValue();
+        const endSpy = jest.spyOn(service, 'endFlow').mockResolvedValue();
+
+        await service.goToNextNode(execution, currentNode);
+
+        expect(executeSpy).toHaveBeenCalledWith(execution, 'path-two-next', 'path-2');
         expect(endSpy).not.toHaveBeenCalled();
 
         executeSpy.mockRestore();

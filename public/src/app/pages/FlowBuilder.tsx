@@ -917,6 +917,19 @@ export default function FlowBuilder() {
             border-top: 1px solid var(--border);
         }
 
+        .node-input-ports {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: flex-start;
+        }
+
+        .node-input-port {
+            display: flex;
+            align-items: center;
+            min-height: 14px;
+        }
+
         .flow-node.event-circle .flow-node-ports {
             position: absolute;
             inset: 0;
@@ -925,7 +938,7 @@ export default function FlowBuilder() {
             pointer-events: none;
         }
 
-        .flow-node.event-circle .flow-node-ports > .port.input {
+        .flow-node.event-circle .node-input-ports {
             position: absolute;
             top: 50%;
             left: -6px;
@@ -938,6 +951,7 @@ export default function FlowBuilder() {
             top: 50%;
             right: -6px;
             transform: translate(50%, -50%);
+            pointer-events: auto;
         }
 
         .flow-node.event-circle .node-output-port {
@@ -1010,6 +1024,11 @@ export default function FlowBuilder() {
             background: var(--info);
             transform: scale(1.3);
             box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+        }
+
+        .port.input.is-extra-input {
+            background: rgba(148, 163, 184, 0.76);
+            border-style: dashed;
         }
         
         .port.input { margin-left: -7px; }
