@@ -818,7 +818,7 @@ function renderLeadsTable(leads: Lead[] | null = null) {
             ? `<a href="https://wa.me/55${phone}" target="_blank" style="color: var(--whatsapp); text-decoration: none;">${phoneDisplay}</a>`
             : phoneDisplay;
         const whatsappAction = phone
-            ? `onclick="sendWhatsApp('${phone}')" title="Mensagem"`
+            ? `onclick="sendWhatsApp(${Number(lead.id) || 0}, '${phone}')" title="Mensagem"`
             : 'disabled title="WhatsApp indisponível"';
 
         return `
@@ -1007,8 +1007,15 @@ async function deleteLead(id: number) {
 }
 
 // Enviar WhatsApp
-function sendWhatsApp(phone: string) {
-    const cleanPhone = phone.replace(/\D/g, '');
+function sendWhatsApp(leadId: number, phone: string) {
+    const normalizedLeadId = Number(leadId || 0);
+    if (Number.isFinite(normalizedLeadId) && normalizedLeadId > 0) {
+        window.location.href = `#/inbox?leadId=${Math.floor(normalizedLeadId)}`;
+        return;
+    }
+
+    const cleanPhone = String(phone || '').replace(/\D/g, '');
+    if (!cleanPhone) return;
     window.open(`https://wa.me/55${cleanPhone}`, '_blank');
 }
 

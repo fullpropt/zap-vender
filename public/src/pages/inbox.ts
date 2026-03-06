@@ -112,8 +112,10 @@ const stickerMediaRehydrateAttempts = new Set<string>();
 let activeChatScrollContainer: HTMLElement | null = null;
 let chatMediaPreviewBindingsBound = false;
 let chatMediaPreviewLastFocusedElement: HTMLElement | null = null;
+let pendingInboxOpenLeadId = 0;
 
 const INBOX_SESSION_FILTER_STORAGE_KEY = 'zapvender_inbox_session_filter';
+const INBOX_OPEN_LEAD_QUERY_KEYS = ['leadId', 'lead_id', 'id'] as const;
 
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', is_default: true, source: 'name' },
@@ -720,7 +722,80 @@ function getContatosUrl(id: string | number) {
     return `#/contatos?id=${id}`;
 }
 
+function getInboxRouteParams() {
+    if (window.location.search) {
+        return new URLSearchParams(window.location.search);
+    }
+    const hash = String(window.location.hash || '');
+    const queryIndex = hash.indexOf('?');
+    const query = queryIndex >= 0 ? hash.slice(queryIndex + 1) : '';
+    return new URLSearchParams(query);
+}
+
+function resolveInboxOpenLeadIdFromRouteParams() {
+    const params = getInboxRouteParams();
+    for (const key of INBOX_OPEN_LEAD_QUERY_KEYS) {
+        const rawValue = String(params.get(key) || '').trim();
+        const parsedValue = Number.parseInt(rawValue, 10);
+        if (Number.isInteger(parsedValue) && parsedValue > 0) {
+            return parsedValue;
+        }
+    }
+    return 0;
+}
+
+function clearInboxOpenLeadIdFromRouteParams() {
+    const currentUrl = new URL(window.location.href);
+    const hasSearchParam = INBOX_OPEN_LEAD_QUERY_KEYS.some((key) => currentUrl.searchParams.has(key));
+    if (hasSearchParam) {
+        INBOX_OPEN_LEAD_QUERY_KEYS.forEach((key) => currentUrl.searchParams.delete(key));
+        window.history.replaceState({}, '', currentUrl.toString());
+        return;
+    }
+
+    const hash = String(window.location.hash || '');
+    if (!hash) return;
+
+    const queryIndex = hash.indexOf('?');
+    if (queryIndex < 0) return;
+
+    const hashPath = hash.slice(0, queryIndex);
+    const hashQuery = hash.slice(queryIndex + 1);
+    const params = new URLSearchParams(hashQuery);
+    let changed = false;
+
+    INBOX_OPEN_LEAD_QUERY_KEYS.forEach((key) => {
+        if (!params.has(key)) return;
+        params.delete(key);
+        changed = true;
+    });
+
+    if (!changed) return;
+
+    const nextQuery = params.toString();
+    const nextHash = nextQuery ? `${hashPath}?${nextQuery}` : hashPath;
+    const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+    window.history.replaceState({}, '', nextUrl);
+}
+
+function tryOpenPendingLeadConversation() {
+    if (!Number.isInteger(pendingInboxOpenLeadId) || pendingInboxOpenLeadId <= 0) return;
+
+    const targetConversation = conversations.find(
+        (conversation) => Number(conversation.leadId) === pendingInboxOpenLeadId
+    );
+    if (!targetConversation) return;
+
+    const targetConversationId = Number(targetConversation.id || 0);
+    if (!Number.isInteger(targetConversationId) || targetConversationId <= 0) return;
+
+    pendingInboxOpenLeadId = 0;
+    clearInboxOpenLeadIdFromRouteParams();
+    void selectConversation(targetConversationId);
+}
+
 function initInbox() {
+    pendingInboxOpenLeadId = resolveInboxOpenLeadIdFromRouteParams();
     bindInboxLifecycle();
     syncInboxMobileViewportState();
     bindQuickReplyDismiss();
@@ -728,6 +803,11 @@ function initInbox() {
     bindChatMediaPreviewModal();
     loadContactFields();
     void loadInboxSessionFilters().finally(() => {
+        if (pendingInboxOpenLeadId > 0 && inboxSessionFilter) {
+            inboxSessionFilter = '';
+            persistInboxSessionFilter('');
+            renderInboxSessionFilterOptions();
+        }
         loadConversations();
     });
     loadQuickReplies();
@@ -1223,6 +1303,7 @@ async function loadConversations() {
             renderConversations();
         }
         updateUnreadBadge();
+        tryOpenPendingLeadConversation();
     } catch (error) {
         const hasToken = Boolean(sessionStorage.getItem('selfDashboardToken'));
         const isLoginRoute = String(window.location.hash || '').startsWith('#/login');
