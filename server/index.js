@@ -471,10 +471,17 @@ async function resolveSessionOwnerUserId(sessionId) {
     if (!normalizedSessionId) return null;
 
     const runtimeOwnerUserId = normalizeOwnerUserId(sessions.get(normalizedSessionId)?.ownerUserId);
-    if (runtimeOwnerUserId) return runtimeOwnerUserId;
+    if (runtimeOwnerUserId) {
+        const ownerScopeUserId = await resolveOwnerScopeUserIdFromAssignees(runtimeOwnerUserId);
+        return normalizeOwnerUserId(ownerScopeUserId) || runtimeOwnerUserId;
+    }
 
     const storedSession = await WhatsAppSession.findBySessionId(normalizedSessionId);
-    return normalizeOwnerUserId(storedSession?.created_by) || null;
+    const createdByUserId = normalizeOwnerUserId(storedSession?.created_by);
+    if (!createdByUserId) return null;
+
+    const ownerScopeUserId = await resolveOwnerScopeUserIdFromAssignees(createdByUserId);
+    return normalizeOwnerUserId(ownerScopeUserId) || createdByUserId;
 }
 
 async function canAccessSessionRecordInOwnerScope(req, sessionId, ownerScopeUserId = null) {
@@ -7404,10 +7411,10 @@ async function getBusinessHoursSettings(ownerUserId = null, forceRefresh = false
         Settings.get(buildScopedSettingsKey('business_hours_start', normalizedOwnerUserId || null)),
         Settings.get(buildScopedSettingsKey('business_hours_end', normalizedOwnerUserId || null)),
         Settings.get(buildScopedSettingsKey('business_hours_auto_reply_message', normalizedOwnerUserId || null)),
-        normalizedOwnerUserId ? Settings.get('business_hours_enabled') : Promise.resolve(null),
-        normalizedOwnerUserId ? Settings.get('business_hours_start') : Promise.resolve(null),
-        normalizedOwnerUserId ? Settings.get('business_hours_end') : Promise.resolve(null),
-        normalizedOwnerUserId ? Settings.get('business_hours_auto_reply_message') : Promise.resolve(null)
+        normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_enabled'),
+        normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_start'),
+        normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_end'),
+        normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_auto_reply_message')
     ]);
 
     const normalized = normalizeBusinessHoursSettings({

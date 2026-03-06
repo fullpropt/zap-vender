@@ -464,9 +464,9 @@ class QueueService extends EventEmitter {
             Settings.get(this.buildScopedSettingsKey('business_hours_enabled', normalizedOwnerUserId || null)),
             Settings.get(this.buildScopedSettingsKey('business_hours_start', normalizedOwnerUserId || null)),
             Settings.get(this.buildScopedSettingsKey('business_hours_end', normalizedOwnerUserId || null)),
-            normalizedOwnerUserId ? Settings.get('business_hours_enabled') : Promise.resolve(null),
-            normalizedOwnerUserId ? Settings.get('business_hours_start') : Promise.resolve(null),
-            normalizedOwnerUserId ? Settings.get('business_hours_end') : Promise.resolve(null)
+            normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_enabled'),
+            normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_start'),
+            normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_end')
         ]);
 
         const normalized = this.normalizeBusinessHoursSettings({
