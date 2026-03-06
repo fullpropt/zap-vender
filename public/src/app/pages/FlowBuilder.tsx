@@ -57,7 +57,7 @@ export default function FlowBuilder() {
   };
 
   return (
-    <div className="flow-builder-react">
+    <div className="flow-builder-react is-selector-screen">
       <style>{`
         .flow-builder-react {
             --primary: #178C49;
@@ -96,6 +96,10 @@ export default function FlowBuilder() {
             gap: 12px;
         }
 
+        .flow-builder-react.is-selector-screen .main-content {
+            overflow-y: auto;
+        }
+
         .flow-builder-react .header {
             display: flex;
             justify-content: space-between;
@@ -103,6 +107,10 @@ export default function FlowBuilder() {
             gap: 16px;
             margin-bottom: 12px;
             flex-wrap: wrap;
+        }
+
+        .flow-builder-react .flow-page-header {
+            margin-bottom: 0;
         }
 
         .flow-builder-react .header-title {
@@ -153,6 +161,18 @@ export default function FlowBuilder() {
         .flow-builder-react .header-title p {
             color: #9fb0c8;
             margin-top: 6px;
+        }
+
+        .flow-builder-react .flow-selector-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .flow-builder-react .flow-selector-actions[hidden] {
+            display: none !important;
         }
 
         .flow-builder-react .flow-name-highlight {
@@ -2015,10 +2035,8 @@ export default function FlowBuilder() {
             grid-column: 1;
             grid-row: 2;
             min-height: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 8px 0;
+            display: block;
+            padding: 0 0 12px;
         }
 
         .flow-builder-react #flowSelectorScreen[hidden],
@@ -2035,8 +2053,8 @@ export default function FlowBuilder() {
             );
             border: 1px solid rgba(148, 163, 184, 0.28);
             border-radius: 16px;
-            width: min(760px, 100%);
-            max-height: 100%;
+            width: 100%;
+            max-height: none;
             overflow: hidden;
             box-shadow: 0 22px 48px rgba(2, 6, 23, 0.45);
             display: flex;
@@ -2047,31 +2065,47 @@ export default function FlowBuilder() {
         .flow-selector-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
             padding: 20px;
             border-bottom: 1px solid rgba(148, 163, 184, 0.2);
         }
 
-        .flow-selector-header h2 {
-            font-size: 18px;
+        .flow-selector-header .table-title {
+            font-size: 16px;
             color: #e7edf7;
             letter-spacing: 0.01em;
         }
 
+        .flow-selector-header-copy {
+            max-width: 520px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #9fb0c8;
+            text-align: right;
+        }
+
         .flow-selector-body {
             padding: 20px;
-            overflow-y: auto;
-            overflow-x: hidden;
+            overflow: visible;
             min-height: 0;
-            flex: 1;
+            flex: 1 1 auto;
         }
 
         .flow-selector-footer {
             display: flex;
-            justify-content: center;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
             padding: 16px 20px;
             border-top: 1px solid rgba(148, 163, 184, 0.2);
             background: rgba(2, 6, 23, 0.28);
+        }
+
+        .flow-selector-footer-text {
+            margin: 0;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #9fb0c8;
         }
         
         /* Flow List Modal */
@@ -2506,6 +2540,10 @@ export default function FlowBuilder() {
             .flow-builder-react .header-title {
                 flex: 1 1 100%;
             }
+            .flow-builder-react .flow-selector-actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
             .flow-builder-react .header-flow-row,
             .flow-builder-react .header-actions {
                 padding-right: 0;
@@ -2589,25 +2627,33 @@ export default function FlowBuilder() {
                 font-size: 11px;
             }
             .flow-selector-screen {
-                padding: 0;
+                padding: 0 0 10px;
             }
             .flow-selector-card {
                 width: 100%;
-                height: 100%;
                 max-height: none;
                 border-radius: 12px;
             }
             .flow-selector-header {
-                padding: 14px 12px;
+                padding: 16px 14px;
             }
-            .flow-selector-header h2 {
-                font-size: 15px;
+            .flow-selector-header-copy {
+                max-width: none;
+                width: 100%;
+                text-align: left;
+                font-size: 12px;
             }
             .flow-selector-body {
-                padding: 10px;
+                padding: 12px;
             }
             .flow-selector-footer {
-                padding: 12px;
+                padding: 12px 14px;
+                align-items: stretch;
+                flex-direction: column;
+            }
+            .flow-selector-footer .toolbar-btn {
+                width: 100%;
+                justify-content: center;
             }
             .flow-list-item {
                 grid-template-columns: 42px minmax(0, 1fr);
@@ -2833,6 +2879,9 @@ export default function FlowBuilder() {
             .flow-builder-react .flow-name-highlight-link-label {
                 display: none;
             }
+            .flow-selector-footer-text {
+                font-size: 12px;
+            }
             .nodes-panel {
                 max-height: none;
             }
@@ -2888,8 +2937,8 @@ export default function FlowBuilder() {
           </aside>
           
           <main className="main-content">
-              <div className="header" id="flowBuilderHeader">
-                  <div className="header-title">
+              <div className="header page-header flow-page-header" id="flowBuilderHeader">
+                  <div className="header-title page-title">
                       <div className="header-title-row">
                           <button
                               type="button"
@@ -2905,6 +2954,16 @@ export default function FlowBuilder() {
                           <h1><span className="icon icon-flows icon-sm"></span> Construtor de Fluxos</h1>
                       </div>
                       <p>Crie automações visuais para suas conversas</p>
+                  </div>
+                  <div className="page-actions flow-selector-actions" id="flowSelectorActions">
+                      <button className="toolbar-btn secondary" type="button" onClick={() => globals.openFlowsModal?.()}>
+                          <span className="icon icon-refresh icon-sm"></span>
+                          <span className="toolbar-btn-label">Atualizar</span>
+                      </button>
+                      <button className="toolbar-btn primary" type="button" onClick={() => globals.createNewFlow?.()}>
+                          <span className="icon icon-add icon-sm"></span>
+                          <span className="toolbar-btn-label">Novo Fluxo</span>
+                      </button>
                   </div>
                   <div className="header-flow-row" id="flowBuilderFlowInfoRow" hidden>
                       <div className="flow-name-highlight">
@@ -2936,14 +2995,19 @@ export default function FlowBuilder() {
               </div>
 
               <section className="flow-selector-screen" id="flowSelectorScreen">
-                  <div className="flow-selector-card">
-                      <div className="flow-selector-header">
-                          <h2 id="flowsScreenTitle">Selecione um Fluxo para começar</h2>
+                  <div className="flow-selector-card table-container">
+                      <div className="flow-selector-header table-header">
+                          <div className="table-title">
+                              <span className="icon icon-flows icon-sm"></span>
+                              Lista de Fluxos
+                          </div>
+                          <div className="flow-selector-header-copy" id="flowsScreenTitle">Selecione um fluxo para começar</div>
                       </div>
                       <div className="flow-selector-body">
                           <div id="flowsList"></div>
                       </div>
-                      <div className="flow-selector-footer">
+                      <div className="flow-selector-footer card-footer">
+                          <p className="flow-selector-footer-text">Escolha um fluxo existente para editar ou crie um novo fluxo do zero.</p>
                           <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
                               <span className="icon icon-add icon-sm"></span>
                               <span className="toolbar-btn-label">Criar Novo Fluxo</span>
