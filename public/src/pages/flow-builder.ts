@@ -2221,11 +2221,7 @@ function getNodePreview(node: FlowNode) {
             return node.data.eventName || node.data.eventKey || 'Selecione um evento personalizado';
         case 'trigger':
         case 'intent':
-            if (isIntentTrigger(node)) {
-                const routes = getIntentRoutes(node);
-                if (routes.length === 0) return 'Defina as intenções para iniciar o fluxo';
-                return `${routes.length} intenção(ões) configurada(s)`;
-            }
+            if (isIntentTrigger(node)) return '';
             return 'Novo contato';
         default:
             return '';

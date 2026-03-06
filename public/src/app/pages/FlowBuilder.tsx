@@ -423,17 +423,47 @@ export default function FlowBuilder() {
         .flow-builder-react .flow-canvas-toolbar .toolbar-btn {
             pointer-events: auto;
             min-width: 0;
+            min-height: 38px;
+            padding: 10px 18px;
+            border-radius: 12px;
+            border: 1px solid transparent;
+            font-size: 14px;
+            font-weight: 700;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
         }
 
         .flow-builder-react .flow-canvas-toolbar .toolbar-btn.primary,
         .flow-builder-react .flow-canvas-toolbar .toolbar-btn.ai-highlight {
             min-width: 150px;
             justify-content: center;
-            min-height: 38px;
         }
 
         .flow-builder-react .flow-canvas-toolbar .toolbar-btn.secondary {
-            min-height: 38px;
+            color: #eefbf4;
+            border-color: rgba(25, 195, 125, 0.58);
+            background: rgba(15, 23, 42, 0.92);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+        }
+
+        .flow-builder-react .flow-canvas-toolbar .toolbar-btn.secondary:hover:not(:disabled) {
+            color: #f8fff9;
+            border-color: rgba(52, 211, 153, 0.78);
+            background: rgba(18, 44, 38, 0.94);
+            box-shadow: 0 12px 28px rgba(25, 195, 125, 0.18);
+            transform: translateY(-1px);
+        }
+
+        .flow-builder-react .flow-canvas-toolbar .toolbar-btn.primary {
+            color: #ffffff;
+            border-color: rgba(255, 255, 255, 0.08);
+            background: linear-gradient(135deg, #19c37d 0%, #22c55e 100%);
+            box-shadow: 0 10px 24px rgba(25, 195, 125, 0.24);
+        }
+
+        .flow-builder-react .flow-canvas-toolbar .toolbar-btn.primary:hover:not(:disabled) {
+            background: linear-gradient(135deg, #20cf85 0%, #29d26b 100%);
+            box-shadow: 0 14px 28px rgba(25, 195, 125, 0.3);
+            transform: translateY(-1px);
         }
 
         .flow-builder-react .flow-canvas-toolbar .toolbar-btn.is-hidden {
@@ -911,7 +941,7 @@ export default function FlowBuilder() {
             padding: 16px 12px 12px;
         }
 
-        .flow-node-header.trigger { background: rgba(16, 185, 129, 0.1); }
+        .flow-node-header.trigger { background: #ffffff; }
         .flow-node-header.intent { background: rgba(245, 158, 11, 0.1); }
         .flow-node-header.message { background: rgba(59, 130, 246, 0.1); }
         .flow-node-header.message_once { background: rgba(20, 184, 166, 0.12); }
@@ -921,6 +951,7 @@ export default function FlowBuilder() {
         .flow-node-header.delay { background: rgba(245, 158, 11, 0.1); }
         .flow-node-header.transfer { background: rgba(239, 68, 68, 0.1); }
         .flow-node-header.event { background: rgba(139, 92, 246, 0.1); }
+        .flow-node-header.end { background: #ffffff; }
         
         .flow-node-header .icon {
             font-size: 18px;
