@@ -409,12 +409,12 @@ export default function FlowBuilder() {
         .flow-builder-react .flow-canvas-toolbar {
             position: absolute;
             top: 16px;
-            right: 16px;
+            left: 16px;
             display: flex;
             align-items: center;
             gap: 10px;
             flex-wrap: wrap;
-            justify-content: flex-end;
+            justify-content: flex-start;
             z-index: 40;
             pointer-events: none;
             max-width: calc(100% - 32px);
@@ -1110,6 +1110,10 @@ export default function FlowBuilder() {
 
         .flow-node.event-circle .flow-node-body {
             display: none;
+        }
+
+        .flow-node.without-body .flow-node-ports {
+            border-top: 0;
         }
 
         .flow-node-ports {

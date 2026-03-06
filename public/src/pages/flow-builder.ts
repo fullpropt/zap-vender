@@ -1740,11 +1740,13 @@ function renderNode(node: FlowNode) {
     
     const nodeEl = document.createElement('div');
     const isEventCircle = node.type === 'event';
+    const previewText = String(getNodePreview(node) || '').trim();
+    const hasPreview = previewText.length > 0;
     const eventDisplayName = node.type === 'event'
         ? String(node.data.eventName || node.data.eventKey || '').trim()
         : '';
     node.data.collapsed = false;
-    nodeEl.className = `flow-node${isEventCircle ? ' event-circle' : ''}`;
+    nodeEl.className = `flow-node${isEventCircle ? ' event-circle' : ''}${hasPreview ? '' : ' without-body'}`;
     nodeEl.id = node.id;
     nodeEl.style.left = node.position.x + 'px';
     nodeEl.style.top = node.position.y + 'px';
@@ -1782,9 +1784,10 @@ function renderNode(node: FlowNode) {
                 </button>
             </div>
         </div>
+        ${hasPreview ? `
         <div class="flow-node-body">
-            ${escapeHtml(getNodePreview(node))}
-        </div>
+            ${escapeHtml(previewText)}
+        </div>` : ''}
         <div class="flow-node-ports">
             ${getNodeInputPortsMarkup(node)}
             ${getNodeOutputPortsMarkup(node)}
