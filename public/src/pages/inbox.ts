@@ -951,7 +951,7 @@ async function tryOpenPendingLeadConversation() {
     if (!targetConversation) return;
 
     const targetConversationId = Number(targetConversation.id || 0);
-    if (!Number.isInteger(targetConversationId) || targetConversationId <= 0) return;
+    if (!Number.isInteger(targetConversationId) || targetConversationId === 0) return;
 
     pendingInboxOpenLeadId = 0;
     clearInboxOpenLeadIdFromRouteParams();
@@ -2981,4 +2981,3 @@ windowAny.toggleContactInfo = toggleContactInfo;
 windowAny.backToList = backToList;
 
 export { initInbox };
-
