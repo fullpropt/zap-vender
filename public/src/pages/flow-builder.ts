@@ -4035,7 +4035,7 @@ function renderFlowsList(flows: FlowSummary[]) {
             isRenaming ? 'is-renaming' : '',
             mobileListMode ? 'is-readonly' : ''
         ].filter(Boolean).join(' ');
-        const itemClick = ` onclick="loadFlow(${flow.id})"`;
+        const itemClick = mobileListMode ? '' : ` onclick="loadFlow(${flow.id})"`;
 
         return `
         <div class="${itemClasses}"${itemClick}>

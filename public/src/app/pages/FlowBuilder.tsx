@@ -2241,7 +2241,13 @@ export default function FlowBuilder() {
         }
 
         .flow-list-item.is-readonly {
-            cursor: pointer;
+            cursor: default;
+        }
+
+        .flow-list-item.is-readonly:hover {
+            border-color: rgba(148, 163, 184, 0.26);
+            box-shadow: none;
+            background: rgba(15, 23, 42, 0.4);
         }
 
         .flow-list-item.is-current {
@@ -2609,6 +2615,9 @@ export default function FlowBuilder() {
             .flow-selector-footer {
                 padding: 12px;
             }
+            .flow-selector-footer {
+                display: none;
+            }
             .flow-list-item {
                 grid-template-columns: 42px minmax(0, 1fr);
                 gap: 10px;
@@ -2944,7 +2953,7 @@ export default function FlowBuilder() {
                           <div id="flowsList"></div>
                       </div>
                       <div className="flow-selector-footer">
-                          <button className="toolbar-btn primary" onClick={() => globals.createNewFlow?.()}>
+                          <button className="toolbar-btn primary flow-selector-create-btn" onClick={() => globals.createNewFlow?.()}>
                               <span className="icon icon-add icon-sm"></span>
                               <span className="toolbar-btn-label">Criar Novo Fluxo</span>
                           </button>
