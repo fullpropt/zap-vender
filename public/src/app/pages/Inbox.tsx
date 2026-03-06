@@ -1627,8 +1627,9 @@ export default function Inbox() {
                 min-height: 44px;
                 max-height: 88px;
                 padding: 11px 12px;
-                font-size: 13px;
-                line-height: 1.3;
+                font-size: 16px;
+                line-height: 1.35;
+                -webkit-text-size-adjust: 100%;
                 overflow-y: auto;
             }
             .chat-scroll-bottom-btn {
