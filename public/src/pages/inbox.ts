@@ -122,6 +122,7 @@ let inboxHistoryResyncInFlight = false;
 let mediaUploadInProgress = false;
 let inboxLifecycleBound = false;
 let inboxViewportSyncRaf: number | null = null;
+let inboxMobileLayoutViewportHeight = 0;
 const stickerMediaRehydrateAttempts = new Set<string>();
 let activeChatScrollContainer: HTMLElement | null = null;
 let chatMediaPreviewBindingsBound = false;
@@ -991,14 +992,36 @@ function isTabletOrMobileView() {
     return window.matchMedia('(max-width: 1024px)').matches;
 }
 
+function isMessageComposerFocused() {
+    const activeElement = document.activeElement as HTMLElement | null;
+    if (!activeElement) return false;
+    if (activeElement.id === 'messageInput') return true;
+    return Boolean(activeElement.closest?.('.chat-input'));
+}
+
 function syncInboxMobileViewportHeight() {
     const root = document.documentElement;
+    const currentInnerHeight = Math.max(320, Math.round(window.innerHeight || 0));
+    if (!inboxMobileLayoutViewportHeight || currentInnerHeight > (inboxMobileLayoutViewportHeight - 24)) {
+        inboxMobileLayoutViewportHeight = currentInnerHeight;
+    }
+
     const visualViewport = window.visualViewport;
-    const rawHeight = visualViewport && Number.isFinite(visualViewport.height) && visualViewport.height > 0
-        ? visualViewport.height
-        : window.innerHeight;
-    const viewportHeight = Math.max(320, Math.round(rawHeight));
-    root.style.setProperty('--inbox-mobile-vh', `${viewportHeight}px`);
+    const hasVisualViewport = Boolean(visualViewport && Number.isFinite(visualViewport.height) && visualViewport.height > 0);
+    const visualHeight = hasVisualViewport
+        ? Math.max(320, Math.round(Number(visualViewport?.height || 0)))
+        : currentInnerHeight;
+    const visualOffsetTop = hasVisualViewport && Number.isFinite(visualViewport?.offsetTop)
+        ? Math.max(0, Math.round(Number(visualViewport?.offsetTop || 0)))
+        : 0;
+    const keyboardInsetFromVisual = hasVisualViewport
+        ? Math.max(0, inboxMobileLayoutViewportHeight - (visualHeight + visualOffsetTop))
+        : 0;
+    const keyboardInsetFromInner = Math.max(0, inboxMobileLayoutViewportHeight - currentInnerHeight);
+    const keyboardInset = Math.max(keyboardInsetFromVisual, keyboardInsetFromInner);
+
+    root.style.setProperty('--inbox-mobile-vh', `${inboxMobileLayoutViewportHeight || currentInnerHeight}px`);
+    root.style.setProperty('--inbox-mobile-keyboard-inset', `${keyboardInset}px`);
 }
 
 function syncInboxRouteScrollLock() {
@@ -1008,11 +1031,13 @@ function syncInboxRouteScrollLock() {
     document.documentElement.classList.toggle('inbox-route-lock', isInboxRoute);
 
     if (isInboxRoute) {
-        if ((window.scrollY || 0) > 0) {
-            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        if (!isMessageComposerFocused()) {
+            if ((window.scrollY || 0) > 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            }
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
         }
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
     }
 }
 
@@ -1037,11 +1062,13 @@ function syncInboxBodyScrollLock() {
     document.documentElement.classList.toggle('inbox-mobile-chat-lock', chatOpenOnMobile);
 
     if (chatOpenOnMobile) {
-        if ((window.scrollY || 0) > 0) {
-            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        if (!isMessageComposerFocused()) {
+            if ((window.scrollY || 0) > 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            }
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
         }
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
     }
 }
 
@@ -2596,6 +2623,7 @@ function renderChat() {
     closeContactInfoPanel();
     bindInlineAudioPlayers(panel);
     bindChatScrollBottomVisibility();
+    bindMessageComposerViewportSync();
     scrollToBottom();
 }
 function renderMessages() {
@@ -2631,6 +2659,8 @@ function renderMessagesInto(container: HTMLElement | null) {
 }
 
 function focusMessageComposerOnOpen() {
+    if (isMobileInboxView()) return;
+
     const focusComposer = () => {
         const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
         if (!input) return;
@@ -2648,6 +2678,30 @@ function focusMessageComposerOnOpen() {
     };
 
     window.requestAnimationFrame(focusComposer);
+}
+
+function bindMessageComposerViewportSync() {
+    const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+    if (!input) return;
+    if (input.dataset.viewportSyncBound === '1') return;
+    input.dataset.viewportSyncBound = '1';
+
+    const syncComposerViewport = () => {
+        scheduleInboxMobileViewportStateSync();
+        window.setTimeout(() => {
+            scheduleInboxMobileViewportStateSync();
+            scrollToBottom();
+        }, 80);
+    };
+
+    input.addEventListener('focus', syncComposerViewport);
+    input.addEventListener('click', syncComposerViewport);
+    input.addEventListener('input', syncComposerViewport);
+    input.addEventListener('blur', () => {
+        window.setTimeout(() => {
+            scheduleInboxMobileViewportStateSync();
+        }, 80);
+    });
 }
 
 function formatAudioPlayerTime(totalSeconds: number) {
@@ -2981,4 +3035,3 @@ windowAny.toggleContactInfo = toggleContactInfo;
 windowAny.backToList = backToList;
 
 export { initInbox };
-

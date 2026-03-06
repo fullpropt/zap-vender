@@ -51,6 +51,7 @@ export default function Inbox() {
             --inbox-scroll-thumb-active: rgba(var(--primary-rgb), 0.74);
             --inbox-main-pad-y: 20px;
             --inbox-mobile-vh: 100svh;
+            --inbox-mobile-keyboard-inset: 0px;
         }
         .inbox-container {
             display: grid;
@@ -1508,12 +1509,12 @@ export default function Inbox() {
         @media (max-width: 768px) {
             html.inbox-mobile-chat-lock {
                 overflow: hidden;
-                height: var(--inbox-mobile-vh, 100svh);
+                height: calc(var(--inbox-mobile-vh, 100svh) - var(--inbox-mobile-keyboard-inset, 0px));
                 overscroll-behavior: none;
             }
             body.inbox-mobile-chat-lock {
                 overflow: hidden;
-                height: var(--inbox-mobile-vh, 100svh);
+                height: calc(var(--inbox-mobile-vh, 100svh) - var(--inbox-mobile-keyboard-inset, 0px));
                 overscroll-behavior: none;
             }
             body.inbox-mobile-chat-lock .inbox-react .main-content,
@@ -1525,8 +1526,8 @@ export default function Inbox() {
             .inbox-react { --inbox-main-pad-y: 8px; }
             .inbox-main-content {
                 padding: calc(env(safe-area-inset-top, 0px) + 8px) 10px 10px !important;
-                min-height: var(--inbox-mobile-vh, 100svh);
-                height: var(--inbox-mobile-vh, 100svh);
+                min-height: calc(var(--inbox-mobile-vh, 100svh) - var(--inbox-mobile-keyboard-inset, 0px));
+                height: calc(var(--inbox-mobile-vh, 100svh) - var(--inbox-mobile-keyboard-inset, 0px));
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
@@ -1568,8 +1569,20 @@ export default function Inbox() {
             .inbox-container {
                 grid-template-columns: 1fr !important;
                 border-radius: 12px;
-                height: calc(var(--inbox-mobile-vh, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px) !important;
-                max-height: calc(var(--inbox-mobile-vh, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px) !important;
+                height: calc(
+                    var(--inbox-mobile-vh, 100svh)
+                    - var(--inbox-mobile-keyboard-inset, 0px)
+                    - env(safe-area-inset-top, 0px)
+                    - env(safe-area-inset-bottom, 0px)
+                    - 16px
+                ) !important;
+                max-height: calc(
+                    var(--inbox-mobile-vh, 100svh)
+                    - var(--inbox-mobile-keyboard-inset, 0px)
+                    - env(safe-area-inset-top, 0px)
+                    - env(safe-area-inset-bottom, 0px)
+                    - 16px
+                ) !important;
                 flex: 1 1 auto;
                 min-height: 0;
             }
@@ -1622,6 +1635,10 @@ export default function Inbox() {
                 gap: 6px;
                 align-items: center;
                 flex-shrink: 0;
+                position: sticky;
+                bottom: 0;
+                z-index: 15;
+                background: linear-gradient(180deg, rgba(20, 34, 55, 0.96), rgba(17, 29, 47, 0.98));
             }
             .chat-input textarea {
                 min-height: 44px;
@@ -1634,7 +1651,7 @@ export default function Inbox() {
             }
             .chat-scroll-bottom-btn {
                 right: 12px;
-                bottom: 76px;
+                bottom: calc(76px + var(--inbox-mobile-keyboard-inset, 0px));
                 width: 36px;
                 height: 36px;
             }
