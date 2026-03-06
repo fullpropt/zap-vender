@@ -1871,6 +1871,8 @@ function getLeadMergeScore(lead) {
 
 function shouldAutoUpdateLeadName(lead, phone, sessionDisplayName = '') {
     if (isLeadNameManuallyLocked(lead)) return false;
+    const source = normalizeLeadSource(lead?.source);
+    if (source && source !== 'whatsapp') return false;
 
     const currentRaw = normalizeText(String(lead?.name || '').trim());
     if (!currentRaw) return true;
@@ -2847,10 +2849,23 @@ async function cleanupDuplicatePhoneSuffixLeads() {
 
 async function cleanupBrokenLeadNames() {
     try {
-        const leads = await query("SELECT id, name, phone FROM leads WHERE name IS NOT NULL");
+        const leads = await query("SELECT id, name, phone, source, custom_fields FROM leads WHERE name IS NOT NULL");
         if (!leads || leads.length === 0) return;
 
         for (const lead of leads) {
+            const source = normalizeLeadSource(lead?.source);
+            if (isLeadNameManuallyLocked(lead)) {
+                const manualSnapshot = resolveManualNameSnapshotFromLead(lead);
+                if (manualSnapshot && manualSnapshot !== String(lead.name || '').trim()) {
+                    await run(
+                        "UPDATE leads SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        [manualSnapshot, lead.id]
+                    );
+                }
+                continue;
+            }
+            if (source && source !== 'whatsapp') continue;
+
             const fixed = normalizeText(lead.name || '');
             const nameDigits = String(lead.name || '').replace(/\D/g, '');
             const phoneDigits = String(lead.phone || '').replace(/\D/g, '');

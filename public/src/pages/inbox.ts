@@ -139,7 +139,7 @@ const INBOX_OPEN_LEAD_QUERY_KEYS = ['leadId', 'lead_id', 'id'] as const;
 const INBOX_SEARCH_CONTACTS_CACHE_TTL_MS = 30 * 1000;
 const INBOX_SEARCH_CONTACTS_BATCH_SIZE = 200;
 const INBOX_SEARCH_CONTACTS_MAX_PAGES = 20;
-const INBOX_NEW_CONVERSATION_PREVIEW = 'Digite para iniciar uma nova conversa';
+const INBOX_NEW_CONVERSATION_PREVIEW = 'Clique para iniciar uma nova conversa';
 
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', is_default: true, source: 'name' },
