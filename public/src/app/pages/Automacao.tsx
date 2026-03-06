@@ -55,11 +55,49 @@ export default function Automacao() {
         }
         .automation-card:hover { box-shadow: var(--shadow-lg); }
         .automation-header {
-            padding: 20px;
+            padding: 16px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 10px;
             border-bottom: 1px solid var(--border-color);
+        }
+        .automation-header-toggle {
+            flex: 1 1 auto;
+            min-width: 0;
+            border: none;
+            background: transparent;
+            color: inherit;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 0;
+        }
+        .automation-header-main {
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+        .automation-expand-icon {
+            display: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 999px;
+            font-size: 10px;
+            line-height: 1;
+            color: var(--gray-500);
+            align-items: center;
+            justify-content: center;
+            background: rgba(148, 163, 184, 0.12);
+            transition: transform 0.2s ease;
+            flex-shrink: 0;
+        }
+        .automation-card.is-expanded .automation-expand-icon {
+            transform: rotate(180deg);
+        }
+        .automation-details {
+            display: block;
         }
         .automation-title {
             font-size: 16px;
@@ -109,6 +147,23 @@ export default function Automacao() {
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 25px;
         }
+        .automation-header .toggle-switch {
+            flex-shrink: 0;
+        }
+        @media (max-width: 768px) {
+            .automation-header-toggle {
+                cursor: pointer;
+            }
+            .automation-expand-icon {
+                display: inline-flex;
+            }
+            .automation-details {
+                display: none;
+            }
+            .automation-card.is-expanded .automation-details {
+                display: block;
+            }
+        }
         @media (max-width: 640px) {
             .automacao-react .stats-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -140,9 +195,11 @@ export default function Automacao() {
             }
             .automacao-react .stats-grid .stat-value { font-size: 20px; }
             .automacao-react .stats-grid .stat-label { font-size: 11px; line-height: 1.2; }
-            .automation-header,
             .automation-body {
                 padding: 16px;
+            }
+            .automation-header {
+                padding: 14px 16px;
             }
             .automation-footer {
                 padding: 12px 16px;

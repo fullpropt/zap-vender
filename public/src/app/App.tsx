@@ -98,6 +98,51 @@ export default function App() {
   };
 
   useEffect(() => {
+    const root = document.documentElement;
+    let frameId: number | null = null;
+
+    const applyViewportSize = () => {
+      const viewport = window.visualViewport;
+      const rawHeight = viewport && Number.isFinite(viewport.height) && viewport.height > 0
+        ? viewport.height
+        : window.innerHeight;
+      const rawWidth = viewport && Number.isFinite(viewport.width) && viewport.width > 0
+        ? viewport.width
+        : window.innerWidth;
+      const nextHeight = Math.max(1, Math.round(rawHeight));
+      const nextWidth = Math.max(1, Math.round(rawWidth));
+      root.style.setProperty('--app-mobile-vh', `${nextHeight}px`);
+      root.style.setProperty('--app-mobile-vw', `${nextWidth}px`);
+    };
+
+    const scheduleApplyViewportSize = () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
+      frameId = requestAnimationFrame(() => {
+        frameId = null;
+        applyViewportSize();
+      });
+    };
+
+    scheduleApplyViewportSize();
+    window.addEventListener('resize', scheduleApplyViewportSize);
+    window.addEventListener('orientationchange', scheduleApplyViewportSize);
+    window.visualViewport?.addEventListener('resize', scheduleApplyViewportSize);
+    window.visualViewport?.addEventListener('scroll', scheduleApplyViewportSize);
+
+    return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener('resize', scheduleApplyViewportSize);
+      window.removeEventListener('orientationchange', scheduleApplyViewportSize);
+      window.visualViewport?.removeEventListener('resize', scheduleApplyViewportSize);
+      window.visualViewport?.removeEventListener('scroll', scheduleApplyViewportSize);
+    };
+  }, []);
+
+  useEffect(() => {
     (window as Window & { refreshWhatsAppStatus?: () => void }).refreshWhatsAppStatus?.();
     closeSidebar();
     syncSidebarAccessibility();

@@ -43,6 +43,7 @@ let pendingAutomationSessionScope: string[] | null = null;
 let automationTags: TagItem[] = [];
 let pendingAutomationTagFilters: string[] | null = null;
 let automationTagFilterGlobalEventsBound = false;
+let expandedAutomationId: number | null = null;
 const RUNTIME_SUPPORTED_TRIGGER_TYPES: TriggerType[] = [
     'new_lead',
     'status_change',
@@ -722,6 +723,7 @@ function updateStats() {
 function renderAutomations() {
     const container = document.getElementById('automationsList') as HTMLElement | null;
     if (!container) return;
+    const collapseDetails = window.matchMedia('(max-width: 768px)').matches;
     
     if (automations.length === 0) {
         container.innerHTML = `
@@ -734,52 +736,80 @@ function renderAutomations() {
         return;
     }
 
-    container.innerHTML = automations.map(a => `
-        <div class="automation-card">
+    if (expandedAutomationId !== null && !automations.some((automation) => Number(automation.id) === Number(expandedAutomationId))) {
+        expandedAutomationId = null;
+    }
+
+    container.innerHTML = automations.map((a) => {
+        const isExpanded = !collapseDetails || expandedAutomationId === a.id;
+        return `
+        <div class="automation-card${isExpanded ? ' is-expanded' : ''}">
             <div class="automation-header">
-                <h3 class="automation-title">${a.name}</h3>
-                <label class="toggle-switch">
+                <button
+                    type="button"
+                    class="automation-header-toggle"
+                    onclick="toggleAutomationCardDetails(${a.id}, event)"
+                    aria-expanded="${isExpanded ? 'true' : 'false'}"
+                    aria-controls="automation-details-${a.id}"
+                >
+                    <span class="automation-header-main">
+                        <h3 class="automation-title">${a.name}</h3>
+                    </span>
+                    <span class="automation-expand-icon" aria-hidden="true">&#9662;</span>
+                </button>
+                <label class="toggle-switch" onclick="event.stopPropagation()">
                     <input type="checkbox" ${a.is_active ? 'checked' : ''} onchange="toggleAutomation(${a.id}, this.checked)">
                     <span class="toggle-slider"></span>
                 </label>
             </div>
-            <div class="automation-body">
-                <p style="color: var(--gray-600); margin-bottom: 10px; font-size: 13px;">${a.description || 'Sem descrição'}</p>
-                <p style="color: var(--gray-500); margin-bottom: 6px; font-size: 12px;"><strong>Contas:</strong> ${getAutomationSessionScopeSummary(a)}</p>
-                <p style="color: var(--gray-500); margin-bottom: 15px; font-size: 12px;"><strong>Tags:</strong> ${getAutomationTagFilterSummary(a)}</p>
-                
-                <div class="automation-trigger">
-                    <div class="automation-trigger-icon trigger"><span class="icon icon-bolt icon-sm"></span></div>
-                    <div>
-                        <div style="font-weight: 600; font-size: 13px;">Gatilho</div>
-                        <div style="font-size: 12px; color: var(--gray-500);">${getTriggerLabel(a.trigger_type)}</div>
+            <div class="automation-details" id="automation-details-${a.id}">
+                <div class="automation-body">
+                    <p style="color: var(--gray-600); margin-bottom: 10px; font-size: 13px;">${a.description || 'Sem descrição'}</p>
+                    <p style="color: var(--gray-500); margin-bottom: 6px; font-size: 12px;"><strong>Contas:</strong> ${getAutomationSessionScopeSummary(a)}</p>
+                    <p style="color: var(--gray-500); margin-bottom: 15px; font-size: 12px;"><strong>Tags:</strong> ${getAutomationTagFilterSummary(a)}</p>
+                    
+                    <div class="automation-trigger">
+                        <div class="automation-trigger-icon trigger"><span class="icon icon-bolt icon-sm"></span></div>
+                        <div>
+                            <div style="font-weight: 600; font-size: 13px;">Gatilho</div>
+                            <div style="font-size: 12px; color: var(--gray-500);">${getTriggerLabel(a.trigger_type)}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="automation-arrow">↓</div>
+                    
+                    <div class="automation-trigger">
+                        <div class="automation-trigger-icon action"><span class="icon icon-target icon-sm"></span></div>
+                        <div>
+                            <div style="font-weight: 600; font-size: 13px;">Ação</div>
+                            <div style="font-size: 12px; color: var(--gray-500);">${getActionLabel(a.action_type)}</div>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="automation-arrow">↓</div>
-                
-                <div class="automation-trigger">
-                    <div class="automation-trigger-icon action"><span class="icon icon-target icon-sm"></span></div>
-                    <div>
-                        <div style="font-weight: 600; font-size: 13px;">Ação</div>
-                        <div style="font-size: 12px; color: var(--gray-500);">${getActionLabel(a.action_type)}</div>
+                <div class="automation-footer">
+                    <div style="font-size: 12px; color: var(--gray-500);">
+                        <strong>${formatNumber(a.executions || 0)}</strong> execuções
+                        ${a.last_execution ? `• Última: ${timeAgo(a.last_execution)}` : ''}
                     </div>
-                </div>
-            </div>
-            <div class="automation-footer">
-                <div style="font-size: 12px; color: var(--gray-500);">
-                    <strong>${formatNumber(a.executions || 0)}</strong> execuções
-                    ${a.last_execution ? `• Última: ${timeAgo(a.last_execution)}` : ''}
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-sm btn-outline" onclick="editAutomation(${a.id})"><span class="icon icon-edit icon-sm"></span></button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="deleteAutomation(${a.id})"><span class="icon icon-delete icon-sm"></span></button>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-sm btn-outline" onclick="editAutomation(${a.id})"><span class="icon icon-edit icon-sm"></span></button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteAutomation(${a.id})"><span class="icon icon-delete icon-sm"></span></button>
+                    </div>
                 </div>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
+function toggleAutomationCardDetails(id: number, event?: Event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    if (!window.matchMedia('(max-width: 768px)').matches) return;
+    expandedAutomationId = expandedAutomationId === id ? null : id;
+    renderAutomations();
+}
 function getTriggerLabel(type: TriggerType | string) {
     const labels = {
         'new_lead': 'Novo lead cadastrado',
@@ -1098,6 +1128,7 @@ const windowAny = window as Window & {
     updateActionOptions?: () => void;
     toggleAutomationAllSessions?: () => void;
     toggleAutomation?: (id: number, active: boolean) => Promise<void>;
+    toggleAutomationCardDetails?: (id: number, event?: Event) => void;
     saveAutomation?: () => Promise<void>;
     editAutomation?: (id: number) => void;
     deleteAutomation?: (id: number) => Promise<void>;
@@ -1109,6 +1140,7 @@ windowAny.updateTriggerOptions = updateTriggerOptions;
 windowAny.updateActionOptions = updateActionOptions;
 windowAny.toggleAutomationAllSessions = toggleAutomationAllSessions;
 windowAny.toggleAutomation = toggleAutomation;
+windowAny.toggleAutomationCardDetails = toggleAutomationCardDetails;
 windowAny.saveAutomation = saveAutomation;
 windowAny.editAutomation = editAutomation;
 windowAny.deleteAutomation = deleteAutomation;

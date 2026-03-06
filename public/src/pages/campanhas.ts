@@ -122,6 +122,7 @@ let campaignRecipientsRequestToken = 0;
 let campaignMessageVariationsDrafts: string[] = [];
 let campaignMessageVariationEditingIndex: number | null = null;
 let campaignMessageVariationsUiBound = false;
+let expandedCampaignId: number | null = null;
 
 function appConfirm(message: string, title = 'Confirmacao') {
     const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
@@ -1774,9 +1775,20 @@ function updateStats() {
     if (avgResponseEl) avgResponseEl.textContent = formatPercent(avgResponse);
 }
 
+function shouldCollapseCampaignCards() {
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function toggleCampaignCardDetails(id: number) {
+    if (!shouldCollapseCampaignCards()) return;
+    expandedCampaignId = expandedCampaignId === id ? null : id;
+    renderCampaigns();
+}
+
 function renderCampaigns() {
     const container = document.getElementById('campaignsList') as HTMLElement | null;
     if (!container) return;
+    const collapseDetails = shouldCollapseCampaignCards();
     
     if (campaigns.length === 0) {
         container.innerHTML = `
@@ -1789,59 +1801,77 @@ function renderCampaigns() {
         return;
     }
 
+    if (expandedCampaignId !== null && !campaigns.some((campaign) => campaign.id === expandedCampaignId)) {
+        expandedCampaignId = null;
+    }
+
     container.innerHTML = campaigns.map(c => {
         const deliveryRate = c.sent > 0 ? (c.delivered / c.sent * 100) : 0;
         const readRate = c.delivered > 0 ? (c.read / c.delivered * 100) : 0;
         const replyRate = c.read > 0 ? (c.replied / c.read * 100) : 0;
+        const isExpanded = !collapseDetails || expandedCampaignId === c.id;
 
         return `
-            <div class="campaign-card">
+            <div class="campaign-card${isExpanded ? ' is-expanded' : ''}">
                 <div class="campaign-header">
-                    <div>
-                        <h3 class="campaign-title">${c.name}</h3>
-                        <div class="campaign-date">Criada em ${formatDate(c.created_at, 'short')}</div>
-                    </div>
-                    <span class="badge badge-${c.status === 'active' ? 'success' : c.status === 'paused' ? 'warning' : c.status === 'completed' ? 'info' : 'secondary'}">
-                        ${getCampaignStatusLabel(c.status)}
-                    </span>
+                    <button
+                        type="button"
+                        class="campaign-header-toggle"
+                        onclick="toggleCampaignCardDetails(${c.id})"
+                        aria-expanded="${isExpanded ? 'true' : 'false'}"
+                        aria-controls="campaign-details-${c.id}"
+                    >
+                        <div class="campaign-header-main">
+                            <h3 class="campaign-title">${c.name}</h3>
+                            <div class="campaign-date">Criada em ${formatDate(c.created_at, 'short')}</div>
+                        </div>
+                        <div class="campaign-header-meta">
+                            <span class="badge badge-${c.status === 'active' ? 'success' : c.status === 'paused' ? 'warning' : c.status === 'completed' ? 'info' : 'secondary'}">
+                                ${getCampaignStatusLabel(c.status)}
+                            </span>
+                            <span class="campaign-expand-icon" aria-hidden="true">&#9662;</span>
+                        </div>
+                    </button>
                 </div>
-                <div class="campaign-body">
-                    <p style="color: var(--gray-600); margin-bottom: 15px;">${c.description || 'Sem descrição'}</p>
-                    <div class="campaign-stats">
-                        <div class="campaign-stat">
-                            <div class="campaign-stat-value">${formatNumber(c.sent || 0)}</div>
-                            <div class="campaign-stat-label">Enviadas</div>
+                <div class="campaign-details" id="campaign-details-${c.id}">
+                    <div class="campaign-body">
+                        <p style="color: var(--gray-600); margin-bottom: 15px;">${c.description || 'Sem descrição'}</p>
+                        <div class="campaign-stats">
+                            <div class="campaign-stat">
+                                <div class="campaign-stat-value">${formatNumber(c.sent || 0)}</div>
+                                <div class="campaign-stat-label">Enviadas</div>
+                            </div>
+                            <div class="campaign-stat">
+                                <div class="campaign-stat-value">${formatPercent(deliveryRate)}</div>
+                                <div class="campaign-stat-label">Entregues</div>
+                            </div>
+                            <div class="campaign-stat">
+                                <div class="campaign-stat-value">${formatPercent(readRate)}</div>
+                                <div class="campaign-stat-label">Lidas</div>
+                            </div>
+                            <div class="campaign-stat">
+                                <div class="campaign-stat-value">${formatPercent(replyRate)}</div>
+                                <div class="campaign-stat-label">Respostas</div>
+                            </div>
                         </div>
-                        <div class="campaign-stat">
-                            <div class="campaign-stat-value">${formatPercent(deliveryRate)}</div>
-                            <div class="campaign-stat-label">Entregues</div>
-                        </div>
-                        <div class="campaign-stat">
-                            <div class="campaign-stat-value">${formatPercent(readRate)}</div>
-                            <div class="campaign-stat-label">Lidas</div>
-                        </div>
-                        <div class="campaign-stat">
-                            <div class="campaign-stat-value">${formatPercent(replyRate)}</div>
-                            <div class="campaign-stat-label">Respostas</div>
+                        <div class="campaign-progress">
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar" style="width: ${deliveryRate}%; background: var(--success);"></div>
+                            </div>
                         </div>
                     </div>
-                    <div class="campaign-progress">
-                        <div class="progress" style="height: 8px;">
-                            <div class="progress-bar" style="width: ${deliveryRate}%; background: var(--success);"></div>
+                    <div class="campaign-footer">
+                        <span class="badge badge-secondary">${getCampaignTypeLabel(c.type)}</span>
+                        <div class="campaign-actions">
+                            <button class="btn btn-sm btn-outline" onclick="viewCampaign(${c.id})"><span class="icon icon-eye icon-sm"></span> Ver</button>
+                            <button class="btn btn-sm btn-outline" onclick="editCampaign(${c.id})"><span class="icon icon-edit icon-sm"></span> Editar</button>
+                            ${c.status === 'active' ? 
+                                `<button class="btn btn-sm btn-warning" onclick="pauseCampaign(${c.id})"><span class="icon icon-pause icon-sm"></span> Pausar</button>` :
+                                c.status === 'paused' || c.status === 'draft' || c.status === 'completed' ?
+                                `<button class="btn btn-sm btn-success" onclick="startCampaign(${c.id})"><span class="icon icon-play icon-sm"></span> Iniciar</button>` : ''
+                            }
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteCampaign(${c.id})"><span class="icon icon-delete icon-sm"></span></button>
                         </div>
-                    </div>
-                </div>
-                <div class="campaign-footer">
-                    <span class="badge badge-secondary">${getCampaignTypeLabel(c.type)}</span>
-                    <div class="campaign-actions">
-                        <button class="btn btn-sm btn-outline" onclick="viewCampaign(${c.id})"><span class="icon icon-eye icon-sm"></span> Ver</button>
-                        <button class="btn btn-sm btn-outline" onclick="editCampaign(${c.id})"><span class="icon icon-edit icon-sm"></span> Editar</button>
-                        ${c.status === 'active' ? 
-                            `<button class="btn btn-sm btn-warning" onclick="pauseCampaign(${c.id})"><span class="icon icon-pause icon-sm"></span> Pausar</button>` :
-                            c.status === 'paused' || c.status === 'draft' || c.status === 'completed' ?
-                            `<button class="btn btn-sm btn-success" onclick="startCampaign(${c.id})"><span class="icon icon-play icon-sm"></span> Iniciar</button>` : ''
-                        }
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteCampaign(${c.id})"><span class="icon icon-delete icon-sm"></span></button>
                     </div>
                 </div>
             </div>
@@ -2122,6 +2152,7 @@ const windowAny = window as Window & {
     pauseCampaign?: (id: number) => Promise<void>;
     deleteCampaign?: (id: number) => Promise<void>;
     switchCampaignTab?: (tab: string) => void;
+    toggleCampaignCardDetails?: (id: number) => void;
 };
 windowAny.initCampanhas = initCampanhas;
 windowAny.loadCampaigns = loadCampaigns;
@@ -2134,5 +2165,6 @@ windowAny.startCampaign = startCampaign;
 windowAny.pauseCampaign = pauseCampaign;
 windowAny.deleteCampaign = deleteCampaign;
 windowAny.switchCampaignTab = switchCampaignTab;
+windowAny.toggleCampaignCardDetails = toggleCampaignCardDetails;
 
 export { initCampanhas };

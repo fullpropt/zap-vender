@@ -56,11 +56,48 @@ export default function Campanhas() {
             box-shadow: var(--shadow-lg);
         }
         .campaign-header {
-            padding: 20px;
             border-bottom: 1px solid var(--border-color);
+        }
+        .campaign-header-toggle {
+            width: 100%;
+            padding: 20px;
+            border: none;
+            background: transparent;
+            color: inherit;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
+            gap: 12px;
+            text-align: left;
+        }
+        .campaign-header-main {
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+        .campaign-header-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+        .campaign-expand-icon {
+            display: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 999px;
+            font-size: 10px;
+            line-height: 1;
+            color: var(--gray-500);
+            align-items: center;
+            justify-content: center;
+            background: rgba(148, 163, 184, 0.12);
+            transition: transform 0.2s ease;
+        }
+        .campaign-card.is-expanded .campaign-expand-icon {
+            transform: rotate(180deg);
+        }
+        .campaign-details {
+            display: block;
         }
         .campaign-title {
             font-size: 18px;
@@ -134,6 +171,20 @@ export default function Campanhas() {
                 justify-content: center;
             }
         }
+        @media (max-width: 768px) {
+            .campaign-header-toggle {
+                cursor: pointer;
+            }
+            .campaign-expand-icon {
+                display: inline-flex;
+            }
+            .campaign-details {
+                display: none;
+            }
+            .campaign-card.is-expanded .campaign-details {
+                display: block;
+            }
+        }
         @media (max-width: 640px) {
             .campanhas-react .stats-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -171,9 +222,9 @@ export default function Campanhas() {
                 padding: 2px 6px;
             }
             .campaign-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
+                border-bottom: 1px solid var(--border-color);
+            }
+            .campaign-header-toggle {
                 padding: 16px;
             }
             .campaign-body {

@@ -40,10 +40,39 @@ function DashboardStyles() {
         .chart-type-toggle { display: flex; gap: 4px; }
         .chart-type-toggle .chart-btn { padding: 8px 12px; border: 1px solid var(--border-color); background: var(--surface-muted); border-radius: 8px; cursor: pointer; color: var(--gray-700); }
         .chart-type-toggle .chart-btn.active { background: rgba(var(--primary-rgb), 0.16); border-color: var(--primary); color: #eafff4; }
-        .stats-general-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--gray-100); }
-        .stats-general-item:last-child { border-bottom: none; }
-        .stats-general-label { font-size: 13px; color: var(--gray-600); }
-        .stats-general-value { font-weight: 700; font-size: 18px; }
+        .stats-general-card {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 10px;
+          align-items: stretch;
+        }
+        .stats-general-card h3 {
+          grid-column: 1 / -1;
+          text-align: center;
+          margin-bottom: 2px;
+        }
+        .stats-general-item {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          text-align: center;
+          gap: 6px;
+          min-width: 0;
+          padding: 10px 8px;
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          background: rgba(15, 23, 42, 0.24);
+        }
+        .stats-general-label {
+            font-size: 12px;
+            color: var(--gray-600);
+            line-height: 1.25;
+            word-break: normal;
+            overflow-wrap: normal;
+            text-wrap: balance;
+        }
+        .stats-general-value { font-weight: 700; font-size: 20px; }
         .events-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
         .events-header h3 { margin: 0; }
         .events-controls { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
@@ -171,9 +200,11 @@ function DashboardStyles() {
             min-height: 40px;
           }
           .stats-period-chart canvas { max-height: 150px !important; }
-          .stats-general-item { gap: 12px; }
+          .stats-general-card { gap: 8px; }
+          .stats-general-card h3 { margin-bottom: 4px; }
+          .stats-general-item { gap: 4px; padding: 8px 6px; border-radius: 10px; }
           .stats-general-label { font-size: 12px; }
-          .stats-general-value { font-size: 16px; }
+          .stats-general-value { font-size: 18px; }
           .events-header { gap: 8px; margin-bottom: 12px; }
           .events-controls { width: 100%; margin-left: 0; }
           .events-controls .form-select, .events-controls .btn { width: 100%; }
@@ -230,15 +261,15 @@ function StatsPeriod() {
       <div className="stats-general-card">
         <h3>Estatísticas gerais</h3>
         <div className="stats-general-item">
-          <span className="stats-general-label">Contatos que interagiram</span>
+          <span className="stats-general-label">Contatos com interação</span>
           <span className="stats-general-value" id="statsContacts">0</span>
         </div>
         <div className="stats-general-item">
-          <span className="stats-general-label">Mensagem enviada pelo contato</span>
+          <span className="stats-general-label">Mensagens do contato</span>
           <span className="stats-general-value" id="statsMessages">0</span>
         </div>
         <div className="stats-general-item">
-          <span className="stats-general-label">Interações/Inscrito</span>
+          <span className="stats-general-label">Interações por inscrito</span>
           <span className="stats-general-value" id="statsInteractionsPer">0</span>
         </div>
       </div>

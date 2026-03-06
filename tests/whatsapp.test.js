@@ -88,7 +88,7 @@ describe('WhatsApp Integration Tests', () => {
                 },
                 {
                     error: { message: 'Failed to decrypt' },
-                    expected: { type: 'decrypt_failed', action: 'regenerate_keys' }
+                    expected: { type: 'decrypt_failed', action: 'retry' }
                 }
             ];
 
