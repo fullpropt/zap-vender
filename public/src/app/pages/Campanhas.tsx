@@ -113,15 +113,17 @@ export default function Campanhas() {
         }
         .campaign-stats {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 15px;
             margin-bottom: 20px;
+            width: 100%;
         }
         .campaign-stat {
             text-align: center;
             padding: 10px;
             background: var(--gray-50);
             border-radius: var(--border-radius);
+            min-width: 0;
         }
         .campaign-stat-value {
             font-size: 20px;
@@ -158,6 +160,10 @@ export default function Campanhas() {
             flex: 0 0 auto;
         }
         @media (max-width: 900px) {
+            .campaign-stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
             .campaign-footer {
                 flex-direction: column;
                 align-items: center;
@@ -248,6 +254,7 @@ export default function Campanhas() {
         @media (max-width: 420px) {
             .campaign-stats {
                 grid-template-columns: 1fr;
+                gap: 8px;
             }
         }
         .campaigns-grid {
