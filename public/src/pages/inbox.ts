@@ -122,6 +122,8 @@ let inboxHistoryResyncInFlight = false;
 let mediaUploadInProgress = false;
 let inboxLifecycleBound = false;
 let inboxViewportSyncRaf: number | null = null;
+let inboxMobileLayoutViewportHeight = 0;
+let inboxComposerFocusActive = false;
 const stickerMediaRehydrateAttempts = new Set<string>();
 let activeChatScrollContainer: HTMLElement | null = null;
 let chatMediaPreviewBindingsBound = false;
@@ -978,6 +980,7 @@ function initInbox() {
     initSocket();
     renderContactInfoPanel();
     setMobileConversationMode(false);
+    setInboxComposerFocusState(false);
     startInboxAutoRefresh();
 }
 
@@ -991,14 +994,43 @@ function isTabletOrMobileView() {
     return window.matchMedia('(max-width: 1024px)').matches;
 }
 
+function isMessageComposerFocused() {
+    if (inboxComposerFocusActive) return true;
+    const activeElement = document.activeElement as HTMLElement | null;
+    if (!activeElement) return false;
+    if (activeElement.id === 'messageInput') return true;
+    return Boolean(activeElement.closest?.('.chat-input'));
+}
+
+function setInboxComposerFocusState(focused: boolean) {
+    inboxComposerFocusActive = Boolean(focused);
+    document.body.classList.toggle('inbox-mobile-composing', inboxComposerFocusActive);
+    document.documentElement.classList.toggle('inbox-mobile-composing', inboxComposerFocusActive);
+}
+
 function syncInboxMobileViewportHeight() {
     const root = document.documentElement;
+    const currentInnerHeight = Math.max(320, Math.round(window.innerHeight || 0));
+    if (!inboxMobileLayoutViewportHeight || currentInnerHeight > (inboxMobileLayoutViewportHeight - 24)) {
+        inboxMobileLayoutViewportHeight = currentInnerHeight;
+    }
+
     const visualViewport = window.visualViewport;
-    const rawHeight = visualViewport && Number.isFinite(visualViewport.height) && visualViewport.height > 0
-        ? visualViewport.height
-        : window.innerHeight;
-    const viewportHeight = Math.max(320, Math.round(rawHeight));
-    root.style.setProperty('--inbox-mobile-vh', `${viewportHeight}px`);
+    const hasVisualViewport = Boolean(visualViewport && Number.isFinite(visualViewport.height) && visualViewport.height > 0);
+    const visualHeight = hasVisualViewport
+        ? Math.max(320, Math.round(Number(visualViewport?.height || 0)))
+        : currentInnerHeight;
+    const visualOffsetTop = hasVisualViewport && Number.isFinite(visualViewport?.offsetTop)
+        ? Math.max(0, Math.round(Number(visualViewport?.offsetTop || 0)))
+        : 0;
+    const keyboardInsetFromVisual = hasVisualViewport
+        ? Math.max(0, inboxMobileLayoutViewportHeight - (visualHeight + visualOffsetTop))
+        : 0;
+    const keyboardInsetFromInner = Math.max(0, inboxMobileLayoutViewportHeight - currentInnerHeight);
+    const keyboardInset = Math.max(keyboardInsetFromVisual, keyboardInsetFromInner);
+
+    root.style.setProperty('--inbox-mobile-vh', `${inboxMobileLayoutViewportHeight || currentInnerHeight}px`);
+    root.style.setProperty('--inbox-mobile-keyboard-inset', `${keyboardInset}px`);
 }
 
 function syncInboxRouteScrollLock() {
@@ -1008,11 +1040,13 @@ function syncInboxRouteScrollLock() {
     document.documentElement.classList.toggle('inbox-route-lock', isInboxRoute);
 
     if (isInboxRoute) {
-        if ((window.scrollY || 0) > 0) {
-            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        if (!isMessageComposerFocused()) {
+            if ((window.scrollY || 0) > 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            }
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
         }
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
     }
 }
 
@@ -1020,6 +1054,7 @@ function syncInboxMobileViewportState() {
     syncInboxMobileViewportHeight();
     syncInboxRouteScrollLock();
     syncInboxBodyScrollLock();
+    syncContactInfoPanelLayout();
 }
 
 function scheduleInboxMobileViewportStateSync() {
@@ -1037,11 +1072,13 @@ function syncInboxBodyScrollLock() {
     document.documentElement.classList.toggle('inbox-mobile-chat-lock', chatOpenOnMobile);
 
     if (chatOpenOnMobile) {
-        if ((window.scrollY || 0) > 0) {
-            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        if (!isMessageComposerFocused()) {
+            if ((window.scrollY || 0) > 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            }
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
         }
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
     }
 }
 
@@ -1113,15 +1150,21 @@ function setConversationUnreadLocal(conversationId: number, unread: number) {
     updateUnreadBadge();
 }
 
-function setContactInfoPanelState(forceOpen?: boolean) {
+function syncContactInfoPanelLayout() {
     const panel = document.getElementById('inboxRightPanel') as HTMLElement | null;
     const backdrop = document.getElementById('contactInfoBackdrop') as HTMLElement | null;
-    if (!panel || !backdrop) return;
+    const inboxContainer = document.querySelector('.inbox-container') as HTMLElement | null;
+    const overlayMode = isTabletOrMobileView();
 
+    panel?.classList.toggle('active', overlayMode && isContactInfoOpen);
+    backdrop?.classList.toggle('active', overlayMode && isContactInfoOpen);
+    inboxContainer?.classList.toggle('contact-info-collapsed', !overlayMode && !isContactInfoOpen);
+}
+
+function setContactInfoPanelState(forceOpen?: boolean) {
     const nextState = typeof forceOpen === 'boolean' ? forceOpen : !isContactInfoOpen;
     isContactInfoOpen = nextState;
-    panel.classList.toggle('active', isContactInfoOpen);
-    backdrop.classList.toggle('active', isContactInfoOpen);
+    syncContactInfoPanelLayout();
 }
 
 function closeContactInfoPanel() {
@@ -1262,7 +1305,6 @@ function renderContactInfoPanel() {
             </div>
 
             <div class="contact-card-actions">
-                <button class="btn btn-outline btn-sm" onclick="openWhatsApp()">Abrir no WhatsApp</button>
                 <button class="btn btn-primary btn-sm" onclick="viewContact()">Abrir contato</button>
             </div>
         </div>
@@ -1519,6 +1561,9 @@ function startInboxAutoRefresh() {
             stopInboxAutoRefresh();
             return;
         }
+        if (isMessageComposerFocused()) {
+            return;
+        }
         void loadConversations();
     }, 10000);
 }
@@ -1532,6 +1577,7 @@ function bindInboxLifecycle() {
 
     window.addEventListener('app:logout', () => {
         stopInboxAutoRefresh();
+        setInboxComposerFocusState(false);
         document.body.classList.remove('inbox-route-lock');
         document.documentElement.classList.remove('inbox-route-lock');
         document.body.classList.remove('inbox-mobile-chat-lock');
@@ -1541,6 +1587,7 @@ function bindInboxLifecycle() {
     window.addEventListener('hashchange', () => {
         const hash = String(window.location.hash || '').toLowerCase();
         if (!hash.startsWith('#/inbox')) {
+            setInboxComposerFocusState(false);
             document.body.classList.remove('inbox-route-lock');
             document.documentElement.classList.remove('inbox-route-lock');
             document.body.classList.remove('inbox-mobile-chat-lock');
@@ -2088,9 +2135,58 @@ async function sendQuickReplyAudio(quickReply: TemplateItem) {
 
 function getMediaUrl(url?: string | null) {
     if (!url) return '';
-    if (url.startsWith('http')) return url;
-    const base = (window as any).APP?.socketUrl || '';
-    return `${base}${url}`;
+
+    const raw = String(url || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('data:') || raw.startsWith('blob:')) return raw;
+
+    const appBaseRaw = String((window as any).APP?.socketUrl || window.location.origin || '').trim();
+    const appOrigin = (() => {
+        try {
+            return new URL(appBaseRaw || window.location.origin).origin;
+        } catch (_) {
+            return window.location.origin;
+        }
+    })();
+
+    const normalizeUploadsPath = (value: string) => {
+        const normalized = String(value || '').trim().replace(/\\/g, '/');
+        if (!normalized) return '';
+
+        if (normalized.startsWith('/uploads/')) return normalized;
+        if (normalized.startsWith('uploads/')) return `/${normalized}`;
+
+        const markerIndex = normalized.toLowerCase().indexOf('/uploads/');
+        if (markerIndex >= 0) {
+            return normalized.slice(markerIndex);
+        }
+
+        return normalized;
+    };
+
+    if (/^https?:\/\//i.test(raw)) {
+        try {
+            const parsed = new URL(raw);
+            const host = String(parsed.hostname || '').toLowerCase();
+            const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+
+            if (isLocalHost) {
+                const normalizedLocalPath = normalizeUploadsPath(`${parsed.pathname || ''}${parsed.search || ''}${parsed.hash || ''}`);
+                if (normalizedLocalPath.startsWith('/')) {
+                    return `${appOrigin}${normalizedLocalPath}`;
+                }
+            }
+        } catch (_) {
+            // keep raw url fallback
+        }
+        return raw;
+    }
+
+    const normalizedPath = normalizeUploadsPath(raw);
+    if (normalizedPath.startsWith('/')) {
+        return `${appOrigin}${normalizedPath}`;
+    }
+    return `${appOrigin}/${normalizedPath}`;
 }
 
 function normalizeMessageStatus(status?: string) {
@@ -2568,8 +2664,7 @@ function renderChat() {
                 <div class="chat-header-status">${formatPhone(currentConversation.phone)}</div>
             </div>
             <div class="chat-header-actions">
-                <button class="btn btn-sm btn-outline btn-icon" onclick="openWhatsApp()" title="Abrir no WhatsApp"><span class="icon icon-whatsapp icon-sm"></span></button>
-                <button class="btn btn-sm btn-outline btn-icon" onclick="toggleContactInfo(true)" title="Dados do contato"><span class="icon icon-user icon-sm"></span></button>
+                <button class="btn btn-sm btn-outline btn-icon" onclick="toggleContactInfo()" title="Dados do contato"><span class="icon icon-user icon-sm"></span></button>
             </div>
         </div>
 
@@ -2616,6 +2711,7 @@ function renderChat() {
     closeContactInfoPanel();
     bindInlineAudioPlayers(panel);
     bindChatScrollBottomVisibility();
+    bindMessageComposerViewportSync();
     scrollToBottom();
 }
 function renderMessages() {
@@ -2651,6 +2747,8 @@ function renderMessagesInto(container: HTMLElement | null) {
 }
 
 function focusMessageComposerOnOpen() {
+    if (isMobileInboxView()) return;
+
     const focusComposer = () => {
         const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
         if (!input) return;
@@ -2668,6 +2766,38 @@ function focusMessageComposerOnOpen() {
     };
 
     window.requestAnimationFrame(focusComposer);
+}
+
+function bindMessageComposerViewportSync() {
+    const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+    if (!input) return;
+    if (input.dataset.viewportSyncBound === '1') return;
+    input.dataset.viewportSyncBound = '1';
+
+    const syncComposerViewport = () => {
+        scheduleInboxMobileViewportStateSync();
+        window.setTimeout(() => {
+            scheduleInboxMobileViewportStateSync();
+            scrollToBottom();
+        }, 80);
+    };
+
+    input.addEventListener('focus', () => {
+        setInboxComposerFocusState(true);
+        syncComposerViewport();
+    });
+    input.addEventListener('click', syncComposerViewport);
+    input.addEventListener('input', () => {
+        window.requestAnimationFrame(() => {
+            scrollToBottom();
+        });
+    });
+    input.addEventListener('blur', () => {
+        setInboxComposerFocusState(false);
+        window.setTimeout(() => {
+            scheduleInboxMobileViewportStateSync();
+        }, 80);
+    });
 }
 
 function formatAudioPlayerTime(totalSeconds: number) {
@@ -2898,7 +3028,6 @@ function toggleContactInfo(forceOpen?: boolean) {
     }
 
     renderContactInfoPanel();
-    if (!isTabletOrMobileView()) return;
     setContactInfoPanelState(forceOpen);
 }
 

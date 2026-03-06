@@ -51,6 +51,7 @@ export default function Inbox() {
             --inbox-scroll-thumb-active: rgba(var(--primary-rgb), 0.74);
             --inbox-main-pad-y: 20px;
             --inbox-mobile-vh: 100svh;
+            --inbox-mobile-keyboard-inset: 0px;
         }
         .inbox-container {
             display: grid;
@@ -65,6 +66,7 @@ export default function Inbox() {
             box-shadow: var(--shadow-lg);
             overflow: hidden;
             min-width: 0;
+            transition: grid-template-columns var(--transition);
         }
         .inbox-react .conversations-list,
         .inbox-react .chat-messages,
@@ -1478,11 +1480,22 @@ export default function Inbox() {
         }
         .contact-card-muted { color: var(--gray-600); font-size: 12px; margin: 0; }
         .contact-card-actions {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+            display: flex;
             gap: 8px;
         }
-        .contact-card-actions .btn { width: 100%; }
+        .contact-card-actions .btn {
+            flex: 1 1 0;
+            width: auto;
+        }
+
+        @media (min-width: 1025px) {
+            .inbox-container.contact-info-collapsed {
+                grid-template-columns: 350px minmax(0, 1fr);
+            }
+            .inbox-container.contact-info-collapsed .inbox-right-panel {
+                display: none;
+            }
+        }
 
         @media (max-width: 1024px) {
             .inbox-container {
@@ -1506,14 +1519,19 @@ export default function Inbox() {
         }
 
         @media (max-width: 768px) {
+            html.inbox-mobile-composing,
+            body.inbox-mobile-composing {
+                overflow: hidden !important;
+                overscroll-behavior: none;
+            }
             html.inbox-mobile-chat-lock {
                 overflow: hidden;
-                height: var(--inbox-mobile-vh, 100svh);
+                height: calc(var(--inbox-mobile-vh, 100svh) - var(--inbox-mobile-keyboard-inset, 0px));
                 overscroll-behavior: none;
             }
             body.inbox-mobile-chat-lock {
                 overflow: hidden;
-                height: var(--inbox-mobile-vh, 100svh);
+                height: calc(var(--inbox-mobile-vh, 100svh) - var(--inbox-mobile-keyboard-inset, 0px));
                 overscroll-behavior: none;
             }
             body.inbox-mobile-chat-lock .inbox-react .main-content,
@@ -1525,8 +1543,8 @@ export default function Inbox() {
             .inbox-react { --inbox-main-pad-y: 8px; }
             .inbox-main-content {
                 padding: calc(env(safe-area-inset-top, 0px) + 8px) 10px 10px !important;
-                min-height: var(--inbox-mobile-vh, 100svh);
-                height: var(--inbox-mobile-vh, 100svh);
+                min-height: calc(var(--inbox-mobile-vh, 100svh) - var(--inbox-mobile-keyboard-inset, 0px));
+                height: calc(var(--inbox-mobile-vh, 100svh) - var(--inbox-mobile-keyboard-inset, 0px));
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
@@ -1568,8 +1586,20 @@ export default function Inbox() {
             .inbox-container {
                 grid-template-columns: 1fr !important;
                 border-radius: 12px;
-                height: calc(var(--inbox-mobile-vh, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px) !important;
-                max-height: calc(var(--inbox-mobile-vh, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px) !important;
+                height: calc(
+                    var(--inbox-mobile-vh, 100svh)
+                    - var(--inbox-mobile-keyboard-inset, 0px)
+                    - env(safe-area-inset-top, 0px)
+                    - env(safe-area-inset-bottom, 0px)
+                    - 16px
+                ) !important;
+                max-height: calc(
+                    var(--inbox-mobile-vh, 100svh)
+                    - var(--inbox-mobile-keyboard-inset, 0px)
+                    - env(safe-area-inset-top, 0px)
+                    - env(safe-area-inset-bottom, 0px)
+                    - 16px
+                ) !important;
                 flex: 1 1 auto;
                 min-height: 0;
             }
@@ -1587,10 +1617,14 @@ export default function Inbox() {
                 display: flex !important;
                 min-height: 0;
                 height: 100%;
+                position: relative;
+                overflow: hidden;
             }
             .chat-header {
                 padding: 10px 12px;
                 gap: 10px;
+                position: relative;
+                z-index: 12;
             }
             .chat-back-btn {
                 display: inline-flex;
@@ -1610,6 +1644,7 @@ export default function Inbox() {
             }
             .chat-messages {
                 padding: 10px 12px;
+                padding-bottom: calc(96px + env(safe-area-inset-bottom));
                 flex: 1 1 auto;
                 min-height: 0;
             }
@@ -1622,18 +1657,25 @@ export default function Inbox() {
                 gap: 6px;
                 align-items: center;
                 flex-shrink: 0;
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 15;
+                background: linear-gradient(180deg, rgba(20, 34, 55, 0.96), rgba(17, 29, 47, 0.98));
             }
             .chat-input textarea {
                 min-height: 44px;
                 max-height: 88px;
                 padding: 11px 12px;
-                font-size: 13px;
-                line-height: 1.3;
+                font-size: 16px;
+                line-height: 1.35;
+                -webkit-text-size-adjust: 100%;
                 overflow-y: auto;
             }
             .chat-scroll-bottom-btn {
                 right: 12px;
-                bottom: 76px;
+                bottom: calc(76px + var(--inbox-mobile-keyboard-inset, 0px));
                 width: 36px;
                 height: 36px;
             }
@@ -1825,7 +1867,7 @@ export default function Inbox() {
                 font-size: 13px;
             }
             .contact-card-actions {
-                grid-template-columns: 1fr;
+                flex-direction: column;
             }
         }
         @media (max-width: 480px) {
