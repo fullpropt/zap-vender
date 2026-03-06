@@ -379,10 +379,9 @@ function renderInboxSessionFilterOptions() {
         ...inboxAvailableSessions.map((session) => {
             const sessionId = sanitizeSessionId(session.session_id);
             const displayName = getSessionDisplayName(session);
-            const status = getSessionStatusLabel(session);
             const label = displayName === sessionId
-                ? `${displayName} - ${status}`
-                : `${displayName} - ${sessionId} - ${status}`;
+                ? displayName
+                : `${displayName} (${sessionId})`;
             return `<option value="${escapeHtml(sessionId)}">${escapeHtml(label)}</option>`;
         })
     ];
@@ -396,12 +395,14 @@ function renderInboxSessionIndicator() {
     const container = document.getElementById('inboxSessionIndicator') as HTMLElement | null;
     if (!container) return;
 
-    const nameEl = container.querySelector('.inbox-session-highlight-name') as HTMLElement | null;
+    const selectEl = container.querySelector('#inboxSessionFilter') as HTMLSelectElement | null;
     const metaEl = container.querySelector('.inbox-session-highlight-meta') as HTMLElement | null;
     const statusEl = container.querySelector('.inbox-session-highlight-status') as HTMLElement | null;
+    if (selectEl) {
+        selectEl.value = inboxSessionFilter;
+    }
 
     if (!inboxSessionFilter) {
-        if (nameEl) nameEl.textContent = 'Todas as contas';
         if (metaEl) metaEl.textContent = 'Mostrando conversas de todas as contas';
         if (statusEl) {
             statusEl.textContent = 'Filtro geral';
@@ -412,12 +413,13 @@ function renderInboxSessionIndicator() {
     }
 
     const selectedSession = findInboxSessionById(inboxSessionFilter);
-    const sessionDisplayName = selectedSession ? getSessionDisplayName(selectedSession) : inboxSessionFilter;
     const sessionId = selectedSession ? sanitizeSessionId(selectedSession.session_id, inboxSessionFilter) : inboxSessionFilter;
     const connected = selectedSession ? isInboxSessionConnected(selectedSession) : false;
     const statusLabel = selectedSession ? getSessionStatusLabel(selectedSession) : 'Indisponível';
 
-    if (nameEl) nameEl.textContent = sessionDisplayName;
+    if (selectEl) {
+        selectEl.value = selectedSession ? sessionId : inboxSessionFilter;
+    }
     if (metaEl) {
         metaEl.textContent = selectedSession
             ? `${sessionId} • ${statusLabel}`

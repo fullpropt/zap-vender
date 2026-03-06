@@ -366,32 +366,9 @@ function parseLeadTags(value: unknown) {
         .filter(Boolean);
 }
 
-function getContactSessionId(contact: Contact) {
-    return sanitizeSessionId((contact as Record<string, any>).session_id || (contact as Record<string, any>).sessionId);
-}
-
-function getContactSessionLabel(contact: Contact) {
-    const sessionId = getContactSessionId(contact);
-    const fromApi = String((contact as Record<string, any>).session_label || (contact as Record<string, any>).sessionLabel || '').trim();
-    if (fromApi) return fromApi;
-    const known = contactsAvailableSessions.find((session) => sanitizeSessionId(session.session_id) === sessionId);
-    if (known) return getSessionDisplayName(known);
-    return sessionId;
-}
-
 function renderContactTagChips(contact: Contact) {
     const chips: string[] = [];
     const tags = parseLeadTags(contact.tags);
-
-    if (!contactsSessionFilter) {
-        const sessionId = getContactSessionId(contact);
-        if (sessionId) {
-            const sessionLabel = getContactSessionLabel(contact) || sessionId;
-            chips.push(
-                `<span class="badge contacts-tag-chip contacts-tag-chip-session" title="${escapeHtml(sessionId)}">Conta: ${escapeHtml(sessionLabel)}</span>`
-            );
-        }
-    }
 
     for (const tag of tags) {
         chips.push(`<span class="badge badge-gray contacts-tag-chip">${escapeHtml(tag)}</span>`);

@@ -174,30 +174,11 @@ export default function Inbox() {
             font-size: 20px;
             color: var(--dark);
         }
-        .inbox-session-filter {
-            margin-bottom: 0;
-        }
         .inbox-session-unified {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 0;
             align-items: stretch;
-        }
-        .inbox-session-filter .form-label {
-            display: block;
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--gray-700);
-            margin-bottom: 6px;
-        }
-        .inbox-session-filter .form-select {
-            width: 100%;
-            border-radius: 10px;
-            border: 1px solid var(--border-color);
-            background: var(--surface);
-            color: var(--dark);
-            font-size: 13px;
-            padding: 9px 10px;
         }
         .inbox-session-highlight {
             margin-bottom: 0;
@@ -227,9 +208,9 @@ export default function Inbox() {
             justify-content: space-between;
             gap: 10px;
         }
-        .inbox-session-filter-embedded .form-select {
-            border-color: rgba(var(--primary-rgb), 0.26);
-            background: rgba(15, 23, 42, 0.52);
+        .inbox-session-highlight-content {
+            min-width: 0;
+            flex: 1;
         }
         .inbox-session-highlight-label {
             font-size: 11px;
@@ -239,11 +220,47 @@ export default function Inbox() {
             font-weight: 700;
             margin-bottom: 4px;
         }
-        .inbox-session-highlight-name {
-            font-size: 15px;
+        .inbox-session-highlight-select-shell {
+            position: relative;
+            width: fit-content;
+            max-width: 100%;
+        }
+        .inbox-session-highlight-select {
+            appearance: none;
+            -webkit-appearance: none;
+            border: 1px solid transparent;
+            background: transparent;
             color: var(--dark);
+            font-size: 15px;
             font-weight: 700;
             line-height: 1.2;
+            border-radius: 10px;
+            padding: 4px 22px 4px 8px;
+            margin-left: -8px;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+            max-width: 100%;
+        }
+        .inbox-session-highlight-select:hover {
+            border-color: rgba(var(--primary-rgb), 0.42);
+            background: rgba(var(--primary-rgb), 0.08);
+        }
+        .inbox-session-highlight-select:focus {
+            outline: none;
+            border-color: rgba(var(--primary-rgb), 0.62);
+            background: rgba(var(--primary-rgb), 0.1);
+        }
+        .inbox-session-highlight-select-icon {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            width: 0;
+            height: 0;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 6px solid rgba(var(--primary-rgb), 0.92);
         }
         .inbox-session-highlight-meta {
             font-size: 12px;
@@ -1889,31 +1906,8 @@ export default function Inbox() {
                 font-size: 18px;
                 margin-bottom: 0;
             }
-            .inbox-session-filter .form-label {
-                margin-bottom: 8px;
-                font-size: 11px;
-                letter-spacing: 0.06em;
-            }
-            .inbox-session-filter .form-select {
-                min-height: 42px;
-                border-radius: 12px;
-                padding: 0 12px;
-            }
             .inbox-session-unified {
-                gap: 8px;
-            }
-            .inbox-session-filter-embedded .form-label {
-                margin-bottom: 6px;
-                font-size: 10px;
-                letter-spacing: 0.05em;
-                text-align: center;
-            }
-            .inbox-session-filter-embedded .form-select {
-                min-height: 38px;
-                padding: 0 10px;
-                font-size: 12px;
-                text-align: center;
-                text-align-last: center;
+                gap: 0;
             }
             .inbox-session-highlight {
                 padding: 10px;
@@ -1932,12 +1926,23 @@ export default function Inbox() {
                 width: 100%;
                 text-align: center;
             }
+            .inbox-session-highlight-content {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
             .inbox-session-highlight-label,
             .inbox-session-highlight-meta {
                 display: none;
             }
-            .inbox-session-highlight-name {
-                display: none;
+            .inbox-session-highlight-select-shell {
+                max-width: 100%;
+            }
+            .inbox-session-highlight-select {
+                font-size: 13px;
+                padding: 4px 20px 4px 8px;
+                margin-left: 0;
+                text-align: center;
             }
             .inbox-session-highlight-status {
                 font-size: 10px;
@@ -2132,21 +2137,20 @@ export default function Inbox() {
                 <span className="icon icon-inbox icon-sm"></span> Inbox
               </h2>
               <div className="inbox-session-highlight inbox-session-unified" id="inboxSessionIndicator">
-                <div className="inbox-session-filter inbox-session-filter-embedded">
-                  <label className="form-label" htmlFor="inboxSessionFilter">Conta WhatsApp</label>
-                  <select
-                    id="inboxSessionFilter"
-                    className="form-select"
-                    defaultValue=""
-                    onChange={(event) => globals.changeInboxSessionFilter?.((event.target as HTMLSelectElement).value)}
-                  >
-                    <option value="">Todas as contas</option>
-                  </select>
-                </div>
                 <div className="inbox-session-highlight-main">
-                  <div>
+                  <div className="inbox-session-highlight-content">
                     <div className="inbox-session-highlight-label">Conta exibida</div>
-                    <div className="inbox-session-highlight-name">Todas as contas</div>
+                    <div className="inbox-session-highlight-select-shell">
+                      <select
+                        id="inboxSessionFilter"
+                        className="inbox-session-highlight-select"
+                        defaultValue=""
+                        onChange={(event) => globals.changeInboxSessionFilter?.((event.target as HTMLSelectElement).value)}
+                      >
+                        <option value="">Todas as contas</option>
+                      </select>
+                      <span className="inbox-session-highlight-select-icon" aria-hidden="true"></span>
+                    </div>
                     <div className="inbox-session-highlight-meta">Mostrando conversas de todas as contas</div>
                   </div>
                   <div className="inbox-session-highlight-actions">
