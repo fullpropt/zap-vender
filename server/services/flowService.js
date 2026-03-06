@@ -2265,21 +2265,21 @@ class FlowService extends EventEmitter {
     }
 
     async maybeSendTriggerWelcomeMessage(execution, node = null) {
-        if (!this.isIntentTriggerNode(node)) return;
-        if (!this.sendFunction) return;
+        if (!this.isIntentTriggerNode(node)) return false;
+        if (!this.sendFunction) return false;
 
         const config = this.resolveTriggerWelcomeConfig(node);
-        if (!config.enabled || !config.content) return;
+        if (!config.enabled || !config.content) return false;
 
         const onceNode = this.buildTriggerWelcomeOnceNode(execution, node);
         if (this.hasLeadSeenOnceMessageNode(execution, onceNode)) {
-            return;
+            return false;
         }
 
         const content = sanitizeOutgoingFlowText(
             this.replaceVariables(config.content, this.ensureExecutionVariables(execution))
         );
-        if (!content) return;
+        if (!content) return false;
 
         const delayMs = config.delaySeconds * 1000;
         if (delayMs > 0) {
@@ -2295,10 +2295,22 @@ class FlowService extends EventEmitter {
         });
 
         await this.markLeadOnceMessageNodeSeen(execution, onceNode);
+        return true;
     }
 
     async executeTriggerNode(execution, node) {
-        await this.maybeSendTriggerWelcomeMessage(execution, node);
+        const welcomeSent = await this.maybeSendTriggerWelcomeMessage(execution, node);
+        if (welcomeSent && this.isIntentTriggerNode(node)) {
+            delete execution.variables.trigger_intent_handle;
+
+            await run(`
+                UPDATE flow_executions
+                SET variables = ?
+                WHERE id = ?
+            `, [JSON.stringify(execution.variables), execution.id]);
+
+            return;
+        }
 
         const selectedHandle = await this.pickTriggerIntentHandle(execution, node);
 
