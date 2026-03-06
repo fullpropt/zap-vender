@@ -952,7 +952,7 @@ async function tryOpenPendingLeadConversation() {
     if (!targetConversation) return;
 
     const targetConversationId = Number(targetConversation.id || 0);
-    if (!Number.isInteger(targetConversationId) || targetConversationId <= 0) return;
+    if (!Number.isInteger(targetConversationId) || targetConversationId === 0) return;
 
     pendingInboxOpenLeadId = 0;
     clearInboxOpenLeadIdFromRouteParams();
@@ -1469,22 +1469,42 @@ async function loadConversations() {
         }));
 
         if (currentConversation) {
-            const refreshedConversation = conversations.find((conversation) => conversation.id === currentConversation?.id) || null;
+            const currentConversationId = Number(currentConversation.id || 0);
+            const currentLeadId = normalizeInboxLeadId(currentConversation.leadId);
+            const refreshedConversationById =
+                conversations.find((conversation) => conversation.id === currentConversationId) || null;
+            const refreshedConversationByLead =
+                currentConversationId <= 0 && currentLeadId > 0
+                    ? conversations.find((conversation) => normalizeInboxLeadId(conversation.leadId) === currentLeadId) || null
+                    : null;
+            const refreshedConversation = refreshedConversationById || refreshedConversationByLead;
+
             if (!refreshedConversation) {
-                currentConversation = null;
-                currentLeadDetails = null;
-                const chatPanel = document.getElementById('chatPanel') as HTMLElement | null;
-                if (chatPanel) {
-                    chatPanel.innerHTML = `
-                        <div class="chat-empty">
-                            <div class="chat-empty-icon icon icon-empty icon-lg"></div>
-                            <h3>Nenhum chat selecionado</h3>
-                            <p>Selecione uma conversa da lista ao lado para começar a conversar</p>
-                        </div>
-                    `;
+                const isVirtualConversation = currentConversationId <= 0 && currentLeadId > 0;
+                if (isVirtualConversation) {
+                    const fallbackSessionId = resolveConversationSessionId(currentConversation);
+                    currentConversation = {
+                        ...currentConversation,
+                        sessionId: fallbackSessionId,
+                        sessionLabel: resolveConversationSessionLabel(fallbackSessionId),
+                        hasConversation: false
+                    };
+                } else {
+                    currentConversation = null;
+                    currentLeadDetails = null;
+                    const chatPanel = document.getElementById('chatPanel') as HTMLElement | null;
+                    if (chatPanel) {
+                        chatPanel.innerHTML = `
+                            <div class="chat-empty">
+                                <div class="chat-empty-icon icon icon-empty icon-lg"></div>
+                                <h3>Nenhum chat selecionado</h3>
+                                <p>Selecione uma conversa da lista ao lado para começar a conversar</p>
+                            </div>
+                        `;
+                    }
+                    renderContactInfoPanel();
+                    setMobileConversationMode(false);
                 }
-                renderContactInfoPanel();
-                setMobileConversationMode(false);
             } else {
                 currentConversation = refreshedConversation;
             }
