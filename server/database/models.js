@@ -117,6 +117,8 @@ function isLeadNameManuallyLocked(customFields) {
 
 function shouldReplaceLeadName(currentName, incomingName, phone, options = {}) {
     if (options.manualNameLocked) return false;
+    const source = String(options.source || '').trim().toLowerCase();
+    if (source && source !== 'whatsapp') return false;
 
     const next = sanitizeLeadName(incomingName);
     if (!next) return false;
@@ -515,7 +517,10 @@ const Lead = {
             // Atualizar dados se necessario
             const nextName = sanitizeLeadName(data.name);
             const manualNameLocked = isLeadNameManuallyLocked(lead.custom_fields);
-            if (shouldReplaceLeadName(lead.name, nextName, lead.phone || data.phone, { manualNameLocked })) {
+            if (shouldReplaceLeadName(lead.name, nextName, lead.phone || data.phone, {
+                manualNameLocked,
+                source: lead.source || data.source
+            })) {
                 await this.update(lead.id, { name: nextName });
                 lead.name = nextName;
             }

@@ -1406,6 +1406,12 @@ async function deleteContact(id: number) {
 function quickMessage(id: number) {
     const contact = allContacts.find(c => c.id === id);
     if (contact) {
+        const leadId = Number(contact.id || id);
+        if (Number.isFinite(leadId) && leadId > 0) {
+            window.location.href = `#/inbox?leadId=${Math.floor(leadId)}`;
+            return;
+        }
+
         const whatsappLink = buildWhatsappLinkFromPhone(contact.phone);
         if (whatsappLink) {
             window.open(whatsappLink, '_blank');
