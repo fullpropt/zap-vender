@@ -729,10 +729,27 @@ async function buildInboxConversationSearchPool() {
 function resolveConversationSessionId(conversation: Conversation | null | undefined) {
     const fromConversation = sanitizeSessionId(conversation?.sessionId);
     if (fromConversation) return fromConversation;
-    const appSession = sanitizeSessionId((window as any).APP?.sessionId);
-    if (appSession) return appSession;
+
+    const filteredSession = sanitizeSessionId(inboxSessionFilter);
+    if (filteredSession) return filteredSession;
+
+    const connectedSession = inboxAvailableSessions.find((session) => {
+        const sessionId = sanitizeSessionId(session?.session_id);
+        return Boolean(sessionId) && isInboxSessionConnected(session);
+    });
+    const connectedSessionId = sanitizeSessionId(connectedSession?.session_id);
+    if (connectedSessionId) return connectedSessionId;
+
     const storedSession = sanitizeSessionId(localStorage.getItem('zapvender_active_whatsapp_session'));
     if (storedSession) return storedSession;
+
+    const appSession = sanitizeSessionId((window as any).APP?.sessionId);
+    if (appSession) return appSession;
+
+    const anyListedSession = inboxAvailableSessions.find((session) => sanitizeSessionId(session?.session_id));
+    const anyListedSessionId = sanitizeSessionId(anyListedSession?.session_id);
+    if (anyListedSessionId) return anyListedSessionId;
+
     return buildOwnerFallbackSessionId(getOwnerUserIdFromSessionToken(), 'default_whatsapp_session');
 }
 
