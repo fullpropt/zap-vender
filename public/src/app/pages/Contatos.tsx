@@ -16,8 +16,10 @@ type ContatosGlobals = {
   bulkSendMessage?: () => void;
   bulkChangeStatus?: () => void;
   bulkAddTag?: () => void;
+  bulkRemoveTag?: () => void;
   submitBulkChangeStatus?: () => void;
   submitBulkAddTag?: () => void;
+  submitBulkRemoveTag?: () => void;
   bulkDelete?: () => void;
   clearSelection?: () => void;
   filterContacts?: () => void;
@@ -256,6 +258,9 @@ export default function Contatos() {
             <button className="btn btn-sm btn-outline" onClick={() => globals.bulkAddTag?.()}>
               <span className="icon icon-tag icon-sm"></span> Adicionar Tag
             </button>
+            <button className="btn btn-sm btn-outline" onClick={() => globals.bulkRemoveTag?.()}>
+              <span className="icon icon-delete icon-sm"></span> Remover Tag
+            </button>
             <button className="btn btn-sm btn-outline-danger" onClick={() => globals.bulkDelete?.()}>
               <span className="icon icon-delete icon-sm"></span> Excluir
             </button>
@@ -354,6 +359,11 @@ export default function Contatos() {
               <div className="form-group">
                 <label className="form-label">Email</label>
                 <input type="email" className="form-input" id="contactEmail" placeholder="email@exemplo.com" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Tags</label>
+                <input type="text" className="form-input" id="contactTags" placeholder="Ex.: VIP, Campanha Março" />
+                <p className="form-help">Separe múltiplas tags por vírgula.</p>
               </div>
               <div className="form-row" id="contactCustomFields"></div>
               <div className="form-row">
@@ -642,6 +652,37 @@ Use {{nome}} para personalizar`}
             <button className="btn btn-outline" onClick={() => globals.closeModal?.('bulkTagModal')}>Cancelar</button>
             <button className="btn btn-primary" onClick={() => globals.submitBulkAddTag?.()}>
               <span className="icon icon-tag icon-sm"></span> Adicionar Tags
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-overlay" id="bulkRemoveTagModal">
+        <div className="modal">
+          <div className="modal-header">
+            <h3 className="modal-title"><span className="icon icon-delete icon-sm"></span> Remover Tag em Lote</h3>
+            <button className="modal-close" onClick={() => globals.closeModal?.('bulkRemoveTagModal')}>×</button>
+          </div>
+          <div className="modal-body">
+            <div className="form-group">
+              <label className="form-label">Destinatários</label>
+              <p className="text-muted"><span id="bulkRemoveTagRecipients">0</span> contatos selecionados</p>
+            </div>
+            <div className="form-group">
+              <label className="form-label required" htmlFor="bulkRemoveTagInput">Tags para remover</label>
+              <input
+                type="text"
+                className="form-input"
+                id="bulkRemoveTagInput"
+                placeholder="Ex.: Lead, Campanha Março"
+              />
+              <p className="form-help">Separe múltiplas tags por vírgula.</p>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-outline" onClick={() => globals.closeModal?.('bulkRemoveTagModal')}>Cancelar</button>
+            <button className="btn btn-primary" onClick={() => globals.submitBulkRemoveTag?.()}>
+              <span className="icon icon-delete icon-sm"></span> Remover Tags
             </button>
           </div>
         </div>

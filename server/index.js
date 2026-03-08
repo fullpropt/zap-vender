@@ -11800,12 +11800,17 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
         const addTagsInput = Object.prototype.hasOwnProperty.call(body, 'addTags')
             ? body.addTags
             : body.tags;
+        const removeTagsInput = Object.prototype.hasOwnProperty.call(body, 'removeTags')
+            ? body.removeTags
+            : body.remove_tags;
         const tagsToAdd = Array.from(new Set(parseLeadTagsForMerge(addTagsInput)));
+        const tagsToRemove = Array.from(new Set(parseLeadTagsForMerge(removeTagsInput)));
+        const tagsToRemoveKeys = new Set(tagsToRemove.map((tag) => String(tag || '').trim().toLowerCase()).filter(Boolean));
 
-        if (!hasStatusField && tagsToAdd.length === 0) {
+        if (!hasStatusField && tagsToAdd.length === 0 && tagsToRemove.length === 0) {
             return res.status(400).json({
                 success: false,
-                error: 'Nenhuma alteração informada (status ou addTags)'
+                error: 'Nenhuma alteração informada (status, addTags ou removeTags)'
             });
         }
 
@@ -11835,6 +11840,7 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
         let failed = 0;
         let statusChanged = 0;
         let tagsUpdated = 0;
+        let tagsRemoved = 0;
         const errors = [];
 
         for (const leadId of leadIds) {
@@ -11852,20 +11858,29 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
             try {
                 const updateData = {};
                 let tagsWereUpdated = false;
+                let tagsWereRemoved = false;
 
                 if (hasStatusField && Number(lead.status) !== Number(requestedStatus)) {
                     updateData.status = Number(requestedStatus);
                 }
 
-                if (tagsToAdd.length > 0) {
+                if (tagsToAdd.length > 0 || tagsToRemove.length > 0) {
                     const currentTags = parseLeadTagsForMerge(lead.tags);
-                    const mergedTags = Array.from(new Set([...currentTags, ...tagsToAdd]));
+                    const hadRemovableTags = tagsToRemoveKeys.size > 0
+                        && currentTags.some((tag) => tagsToRemoveKeys.has(String(tag || '').trim().toLowerCase()));
+                    let mergedTags = Array.from(new Set([...currentTags, ...tagsToAdd]));
+                    if (tagsToRemoveKeys.size > 0) {
+                        mergedTags = mergedTags.filter(
+                            (tag) => !tagsToRemoveKeys.has(String(tag || '').trim().toLowerCase())
+                        );
+                    }
                     const tagsChanged = mergedTags.length !== currentTags.length
                         || mergedTags.some((tag, index) => tag !== currentTags[index]);
 
                     if (tagsChanged) {
                         updateData.tags = mergedTags;
                         tagsWereUpdated = true;
+                        tagsWereRemoved = hadRemovableTags;
                     }
                 }
 
@@ -11889,6 +11904,9 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
                 updated += 1;
                 if (tagsWereUpdated) {
                     tagsUpdated += 1;
+                }
+                if (tagsWereRemoved) {
+                    tagsRemoved += 1;
                 }
 
                 webhookService.trigger('lead.updated', { lead: updatedLead }, {
@@ -11946,6 +11964,7 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
             failed,
             statusChanged,
             tagsUpdated,
+            tagsRemoved,
             errors
         });
     } catch (error) {

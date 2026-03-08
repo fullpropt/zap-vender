@@ -66,6 +66,7 @@ type BulkLeadsUpdateResponse = {
     failed?: number;
     statusChanged?: number;
     tagsUpdated?: number;
+    tagsRemoved?: number;
     errors?: Array<{ id?: number; error?: string }>;
 };
 
@@ -1237,12 +1238,19 @@ function clearSelection() {
 }
 
 async function saveContact() {
+    const contactTagsInput = document.getElementById('contactTags') as HTMLInputElement | null;
+    const contactTags = Array.from(new Set(
+        parseLeadTags(contactTagsInput?.value || '')
+            .map((tag) => String(tag || '').trim())
+            .filter(Boolean)
+    ));
     const data = {
         name: (document.getElementById('contactName') as HTMLInputElement | null)?.value.trim() || '',
         phone: (document.getElementById('contactPhone') as HTMLInputElement | null)?.value.replace(/\D/g, '') || '',
         email: (document.getElementById('contactEmail') as HTMLInputElement | null)?.value.trim() || '',
         status: parseInt((document.getElementById('contactStatus') as HTMLSelectElement | null)?.value || '1', 10) as LeadStatus,
-        source: (document.getElementById('contactSource') as HTMLSelectElement | null)?.value || ''
+        source: (document.getElementById('contactSource') as HTMLSelectElement | null)?.value || '',
+        tags: contactTags
     };
     const customFields = collectCustomFieldsValues('contact-custom-field');
     const contactNotes = (document.getElementById('contactNotes') as HTMLTextAreaElement | null)?.value || '';
@@ -1563,6 +1571,17 @@ function openBulkAddTagModal() {
     openModal('bulkTagModal');
 }
 
+function openBulkRemoveTagModal() {
+    if (!hasSelectedContactsForBulkAction()) return;
+    setBulkRecipientsText('bulkRemoveTagRecipients');
+    const input = document.getElementById('bulkRemoveTagInput') as HTMLInputElement | null;
+    if (input) {
+        input.value = '';
+        setTimeout(() => input.focus(), 0);
+    }
+    openModal('bulkRemoveTagModal');
+}
+
 async function submitBulkChangeStatus() {
     const statusSelect = document.getElementById('bulkStatusValue') as HTMLSelectElement | null;
     const parsed = parseInt(String(statusSelect?.value || '').trim(), 10);
@@ -1590,6 +1609,22 @@ async function submitBulkAddTag() {
         const nextInput = document.getElementById('bulkTagInput') as HTMLInputElement | null;
         if (nextInput) nextInput.value = '';
         closeModal('bulkTagModal');
+    }
+}
+
+async function submitBulkRemoveTag() {
+    const input = document.getElementById('bulkRemoveTagInput') as HTMLInputElement | null;
+    const raw = String(input?.value || '').trim();
+    if (!raw) {
+        showToast('warning', 'Atencao', 'Informe pelo menos uma tag');
+        return;
+    }
+
+    const success = await bulkRemoveTagSelection();
+    if (success !== false) {
+        const nextInput = document.getElementById('bulkRemoveTagInput') as HTMLInputElement | null;
+        if (nextInput) nextInput.value = '';
+        closeModal('bulkRemoveTagModal');
     }
 }
 
@@ -1736,6 +1771,75 @@ async function bulkAddTagSelection() {
     } catch (error) {
         hideLoading();
         showToast('error', 'Erro', error instanceof Error ? error.message : 'Erro ao adicionar tag em lote');
+        return false;
+    }
+}
+
+async function bulkRemoveTagSelection() {
+    const uniqueLeadIds = Array.from(
+        new Set(
+            selectedContacts
+                .map((value) => parseInt(String(value), 10))
+                .filter((value) => Number.isInteger(value) && value > 0)
+        )
+    );
+
+    if (uniqueLeadIds.length === 0) {
+        showToast('warning', 'Atencao', 'Nenhum contato selecionado');
+        return;
+    }
+
+    const modalTagsValue = (document.getElementById('bulkRemoveTagInput') as HTMLInputElement | null)?.value;
+    const rawInput = (modalTagsValue && String(modalTagsValue).trim())
+        ? modalTagsValue
+        : await appPrompt('Digite a(s) tag(s) para remover (separadas por virgula):', {
+            title: 'Remover tags em lote',
+            placeholder: 'Ex.: VIP, retorno, urgente'
+        });
+    if (rawInput === null) return;
+
+    const tagsToRemove = Array.from(new Set(
+        String(rawInput || '')
+            .split(/[,;|]/)
+            .map((tag) => String(tag || '').trim())
+            .filter(Boolean)
+    ));
+
+    if (tagsToRemove.length === 0) {
+        showToast('warning', 'Atencao', 'Informe pelo menos uma tag');
+        return;
+    }
+
+    try {
+        showLoading(`Removendo tag em ${uniqueLeadIds.length} contato(s)...`);
+
+        const response: BulkLeadsUpdateResponse = await api.post('/api/leads/bulk-update', {
+            leadIds: uniqueLeadIds,
+            removeTags: tagsToRemove
+        });
+
+        clearSelection();
+        clearLeadViewCaches();
+        await loadContacts({ forceRefresh: true, silent: true });
+
+        const updated = Number(response?.updated || 0);
+        const skipped = Number(response?.skipped || 0);
+        const failed = Number(response?.failed || 0);
+        const tagsRemoved = Number(response?.tagsRemoved || 0);
+        const summary = [`${updated} atualizados`];
+        if (tagsRemoved > 0) summary.push(`${tagsRemoved} com tags removidas`);
+        if (skipped > 0) summary.push(`${skipped} ignorados`);
+        if (failed > 0) summary.push(`${failed} com erro`);
+
+        showToast(
+            failed > 0 ? 'warning' : 'success',
+            failed > 0 ? 'Concluido com alertas' : 'Sucesso',
+            `Remocao de tags concluida: ${summary.join(', ')}`
+        );
+        return true;
+    } catch (error) {
+        hideLoading();
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Erro ao remover tag em lote');
         return false;
     }
 }
@@ -1892,8 +1996,10 @@ const windowAny = window as Window & {
     bulkDelete?: () => Promise<void>;
     bulkChangeStatus?: () => Promise<void>;
     bulkAddTag?: () => void;
+    bulkRemoveTag?: () => void;
     submitBulkChangeStatus?: () => Promise<void>;
     submitBulkAddTag?: () => Promise<void>;
+    submitBulkRemoveTag?: () => Promise<void>;
     importContacts?: () => Promise<void>;
     exportContacts?: () => void;
     switchTab?: (tab: string) => void;
@@ -1919,8 +2025,10 @@ windowAny.sendBulkMessage = sendBulkMessage;
 windowAny.bulkDelete = bulkDelete;
 windowAny.bulkChangeStatus = openBulkChangeStatusModal;
 windowAny.bulkAddTag = openBulkAddTagModal;
+windowAny.bulkRemoveTag = openBulkRemoveTagModal;
 windowAny.submitBulkChangeStatus = submitBulkChangeStatus;
 windowAny.submitBulkAddTag = submitBulkAddTag;
+windowAny.submitBulkRemoveTag = submitBulkRemoveTag;
 windowAny.importContacts = importContacts;
 windowAny.exportContacts = exportContacts;
 windowAny.switchTab = switchTab;
