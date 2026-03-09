@@ -815,7 +815,7 @@ function normalizePlanStatus(status: unknown) {
     return allowed.has(normalized) ? normalized : 'unknown';
 }
 
-function getPlanStatusLabel(status: string, fallback = 'NÃ£o configurado') {
+function getPlanStatusLabel(status: string, fallback = 'Não configurado') {
     const normalized = normalizePlanStatus(status);
     const labels: Record<string, string> = {
         active: 'Ativo',
@@ -875,10 +875,10 @@ function buildFallbackPlanStatus(): PlanStatusViewModel {
         statusLabel: 'Ativo',
         renewalDate: null,
         lastVerifiedAt: null,
-        provider: 'API nÃ£o configurada',
+        provider: 'API não configurada',
         source: 'local',
         apiConfigured: false,
-        message: 'A confirmaÃ§Ã£o automÃ¡tica do plano via API serÃ¡ habilitada apÃ³s configurar a integraÃ§Ã£o.'
+        message: 'A confirmação automática do plano via API será habilitada após configurar a integração.'
     };
 }
 
@@ -948,7 +948,7 @@ function renderPlanStatus() {
                     <input type="text" class="form-input" value="${escapeHtml(formatPlanDateTime(data.renewalDate))}" readonly />
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Ãšltima confirmaÃ§Ã£o</label>
+                    <label class="form-label">Última confirmação</label>
                     <input type="text" class="form-input" value="${escapeHtml(formatPlanDateTime(data.lastVerifiedAt))}" readonly />
                 </div>
             </div>
@@ -971,7 +971,7 @@ async function loadPlanStatus(options: { silent?: boolean } = {}) {
             planStatusCache = buildFallbackPlanStatus();
         }
         if (shouldShowLoading) {
-            showToast('warning', 'Aviso', 'NÃ£o foi possÃ­vel carregar o status do plano');
+            showToast('warning', 'Aviso', 'Não foi possível carregar o status do plano');
         }
     } finally {
         planStatusLoading = false;
@@ -988,7 +988,7 @@ async function refreshPlanStatus() {
         showToast('success', 'Sucesso', 'Situacao do plano atualizada');
     } catch (error) {
         await loadPlanStatus({ silent: true });
-        showToast('warning', 'Aviso', 'NÃ£o foi possÃ­vel confirmar o plano via API');
+        showToast('warning', 'Aviso', 'Não foi possível confirmar o plano via API');
     } finally {
         planStatusLoading = false;
         renderPlanStatus();
@@ -1014,9 +1014,9 @@ async function saveGeneralSettings() {
             company_phone: company.phone,
             company_email: company.email
         });
-        showToast('success', 'Sucesso', 'ConfiguraÃ§Ãµes salvas!');
+        showToast('success', 'Sucesso', 'Configurações salvas!');
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas nÃ£o foi possÃ­vel sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
     }
 }
 
@@ -1024,9 +1024,9 @@ async function saveBusinessHoursSettings() {
     try {
         await persistBusinessHoursBySessionToServer();
         renderBusinessHoursAccountsManager();
-        showToast('success', 'Sucesso', 'HorÃ¡rios atualizados!');
+        showToast('success', 'Sucesso', 'Horários atualizados!');
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas nÃ£o foi possÃ­vel sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
     }
 }
 
@@ -1110,17 +1110,17 @@ async function createSettingsTag() {
 
         const reloadSucceeded = await loadSettingsTags();
         if (!reloadSucceeded) {
-            showToast('warning', 'Aviso', 'Etiqueta criada, mas nÃƒÂ£o foi possÃƒÂ­vel atualizar a lista agora');
+            showToast('warning', 'Aviso', 'Etiqueta criada, mas não foi possível atualizar a lista agora');
             return;
         }
         showToast('success', 'Sucesso', 'Etiqueta criada!');
     } catch (error: any) {
         const message = String(error?.message || '').toLowerCase();
         if (message.includes('409') || message.includes('ja existe')) {
-            showToast('warning', 'Aviso', 'JÃ¡ existe uma etiqueta com esse nome');
+            showToast('warning', 'Aviso', 'Já existe uma etiqueta com esse nome');
             return;
         }
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel criar a etiqueta');
+        showToast('error', 'Erro', 'Não foi possível criar a etiqueta');
     }
 }
 
@@ -1136,7 +1136,7 @@ async function updateSettingsTag(id: number) {
     const description = ((row.querySelector('.settings-tag-description') as HTMLInputElement | null)?.value || '').trim();
 
     if (!name) {
-        showToast('warning', 'Aviso', 'Nome da etiqueta Ã© obrigatÃ³rio');
+        showToast('warning', 'Aviso', 'Nome da etiqueta é obrigatório');
         return;
     }
 
@@ -1151,10 +1151,10 @@ async function updateSettingsTag(id: number) {
     } catch (error: any) {
         const message = String(error?.message || '').toLowerCase();
         if (message.includes('409') || message.includes('ja existe')) {
-            showToast('warning', 'Aviso', 'JÃ¡ existe uma etiqueta com esse nome');
+            showToast('warning', 'Aviso', 'Já existe uma etiqueta com esse nome');
             return;
         }
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel atualizar a etiqueta');
+        showToast('error', 'Erro', 'Não foi possível atualizar a etiqueta');
     }
 }
 
@@ -1170,7 +1170,7 @@ async function deleteSettingsTag(id: number) {
         }
         showToast('success', 'Sucesso', 'Etiqueta removida!');
     } catch (error) {
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel remover a etiqueta');
+        showToast('error', 'Erro', 'Não foi possível remover a etiqueta');
     }
 }
 
@@ -1308,7 +1308,7 @@ async function persistContactFields(showSuccess = true) {
     await api.put('/api/contact-fields', { fields: payload });
     await loadContactFields();
     if (showSuccess) {
-        showToast('success', 'Sucesso', 'Campos dinÃ¢micos atualizados!');
+        showToast('success', 'Sucesso', 'Campos dinâmicos atualizados!');
     }
 }
 
@@ -1522,9 +1522,9 @@ function renderTemplateCard(template: TemplateItem) {
     const body = mediaType === 'audio'
         ? `
             <div class="template-audio">
-                ${audioUrl ? `<audio controls preload="metadata" src="${audioUrl}"></audio>` : `<p class="text-muted">Nenhum Ã¡udio enviado.</p>`}
+                ${audioUrl ? `<audio controls preload="metadata" src="${audioUrl}"></audio>` : `<p class="text-muted">Nenhum áudio enviado.</p>`}
                 <input type="file" class="form-input template-audio-input" accept="audio/*" onchange="replaceTemplateAudio(${template.id}, event)" />
-                <small class="text-muted">Envie um novo Ã¡udio para substituir o atual.</small>
+                <small class="text-muted">Envie um novo áudio para substituir o atual.</small>
             </div>
         `
         : `
@@ -1554,7 +1554,7 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
     const name = nameInput?.value.trim() || '';
 
     if (!id || !name) {
-        if (showToastMessage) showToast('warning', 'Aviso', 'Preencha o tÃ­tulo da resposta rÃ¡pida');
+        if (showToastMessage) showToast('warning', 'Aviso', 'Preencha o título da resposta rápida');
         return;
     }
 
@@ -1565,7 +1565,7 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
 
     if (mediaType === 'audio') {
         if (!mediaUrl) {
-            if (showToastMessage) showToast('warning', 'Aviso', 'Envie um Ã¡udio para a resposta rÃ¡pida');
+            if (showToastMessage) showToast('warning', 'Aviso', 'Envie um áudio para a resposta rápida');
             return;
         }
         payload.media_type = 'audio';
@@ -1573,7 +1573,7 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
     } else {
         const content = contentInput?.value.trim() || '';
         if (!content) {
-            if (showToastMessage) showToast('warning', 'Aviso', 'Preencha a mensagem da resposta rÃ¡pida');
+            if (showToastMessage) showToast('warning', 'Aviso', 'Preencha a mensagem da resposta rápida');
             return;
         }
         payload.content = content;
@@ -1581,7 +1581,7 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
 
     await api.put(`/api/templates/${id}`, payload);
     if (showToastMessage) {
-        showToast('success', 'Sucesso', 'Resposta rÃ¡pida atualizada!');
+        showToast('success', 'Sucesso', 'Resposta rápida atualizada!');
     }
 }
 
@@ -1591,14 +1591,14 @@ async function saveTemplate(id: number) {
     try {
         await saveTemplateInternal(card, true);
     } catch (error) {
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel salvar');
+        showToast('error', 'Erro', 'Não foi possível salvar');
     }
 }
 
 async function saveCopysSettings() {
     const cards = Array.from(document.querySelectorAll('.template-card')) as HTMLElement[];
     if (!cards.length) {
-        showToast('info', 'Info', 'Nenhuma resposta rÃ¡pida para salvar');
+        showToast('info', 'Info', 'Nenhuma resposta rápida para salvar');
         return;
     }
 
@@ -1607,9 +1607,9 @@ async function saveCopysSettings() {
             await saveTemplateInternal(card, false);
         }
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Respostas rÃ¡pidas salvas!');
+        showToast('success', 'Sucesso', 'Respostas rápidas salvas!');
     } catch (error) {
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel salvar as respostas rÃ¡pidas');
+        showToast('error', 'Erro', 'Não foi possível salvar as respostas rápidas');
     }
 }
 
@@ -1618,9 +1618,9 @@ async function deleteTemplate(id: number) {
     try {
         await api.delete(`/api/templates/${id}`);
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Resposta rÃ¡pida removida!');
+        showToast('success', 'Sucesso', 'Resposta rápida removida!');
     } catch (error) {
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel remover');
+        showToast('error', 'Erro', 'Não foi possível remover');
     }
 }
 
@@ -1630,7 +1630,7 @@ async function replaceTemplateAudio(id: number, event: Event) {
     if (!file) return;
 
     try {
-        showLoading('Enviando Ã¡udio...');
+        showLoading('Enviando áudio...');
         const uploaded = await uploadFile(file);
         hideLoading();
 
@@ -1639,17 +1639,17 @@ async function replaceTemplateAudio(id: number, event: Event) {
         const name = nameInput?.value.trim() || '';
 
         await api.put(`/api/templates/${id}`, {
-            name: name || `Resposta rÃ¡pida ${id}`,
+            name: name || `Resposta rápida ${id}`,
             category: 'quick_reply',
             media_type: 'audio',
             media_url: uploaded.url,
             content: ''
         });
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Ãudio atualizado!');
+        showToast('success', 'Sucesso', 'Áudio atualizado!');
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel atualizar o Ã¡udio');
+        showToast('error', 'Erro', 'Não foi possível atualizar o áudio');
     } finally {
         if (target) target.value = '';
     }
@@ -1693,14 +1693,14 @@ async function saveNewTemplate() {
     const message = (document.getElementById('newTemplateMessage') as HTMLTextAreaElement | null)?.value.trim() || '';
     const audioInput = document.getElementById('newTemplateAudio') as HTMLInputElement | null;
     const audioFile = audioInput?.files?.[0];
-    if (!name) { showToast('error', 'Erro', 'Preencha o tÃ­tulo da resposta rÃ¡pida'); return; }
+    if (!name) { showToast('error', 'Erro', 'Preencha o título da resposta rápida'); return; }
     try {
         if (type === 'audio') {
             if (!audioFile) {
-                showToast('error', 'Erro', 'Selecione um arquivo de Ã¡udio');
+                showToast('error', 'Erro', 'Selecione um arquivo de áudio');
                 return;
             }
-            showLoading('Enviando Ã¡udio...');
+            showLoading('Enviando áudio...');
             const uploaded = await uploadFile(audioFile);
             hideLoading();
             await api.post('/api/templates', {
@@ -1729,10 +1729,10 @@ async function saveNewTemplate() {
         if (newTemplateType) newTemplateType.value = 'text';
         updateNewTemplateForm();
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Resposta rÃ¡pida adicionada!');
+        showToast('success', 'Sucesso', 'Resposta rápida adicionada!');
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel adicionar a resposta rÃ¡pida');
+        showToast('error', 'Erro', 'Não foi possível adicionar a resposta rápida');
     }
 }
 
@@ -1801,7 +1801,7 @@ function renderWhatsAppAccountsManager() {
                         />
                     </div>
                     <div class="form-group connection-account-inline-field">
-                        <label class="form-label">Limite diÃ¡rio</label>
+                        <label class="form-label">Limite diário</label>
                         <input
                             type="number"
                             min="0"
@@ -1811,7 +1811,7 @@ function renderWhatsAppAccountsManager() {
                             value="${dailyLimit}"
                         />
                     </div>
-                    <label class="connection-campaign-toggle" title="Participa de campanhas e transmissÃµes">
+                    <label class="connection-campaign-toggle" title="Participa de campanhas e transmissões">
                         <input
                             type="checkbox"
                             class="connection-session-enabled-input"
@@ -1872,10 +1872,10 @@ async function saveWhatsAppSessionName(sessionToken: string) {
             daily_limit: dailyLimit,
             dispatch_weight: dispatchWeight
         });
-        showToast('success', 'Sucesso', 'ConfiguraÃ§Ãµes da conta atualizadas.');
+        showToast('success', 'Sucesso', 'Configurações da conta atualizadas.');
         await refreshWhatsAppAccounts();
     } catch (error) {
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel atualizar a conta.');
+        showToast('error', 'Erro', 'Não foi possível atualizar a conta.');
     }
 }
 
@@ -1895,7 +1895,7 @@ async function removeWhatsAppSession(sessionToken: string) {
         showToast('success', 'Sucesso', 'Conta removida.');
         await refreshWhatsAppAccounts();
     } catch (error) {
-        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel remover a conta.');
+        showToast('error', 'Erro', 'Não foi possível remover a conta.');
     }
 }
 
@@ -1910,7 +1910,7 @@ async function connectWhatsApp() {
             if (qrContainer) qrContainer.style.display = 'block';
             if (qrCode) qrCode.innerHTML = `<img src="${response.qr}" alt="QR Code" style="max-width: 250px;">`;
         }
-    } catch (error) { hideLoading(); showToast('error', 'Erro', 'NÃ£o foi possÃ­vel gerar o QR Code'); }
+    } catch (error) { hideLoading(); showToast('error', 'Erro', 'Não foi possível gerar o QR Code'); }
 }
 
 async function disconnectWhatsApp() {
@@ -1926,7 +1926,7 @@ function saveWhatsAppSettings() {
         workEnd: (document.getElementById('workEnd') as HTMLInputElement | null)?.value || ''
     };
     writeLocalSettingsStorage(settings);
-    showToast('success', 'Sucesso', 'ConfiguraÃ§Ãµes salvas!');
+    showToast('success', 'Sucesso', 'Configurações salvas!');
 }
 
 async function saveAiSettings() {
@@ -1940,9 +1940,9 @@ async function saveAiSettings() {
         await api.put('/api/settings', {
             ai_assistant: ai
         });
-        showToast('success', 'Sucesso', 'ConfiguraÃ§Ãµes de InteligÃªncia Artificial salvas!');
+        showToast('success', 'Sucesso', 'Configurações de Inteligência Artificial salvas!');
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas nÃ£o foi possÃ­vel sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
     }
 }
 
@@ -1961,7 +1961,7 @@ async function saveNotificationSettings() {
         });
         showToast('success', 'Sucesso', 'Notificacoes salvas!');
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas nÃ£o foi possÃ­vel sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
     }
 }
 
@@ -1976,7 +1976,7 @@ function getUserRoleLabel(role: unknown) {
     const normalized = normalizeUserRole(role);
     if (normalized === 'admin') return 'Administrador';
     if (normalized === 'supervisor') return 'Supervisor';
-    return 'UsuÃ¡rio';
+    return 'Usuário';
 }
 
 function getUserRoleBadgeClass(role: unknown) {
@@ -2087,7 +2087,7 @@ function renderUsersTable() {
             <tr>
                 <td colspan="5" class="table-empty">
                     <div class="table-empty-icon icon icon-empty icon-lg"></div>
-                    <p>Nenhum usuÃ¡rio encontrado</p>
+                    <p>Nenhum usuário encontrado</p>
                 </td>
             </tr>
         `;
@@ -2111,7 +2111,7 @@ function renderUsersTable() {
                 <td><span class="badge ${active ? 'badge-success' : 'badge-secondary'}">${active ? 'Ativo' : 'Inativo'}</span></td>
                 <td>
                     ${canEdit ? `
-                    <button class="btn btn-sm btn-outline" onclick="openEditUserModal(${userId})" title="Editar usuÃ¡rio">
+                    <button class="btn btn-sm btn-outline" onclick="openEditUserModal(${userId})" title="Editar usuário">
                         <span class="icon icon-edit icon-sm"></span>
                     </button>
                     ` : ''}
@@ -2134,7 +2134,7 @@ async function loadUsers(options: { silent?: boolean } = {}) {
             <tr>
                 <td colspan="5" class="table-empty">
                     <div class="table-empty-icon icon icon-empty icon-lg"></div>
-                    <p>Carregando usuÃ¡rios...</p>
+                    <p>Carregando usuários...</p>
                 </td>
             </tr>
         `;
@@ -2153,14 +2153,14 @@ async function loadUsers(options: { silent?: boolean } = {}) {
                 <tr>
                     <td colspan="5" class="table-empty">
                         <div class="table-empty-icon icon icon-empty icon-lg"></div>
-                        <p>NÃ£o foi possÃ­vel carregar os usuÃ¡rios</p>
+                        <p>Não foi possível carregar os usuários</p>
                     </td>
                 </tr>
             `;
         }
         const message = String(error?.message || '').toLowerCase();
         if (message.includes('permiss')) {
-            showToast('warning', 'Aviso', 'Sua conta nÃ£o tem permissÃ£o para listar todos os usuÃ¡rios.');
+            showToast('warning', 'Aviso', 'Sua conta não tem permissão para listar todos os usuários.');
         }
     }
 }
@@ -2171,12 +2171,12 @@ function openEditUserModal(id: number) {
 
     const user = usersCache.find((item) => Number(item.id) === userId);
     if (!user) {
-        showToast('warning', 'Aviso', 'UsuÃ¡rio nÃ£o encontrado');
+        showToast('warning', 'Aviso', 'Usuário não encontrado');
         return;
     }
     const isPrimaryAdmin = isManagedUserPrimaryAdmin(user);
     if (isPrimaryAdmin && !isCurrentUserOwnerAdmin()) {
-        showToast('warning', 'Aviso', 'Somente o admin principal pode editar os prÃ³prios dados');
+        showToast('warning', 'Aviso', 'Somente o admin principal pode editar os próprios dados');
         return;
     }
 
@@ -2211,14 +2211,14 @@ async function updateUser() {
     const name = String(editUserName?.value || '').trim();
 
     if (!id || !name) {
-        showToast('error', 'Erro', 'Nome Ã© obrigatÃ³rio');
+        showToast('error', 'Erro', 'Nome é obrigatório');
         return;
     }
 
     const editedUser = usersCache.find((item) => Number(item.id) === id);
     const isPrimaryAdmin = isManagedUserPrimaryAdmin(editedUser);
     if (isPrimaryAdmin && !isCurrentUserOwnerAdmin()) {
-        showToast('warning', 'Aviso', 'Somente o admin principal pode editar os prÃ³prios dados');
+        showToast('warning', 'Aviso', 'Somente o admin principal pode editar os próprios dados');
         return;
     }
     const payload: Record<string, unknown> = { name };
@@ -2231,9 +2231,9 @@ async function updateUser() {
         await api.put(`/api/users/${id}`, payload);
         closeModal('editUserModal');
         await loadUsers();
-        showToast('success', 'Sucesso', 'UsuÃ¡rio atualizado!');
+        showToast('success', 'Sucesso', 'Usuário atualizado!');
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'NÃ£o foi possÃ­vel atualizar o usuÃ¡rio');
+        showToast('error', 'Erro', error?.message || 'Não foi possível atualizar o usuário');
     }
 }
 
@@ -2270,9 +2270,9 @@ async function addUser() {
         if (newUserPassword) newUserPassword.value = '';
         if (newUserRole) newUserRole.value = 'agent';
         await loadUsers();
-        showToast('success', 'Sucesso', 'UsuÃ¡rio adicionado!');
+        showToast('success', 'Sucesso', 'Usuário adicionado!');
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'NÃ£o foi possÃ­vel adicionar o usuÃ¡rio');
+        showToast('error', 'Erro', error?.message || 'Não foi possível adicionar o usuário');
     }
 }
 
@@ -2284,13 +2284,13 @@ async function deleteUser(id: number) {
 
     const userId = Number(id);
     if (!Number.isFinite(userId) || userId <= 0) {
-        showToast('error', 'Erro', 'UsuÃ¡rio invÃ¡lido');
+        showToast('error', 'Erro', 'Usuário inválido');
         return;
     }
 
     const user = usersCache.find((item) => Number(item.id) === userId);
     if (isManagedUserPrimaryAdmin(user)) {
-        showToast('warning', 'Aviso', 'NÃ£o Ã© permitido remover o admin principal da conta');
+        showToast('warning', 'Aviso', 'Não é permitido remover o admin principal da conta');
         return;
     }
     const name = String(user?.name || 'este usuario');
@@ -2310,14 +2310,14 @@ async function confirmDeleteUser() {
     const confirmDeleteUserId = document.getElementById('confirmDeleteUserId') as HTMLInputElement | null;
     const userId = Number(confirmDeleteUserId?.value || 0);
     if (!Number.isFinite(userId) || userId <= 0) {
-        showToast('error', 'Erro', 'UsuÃ¡rio invÃ¡lido');
+        showToast('error', 'Erro', 'Usuário inválido');
         return;
     }
     const user = usersCache.find((item) => Number(item.id) === userId);
     if (isManagedUserPrimaryAdmin(user)) {
         closeModal('confirmDeleteUserModal');
         if (confirmDeleteUserId) confirmDeleteUserId.value = '';
-        showToast('warning', 'Aviso', 'NÃ£o Ã© permitido remover o admin principal da conta');
+        showToast('warning', 'Aviso', 'Não é permitido remover o admin principal da conta');
         return;
     }
 
@@ -2326,9 +2326,9 @@ async function confirmDeleteUser() {
         closeModal('confirmDeleteUserModal');
         if (confirmDeleteUserId) confirmDeleteUserId.value = '';
         await loadUsers();
-        showToast('success', 'Sucesso', 'UsuÃ¡rio removido!');
+        showToast('success', 'Sucesso', 'Usuário removido!');
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'NÃ£o foi possÃ­vel remover o usuÃ¡rio');
+        showToast('error', 'Erro', error?.message || 'Não foi possível remover o usuário');
     }
 }
 
@@ -2369,7 +2369,7 @@ async function confirmDeleteAccount() {
             window.location.reload();
         }, 400);
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'NÃ£o foi possÃ­vel excluir a conta');
+        showToast('error', 'Erro', error?.message || 'Não foi possível excluir a conta');
     }
 }
 
@@ -2382,7 +2382,7 @@ async function changePassword() {
     const newPass = (document.getElementById('newPassword') as HTMLInputElement | null)?.value || '';
     const confirm = (document.getElementById('confirmPassword') as HTMLInputElement | null)?.value || '';
     if (!current || !newPass || !confirm) { showToast('error', 'Erro', 'Preencha todos os campos'); return; }
-    if (newPass !== confirm) { showToast('error', 'Erro', 'As senhas nÃ£o conferem'); return; }
+    if (newPass !== confirm) { showToast('error', 'Erro', 'As senhas não conferem'); return; }
     if (newPass.length < 6) { showToast('error', 'Erro', 'A senha deve ter pelo menos 6 caracteres'); return; }
 
     try {
@@ -2398,7 +2398,7 @@ async function changePassword() {
         if (newPassword) newPassword.value = '';
         if (confirmPassword) confirmPassword.value = '';
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'NÃ£o foi possÃ­vel alterar a senha');
+        showToast('error', 'Erro', error?.message || 'Não foi possível alterar a senha');
     }
 }
 
@@ -2413,8 +2413,8 @@ async function regenerateApiKey() {
     if (apiKey) apiKey.value = 'sk_live_' + Math.random().toString(36).substring(2, 15);
     showToast('success', 'Sucesso', 'Nova API Key gerada!');
 }
-function testWebhook() { showToast('info', 'Testando', 'Enviando requisiÃ§Ã£o de teste...'); setTimeout(() => { showToast('success', 'Sucesso', 'Webhook respondeu corretamente!'); }, 1500); }
-function saveApiSettings() { showToast('success', 'Sucesso', 'ConfiguraÃ§Ãµes de API salvas!'); }
+function testWebhook() { showToast('info', 'Testando', 'Enviando requisição de teste...'); setTimeout(() => { showToast('success', 'Sucesso', 'Webhook respondeu corretamente!'); }, 1500); }
+function saveApiSettings() { showToast('success', 'Sucesso', 'Configurações de API salvas!'); }
 
 const windowAny = window as Window & {
     initConfiguracoes?: () => void;
@@ -2514,4 +2514,3 @@ windowAny.saveApiSettings = saveApiSettings;
 windowAny.loadPlanStatus = loadPlanStatus;
 
 export { initConfiguracoes };
-
