@@ -32,6 +32,21 @@ function resolvePostgresApplicationName() {
     return `${service}:${commit}:${deploy}`.slice(0, 63);
 }
 
+function parseBooleanEnv(value, fallback = false) {
+    if (value === undefined || value === null || value === '') return fallback;
+    const normalized = String(value).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'nao', 'off'].includes(normalized)) return false;
+    return fallback;
+}
+
+function parsePositiveIntEnv(value, fallback, min = 1, max = Number.POSITIVE_INFINITY) {
+    const parsed = parseInt(String(value ?? ''), 10);
+    if (!Number.isFinite(parsed) || parsed < min) return fallback;
+    if (Number.isFinite(max) && parsed > max) return max;
+    return parsed;
+}
+
 function getPostgresPool() {
     if (PostgresPool) return PostgresPool;
     try {
@@ -54,9 +69,35 @@ function getDatabase() {
 
     const Pool = getPostgresPool();
     const applicationName = resolvePostgresApplicationName();
+    const poolMax = parsePositiveIntEnv(process.env.PG_POOL_MAX, 20, 1, 200);
+    const idleTimeoutMillis = parsePositiveIntEnv(process.env.PG_IDLE_TIMEOUT_MS, 30000, 1000, 30 * 60 * 1000);
+    const connectionTimeoutMillis = parsePositiveIntEnv(process.env.PG_CONNECTION_TIMEOUT_MS, 10000, 1000, 5 * 60 * 1000);
+    const queryTimeout = parsePositiveIntEnv(process.env.PG_QUERY_TIMEOUT_MS, 60000, 1000, 15 * 60 * 1000);
+    const statementTimeout = parsePositiveIntEnv(process.env.PG_STATEMENT_TIMEOUT_MS, 60000, 1000, 15 * 60 * 1000);
+    const idleInTransactionTimeout = parsePositiveIntEnv(
+        process.env.PG_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS,
+        60000,
+        1000,
+        15 * 60 * 1000
+    );
+    const keepAlive = parseBooleanEnv(process.env.PG_KEEPALIVE, true);
+    const keepAliveInitialDelayMillis = parsePositiveIntEnv(
+        process.env.PG_KEEPALIVE_INITIAL_DELAY_MS,
+        10000,
+        1000,
+        10 * 60 * 1000
+    );
     pool = new Pool({
         connectionString: process.env.DATABASE_URL,
         application_name: applicationName,
+        max: poolMax,
+        idleTimeoutMillis,
+        connectionTimeoutMillis,
+        query_timeout: queryTimeout,
+        statement_timeout: statementTimeout,
+        idle_in_transaction_session_timeout: idleInTransactionTimeout,
+        keepAlive,
+        keepAliveInitialDelayMillis,
         ssl: process.env.NODE_ENV == 'production'
             ? { rejectUnauthorized: false }
             : false
@@ -64,6 +105,10 @@ function getDatabase() {
 
     console.log('?? Banco de dados conectado: Postgres');
     console.log(`[DB] application_name=${applicationName}`);
+    console.log(
+        `[DB] pool max=${poolMax} idleTimeoutMs=${idleTimeoutMillis} connTimeoutMs=${connectionTimeoutMillis} `
+        + `queryTimeoutMs=${queryTimeout} statementTimeoutMs=${statementTimeout}`
+    );
     return pool;
 }
 

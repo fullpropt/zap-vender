@@ -67,10 +67,27 @@ function normalizeTagFilterInput(value) {
     return JSON.stringify(tags);
 }
 
+function leadMatchesTagFilter(leadTagsValue, tagFilterValue) {
+    const filterKeys = uniqueTagLabels(tagFilterValue)
+        .map((tag) => normalizeTagKey(tag))
+        .filter(Boolean);
+    if (!filterKeys.length) return true;
+
+    const leadKeys = new Set(
+        parseTagList(leadTagsValue)
+            .map((tag) => normalizeTagKey(tag))
+            .filter(Boolean)
+    );
+    if (!leadKeys.size) return false;
+
+    return filterKeys.some((key) => leadKeys.has(key));
+}
+
 module.exports = {
     normalizeTagLabel,
     normalizeTagKey,
     parseTagList,
     uniqueTagLabels,
-    normalizeTagFilterInput
+    normalizeTagFilterInput,
+    leadMatchesTagFilter
 };

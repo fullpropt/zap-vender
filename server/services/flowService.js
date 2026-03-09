@@ -7,6 +7,7 @@ const { Flow, Lead, Conversation, Message, CustomEvent } = require('../database/
 const { run, queryOne, generateUUID } = require('../database/connection');
 const EventEmitter = require('events');
 const Fuse = require('fuse.js');
+const { normalizeLeadStatus } = require('../utils/leadStatus');
 const { classifyKeywordFlowIntent, classifyIntentRoute } = require('./intentClassifierService');
 const INTENT_STOPWORDS = new Set([
     'a', 'o', 'as', 'os', 'de', 'da', 'do', 'das', 'dos',
@@ -2499,9 +2500,8 @@ class FlowService extends EventEmitter {
     }
 
     async executeLeadStatusAction(execution, payload = {}) {
-        const rawStatus = Number(payload?.status);
-        if (!Number.isFinite(rawStatus) || rawStatus <= 0) return;
-        const nextStatus = Math.trunc(rawStatus);
+        const nextStatus = normalizeLeadStatus(payload?.status, null);
+        if (nextStatus === null) return;
         await Lead.update(execution.lead.id, { status: nextStatus });
         execution.lead.status = nextStatus;
     }

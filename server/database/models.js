@@ -11,6 +11,7 @@ const {
     parseTagList: sharedParseTagList,
     uniqueTagLabels: sharedUniqueTagLabels
 } = require('../utils/tagUtils');
+const { normalizeLeadStatus } = require('../utils/leadStatus');
 
 function normalizeDigits(value) {
     return String(value || '').replace(/\D/g, '');
@@ -418,6 +419,11 @@ const Lead = {
         const customFields = normalizedSource !== 'whatsapp' && sanitizedName
             ? lockLeadNameAsManual(initialCustomFields, sanitizedName)
             : initialCustomFields;
+        const hasExplicitStatus = Object.prototype.hasOwnProperty.call(data || {}, 'status');
+        const normalizedStatus = normalizeLeadStatus(data.status, hasExplicitStatus ? null : 1);
+        if (normalizedStatus === null) {
+            throw new Error('Status invalido. Use 1, 2, 3 ou 4.');
+        }
         const ownerUserId = await resolveLeadOwnerUserIdInput(data);
         
         const result = await run(`
@@ -432,7 +438,7 @@ const Lead = {
             data.email,
             data.vehicle,
             data.plate,
-            data.status || 1,
+            normalizedStatus,
             JSON.stringify(data.tags || []),
             JSON.stringify(customFields),
             source,
@@ -567,6 +573,16 @@ const Lead = {
                     if (!sanitizedName) continue;
                     fields.push('name = ?');
                     values.push(sanitizedName);
+                    continue;
+                }
+
+                if (key === 'status') {
+                    const normalizedStatus = normalizeLeadStatus(value, null);
+                    if (normalizedStatus === null) {
+                        throw new Error('Status invalido. Use 1, 2, 3 ou 4.');
+                    }
+                    fields.push('status = ?');
+                    values.push(normalizedStatus);
                     continue;
                 }
 

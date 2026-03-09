@@ -1330,7 +1330,7 @@ function syncCampaignDetailsModal(campaign: Campaign, options: { refreshRecipien
 
     const detailsTitle = document.getElementById('detailsTitle') as HTMLElement | null;
     if (detailsTitle) {
-        detailsTitle.innerHTML = `<span class="icon icon-campaigns icon-sm"></span> ${campaign.name}`;
+        detailsTitle.innerHTML = `<span class="icon icon-campaigns icon-sm"></span> ${escapeCampaignText(campaign.name)}`;
     }
 
     renderCampaignOverviewContent(campaign);
@@ -1822,7 +1822,7 @@ function renderCampaigns() {
                         aria-controls="campaign-details-${c.id}"
                     >
                         <div class="campaign-header-main">
-                            <h3 class="campaign-title">${c.name}</h3>
+                            <h3 class="campaign-title">${escapeCampaignText(c.name)}</h3>
                             <div class="campaign-date">Criada em ${formatDate(c.created_at, 'short')}</div>
                         </div>
                         <div class="campaign-header-meta">
@@ -1983,7 +1983,7 @@ function viewCampaign(id: number) {
 
     const detailsTitle = document.getElementById('detailsTitle') as HTMLElement | null;
     if (detailsTitle) {
-        detailsTitle.innerHTML = `<span class="icon icon-campaigns icon-sm"></span> ${campaign.name}`;
+        detailsTitle.innerHTML = `<span class="icon icon-campaigns icon-sm"></span> ${escapeCampaignText(campaign.name)}`;
     }
     renderCampaignOverviewContent(campaign);
     renderCampaignMessages(campaign);

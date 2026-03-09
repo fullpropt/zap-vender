@@ -112,6 +112,15 @@ function parseLeadStatus(value: unknown): LeadStatus | null {
     return normalized as LeadStatus;
 }
 
+function escapeFunnelText(value: unknown) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 function isFunnelMobileMode() {
     if (typeof window === 'undefined') return false;
     return window.matchMedia('(max-width: 768px)').matches;
@@ -322,22 +331,38 @@ function removeKanbanBodyEmptyState(body: HTMLElement) {
 }
 
 function renderLeadCard(lead: Lead) {
+    const leadId = Number(lead.id);
+    const safeLeadId = Number.isFinite(leadId) && leadId > 0 ? Math.floor(leadId) : 0;
+    const leadName = escapeFunnelText(lead.name || 'Sem nome');
+    const phoneDigits = String(lead.phone || '').replace(/\D/g, '');
+    const vehicleText = lead.vehicle ? escapeFunnelText(lead.vehicle) : '';
+    const whatsappAriaLabel = escapeFunnelText(`Abrir conversa no WhatsApp com ${lead.name || 'lead'}`);
+
     return `
-        <div class="kanban-card" draggable="true" data-id="${lead.id}" onclick="viewLead(${lead.id})">
+        <div class="kanban-card" draggable="true" data-id="${safeLeadId}" role="button" tabindex="0" onclick="viewLead(${safeLeadId})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();viewLead(${safeLeadId});}">
             <div class="kanban-card-header">
                 <div class="avatar avatar-sm" style="background: ${getAvatarColor(lead.name)}">${getInitials(lead.name)}</div>
                 <div>
-                    <div class="kanban-card-name">${lead.name || 'Sem nome'}</div>
-                    <div class="kanban-card-phone">${formatPhone(lead.phone)}</div>
+                    <div class="kanban-card-name">${leadName}</div>
+                    <div class="kanban-card-phone">${escapeFunnelText(formatPhone(phoneDigits))}</div>
                 </div>
             </div>
-            ${lead.vehicle ? `<div class="kanban-card-vehicle"><span class="icon icon-car icon-sm"></span> ${lead.vehicle}</div>` : ''}
+            ${vehicleText ? `<div class="kanban-card-vehicle"><span class="icon icon-car icon-sm"></span> ${vehicleText}</div>` : ''}
             <div class="kanban-card-footer">
                 <span class="kanban-card-date">${timeAgo(lead.created_at)}</span>
-                <button class="btn btn-sm btn-whatsapp btn-icon" onclick="event.stopPropagation(); quickWhatsApp('${lead.phone}')"><span class="icon icon-message icon-sm"></span></button>
+                <button class="btn btn-sm btn-whatsapp btn-icon" aria-label="${whatsappAriaLabel}" onclick="event.stopPropagation(); quickWhatsApp('${phoneDigits}')"><span class="icon icon-message icon-sm"></span></button>
             </div>
         </div>
     `;
+}
+
+function buildLeadStatusOptionsHtml(currentStatus: LeadStatus) {
+    const statusValues: LeadStatus[] = [1, 2, 3, 4];
+    return statusValues.map((statusValue) => {
+        const stage = funnelStages[statusValue - 1] || DEFAULT_FUNNEL_STAGES[statusValue - 1];
+        const stageName = escapeFunnelText(stage?.name || `Etapa ${statusValue}`);
+        return `<option value="${statusValue}" ${currentStatus === statusValue ? 'selected' : ''}>${stageName}</option>`;
+    }).join('');
 }
 
 function renderKanbanStage(stage: LeadStatus) {
@@ -738,26 +763,24 @@ function viewLead(id: number) {
 
     const leadModalTitle = document.getElementById('leadModalTitle') as HTMLElement | null;
     const leadModalBody = document.getElementById('leadModalBody') as HTMLElement | null;
+    const leadPhoneDigits = String(currentLead.phone || '').replace(/\D/g, '');
     if (leadModalTitle) {
-        leadModalTitle.innerHTML = `<span class="icon icon-user icon-sm"></span> ${currentLead.name || 'Lead'}`;
+        leadModalTitle.innerHTML = `<span class="icon icon-user icon-sm"></span> ${escapeFunnelText(currentLead.name || 'Lead')}`;
     }
     if (leadModalBody) {
         leadModalBody.innerHTML = `
         <div class="form-group">
             <label class="form-label">Nome</label>
-            <p>${currentLead.name || '-'}</p>
+            <p>${escapeFunnelText(currentLead.name || '-')}</p>
         </div>
         <div class="form-group">
             <label class="form-label">WhatsApp</label>
-            <p><a href="https://wa.me/55${currentLead.phone || ''}" target="_blank" style="color: var(--whatsapp);">${formatPhone(currentLead.phone || '')}</a></p>
+            <p><a href="https://wa.me/55${leadPhoneDigits}" target="_blank" style="color: var(--whatsapp);">${escapeFunnelText(formatPhone(leadPhoneDigits))}</a></p>
         </div>
         <div class="form-group">
             <label class="form-label">Status</label>
             <select class="form-select" id="leadStatus" onchange="changeLeadStatus(${currentLead.id}, this.value)">
-                <option value="1" ${currentLead.status === 1 ? 'selected' : ''}>Novo</option>
-                <option value="2" ${currentLead.status === 2 ? 'selected' : ''}>Em Andamento</option>
-                <option value="3" ${currentLead.status === 3 ? 'selected' : ''}>Conclu\u00EDdo</option>
-                <option value="4" ${currentLead.status === 4 ? 'selected' : ''}>Perdido</option>
+                ${buildLeadStatusOptionsHtml(currentLead.status)}
             </select>
         </div>
         <div class="form-group">

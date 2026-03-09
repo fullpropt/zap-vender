@@ -36,6 +36,7 @@ class QueueService extends EventEmitter {
         this.sessionDisconnectedRetryMs = this.parsePositiveNumber(process.env.WHATSAPP_SESSION_DISCONNECTED_RETRY_MS, 60000);
         this.sessionReconnectingRetryMs = this.parsePositiveNumber(process.env.WHATSAPP_SESSION_RECONNECTING_RETRY_MS, 20000);
         this.sessionWarmingRetryMs = this.parsePositiveNumber(process.env.WHATSAPP_SESSION_WARMING_UP_RETRY_MS, 10000);
+        this.sessionCooldownRetryMs = this.parsePositiveNumber(process.env.WHATSAPP_SESSION_COOLDOWN_RETRY_MS, 15000);
     }
     
     /**
@@ -271,6 +272,10 @@ class QueueService extends EventEmitter {
 
         if (normalized.status === 'warming_up') {
             return this.sessionWarmingRetryMs;
+        }
+
+        if (normalized.status === 'cooldown') {
+            return this.sessionCooldownRetryMs;
         }
 
         if (normalized.status === 'reconnecting') {
@@ -697,6 +702,8 @@ class QueueService extends EventEmitter {
                         const reason = runtimeSessionState.reason || (
                             runtimeSessionState.status === 'warming_up'
                                 ? 'Sessao em aquecimento apos reconexao'
+                                : runtimeSessionState.status === 'cooldown'
+                                    ? 'Sessao em cooldown por limite de envio'
                                 : runtimeSessionState.status === 'reconnecting'
                                     ? 'Sessao reconectando'
                                     : 'Sessao nao conectada'
@@ -835,6 +842,8 @@ class QueueService extends EventEmitter {
                         : this.computeUnavailableSessionRetryMs({
                             status: errorCode === 'SESSION_WARMING_UP'
                                 ? 'warming_up'
+                                : errorCode === 'SESSION_COOLDOWN'
+                                    ? 'cooldown'
                                 : errorCode === 'SESSION_RECONNECTING'
                                     ? 'reconnecting'
                                     : 'disconnected'

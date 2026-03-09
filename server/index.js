@@ -1,8 +1,8 @@
-/**
+﻿/**
 
- * SELF PROTEÇÃO VEICULAR - SERVIDOR PRINCIPAL v4.1
+ * SELF PROTEÃ‡ÃƒO VEICULAR - SERVIDOR PRINCIPAL v4.1
 
- * Carregado por server/start.js (bootstrap) após listen - app e server já criados.
+ * Carregado por server/start.js (bootstrap) apÃ³s listen - app e server jÃ¡ criados.
 
  */
 
@@ -16,8 +16,6 @@ const cors = require('cors');
 
 const helmet = require('helmet');
 
-const rateLimit = require('express-rate-limit');
-
 const path = require('path');
 
 const fs = require('fs');
@@ -27,7 +25,7 @@ const multer = require('multer');
 
 
 
-// Baileys (loader dinâmico - ESM)
+// Baileys (loader dinÃ¢mico - ESM)
 
 const baileysLoader = require('./services/whatsapp/baileysLoader');
 
@@ -106,16 +104,19 @@ const {
     normalizeTagKey: normalizeUnifiedTagKey,
     parseTagList: parseUnifiedTagList,
     uniqueTagLabels: uniqueUnifiedTagLabels,
-    normalizeTagFilterInput: normalizeUnifiedTagFilterInput
+    normalizeTagFilterInput: normalizeUnifiedTagFilterInput,
+    leadMatchesTagFilter: leadMatchesUnifiedTagFilter
 } = require('./utils/tagUtils');
+const { normalizeLeadStatus, LEAD_STATUS_VALUES } = require('./utils/leadStatus');
 
 
 
-// Utils - Fixers (correções automáticas baseadas em análise de projetos GitHub)
+// Utils - Fixers (correÃ§Ãµes automÃ¡ticas baseadas em anÃ¡lise de projetos GitHub)
 
 const audioFixer = require('./utils/audioFixer');
 
 const connectionFixer = require('./utils/connectionFixer');
+const { scheduleBackup } = require('./utils/backup');
 
 
 
@@ -132,7 +133,8 @@ const {
 
 // Middleware
 
-const { authenticate, requestLogger, verifyToken } = require('./middleware/auth');
+const { authenticate, requestLogger, verifyToken, rateLimit: authRateLimit } = require('./middleware/auth');
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 
 
@@ -144,7 +146,7 @@ const { encrypt, decrypt } = require('./utils/encryption');
 
 // ============================================
 
-// CONFIGURAÇÕES
+// CONFIGURAÃ‡Ã•ES
 
 // ============================================
 
@@ -189,6 +191,15 @@ const WHATSAPP_DEFAULT_QUERY_TIMEOUT_MS = parsePositiveIntEnv(process.env.WHATSA
 const WHATSAPP_RETRY_REQUEST_DELAY_MS = parsePositiveIntEnv(process.env.WHATSAPP_RETRY_REQUEST_DELAY_MS, 500);
 const WHATSAPP_SESSION_SEND_WARMUP_MS = parsePositiveIntEnv(process.env.WHATSAPP_SESSION_SEND_WARMUP_MS, 12000);
 const WHATSAPP_SESSION_DISPATCH_BACKOFF_MS = parsePositiveIntEnv(process.env.WHATSAPP_SESSION_DISPATCH_BACKOFF_MS, 60000);
+const WHATSAPP_SESSION_RATE_LIMIT_ENABLED = parseBooleanEnv(process.env.WHATSAPP_SESSION_RATE_LIMIT_ENABLED, true);
+const WHATSAPP_SESSION_RATE_LIMIT_MAX_PER_MINUTE = parsePositiveIntInRange(
+    process.env.WHATSAPP_SESSION_RATE_LIMIT_MAX_PER_MINUTE,
+    30,
+    1,
+    2000
+);
+const METRICS_ENABLED = parseBooleanEnv(process.env.METRICS_ENABLED, false);
+const METRICS_BEARER_TOKEN = String(process.env.METRICS_BEARER_TOKEN || '').trim();
 const WHATSAPP_AUTH_STATE_DRIVER = String(process.env.WHATSAPP_AUTH_STATE_DRIVER || 'multi_file').trim().toLowerCase();
 const WHATSAPP_AUTH_STATE_DB_FALLBACK_MULTI_FILE = parseBooleanEnv(process.env.WHATSAPP_AUTH_STATE_DB_FALLBACK_MULTI_FILE, true);
 let cachedBaileysSocketVersion = null;
@@ -198,7 +209,7 @@ function parseBooleanEnv(value, fallback = false) {
     if (value === undefined || value === null || value === '') return fallback;
     const normalized = String(value).trim().toLowerCase();
     if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return true;
-    if (['0', 'false', 'no', 'nao', 'não', 'off'].includes(normalized)) return false;
+    if (['0', 'false', 'no', 'nao', 'nÃ£o', 'off'].includes(normalized)) return false;
     return fallback;
 }
 
@@ -273,6 +284,16 @@ const TENANT_INTEGRITY_AUDIT_SAMPLE_LIMIT = parsePositiveIntEnv(
 const TENANT_INTEGRITY_AUDIT_ALLOW_GLOBAL_MANUAL = parseBooleanEnv(
     process.env.TENANT_INTEGRITY_AUDIT_ALLOW_GLOBAL_MANUAL,
     false
+);
+const BACKUP_AUTO_ENABLED = parseBooleanEnv(
+    process.env.BACKUP_AUTO_ENABLED,
+    false
+);
+const BACKUP_INTERVAL_HOURS = parsePositiveIntInRange(
+    process.env.BACKUP_INTERVAL_HOURS,
+    24,
+    1,
+    720
 );
 const USER_PRESENCE_TTL_MS = parsePositiveIntEnv(
     process.env.USER_PRESENCE_TTL_MS,
@@ -595,19 +616,19 @@ async function resolveSocketOwnerUserId(socket) {
 
 
 
-// Avisar se chaves de segurança não foram configuradas (não bloqueia startup para deploy funcionar)
+// Avisar se chaves de seguranÃ§a nÃ£o foram configuradas (nÃ£o bloqueia startup para deploy funcionar)
 
 if (process.env.NODE_ENV === 'production') {
 
     if (!process.env.ENCRYPTION_KEY || ENCRYPTION_KEY === 'self-protecao-veicular-key-2024') {
 
-        console.warn('??  AVISO: Configure ENCRYPTION_KEY nas variáveis de ambiente para produção.');
+        console.warn('??  AVISO: Configure ENCRYPTION_KEY nas variÃ¡veis de ambiente para produÃ§Ã£o.');
 
     }
 
     if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'self-protecao-jwt-secret-2024') {
 
-        console.warn('??  AVISO: Configure JWT_SECRET nas variáveis de ambiente para produção.');
+        console.warn('??  AVISO: Configure JWT_SECRET nas variÃ¡veis de ambiente para produÃ§Ã£o.');
 
     }
 
@@ -615,7 +636,7 @@ if (process.env.NODE_ENV === 'production') {
 
 
 
-// Criar diretórios necessários
+// Criar diretÃ³rios necessÃ¡rios
 
 [SESSIONS_DIR, UPLOADS_DIR, path.join(__dirname, '..', 'data')].forEach(dir => {
 
@@ -675,13 +696,13 @@ const bootstrapPromise = bootstrapDatabase();
 
 // ============================================
 
-// MIDDLEWARES E ROTAS (app já tem /health do start.js)
+// MIDDLEWARES E ROTAS (app jÃ¡ tem /health do start.js)
 
 // ============================================
 
 
 
-// Segurança
+// SeguranÃ§a
 
 app.use(helmet({
 
@@ -701,7 +722,7 @@ app.set('trust proxy', 1);
 
 // Rate limiting
 
-const limiter = rateLimit({
+const limiter = authRateLimit({
 
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
 
@@ -779,7 +800,7 @@ const corsOptionsDelegate = (req, callback) => {
         allowedHostSet.has(originHost);
 
     if (!isAllowed) {
-        return callback(new Error('Não permitido por CORS'));
+        return callback(new Error('NÃ£o permitido por CORS'));
     }
 
     return callback(null, {
@@ -791,6 +812,81 @@ const corsOptionsDelegate = (req, callback) => {
 };
 
 app.use(cors(corsOptionsDelegate));
+
+
+
+app.get('/metrics', async (req, res) => {
+    if (!METRICS_ENABLED) {
+        return res.status(404).send('Not found');
+    }
+
+    if (METRICS_BEARER_TOKEN) {
+        const authHeader = String(req.header('Authorization') || '').trim();
+        const queryToken = String(req.query?.token || '').trim();
+        const bearerToken = authHeader.startsWith('Bearer ')
+            ? authHeader.slice('Bearer '.length).trim()
+            : '';
+        if (bearerToken !== METRICS_BEARER_TOKEN && queryToken !== METRICS_BEARER_TOKEN) {
+            return res.status(401).send('Unauthorized');
+        }
+    }
+
+    try {
+        const connectedSessions = Array.from(sessions.values()).filter((session) => session?.isConnected === true).length;
+        const totalSessions = sessions.size;
+        const queueStatsRow = await queryOne(`
+            SELECT
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
+                SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+            FROM message_queue
+        `);
+        const runningFlowsRow = await queryOne(`
+            SELECT COUNT(*)::int AS total
+            FROM flow_executions
+            WHERE status = 'running'
+        `);
+
+        const queuePending = Number(queueStatsRow?.pending || 0) || 0;
+        const queueProcessing = Number(queueStatsRow?.processing || 0) || 0;
+        const queueSent = Number(queueStatsRow?.sent || 0) || 0;
+        const queueFailed = Number(queueStatsRow?.failed || 0) || 0;
+        const flowRunning = Number(runningFlowsRow?.total || 0) || 0;
+
+        const metricsLines = [
+            '# HELP zapvender_process_uptime_seconds Node process uptime in seconds',
+            '# TYPE zapvender_process_uptime_seconds gauge',
+            `zapvender_process_uptime_seconds ${Math.floor(process.uptime())}`,
+            '# HELP zapvender_whatsapp_sessions_total Total WhatsApp sessions loaded in runtime',
+            '# TYPE zapvender_whatsapp_sessions_total gauge',
+            `zapvender_whatsapp_sessions_total ${totalSessions}`,
+            '# HELP zapvender_whatsapp_sessions_connected Connected WhatsApp sessions in runtime',
+            '# TYPE zapvender_whatsapp_sessions_connected gauge',
+            `zapvender_whatsapp_sessions_connected ${connectedSessions}`,
+            '# HELP zapvender_queue_pending_messages Pending messages in queue',
+            '# TYPE zapvender_queue_pending_messages gauge',
+            `zapvender_queue_pending_messages ${queuePending}`,
+            '# HELP zapvender_queue_processing_messages Processing messages in queue',
+            '# TYPE zapvender_queue_processing_messages gauge',
+            `zapvender_queue_processing_messages ${queueProcessing}`,
+            '# HELP zapvender_queue_sent_messages Sent messages in queue table',
+            '# TYPE zapvender_queue_sent_messages gauge',
+            `zapvender_queue_sent_messages ${queueSent}`,
+            '# HELP zapvender_queue_failed_messages Failed messages in queue table',
+            '# TYPE zapvender_queue_failed_messages gauge',
+            `zapvender_queue_failed_messages ${queueFailed}`,
+            '# HELP zapvender_flow_executions_running Running flow executions',
+            '# TYPE zapvender_flow_executions_running gauge',
+            `zapvender_flow_executions_running ${flowRunning}`
+        ];
+
+        res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+        return res.send(`${metricsLines.join('\n')}\n`);
+    } catch (error) {
+        return res.status(500).send(`metrics_error ${String(error?.message || 'unknown')}`);
+    }
+});
 
 
 
@@ -812,7 +908,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 
 
-// Autenticação obrigatória para /api (exceto login/refresh)
+// AutenticaÃ§Ã£o obrigatÃ³ria para /api (exceto login/refresh)
 
 app.use('/api', (req, res, next) => {
 
@@ -836,7 +932,7 @@ app.use('/api', (req, res, next) => {
 
 
 
-// Arquivos estáticos
+// Arquivos estÃ¡ticos
 
 const PUBLIC_IMG_DIR = path.join(__dirname, '..', 'public', 'img');
 if (fs.existsSync(PUBLIC_IMG_DIR)) {
@@ -917,7 +1013,7 @@ const io = new Server(server, {
 
 
 
-// Autenticação via JWT no handshake do Socket.IO
+// AutenticaÃ§Ã£o via JWT no handshake do Socket.IO
 
 function getOwnerScopeRoom(ownerUserId) {
     const normalizedOwnerUserId = normalizeOwnerUserId(ownerUserId);
@@ -1007,7 +1103,7 @@ io.use((socket, next) => {
 
 // ============================================
 
-// WHATSAPP - GERENCIAMENTO DE SESSÕES (via whatsapp service)
+// WHATSAPP - GERENCIAMENTO DE SESSÃ•ES (via whatsapp service)
 
 // ============================================
 
@@ -1031,6 +1127,7 @@ const recoveredFlowMessageIds = new Map();
 const sessionReconnectCatchupTimers = new Map();
 const sessionReconnectCatchupInFlight = new Set();
 const sessionHistorySyncQueues = new Map();
+const sessionSendRateStateBySessionId = new Map();
 const reconnectInFlight = new Set();
 let isServerShuttingDown = false;
 let inboxReconciliationIntervalId = null;
@@ -1187,7 +1284,7 @@ function isDisconnectedSessionRuntimeError(error) {
     );
 }
 
-function setRuntimeSessionDispatchBackoff(session, backoffMs = WHATSAPP_SESSION_DISPATCH_BACKOFF_MS) {
+function setRuntimeSessionDispatchBackoff(session, backoffMs = WHATSAPP_SESSION_DISPATCH_BACKOFF_MS, reason = 'unavailable') {
     if (!session) return 0;
     const durationMs = Number(backoffMs);
     const normalizedBackoffMs = Number.isFinite(durationMs) && durationMs > 0
@@ -1195,12 +1292,73 @@ function setRuntimeSessionDispatchBackoff(session, backoffMs = WHATSAPP_SESSION_
         : WHATSAPP_SESSION_DISPATCH_BACKOFF_MS;
     const nextBlockedUntilMs = Date.now() + normalizedBackoffMs;
     session.dispatchBlockedUntilMs = Math.max(Number(session.dispatchBlockedUntilMs || 0), nextBlockedUntilMs);
+    const normalizedReason = String(reason || '').trim().toLowerCase();
+    session.dispatchBlockReason = normalizedReason || null;
     return session.dispatchBlockedUntilMs;
 }
 
 function clearRuntimeSessionDispatchBackoff(session) {
     if (!session) return;
     session.dispatchBlockedUntilMs = 0;
+    session.dispatchBlockReason = null;
+}
+
+function consumeSessionSendRateSlot(sessionId) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId || !WHATSAPP_SESSION_RATE_LIMIT_ENABLED) {
+        return {
+            allowed: true,
+            retryAfterMs: 0,
+            limitPerMinute: WHATSAPP_SESSION_RATE_LIMIT_MAX_PER_MINUTE
+        };
+    }
+
+    const nowMs = Date.now();
+    const windowMs = 60000;
+    const limitPerMinute = Math.max(1, WHATSAPP_SESSION_RATE_LIMIT_MAX_PER_MINUTE);
+    let state = sessionSendRateStateBySessionId.get(normalizedSessionId);
+
+    if (!state || Number(state.windowEndsAtMs || 0) <= nowMs) {
+        state = {
+            count: 0,
+            windowEndsAtMs: nowMs + windowMs
+        };
+        sessionSendRateStateBySessionId.set(normalizedSessionId, state);
+    }
+
+    if (Number(state.count || 0) >= limitPerMinute) {
+        return {
+            allowed: false,
+            retryAfterMs: Math.max(1000, Number(state.windowEndsAtMs || nowMs + 1000) - nowMs),
+            limitPerMinute
+        };
+    }
+
+    state.count = Number(state.count || 0) + 1;
+    return {
+        allowed: true,
+        retryAfterMs: 0,
+        limitPerMinute,
+        remaining: Math.max(0, limitPerMinute - state.count)
+    };
+}
+
+function enforceSessionSendRateLimit(sessionId, session = null) {
+    const rateState = consumeSessionSendRateSlot(sessionId);
+    if (rateState.allowed) return;
+
+    const retryAfterMs = Math.max(1000, Number(rateState.retryAfterMs || 0) || 1000);
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    const runtimeSession = session || sessions.get(normalizedSessionId);
+    if (runtimeSession) {
+        setRuntimeSessionDispatchBackoff(runtimeSession, retryAfterMs, 'cooldown');
+    }
+
+    throw buildSessionUnavailableError({
+        status: 'cooldown',
+        retryAfterMs,
+        reason: `Limite de envio por sessao atingido (${rateState.limitPerMinute}/min)`
+    }, 'Sessao em cooldown de envio');
 }
 
 function clearRuntimeSessionReconnectTimer(session) {
@@ -1230,6 +1388,23 @@ function getSessionDispatchState(sessionId) {
     const blockedUntilMs = Number(session.dispatchBlockedUntilMs || 0);
     if (blockedUntilMs > nowMs) {
         const retryAfterMs = Math.max(1000, blockedUntilMs - nowMs);
+        const blockReason = String(session.dispatchBlockReason || '').trim().toLowerCase();
+        if (blockReason === 'cooldown') {
+            return {
+                available: false,
+                status: 'cooldown',
+                retryAfterMs,
+                reason: 'Sessao em cooldown por limite de envio'
+            };
+        }
+        if (blockReason === 'warming_up') {
+            return {
+                available: false,
+                status: 'warming_up',
+                retryAfterMs,
+                reason: 'Sessao em aquecimento apos reconexao'
+            };
+        }
         return {
             available: false,
             status: session.isConnected ? 'warming_up' : (session.reconnecting ? 'reconnecting' : 'disconnected'),
@@ -1391,6 +1566,30 @@ function resolveDefaultSessionId(preferredSessionId = '') {
     }
 
     return DEFAULT_WHATSAPP_SESSION_ID;
+}
+
+function resolveFirstConnectedSessionId(preferredSessionId = '') {
+    const preferred = sanitizeSessionId(preferredSessionId);
+    if (preferred && sessions.get(preferred)?.isConnected) {
+        return preferred;
+    }
+
+    for (const candidate of listDefaultSessionCandidates()) {
+        const normalizedCandidate = sanitizeSessionId(candidate);
+        if (normalizedCandidate && sessions.get(normalizedCandidate)?.isConnected) {
+            return normalizedCandidate;
+        }
+    }
+
+    for (const [runtimeSessionId, runtimeSession] of sessions.entries()) {
+        if (!runtimeSession?.isConnected) continue;
+        const normalizedRuntimeSessionId = sanitizeSessionId(runtimeSessionId);
+        if (normalizedRuntimeSessionId) {
+            return normalizedRuntimeSessionId;
+        }
+    }
+
+    return '';
 }
 
 function resolveSessionIdOrDefault(sessionId, fallbackSessionId = '') {
@@ -1572,7 +1771,7 @@ function normalizeText(value) {
     if (!value || typeof value !== 'string') return value;
     let text = value;
 
-    if (text.includes('Ã') || text.includes('Â')) {
+    if (text.includes('Ãƒ') || text.includes('Ã‚')) {
         try {
             const decoded = Buffer.from(text, 'latin1').toString('utf8');
             if (decoded && !decoded.includes('\uFFFD')) {
@@ -1585,14 +1784,14 @@ function normalizeText(value) {
 
     if (text.includes('?') || text.includes('\uFFFD')) {
         const fixes = [
-            [/Usu[?\uFFFD]rio/g, 'Usuário'],
-            [/Voc[?\uFFFD]/g, 'Você'],
-            [/N[?\uFFFD]o/g, 'Não'],
-            [/n[?\uFFFD]o/g, 'não'],
-            [/Conex[?\uFFFD]o/g, 'Conexão'],
-            [/Sess[?\uFFFD]es/g, 'Sessões'],
-            [/Automa[?\uFFFD][?\uFFFD]o/g, 'Automação'],
-            [/Prote[?\uFFFD][?\uFFFD]o/g, 'Proteção']
+            [/Usu[?\uFFFD]rio/g, 'UsuÃ¡rio'],
+            [/Voc[?\uFFFD]/g, 'VocÃª'],
+            [/N[?\uFFFD]o/g, 'NÃ£o'],
+            [/n[?\uFFFD]o/g, 'nÃ£o'],
+            [/Conex[?\uFFFD]o/g, 'ConexÃ£o'],
+            [/Sess[?\uFFFD]es/g, 'SessÃµes'],
+            [/Automa[?\uFFFD][?\uFFFD]o/g, 'AutomaÃ§Ã£o'],
+            [/Prote[?\uFFFD][?\uFFFD]o/g, 'ProteÃ§Ã£o']
         ];
         for (const [regex, replacement] of fixes) {
             text = text.replace(regex, replacement);
@@ -1612,7 +1811,7 @@ function sanitizeAutoName(value) {
         lower === 'unknown' ||
         lower === 'undefined' ||
         lower === 'null' ||
-        lower === 'você' ||
+        lower === 'vocÃª' ||
         lower === 'voce'
     ) {
         return '';
@@ -1912,9 +2111,9 @@ function shouldAutoUpdateLeadName(lead, phone, sessionDisplayName = '') {
         current === 'unknown' ||
         current === 'undefined' ||
         current === 'null' ||
-        current === 'você' ||
+        current === 'vocÃª' ||
         current === 'voce' ||
-        current === 'usuário (você)' ||
+        current === 'usuÃ¡rio (vocÃª)' ||
         current === 'usuario (voce)'
     ) {
         return true;
@@ -1926,7 +2125,7 @@ function shouldAutoUpdateLeadName(lead, phone, sessionDisplayName = '') {
     if (/^\d+$/.test(currentRaw)) return true;
 
     const sessionName = normalizeText(String(sessionDisplayName || '').trim());
-    if (sessionName && (currentRaw === sessionName || currentRaw === `${sessionName} (Você)`)) {
+    if (sessionName && (currentRaw === sessionName || currentRaw === `${sessionName} (VocÃª)`)) {
         return true;
     }
 
@@ -2430,8 +2629,8 @@ function resolveMessageJid(msg, sessionPhone = '') {
 
     const preferredUserJid = nonSelfUserJid || uniqueUserJids[0] || null;
 
-    // NÃ£o mapear LID para o prÃ³prio nÃºmero da sessÃ£o, pois isso causa
-    // roteamento incorreto para o chat "VocÃª".
+    // NÃƒÂ£o mapear LID para o prÃƒÂ³prio nÃƒÂºmero da sessÃƒÂ£o, pois isso causa
+    // roteamento incorreto para o chat "VocÃƒÂª".
     if (lidJid && nonSelfUserJid) {
 
         registerJidAlias(lidJid, nonSelfUserJid, sessionDigits);
@@ -2620,7 +2819,7 @@ async function cleanupDuplicateMessages() {
 
     try {
 
-        // Remover duplicados com message_id igual (segurança extra)
+        // Remover duplicados com message_id igual (seguranÃ§a extra)
 
         await run(`
 
@@ -2642,7 +2841,7 @@ async function cleanupDuplicateMessages() {
 
 
 
-        // Remover duplicados sem message_id (mesmo conteúdo no mesmo segundo)
+        // Remover duplicados sem message_id (mesmo conteÃºdo no mesmo segundo)
 
         await run(`
 
@@ -2987,7 +3186,7 @@ async function persistWhatsappSession(sessionId, status, options = {}) {
 
     } catch (error) {
 
-        console.error(`[${sessionId}] Erro ao persistir sessão:`, error.message);
+        console.error(`[${sessionId}] Erro ao persistir sessÃ£o:`, error.message);
 
     }
 
@@ -3012,7 +3211,7 @@ async function rehydrateSessions(ioInstance) {
 
             if (hasLocalSession || hasDbAuthState) {
 
-                console.log(`[${sessionId}] Reidratando sessão armazenada...`);
+                console.log(`[${sessionId}] Reidratando sessÃ£o armazenada...`);
 
                 await createSession(sessionId, null, 0, {
                     ownerUserId: Number.isInteger(ownerUserId) && ownerUserId > 0 ? ownerUserId : undefined
@@ -3020,7 +3219,7 @@ async function rehydrateSessions(ioInstance) {
 
             } else {
 
-                console.log(`[${sessionId}] Sessão no banco sem auth state local/DB, ignorando.`);
+                console.log(`[${sessionId}] SessÃ£o no banco sem auth state local/DB, ignorando.`);
 
             }
 
@@ -3028,7 +3227,7 @@ async function rehydrateSessions(ioInstance) {
 
     } catch (error) {
 
-        console.error('? Erro ao reidratar sessões:', error.message);
+        console.error('? Erro ao reidratar sessÃµes:', error.message);
 
     }
 
@@ -3076,7 +3275,7 @@ const extractNumber = whatsappService.extractNumber;
 
 /**
 
- * Função de envio de mensagem (usada pelos serviços)
+ * FunÃ§Ã£o de envio de mensagem (usada pelos serviÃ§os)
 
  */
 
@@ -3097,6 +3296,7 @@ async function sendMessageToWhatsApp(options) {
         }
         throw buildSessionUnavailableError(dispatchState, 'WhatsApp nao esta conectado');
     }
+    enforceSessionSendRateLimit(sid, session);
 
     
 
@@ -3163,7 +3363,7 @@ async function sendMessageToWhatsApp(options) {
 
             } catch (error) {
 
-                console.error('[SendMessage] Erro ao preparar áudio, usando método padrão:', error.message);
+                console.error('[SendMessage] Erro ao preparar Ã¡udio, usando mÃ©todo padrÃ£o:', error.message);
 
                 result = await session.socket.sendMessage(targetJid, {
 
@@ -3208,7 +3408,7 @@ async function sendMessageToWhatsApp(options) {
 
 /**
 
- * Criar sessão WhatsApp
+ * Criar sessÃ£o WhatsApp
 
  */
 
@@ -3454,20 +3654,20 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
     try {
 
-        console.log(`[${sessionId}] Criando sessão... (Tentativa ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+        console.log(`[${sessionId}] Criando sessÃ£o... (Tentativa ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
 
         persistWhatsappSession(sessionId, 'connecting', { ownerUserId });
 
         
 
-        // Validar e corrigir sessÃ£o local somente quando o auth state principal for por arquivos.
+        // Validar e corrigir sessÃƒÂ£o local somente quando o auth state principal for por arquivos.
         if (WHATSAPP_AUTH_STATE_DRIVER === 'multi_file') {
 
             const sessionValidation = await connectionFixer.validateSession(sessionPath);
 
             if (!sessionValidation.valid && attempt === 0) {
 
-                console.log(`[${sessionId}] Problemas na sessão detectados, corrigindo...`);
+                console.log(`[${sessionId}] Problemas na sessÃ£o detectados, corrigindo...`);
 
                 await connectionFixer.fixSession(sessionPath);
 
@@ -3587,6 +3787,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
             ownerUserId,
             sendReadyAtMs: 0,
             dispatchBlockedUntilMs: 0,
+            dispatchBlockReason: null,
             lastDisconnectReason: null,
             lastDisconnectAt: null,
             reconnectScheduleTimer: null
@@ -3599,7 +3800,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         
 
-        // Eventos de conexão
+        // Eventos de conexÃ£o
 
         sock.ev.on('connection.update', async (update) => {
 
@@ -3716,7 +3917,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                 
 
-                console.log(`[${sessionId}] Conexão fechada. Status: ${statusCode}`);
+                console.log(`[${sessionId}] ConexÃ£o fechada. Status: ${statusCode}`);
 
                 persistWhatsappSession(sessionId, 'disconnected', {
                     ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || null
@@ -3724,7 +3925,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                 
 
-                // Detectar tipo de erro e aplicar correção
+                // Detectar tipo de erro e aplicar correÃ§Ã£o
 
                 const errorInfo = connectionFixer.detectDisconnectReason(lastDisconnect?.error);
                 session.lastDisconnectAt = Date.now();
@@ -3736,11 +3937,11 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                 };
                 setRuntimeSessionDispatchBackoff(session);
 
-                console.log(`[${sessionId}] Tipo de erro: ${errorInfo.type}, Ação: ${errorInfo.action}`);
+                console.log(`[${sessionId}] Tipo de erro: ${errorInfo.type}, AÃ§Ã£o: ${errorInfo.action}`);
 
                 
 
-                // Aplicar correção se necessário
+                // Aplicar correÃ§Ã£o se necessÃ¡rio
 
                 if (errorInfo.action === 'clean_session' || errorInfo.action === 'regenerate_keys') {
 
@@ -3869,7 +4070,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                         id: sock.user?.id,
 
-                        name: sock.user?.name || 'Usuário',
+                        name: sock.user?.name || 'UsuÃ¡rio',
 
                         pushName: sock.user?.verifiedName || sock.user?.name,
 
@@ -3882,10 +4083,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                     reconnectAttempts.set(sessionId, 0);
                     clearRuntimeSessionDispatchBackoff(session);
                     session.sendReadyAtMs = Date.now() + WHATSAPP_SESSION_SEND_WARMUP_MS;
-                    session.dispatchBlockedUntilMs = Math.max(
-                        Number(session.dispatchBlockedUntilMs || 0),
-                        session.sendReadyAtMs
-                    );
+                    if (WHATSAPP_SESSION_SEND_WARMUP_MS > 0) {
+                        setRuntimeSessionDispatchBackoff(session, WHATSAPP_SESSION_SEND_WARMUP_MS, 'warming_up');
+                    }
 
                     
 
@@ -3917,7 +4117,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
 
 
-                    // Forçar sincronização inicial de chats
+                    // ForÃ§ar sincronizaÃ§Ã£o inicial de chats
 
                     setTimeout(() => {
 
@@ -3931,7 +4131,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                     
 
-                    // Criar monitor de saúde da conexão
+                    // Criar monitor de saÃºde da conexÃ£o
 
                     stopSessionHealthMonitor(session);
                     const healthMonitor = connectionFixer.createHealthMonitor(sock, sessionId);
@@ -4221,7 +4421,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         
 
-        // Presença (digitando)
+        // PresenÃ§a (digitando)
 
         sock.ev.on('presence.update', (presence) => {
             if (!isActiveSessionSocket(sessionId, sock)) {
@@ -4279,7 +4479,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
     } catch (error) {
 
-        console.error(`[${sessionId}] ? Erro ao criar sessão:`, error.message);
+        console.error(`[${sessionId}] ? Erro ao criar sessÃ£o:`, error.message);
 
         
 
@@ -4295,7 +4495,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         } else {
 
-            clientSocket.emit('error', { message: 'Erro ao criar sessão WhatsApp' });
+            clientSocket.emit('error', { message: 'Erro ao criar sessÃ£o WhatsApp' });
 
             return null;
 
@@ -4531,10 +4731,7 @@ function isSupportedAutomationTriggerType(triggerType = '') {
 }
 
 function normalizeAutomationStatus(value) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return null;
-    const normalized = Math.trunc(parsed);
-    return normalized > 0 ? normalized : null;
+    return normalizeLeadStatus(value, null);
 }
 
 function parseAutomationJsonValue(rawValue = '', fallback = {}) {
@@ -4853,18 +5050,8 @@ function shouldAutomationRunForSession(automation, sessionId) {
 }
 
 function shouldAutomationRunForLeadTags(automation, lead) {
-    const tagFilters = parseAutomationTagFilters(automation?.tag_filter);
-    if (!tagFilters.length) return true;
     if (!lead) return false;
-
-    const leadTagKeys = new Set(
-        parseLeadTags(lead?.tags)
-            .map((tag) => normalizeAutomationTagKey(tag))
-            .filter(Boolean)
-    );
-    if (!leadTagKeys.size) return false;
-
-    return tagFilters.some((tag) => leadTagKeys.has(normalizeAutomationTagKey(tag)));
+    return leadMatchesUnifiedTagFilter(lead?.tags, automation?.tag_filter);
 }
 
 async function resolveAutomationConversation(lead, baseConversation = null, sessionId = DEFAULT_AUTOMATION_SESSION_ID) {
@@ -5527,7 +5714,7 @@ async function syncChatsToDatabase(sessionId, payload) {
         const isSelfChat = isSelfPhone(phoneDigits, sessionDigits);
         if (isSelfChat) {
             const safeSessionName = normalizeText(sessionDisplayName || '');
-            displayName = safeSessionName ? `${safeSessionName} (Você)` : 'Você';
+            displayName = safeSessionName ? `${safeSessionName} (VocÃª)` : 'VocÃª';
         }
 
 
@@ -5985,7 +6172,7 @@ async function triggerChatSync(sessionId, sock, store, attempt = 1) {
 
     } catch (error) {
 
-        console.warn(`[${sessionId}] ?? Não foi possível buscar chats por API:`, error.message);
+        console.warn(`[${sessionId}] ?? NÃ£o foi possÃ­vel buscar chats por API:`, error.message);
 
     }
 
@@ -6190,7 +6377,7 @@ async function backfillConversationMessagesFromStore(options = {}) {
         }
     }
 
-    console.log(`[${sessionId}] Backfill local recuperou ${inserted} mensagem(ns) e atualizou ${hydratedMedia} mídia(s) na conversa ${conversation.id}`);
+    console.log(`[${sessionId}] Backfill local recuperou ${inserted} mensagem(ns) e atualizou ${hydratedMedia} mÃ­dia(s) na conversa ${conversation.id}`);
     return createStoreBackfillResult(inserted, hydratedMedia);
 }
 
@@ -7534,8 +7721,8 @@ async function processIncomingMessage(sessionId, msg, options = {}) {
     const isFromRawUser = isUserJid(fromRawNormalized);
     const isFromRawSelf = isSelfPhone(fromRawDigits, sessionDigits);
 
-    // Em mensagens recebidas, quando o remoteJid jÃ¡ vem como usuÃ¡rio vÃ¡lido
-    // (e nÃ£o Ã© self), ele Ã© a melhor fonte para evitar roteamento incorreto.
+    // Em mensagens recebidas, quando o remoteJid jÃƒÂ¡ vem como usuÃƒÂ¡rio vÃƒÂ¡lido
+    // (e nÃƒÂ£o ÃƒÂ© self), ele ÃƒÂ© a melhor fonte para evitar roteamento incorreto.
     if (!isFromMe && isFromRawUser && !isFromRawSelf) {
         from = fromRawNormalized;
     }
@@ -7686,7 +7873,7 @@ async function processIncomingMessage(sessionId, msg, options = {}) {
 
     const safeSessionName = normalizeText(sessionDisplayName || '');
 
-    const selfName = safeSessionName ? `${safeSessionName} (Você)` : 'Você';
+    const selfName = safeSessionName ? `${safeSessionName} (VocÃª)` : 'VocÃª';
 
     
 
@@ -7979,6 +8166,7 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
         }
         throw buildSessionUnavailableError(dispatchState, 'Sessao nao esta conectada');
     }
+    enforceSessionSendRateLimit(sessionId, session);
 
     
 
@@ -8249,7 +8437,7 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
 /**
 
- * Verificar se sessão existe
+ * Verificar se sessÃ£o existe
 
  */
 
@@ -8263,13 +8451,13 @@ function sessionExists(sessionId) {
 
 // ============================================
 
-// INICIALIZAR SERVIÇOS
+// INICIALIZAR SERVIÃ‡OS
 
 // ============================================
 
 
 
-// Inicializar serviço de fila
+// Inicializar serviÃ§o de fila
 
 (async () => {
     await bootstrapPromise;
@@ -8395,8 +8583,26 @@ function sessionExists(sessionId) {
             };
         }
 
+        let directSessionId = resolvedSessionId;
+        try {
+            const directSessionDispatchState = await getSessionDispatchState(directSessionId);
+            if (directSessionDispatchState?.available === false) {
+                const connectedFallbackSessionId = resolveFirstConnectedSessionId(requestedSessionId);
+                if (connectedFallbackSessionId) {
+                    directSessionId = connectedFallbackSessionId;
+                }
+            }
+        } catch (_) {
+            // fallback para manter sessao resolvida originalmente
+        }
+
+        const finalDirectDispatchState = await getSessionDispatchState(directSessionId);
+        if (finalDirectDispatchState?.available === false) {
+            throw new Error('Nenhuma sessao WhatsApp conectada para envio de fluxo.');
+        }
+
         return await sendMessage(
-            resolvedSessionId,
+            directSessionId,
             destination,
             content,
             mediaType,
@@ -8418,6 +8624,16 @@ function sessionExists(sessionId) {
     startTenantIntegrityAuditWorker();
     startInboxReconciliationWorker();
     startFlowAwaitingInputRecoveryWorker();
+    if (BACKUP_AUTO_ENABLED) {
+        try {
+            scheduleBackup(BACKUP_INTERVAL_HOURS);
+            console.log(`[Backup] Rotina automatica ativada (intervalo=${BACKUP_INTERVAL_HOURS}h)`);
+        } catch (backupScheduleError) {
+            console.error('[Backup] Falha ao iniciar rotina automatica:', backupScheduleError.message);
+        }
+    } else {
+        console.log('[Backup] Rotina automatica desabilitada (BACKUP_AUTO_ENABLED=false)');
+    }
 })().catch((error) => {
     console.error('Erro ao inicializar servicos apos migracao:', error.message);
 });
@@ -8454,7 +8670,7 @@ async function requireActiveWhatsAppPlan(req, res, next) {
         if (!hasActivePlan) {
             return res.status(402).json({
                 success: false,
-                error: 'Sua assinatura não está ativa. Reative para poder usar a aplicação.',
+                error: 'Sua assinatura nÃ£o estÃ¡ ativa. Reative para poder usar a aplicaÃ§Ã£o.',
                 code: 'PLAN_INACTIVE'
             });
         }
@@ -8471,7 +8687,7 @@ async function ensureSocketActiveWhatsAppPlan(socket, sessionId = null) {
     if (!hasActivePlan) {
         const normalizedSessionId = sanitizeSessionId(sessionId);
         socket.emit('error', {
-            message: 'Sua assinatura não está ativa. Reative para poder usar a aplicação.',
+            message: 'Sua assinatura nÃ£o estÃ¡ ativa. Reative para poder usar a aplicaÃ§Ã£o.',
             code: 'PLAN_INACTIVE'
         });
         socket.emit('session-status', {
@@ -8854,7 +9070,7 @@ io.on('connection', (socket) => {
             owner_user_id: ownerScopeUserId || undefined
         });
         const sessionPhone = getSessionPhone(normalizedSessionId);
-        const sessionDisplayName = normalizeText(getSessionDisplayName(normalizedSessionId) || 'Usuário');
+        const sessionDisplayName = normalizeText(getSessionDisplayName(normalizedSessionId) || 'UsuÃ¡rio');
 
         const contacts = (await Promise.all(leads.map(async (lead) => {
             const conversation = await Conversation.findByLeadId(lead.id, normalizedSessionId || null);
@@ -8872,7 +9088,7 @@ io.on('connection', (socket) => {
                 const sessionDigits = normalizePhoneDigits(sessionPhone);
                 if (isSelfPhone(phoneDigits, sessionDigits)) {
                     const safeSessionName = normalizeText(sessionDisplayName || '');
-                    displayName = safeSessionName ? `${safeSessionName} (Você)` : 'Você';
+                    displayName = safeSessionName ? `${safeSessionName} (VocÃª)` : 'VocÃª';
                 }
 
             return {
@@ -9146,7 +9362,7 @@ io.on('connection', (socket) => {
 
 
 
-// Status do WhatsApp (para Configurações > Conexão)
+// Status do WhatsApp (para ConfiguraÃ§Ãµes > ConexÃ£o)
 
 app.get('/api/whatsapp/status', authenticate, async (req, res) => {
 
@@ -9454,7 +9670,7 @@ app.get('/api/status', authenticate, async (req, res) => {
 
 // ============================================
 
-// API DE AUTENTICAÇÃO
+// API DE AUTENTICAÃ‡ÃƒO
 
 // ============================================
 
@@ -9470,7 +9686,7 @@ app.post('/api/auth/login', async (req, res) => {
 
         if (!email || !password) {
 
-            return res.status(400).json({ error: 'Email e senha são obrigatórios' });
+            return res.status(400).json({ error: 'Email e senha sÃ£o obrigatÃ³rios' });
 
         }
 
@@ -9488,7 +9704,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 
 
-        // Compatibilidade com login legado (usuário: thyago / senha: thyago123)
+        // Compatibilidade com login legado (usuÃ¡rio: thyago / senha: thyago123)
 
         if (!user && normalizedEmail === 'thyago' && password === 'thyago123') {
 
@@ -9522,7 +9738,7 @@ app.post('/api/auth/login', async (req, res) => {
 
         if (!user || !verifyPassword(password, user.password_hash)) {
 
-            return res.status(401).json({ error: 'Credenciais inválidas' });
+            return res.status(401).json({ error: 'Credenciais invÃ¡lidas' });
 
         }
 
@@ -9530,7 +9746,7 @@ app.post('/api/auth/login', async (req, res) => {
 
         if (!user.is_active) {
 
-            return res.status(401).json({ error: 'Usuário desativado' });
+            return res.status(401).json({ error: 'UsuÃ¡rio desativado' });
 
         }
 
@@ -9950,7 +10166,7 @@ app.post('/api/auth/refresh', async (req, res) => {
 
         if (!refreshToken) {
 
-            return res.status(400).json({ error: 'Refresh token é obrigatório' });
+            return res.status(400).json({ error: 'Refresh token Ã© obrigatÃ³rio' });
 
         }
 
@@ -9966,7 +10182,7 @@ app.post('/api/auth/refresh', async (req, res) => {
 
         if (!decoded || decoded.type !== 'refresh') {
 
-            return res.status(401).json({ error: 'Refresh token inválido' });
+            return res.status(401).json({ error: 'Refresh token invÃ¡lido' });
 
         }
 
@@ -9976,7 +10192,7 @@ app.post('/api/auth/refresh', async (req, res) => {
 
         if (!user || !user.is_active) {
 
-            return res.status(401).json({ error: 'Usuário não encontrado ou inativo' });
+            return res.status(401).json({ error: 'UsuÃ¡rio nÃ£o encontrado ou inativo' });
 
         }
         markUserPresenceOnline(user.id);
@@ -10214,13 +10430,13 @@ const PREVIOUS_EMAIL_HTML_TEMPLATE_V2 = [
     '<img src="{{logo_url}}" alt="ZapVender" style="display:block;height:36px;width:auto;max-width:180px;">',
     '</td></tr>',
     '<tr><td style="padding:28px 24px;">',
-    '<p style="margin:0 0 12px 0;font-size:16px;line-height:1.5;color:#142033;">Olá {{name}},</p>',
-    '<p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#344054;">Recebemos seu cadastro no <strong>{{app_name}}</strong>. Para ativar sua conta, confirme seu e-mail clicando no botão abaixo.</p>',
+    '<p style="margin:0 0 12px 0;font-size:16px;line-height:1.5;color:#142033;">OlÃ¡ {{name}},</p>',
+    '<p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#344054;">Recebemos seu cadastro no <strong>{{app_name}}</strong>. Para ativar sua conta, confirme seu e-mail clicando no botÃ£o abaixo.</p>',
     '<p style="margin:0 0 20px 0;"><a href="{{confirmation_url}}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#1dbf73;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px;">Confirmar e-mail</a></p>',
     '<p style="margin:0;font-size:13px;line-height:1.6;color:#667085;">Este link expira em {{expires_in_text}}.</p>',
     '</td></tr>',
     '<tr><td style="padding:16px 24px;background:#f8fafc;border-top:1px solid #e4e9f1;">',
-    '<p style="margin:0 0 6px 0;font-size:12px;line-height:1.5;color:#667085;"><strong>ZapVender</strong> | Plataforma de atendimento e automação para WhatsApp.</p>',
+    '<p style="margin:0 0 6px 0;font-size:12px;line-height:1.5;color:#667085;"><strong>ZapVender</strong> | Plataforma de atendimento e automaÃ§Ã£o para WhatsApp.</p>',
     '<p style="margin:0;font-size:12px;line-height:1.5;color:#667085;">Suporte: <a href="mailto:{{company_email}}" style="color:#0f766e;text-decoration:none;">{{company_email}}</a></p>',
     '</td></tr>',
     '</table>',
@@ -10476,7 +10692,7 @@ function normalizeUserActiveInput(value, fallback = 1) {
     if (typeof value === 'string') {
         const normalized = value.trim().toLowerCase();
         if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return 1;
-        if (['0', 'false', 'no', 'nao', 'não', 'off'].includes(normalized)) return 0;
+        if (['0', 'false', 'no', 'nao', 'nÃ£o', 'off'].includes(normalized)) return 0;
     }
     return fallback;
 }
@@ -10525,7 +10741,7 @@ app.get('/api/users', authenticate, async (req, res) => {
                 .filter(Boolean)
         });
     } catch (error) {
-        res.status(500).json({ success: false, error: 'Erro ao carregar usuários' });
+        res.status(500).json({ success: false, error: 'Erro ao carregar usuÃ¡rios' });
     }
 });
 
@@ -10533,7 +10749,7 @@ app.post('/api/users', authenticate, async (req, res) => {
     try {
         const requesterRole = String(req.user?.role || '').toLowerCase();
         if (requesterRole !== 'admin') {
-            return res.status(403).json({ success: false, error: 'Sem permissão para criar usuários' });
+            return res.status(403).json({ success: false, error: 'Sem permissÃ£o para criar usuÃ¡rios' });
         }
 
         const requesterOwnerUserId = await resolveRequesterOwnerUserId(req);
@@ -10548,7 +10764,7 @@ app.post('/api/users', authenticate, async (req, res) => {
         const role = normalizeUserRoleInput(req.body?.role);
 
         if (!name || !email || !password) {
-            return res.status(400).json({ success: false, error: 'Nome, e-mail e senha são obrigatórios' });
+            return res.status(400).json({ success: false, error: 'Nome, e-mail e senha sÃ£o obrigatÃ³rios' });
         }
 
         if (password.length < 6) {
@@ -10557,7 +10773,7 @@ app.post('/api/users', authenticate, async (req, res) => {
 
         const existing = await User.findActiveByEmail(email);
         if (existing) {
-            return res.status(409).json({ success: false, error: 'E-mail já cadastrado' });
+            return res.status(409).json({ success: false, error: 'E-mail jÃ¡ cadastrado' });
         }
 
         const created = await User.create({
@@ -10571,7 +10787,7 @@ app.post('/api/users', authenticate, async (req, res) => {
         const user = await User.findById(created.id);
         res.json({ success: true, user: sanitizeUserPayload(user, requesterOwnerUserId) });
     } catch (error) {
-        res.status(500).json({ success: false, error: 'Erro ao criar usuário' });
+        res.status(500).json({ success: false, error: 'Erro ao criar usuÃ¡rio' });
     }
 });
 
@@ -10579,7 +10795,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
     try {
         const targetId = parseInt(req.params.id, 10);
         if (!Number.isInteger(targetId) || targetId <= 0) {
-            return res.status(400).json({ success: false, error: 'Usuário inválido' });
+            return res.status(400).json({ success: false, error: 'UsuÃ¡rio invÃ¡lido' });
         }
 
         const requesterRole = String(req.user?.role || '').toLowerCase();
@@ -10589,12 +10805,12 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
         const isSelf = requesterId === targetId;
 
         if (!isAdmin && !isSelf) {
-            return res.status(403).json({ success: false, error: 'Sem permissão para editar este usuário' });
+            return res.status(403).json({ success: false, error: 'Sem permissÃ£o para editar este usuÃ¡rio' });
         }
 
         const current = await User.findById(targetId);
         if (!current) {
-            return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
+            return res.status(404).json({ success: false, error: 'UsuÃ¡rio nÃ£o encontrado' });
         }
 
         if (isAdmin && !isSameUserOwner(current, requesterOwnerUserId)) {
@@ -10612,7 +10828,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
         if (Object.prototype.hasOwnProperty.call(req.body || {}, 'name')) {
             const name = String(req.body?.name || '').trim();
             if (!name) {
-                return res.status(400).json({ success: false, error: 'Nome é obrigatório' });
+                return res.status(400).json({ success: false, error: 'Nome Ã© obrigatÃ³rio' });
             }
             payload.name = name;
         }
@@ -10638,7 +10854,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
                 return res.status(400).json({ success: false, error: 'Nao e permitido desativar o admin principal da conta' });
             }
             if (Number(current.id) === requesterId && Number(payload.is_active) === 0) {
-                return res.status(400).json({ success: false, error: 'Não é possível desativar o próprio usuário' });
+                return res.status(400).json({ success: false, error: 'NÃ£o Ã© possÃ­vel desativar o prÃ³prio usuÃ¡rio' });
             }
         }
 
@@ -10665,7 +10881,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
         const updated = await User.findById(targetId);
         res.json({ success: true, user: sanitizeUserPayload(updated, requesterOwnerUserId) });
     } catch (error) {
-        res.status(500).json({ success: false, error: 'Erro ao atualizar usuário' });
+        res.status(500).json({ success: false, error: 'Erro ao atualizar usuÃ¡rio' });
     }
 });
 
@@ -10718,14 +10934,14 @@ app.post('/api/auth/change-password', authenticate, async (req, res) => {
     try {
         const userId = Number(req.user?.id || 0);
         if (!userId) {
-            return res.status(401).json({ success: false, error: 'Usuário não autenticado' });
+            return res.status(401).json({ success: false, error: 'UsuÃ¡rio nÃ£o autenticado' });
         }
 
         const currentPassword = String(req.body?.currentPassword || '');
         const newPassword = String(req.body?.newPassword || '');
 
         if (!currentPassword || !newPassword) {
-            return res.status(400).json({ success: false, error: 'Senha atual e nova senha são obrigatórias' });
+            return res.status(400).json({ success: false, error: 'Senha atual e nova senha sÃ£o obrigatÃ³rias' });
         }
 
         if (newPassword.length < 6) {
@@ -10735,11 +10951,11 @@ app.post('/api/auth/change-password', authenticate, async (req, res) => {
         const { verifyPassword, hashPassword } = require('./middleware/auth');
         const user = await User.findByIdWithPassword(userId);
         if (!user) {
-            return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
+            return res.status(404).json({ success: false, error: 'UsuÃ¡rio nÃ£o encontrado' });
         }
 
         if (!verifyPassword(currentPassword, user.password_hash)) {
-            return res.status(400).json({ success: false, error: 'Senha atual inválida' });
+            return res.status(400).json({ success: false, error: 'Senha atual invÃ¡lida' });
         }
 
         await User.updatePassword(userId, hashPassword(newPassword));
@@ -10985,14 +11201,14 @@ app.get('/api/dashboard/stats-period', authenticate, async (req, res) => {
         const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
 
         if (!DASHBOARD_PERIOD_METRICS.has(metric)) {
-            return res.status(400).json({ success: false, error: 'Métrica inválida' });
+            return res.status(400).json({ success: false, error: 'MÃ©trica invÃ¡lida' });
         }
 
         const startInput = normalizePeriodDateInput(req.query.startDate);
         const endInput = normalizePeriodDateInput(req.query.endDate);
 
         if (!startInput || !endInput) {
-            return res.status(400).json({ success: false, error: 'Período inválido' });
+            return res.status(400).json({ success: false, error: 'PerÃ­odo invÃ¡lido' });
         }
 
         if (startInput.date > endInput.date) {
@@ -11002,7 +11218,7 @@ app.get('/api/dashboard/stats-period', authenticate, async (req, res) => {
         const maxDaysRange = 370;
         const periodDays = Math.floor((endInput.date.getTime() - startInput.date.getTime()) / 86400000) + 1;
         if (periodDays > maxDaysRange) {
-            return res.status(400).json({ success: false, error: `Período máximo é de ${maxDaysRange} dias` });
+            return res.status(400).json({ success: false, error: `PerÃ­odo mÃ¡ximo Ã© de ${maxDaysRange} dias` });
         }
 
         const endExclusiveDate = new Date(endInput.date);
@@ -11123,8 +11339,8 @@ app.get('/api/dashboard/stats-period', authenticate, async (req, res) => {
             total: data.reduce((sum, item) => sum + item, 0)
         });
     } catch (error) {
-        console.error('Falha ao carregar estatísticas por período:', error);
-        res.status(500).json({ success: false, error: 'Erro ao carregar estatísticas por período' });
+        console.error('Falha ao carregar estatÃ­sticas por perÃ­odo:', error);
+        res.status(500).json({ success: false, error: 'Erro ao carregar estatÃ­sticas por perÃ­odo' });
     }
 });
 
@@ -11136,7 +11352,7 @@ function parseBooleanInput(value, fallback = false) {
     if (typeof value === 'string') {
         const normalized = value.trim().toLowerCase();
         if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return true;
-        if (['0', 'false', 'no', 'nao', 'não', 'off'].includes(normalized)) return false;
+        if (['0', 'false', 'no', 'nao', 'nÃ£o', 'off'].includes(normalized)) return false;
     }
     return fallback;
 }
@@ -11370,12 +11586,12 @@ app.get('/api/leads/:id', authenticate, async (req, res) => {
 
     if (!lead) {
 
-        return res.status(404).json({ error: 'Lead não encontrado' });
+        return res.status(404).json({ error: 'Lead nÃ£o encontrado' });
 
     }
 
     if (!await canAccessLeadRecordInOwnerScope(req, lead)) {
-        return res.status(404).json({ error: 'Lead não encontrado' });
+        return res.status(404).json({ error: 'Lead nÃ£o encontrado' });
     }
 
     res.json({ success: true, lead });
@@ -11769,7 +11985,7 @@ app.post('/api/leads/bulk-delete', authenticate, async (req, res) => {
         if (leadIds.length === 0) {
             return res.status(400).json({
                 success: false,
-                error: 'Lista de IDs inválida'
+                error: 'Lista de IDs invÃ¡lida'
             });
         }
 
@@ -11859,7 +12075,7 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
         if (leadIds.length === 0) {
             return res.status(400).json({
                 success: false,
-                error: 'Lista de IDs inválida'
+                error: 'Lista de IDs invÃ¡lida'
             });
         }
 
@@ -11873,12 +12089,12 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
 
         const body = req.body && typeof req.body === 'object' ? req.body : {};
         const hasStatusField = Object.prototype.hasOwnProperty.call(body, 'status');
-        const requestedStatus = hasStatusField ? parseInt(String(body.status || ''), 10) : null;
+        const requestedStatus = hasStatusField ? normalizeLeadStatus(body.status, null) : null;
 
-        if (hasStatusField && ![1, 2, 3, 4].includes(Number(requestedStatus))) {
+        if (hasStatusField && requestedStatus === null) {
             return res.status(400).json({
                 success: false,
-                error: 'Status inválido. Use 1, 2, 3 ou 4.'
+                error: `Status invalido. Use ${LEAD_STATUS_VALUES.join(', ')}.`
             });
         }
 
@@ -11895,7 +12111,7 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
         if (!hasStatusField && tagsToAdd.length === 0 && tagsToRemove.length === 0) {
             return res.status(400).json({
                 success: false,
-                error: 'Nenhuma alteração informada (status, addTags ou removeTags)'
+                error: 'Nenhuma alteraÃ§Ã£o informada (status, addTags ou removeTags)'
             });
         }
 
@@ -11946,7 +12162,7 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
                 let tagsWereRemoved = false;
 
                 if (hasStatusField && Number(lead.status) !== Number(requestedStatus)) {
-                    updateData.status = Number(requestedStatus);
+                    updateData.status = requestedStatus;
                 }
 
                 if (tagsToAdd.length > 0 || tagsToRemove.length > 0) {
@@ -11981,7 +12197,7 @@ app.post('/api/leads/bulk-update', authenticate, async (req, res) => {
                 if (!updatedLead) {
                     failed += 1;
                     if (errors.length < 25) {
-                        errors.push({ id: leadId, error: 'Lead não encontrado após atualização' });
+                        errors.push({ id: leadId, error: 'Lead nÃ£o encontrado apÃ³s atualizaÃ§Ã£o' });
                     }
                     continue;
                 }
@@ -12069,18 +12285,28 @@ app.put('/api/leads/:id', authenticate, async (req, res) => {
 
     if (!lead) {
 
-        return res.status(404).json({ error: 'Lead não encontrado' });
+        return res.status(404).json({ error: 'Lead nÃ£o encontrado' });
 
     }
 
     if (!await canAccessLeadRecordInOwnerScope(req, lead)) {
-        return res.status(404).json({ error: 'Lead não encontrado' });
+        return res.status(404).json({ error: 'Lead nÃ£o encontrado' });
     }
 
     
 
     const oldStatus = normalizeAutomationStatus(lead.status);
     const updateData = { ...req.body };
+
+    if (Object.prototype.hasOwnProperty.call(updateData, 'status')) {
+        const normalizedStatus = normalizeLeadStatus(updateData.status, null);
+        if (normalizedStatus === null) {
+            return res.status(400).json({
+                error: `Status invalido. Use ${LEAD_STATUS_VALUES.join(', ')}.`
+            });
+        }
+        updateData.status = normalizedStatus;
+    }
 
     if (Object.prototype.hasOwnProperty.call(updateData, 'name')) {
         const manualName = sanitizeAutoName(updateData.name);
@@ -12297,12 +12523,12 @@ app.post('/api/tags', authenticate, async (req, res) => {
         const description = normalizeTagDescriptionInput(req.body?.description);
 
         if (!name) {
-            return res.status(400).json({ success: false, error: 'Nome da tag é obrigatório' });
+            return res.status(400).json({ success: false, error: 'Nome da tag Ã© obrigatÃ³rio' });
         }
 
         const existing = await Tag.findByName(name, tagScope);
         if (existing) {
-            return res.status(409).json({ success: false, error: 'Já existe uma tag com este nome' });
+            return res.status(409).json({ success: false, error: 'JÃ¡ existe uma tag com este nome' });
         }
 
         const tag = await Tag.create(
@@ -12324,24 +12550,24 @@ app.put('/api/tags/:id', authenticate, async (req, res) => {
         };
         const tagId = parseInt(req.params.id, 10);
         if (!Number.isInteger(tagId) || tagId <= 0) {
-            return res.status(400).json({ success: false, error: 'ID de tag inválido' });
+            return res.status(400).json({ success: false, error: 'ID de tag invÃ¡lido' });
         }
 
         const currentTag = await Tag.findById(tagId, tagScope);
         if (!currentTag) {
-            return res.status(404).json({ success: false, error: 'Tag não encontrada' });
+            return res.status(404).json({ success: false, error: 'Tag nÃ£o encontrada' });
         }
 
         const payload = {};
         if (Object.prototype.hasOwnProperty.call(req.body, 'name')) {
             const nextName = normalizeTagNameInput(req.body.name);
             if (!nextName) {
-                return res.status(400).json({ success: false, error: 'Nome da tag é obrigatório' });
+                return res.status(400).json({ success: false, error: 'Nome da tag Ã© obrigatÃ³rio' });
             }
 
             const duplicate = await Tag.findByName(nextName, tagScope);
             if (duplicate && Number(duplicate.id) !== tagId) {
-                return res.status(409).json({ success: false, error: 'Já existe uma tag com este nome' });
+                return res.status(409).json({ success: false, error: 'JÃ¡ existe uma tag com este nome' });
             }
             payload.name = nextName;
         }
@@ -12354,7 +12580,7 @@ app.put('/api/tags/:id', authenticate, async (req, res) => {
 
         const updatedTag = await Tag.update(tagId, payload, tagScope);
         if (!updatedTag) {
-            return res.status(404).json({ success: false, error: 'Tag não encontrada' });
+            return res.status(404).json({ success: false, error: 'Tag nÃ£o encontrada' });
         }
 
         if (
@@ -12380,12 +12606,12 @@ app.delete('/api/tags/:id', authenticate, async (req, res) => {
         };
         const tagId = parseInt(req.params.id, 10);
         if (!Number.isInteger(tagId) || tagId <= 0) {
-            return res.status(400).json({ success: false, error: 'ID de tag inválido' });
+            return res.status(400).json({ success: false, error: 'ID de tag invÃ¡lido' });
         }
 
         const currentTag = await Tag.findById(tagId, tagScope);
         if (!currentTag) {
-            return res.status(404).json({ success: false, error: 'Tag não encontrada' });
+            return res.status(404).json({ success: false, error: 'Tag nÃ£o encontrada' });
         }
 
         const deleted = await Tag.delete(tagId, tagScope);
@@ -12497,8 +12723,8 @@ app.get('/api/conversations', authenticate, async (req, res) => {
         const phoneDigits = normalizePhoneDigits(c.phone);
         const sessionDigits = normalizePhoneDigits(sessionPhone);
         if (isSelfPhone(phoneDigits, sessionDigits)) {
-            const sessionName = normalizeText(getSessionDisplayName(c.session_id) || 'Usuário');
-            name = sessionName ? `${sessionName} (Você)` : 'Você';
+            const sessionName = normalizeText(getSessionDisplayName(c.session_id) || 'UsuÃ¡rio');
+            name = sessionName ? `${sessionName} (VocÃª)` : 'VocÃª';
         }
 
         return {
@@ -12590,7 +12816,7 @@ app.post('/api/send', authenticate, async (req, res) => {
 
     if (!sessionId || !to || !message) {
 
-        return res.status(400).json({ error: 'Parâmetros obrigatórios: sessionId, to, message' });
+        return res.status(400).json({ error: 'ParÃ¢metros obrigatÃ³rios: sessionId, to, message' });
 
     }
 
@@ -12664,7 +12890,7 @@ app.post('/api/messages/send', authenticate, async (req, res) => {
 
     if (!to || !content) {
 
-        return res.status(400).json({ error: 'Parâmetros obrigatórios: phone/to e content' });
+        return res.status(400).json({ error: 'ParÃ¢metros obrigatÃ³rios: phone/to e content' });
 
     }
 
@@ -13699,30 +13925,18 @@ function resolveCampaignSegmentStatus(segment) {
 
     const prefixed = normalizedSegment.match(/^status[_-](\d+)$/);
     if (prefixed) {
-        const value = Number(prefixed[1]);
-        if ([1, 2, 3, 4].includes(value)) return value;
+        const value = normalizeLeadStatus(prefixed[1], null);
+        if (value !== null) return value;
     }
 
-    const directNumeric = Number(normalizedSegment);
-    if ([1, 2, 3, 4].includes(directNumeric)) return directNumeric;
+    const directNumeric = normalizeLeadStatus(normalizedSegment, null);
+    if (directNumeric !== null) return directNumeric;
 
     return null;
 }
 
 function leadMatchesCampaignTag(lead, tagFilter = '') {
-    const tagFilters = parseCampaignTagFilters(tagFilter)
-        .map((tag) => normalizeCampaignTag(tag))
-        .filter(Boolean);
-    if (!tagFilters.length) return true;
-
-    const leadTagKeys = new Set(
-        parseLeadTags(lead?.tags)
-            .map((tag) => normalizeCampaignTag(tag))
-            .filter(Boolean)
-    );
-    if (!leadTagKeys.size) return false;
-
-    return tagFilters.some((tag) => leadTagKeys.has(tag));
+    return leadMatchesUnifiedTagFilter(lead?.tags, tagFilter);
 }
 
 async function resolveCampaignLeadIds(options = {}) {
@@ -14202,12 +14416,12 @@ app.get('/api/campaigns/:id', authenticate, async (req, res) => {
 
     if (!campaign) {
 
-        return res.status(404).json({ error: 'Campanha não encontrada' });
+        return res.status(404).json({ error: 'Campanha nÃ£o encontrada' });
 
     }
 
     if (!canAccessCreatedRecord(req, campaign.created_by)) {
-        return res.status(404).json({ error: 'Campanha não encontrada' });
+        return res.status(404).json({ error: 'Campanha nÃ£o encontrada' });
     }
 
     res.json({ success: true, campaign: await attachCampaignSenderAccounts(campaign) });
@@ -14225,12 +14439,12 @@ app.get('/api/campaigns/:id/recipients', authenticate, async (req, res) => {
 
     if (!campaign) {
 
-        return res.status(404).json({ error: 'Campanha não encontrada' });
+        return res.status(404).json({ error: 'Campanha nÃ£o encontrada' });
 
     }
 
     if (!canAccessCreatedRecord(req, campaign.created_by)) {
-        return res.status(404).json({ error: 'Campanha não encontrada' });
+        return res.status(404).json({ error: 'Campanha nÃ£o encontrada' });
     }
 
     const requestedLimit = parseInt(String(req.query.limit || '200'), 10);
@@ -14531,12 +14745,12 @@ app.get('/api/automations/:id', authenticate, async (req, res) => {
 
     if (!automation) {
 
-        return res.status(404).json({ error: 'Automação não encontrada' });
+        return res.status(404).json({ error: 'AutomaÃ§Ã£o nÃ£o encontrada' });
 
     }
 
     if (!canAccessCreatedRecord(req, automation.created_by)) {
-        return res.status(404).json({ error: 'Automação não encontrada' });
+        return res.status(404).json({ error: 'AutomaÃ§Ã£o nÃ£o encontrada' });
     }
 
     res.json({ success: true, automation: enrichAutomationForResponse(automation) });
@@ -14603,7 +14817,7 @@ app.put('/api/automations/:id', authenticate, async (req, res) => {
 
     if (!automation) {
 
-        return res.status(404).json({ error: 'Automação não encontrada' });
+        return res.status(404).json({ error: 'AutomaÃ§Ã£o nÃ£o encontrada' });
 
     }
 
@@ -14796,12 +15010,12 @@ app.get('/api/flows/:id', authenticate, async (req, res) => {
 
     if (!flow) {
 
-        return res.status(404).json({ error: 'Fluxo não encontrado' });
+        return res.status(404).json({ error: 'Fluxo nÃ£o encontrado' });
 
     }
 
     if (!canAccessCreatedRecord(req, flow.created_by)) {
-        return res.status(404).json({ error: 'Fluxo não encontrado' });
+        return res.status(404).json({ error: 'Fluxo nÃ£o encontrado' });
     }
 
     res.json({ success: true, flow });
@@ -14823,6 +15037,12 @@ app.post('/api/flows', authenticate, async (req, res) => {
         session_id: flowSessionScope.provided ? flowSessionScope.sessionId : null
     };
     delete payload.sessionId;
+    const triggerType = String(payload?.trigger_type || '').trim().toLowerCase();
+    if (triggerType === 'webhook') {
+        return res.status(400).json({
+            error: 'Trigger webhook ainda nao esta disponivel por HTTP. Use new_contact, keyword ou manual.'
+        });
+    }
     const result = await Flow.create(payload);
 
     const flow = await Flow.findById(result.id, {
@@ -14859,6 +15079,14 @@ app.put('/api/flows/:id', authenticate, async (req, res) => {
         payload.session_id = flowSessionScope.sessionId;
     }
     delete payload.sessionId;
+    if (Object.prototype.hasOwnProperty.call(payload, 'trigger_type')) {
+        const triggerType = String(payload?.trigger_type || '').trim().toLowerCase();
+        if (triggerType === 'webhook') {
+            return res.status(400).json({
+                error: 'Trigger webhook ainda nao esta disponivel por HTTP. Use new_contact, keyword ou manual.'
+            });
+        }
+    }
 
     await Flow.update(req.params.id, payload);
 
@@ -15862,7 +16090,7 @@ app.put('/api/admin/dashboard/accounts/:ownerUserId', authenticate, async (req, 
             if (!companyName) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Nome da empresa é obrigatório'
+                    error: 'Nome da empresa Ã© obrigatÃ³rio'
                 });
             }
             await Settings.set(buildScopedSettingsKey('company_name', ownerUserId), companyName, 'string');
@@ -16547,7 +16775,7 @@ app.post('/api/webhook/incoming', async (req, res) => {
 
 // ============================================
 
-// API DE CONFIGURAÇÕES
+// API DE CONFIGURAÃ‡Ã•ES
 
 // ============================================
 
@@ -16667,8 +16895,8 @@ app.post('/api/plan/status/refresh', authenticate, async (req, res) => {
             'string'
         );
 
-        // Placeholder para integração externa de validação do plano.
-        // Aqui entra a chamada da API de assinatura no próximo passo.
+        // Placeholder para integraÃ§Ã£o externa de validaÃ§Ã£o do plano.
+        // Aqui entra a chamada da API de assinatura no prÃ³ximo passo.
         const ownerAdmin = await User.findById(ownerScopeUserId || req.user?.id);
         const plan = await buildOwnerPlanStatus(ownerScopeUserId);
 
@@ -16717,7 +16945,7 @@ app.put('/api/settings', authenticate, async (req, res) => {
 
     
 
-    // Atualizar serviço de fila se necessário
+    // Atualizar serviÃ§o de fila se necessÃ¡rio
 
     const hasQueueSettings =
         Object.prototype.hasOwnProperty.call(incomingSettings, 'bulk_message_delay') ||
@@ -16798,7 +17026,7 @@ app.post('/api/upload', authenticate, upload.single('file'), (req, res) => {
 
 // ============================================
 
-// ROTAS DE PÁGINAS
+// ROTAS DE PÃGINAS
 
 // ============================================
 
@@ -16825,7 +17053,10 @@ app.get('/', (req, res) => {
 
 
 
-app.get('*', (req, res) => {
+app.get('*', (req, res, next) => {
+    if (String(req.path || '').startsWith('/api/')) {
+        return next();
+    }
 
     const requestedFile = path.join(STATIC_DIR, req.path);
 
@@ -16852,78 +17083,16 @@ app.get('*', (req, res) => {
 // Middleware de tratamento de erros
 
 app.use((err, req, res, next) => {
-
-    console.error('? Erro:', err);
-
-    
-
-    // Erro de CORS
-
-    if (err.message === 'Não permitido por CORS') {
-
-        return res.status(403).json({ 
-
-            error: 'Origem não permitida',
-
-            code: 'CORS_ERROR'
-
-        });
-
+    if (String(err?.message || '').trim() === 'NÃ£o permitido por CORS') {
+        err.status = 403;
+        err.statusCode = 403;
     }
-
-    
-
-    // Erro de validação
-
-    if (err.name === 'ValidationError') {
-
-        return res.status(400).json({ 
-
-            error: 'Dados inválidos',
-
-            details: err.message,
-
-            code: 'VALIDATION_ERROR'
-
-        });
-
-    }
-
-    
-
-    // Erro genérico
-
-    res.status(err.status || 500).json({ 
-
-        error: process.env.NODE_ENV === 'production' 
-
-            ? 'Erro interno do servidor' 
-
-            : err.message,
-
-        code: err.code || 'INTERNAL_ERROR'
-
-    });
-
+    return errorHandler(err, req, res, next);
 });
 
+// Handler para rotas nÃ£o encontradas
 
-
-// Handler para rotas não encontradas
-
-app.use((req, res) => {
-
-    res.status(404).json({ 
-
-        error: 'Rota não encontrada',
-
-        code: 'NOT_FOUND'
-
-    });
-
-});
-
-
+app.use((req, res) => notFoundHandler(req, res));
 
 process.on('unhandledRejection', (reason, promise) => {
 
@@ -16937,7 +17106,7 @@ process.on('uncaughtException', (error) => {
 
     console.error('? Uncaught Exception:', error);
 
-    // Em produção, pode querer fazer graceful shutdown
+    // Em produÃ§Ã£o, pode querer fazer graceful shutdown
 
     if (process.env.NODE_ENV === 'production') {
 
@@ -16951,7 +17120,7 @@ process.on('uncaughtException', (error) => {
 
 // ============================================
 
-// LOG DE INICIALIZAÇÃO
+// LOG DE INICIALIZAÃ‡ÃƒO
 
 // ============================================
 
@@ -16961,35 +17130,35 @@ process.on('uncaughtException', (error) => {
 
     console.log('+------------------------------------------------------------+');
 
-    console.log('¦     SELF PROTEÇÃO VEICULAR - SERVIDOR v4.1                 ¦');
+    console.log('Â¦     SELF PROTEÃ‡ÃƒO VEICULAR - SERVIDOR v4.1                 Â¦');
 
-    console.log('¦     Sistema de Automação de Mensagens WhatsApp             ¦');
+    console.log('Â¦     Sistema de AutomaÃ§Ã£o de Mensagens WhatsApp             Â¦');
 
-    console.log('¦------------------------------------------------------------¦');
+    console.log('Â¦------------------------------------------------------------Â¦');
 
-    console.log(`¦  ?? Servidor rodando na porta ${PORT}                          ¦`);
+    console.log(`Â¦  ?? Servidor rodando na porta ${PORT}                          Â¦`);
 
-    console.log(`¦  ?? Sessões: ${SESSIONS_DIR.substring(0, 42).padEnd(42)} ¦`);
+    console.log(`Â¦  ?? SessÃµes: ${SESSIONS_DIR.substring(0, 42).padEnd(42)} Â¦`);
 
-    console.log(`¦  ?? URL: http://localhost:${PORT}                               ¦`);
+    console.log(`Â¦  ?? URL: http://localhost:${PORT}                               Â¦`);
 
-    console.log(`¦  ?? Reconexão automática: ${MAX_RECONNECT_ATTEMPTS} tentativas                  ¦`);
+    console.log(`Â¦  ?? ReconexÃ£o automÃ¡tica: ${MAX_RECONNECT_ATTEMPTS} tentativas                  Â¦`);
 
-    console.log(`¦  ?? Fila de mensagens: Ativa                               ¦`);
+    console.log(`Â¦  ?? Fila de mensagens: Ativa                               Â¦`);
 
-    console.log(`¦  ?? Criptografia: Ativa                                    ¦`);
+    console.log(`Â¦  ?? Criptografia: Ativa                                    Â¦`);
 
     console.log('+------------------------------------------------------------+');
 
     console.log('');
 
-    console.log('? Servidor pronto para receber conexões!');
+    console.log('? Servidor pronto para receber conexÃµes!');
 
     console.log('');
 
 
 
-    // Graceful shutdown (referências em closure)
+    // Graceful shutdown (referÃªncias em closure)
 
     process.on('SIGTERM', async () => {
         if (isServerShuttingDown) return;

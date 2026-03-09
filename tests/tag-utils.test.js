@@ -1,8 +1,9 @@
-const {
+﻿const {
     normalizeTagKey,
     parseTagList,
     uniqueTagLabels,
-    normalizeTagFilterInput
+    normalizeTagFilterInput,
+    leadMatchesTagFilter
 } = require('../server/utils/tagUtils');
 
 describe('tagUtils', () => {
@@ -15,11 +16,11 @@ describe('tagUtils', () => {
     });
 
     test('uniqueTagLabels remove duplicados por case e acento', () => {
-        expect(uniqueTagLabels(['Água', 'agua', ' AGUA ', 'Água com gás'])).toEqual(['Água', 'Água com gás']);
+        expect(uniqueTagLabels(['Agua', 'agua', ' AGUA ', 'Agua com gas'])).toEqual(['Agua', 'Agua com gas']);
     });
 
     test('normalizeTagKey remove acentos e normaliza caixa', () => {
-        expect(normalizeTagKey('  Pró-Médico  ')).toBe('pro-medico');
+        expect(normalizeTagKey('  Pro-Medico  ')).toBe('pro-medico');
     });
 
     test('normalizeTagFilterInput preserva undefined e normaliza vazios', () => {
@@ -28,6 +29,21 @@ describe('tagUtils', () => {
     });
 
     test('normalizeTagFilterInput retorna JSON deduplicado', () => {
-        expect(normalizeTagFilterInput('vip;VIP;víp')).toBe(JSON.stringify(['vip']));
+        expect(normalizeTagFilterInput('vip;VIP;vip')).toBe(JSON.stringify(['vip']));
+    });
+
+    test('leadMatchesTagFilter aceita delimitadores legados em lead e filtro', () => {
+        expect(leadMatchesTagFilter('vip;quente|retorno', 'retorno')).toBe(true);
+        expect(leadMatchesTagFilter('vip;quente|retorno', 'frio')).toBe(false);
+    });
+
+    test('leadMatchesTagFilter ignora caixa e acento no matching', () => {
+        expect(leadMatchesTagFilter('["Pro-Medico"]', 'pro-medico')).toBe(true);
+        expect(leadMatchesTagFilter('["cliente novo"]', 'Cliente Novo')).toBe(true);
+    });
+
+    test('leadMatchesTagFilter retorna true quando filtro vazio', () => {
+        expect(leadMatchesTagFilter('vip', '')).toBe(true);
+        expect(leadMatchesTagFilter('', '')).toBe(true);
     });
 });
