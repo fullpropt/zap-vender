@@ -334,14 +334,17 @@ function setAutomationSessionScopeSelection(sessionIds: string[]) {
 }
 
 function updateAutomationSessionScopeInputs() {
-    const allCheckbox = document.getElementById('automationAllSessions') as HTMLInputElement | null;
-    const isAll = !!allCheckbox?.checked;
-    document.querySelectorAll<HTMLInputElement>('.automation-session-checkbox').forEach((input) => {
-        input.disabled = isAll;
-    });
+    // Mantemos as opcoes especificas sempre clicaveis para permitir
+    // a troca rapida de "todas" para uma conta especifica.
 }
 
 function toggleAutomationAllSessions() {
+    const allCheckbox = document.getElementById('automationAllSessions') as HTMLInputElement | null;
+    if (allCheckbox?.checked) {
+        document.querySelectorAll<HTMLInputElement>('.automation-session-checkbox').forEach((input) => {
+            input.checked = false;
+        });
+    }
     updateAutomationSessionScopeInputs();
 }
 
@@ -453,11 +456,8 @@ function updateAutomationTagFilterToggleLabel() {
 }
 
 function updateAutomationTagFilterInputs() {
-    const allCheckbox = document.getElementById('automationAllTags') as HTMLInputElement | null;
-    const isAll = !!allCheckbox?.checked;
-    document.querySelectorAll<HTMLInputElement>('.automation-tag-filter-checkbox').forEach((input) => {
-        input.disabled = isAll;
-    });
+    // Mantemos as opcoes especificas sempre clicaveis para permitir
+    // que "Todas as tags" seja desmarcado ao escolher uma tag.
     updateAutomationTagFilterToggleLabel();
 }
 
@@ -538,6 +538,26 @@ function renderAutomationTagFilterOptions() {
     }).join('');
 
     updateAutomationTagFilterInputs();
+}
+
+function bindAutomationSessionScopeInteractions() {
+    const container = document.getElementById('automationSessionScopeList') as HTMLElement | null;
+    if (!container || container.dataset.bound === '1') return;
+
+    container.dataset.bound = '1';
+    container.addEventListener('change', (event) => {
+        const target = event.target as HTMLInputElement | null;
+        if (!target || !target.classList.contains('automation-session-checkbox')) return;
+
+        const allCheckbox = document.getElementById('automationAllSessions') as HTMLInputElement | null;
+        if (!allCheckbox) return;
+
+        const hasSpecificSelection = Array.from(document.querySelectorAll<HTMLInputElement>('.automation-session-checkbox'))
+            .some((input) => input.checked);
+
+        allCheckbox.checked = !hasSpecificSelection;
+        updateAutomationSessionScopeInputs();
+    });
 }
 
 function bindAutomationTagFilterDropdown() {
@@ -632,6 +652,7 @@ function initAutomacao() {
     pendingAutomationSessionScope = [];
     pendingAutomationTagFilters = [];
     bindAutomationTagFilterDropdown();
+    bindAutomationSessionScopeInteractions();
     void loadAutomationSessions();
     void loadAutomationTags();
     loadAutomations();

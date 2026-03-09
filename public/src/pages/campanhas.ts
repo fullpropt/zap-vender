@@ -386,11 +386,8 @@ function updateCampaignTagFilterToggleLabel() {
 }
 
 function updateCampaignTagFilterInputs() {
-    const allCheckbox = document.getElementById('campaignAllTags') as HTMLInputElement | null;
-    const isAll = !!allCheckbox?.checked;
-    document.querySelectorAll<HTMLInputElement>('.campaign-tag-filter-checkbox').forEach((input) => {
-        input.disabled = isAll;
-    });
+    // Mantemos as opcoes especificas sempre clicaveis para permitir
+    // que o usuario desmarque "Todas as tags" ao selecionar um item.
     updateCampaignTagFilterToggleLabel();
 }
 
