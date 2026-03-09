@@ -105,6 +105,15 @@ export default function Contatos() {
           .contatos-react .stats-grid .stat-value { font-size: 20px; }
           .contatos-react .stats-grid .stat-label { font-size: 11px; line-height: 1.2; }
         }
+
+        .contatos-react .bulk-tag-selected-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 10px;
+          min-height: 36px;
+          align-items: center;
+        }
       `}</style>
       <button
         className="mobile-menu-toggle"
@@ -690,16 +699,14 @@ Use {{nome}} para personalizar`}
               <p className="text-muted"><span id="bulkRemoveTagRecipients">0</span> contatos selecionados</p>
             </div>
             <div className="form-group">
-              <label className="form-label required" htmlFor="bulkRemoveTagInput">Tags para remover</label>
-              <input
-                type="text"
-                className="form-input"
-                id="bulkRemoveTagInput"
-                list="bulkRemoveTagOptions"
-                placeholder="Ex.: Lead, Campanha Março"
-              />
-              <datalist id="bulkRemoveTagOptions"></datalist>
-              <p className="form-help">Separe múltiplas tags por vírgula.</p>
+              <label className="form-label required" htmlFor="bulkRemoveTagSelect">Tags para remover</label>
+              <select className="form-select" id="bulkRemoveTagSelect" defaultValue="">
+                <option value="">Selecione uma tag...</option>
+              </select>
+              <div id="bulkRemoveTagSelectedChips" className="bulk-tag-selected-chips">
+                <span className="text-muted">Nenhuma tag selecionada.</span>
+              </div>
+              <p className="form-help">Selecione uma ou mais tags na lista acima.</p>
             </div>
           </div>
           <div className="modal-footer">

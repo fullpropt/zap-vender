@@ -88,6 +88,7 @@ const CONTACT_NOTES_KEYS = ['observacoes', 'observacoes_contato', 'notes', 'note
 let allContacts: Contact[] = [];
 let filteredContacts: Contact[] = [];
 let selectedContacts: number[] = [];
+let bulkRemoveSelectedTags: string[] = [];
 let currentPage = 1;
 const perPage = 20;
 let tags: Tag[] = [];
@@ -754,6 +755,7 @@ function initContacts() {
     });
     bindCreateContactTagsSuggestions();
     bindEditContactTagsSuggestions();
+    bindBulkRemoveTagPicker();
     void loadTags();
     loadTemplates();
 }
@@ -952,6 +954,70 @@ function getNormalizedUniqueLeadTags(value: unknown) {
     return normalized;
 }
 
+function normalizeUniqueTagArray(values: string[]) {
+    return getNormalizedUniqueLeadTags((values || []).join(', '));
+}
+
+function renderBulkRemoveTagSelectedChips() {
+    const container = document.getElementById('bulkRemoveTagSelectedChips') as HTMLElement | null;
+    if (!container) return;
+
+    if (!bulkRemoveSelectedTags.length) {
+        container.innerHTML = '<span class="text-muted">Nenhuma tag selecionada.</span>';
+        return;
+    }
+
+    container.innerHTML = bulkRemoveSelectedTags
+        .map((tag) => (
+            `<button type="button" class="btn btn-sm btn-outline" data-bulk-remove-tag-chip="${escapeHtml(tag)}">`
+            + `${escapeHtml(tag)} <span aria-hidden="true">×</span>`
+            + '</button>'
+        ))
+        .join('');
+}
+
+function bindBulkRemoveTagPicker() {
+    const select = document.getElementById('bulkRemoveTagSelect') as HTMLSelectElement | null;
+    const chipsContainer = document.getElementById('bulkRemoveTagSelectedChips') as HTMLElement | null;
+
+    if (select && select.dataset.bound !== '1') {
+        select.dataset.bound = '1';
+        select.addEventListener('change', () => {
+            const selectedTag = String(select.value || '').trim();
+            if (!selectedTag) return;
+
+            const hasTag = bulkRemoveSelectedTags.some((tag) => tag.toLowerCase() === selectedTag.toLowerCase());
+            if (!hasTag) {
+                bulkRemoveSelectedTags = normalizeUniqueTagArray([...bulkRemoveSelectedTags, selectedTag]);
+                renderBulkRemoveTagSelectedChips();
+            }
+
+            select.value = '';
+            select.focus();
+        });
+    }
+
+    if (chipsContainer && chipsContainer.dataset.bound !== '1') {
+        chipsContainer.dataset.bound = '1';
+        chipsContainer.addEventListener('click', (event) => {
+            const target = event.target as HTMLElement | null;
+            const chipButton = target?.closest('[data-bulk-remove-tag-chip]') as HTMLElement | null;
+            if (!chipButton) return;
+
+            event.preventDefault();
+            const tagName = String(chipButton.getAttribute('data-bulk-remove-tag-chip') || '').trim();
+            if (!tagName) return;
+
+            bulkRemoveSelectedTags = bulkRemoveSelectedTags.filter(
+                (tag) => tag.toLowerCase() !== tagName.toLowerCase()
+            );
+            renderBulkRemoveTagSelectedChips();
+        });
+    }
+
+    renderBulkRemoveTagSelectedChips();
+}
+
 function renderCreateContactTagSuggestions() {
     const tagNames = getUniqueTagNames();
     const datalist = document.getElementById('contactTagsOptions') as HTMLDataListElement | null;
@@ -1093,7 +1159,7 @@ async function loadTags() {
         const filterSelect = document.getElementById('filterTag') as HTMLSelectElement | null;
         const importSelect = document.getElementById('importTag') as HTMLSelectElement | null;
         const bulkTagOptions = document.getElementById('bulkTagOptions') as HTMLDataListElement | null;
-        const bulkRemoveTagOptions = document.getElementById('bulkRemoveTagOptions') as HTMLDataListElement | null;
+        const bulkRemoveTagSelect = document.getElementById('bulkRemoveTagSelect') as HTMLSelectElement | null;
         const tagNames = getUniqueTagNames();
         const tagOptions = tagNames
             .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
@@ -1122,14 +1188,15 @@ async function loadTags() {
             bulkTagOptions.innerHTML = datalistOptions;
         }
 
-        if (bulkRemoveTagOptions) {
-            bulkRemoveTagOptions.innerHTML = datalistOptions;
+        if (bulkRemoveTagSelect) {
+            bulkRemoveTagSelect.innerHTML = `<option value="">Selecione uma tag...</option>${tagOptions}`;
         }
     } catch (e) {
         // ignore
     } finally {
         renderCreateContactTagSuggestions();
         renderEditContactTagSuggestions();
+        renderBulkRemoveTagSelectedChips();
     }
 }
 
@@ -1798,10 +1865,12 @@ function openBulkAddTagModal() {
 function openBulkRemoveTagModal() {
     if (!hasSelectedContactsForBulkAction()) return;
     setBulkRecipientsText('bulkRemoveTagRecipients');
-    const input = document.getElementById('bulkRemoveTagInput') as HTMLInputElement | null;
-    if (input) {
-        input.value = '';
-        setTimeout(() => input.focus(), 0);
+    const select = document.getElementById('bulkRemoveTagSelect') as HTMLSelectElement | null;
+    bulkRemoveSelectedTags = [];
+    renderBulkRemoveTagSelectedChips();
+    if (select) {
+        select.value = '';
+        setTimeout(() => select.focus(), 0);
     }
     openModal('bulkRemoveTagModal');
 }
@@ -1837,17 +1906,15 @@ async function submitBulkAddTag() {
 }
 
 async function submitBulkRemoveTag() {
-    const input = document.getElementById('bulkRemoveTagInput') as HTMLInputElement | null;
-    const raw = String(input?.value || '').trim();
-    if (!raw) {
+    if (!bulkRemoveSelectedTags.length) {
         showToast('warning', 'Atencao', 'Informe pelo menos uma tag');
         return;
     }
 
     const success = await bulkRemoveTagSelection();
     if (success !== false) {
-        const nextInput = document.getElementById('bulkRemoveTagInput') as HTMLInputElement | null;
-        if (nextInput) nextInput.value = '';
+        bulkRemoveSelectedTags = [];
+        renderBulkRemoveTagSelectedChips();
         closeModal('bulkRemoveTagModal');
     }
 }
@@ -2013,21 +2080,7 @@ async function bulkRemoveTagSelection() {
         return;
     }
 
-    const modalTagsValue = (document.getElementById('bulkRemoveTagInput') as HTMLInputElement | null)?.value;
-    const rawInput = (modalTagsValue && String(modalTagsValue).trim())
-        ? modalTagsValue
-        : await appPrompt('Digite a(s) tag(s) para remover (separadas por virgula):', {
-            title: 'Remover tags em lote',
-            placeholder: 'Ex.: VIP, retorno, urgente'
-        });
-    if (rawInput === null) return;
-
-    const tagsToRemove = Array.from(new Set(
-        String(rawInput || '')
-            .split(/[,;|]/)
-            .map((tag) => String(tag || '').trim())
-            .filter(Boolean)
-    ));
+    const tagsToRemove = normalizeUniqueTagArray(bulkRemoveSelectedTags);
 
     if (tagsToRemove.length === 0) {
         showToast('warning', 'Atencao', 'Informe pelo menos uma tag');
