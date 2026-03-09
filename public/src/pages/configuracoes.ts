@@ -5,8 +5,15 @@ type Settings = {
     funnel?: Array<{ name?: string; color?: string; description?: string }>;
     whatsapp?: { interval?: string; messagesPerHour?: string; workStart?: string; workEnd?: string };
     businessHours?: { enabled?: boolean; start?: string; end?: string; autoReplyMessage?: string };
+    businessHoursBySession?: Record<string, BusinessHoursSessionSettings>;
     notifications?: { notifyNewLead?: boolean; notifyNewMessage?: boolean; notifySound?: boolean };
     ai?: AiSettingsConfig;
+};
+
+type BusinessHoursSessionSettings = {
+    enabled: boolean;
+    start: string;
+    end: string;
 };
 
 type AiSettingsConfig = {
@@ -120,6 +127,7 @@ let settingsTagsCache: SettingsTag[] = [];
 let contactFieldsCache: ContactField[] = [];
 let customContactFieldsCache: ContactField[] = [];
 let whatsappSessionsCache: WhatsAppSessionRecord[] = [];
+let businessHoursBySessionCache: Record<string, BusinessHoursSessionSettings> = {};
 let usersCache: ManagedUser[] = [];
 let usersPresencePollingTimer: number | null = null;
 let planStatusCache: PlanStatusViewModel | null = null;
@@ -242,8 +250,8 @@ function showPanel(panelId: string) {
     } else if (nextPanelId === 'plan') {
         loadPlanStatus();
     } else if (nextPanelId === 'hours') {
-        clearBusinessHoursMessageField();
-        setTimeout(clearBusinessHoursMessageField, 150);
+        renderBusinessHoursAccountsManager();
+        void refreshBusinessHoursAccounts();
     }
 }
 
@@ -399,6 +407,204 @@ function readBusinessHoursSettingsFromForm() {
     };
 }
 
+function normalizeBusinessHoursBySession(value: unknown) {
+    let parsed: unknown = value;
+    if (typeof parsed === 'string') {
+        const raw = parsed.trim();
+        if (!raw) return {} as Record<string, BusinessHoursSessionSettings>;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            return {} as Record<string, BusinessHoursSessionSettings>;
+        }
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return {} as Record<string, BusinessHoursSessionSettings>;
+    }
+
+    const normalized: Record<string, BusinessHoursSessionSettings> = {};
+    for (const [rawSessionId, rawSettings] of Object.entries(parsed as Record<string, unknown>)) {
+        const sessionId = sanitizeSessionId(rawSessionId);
+        if (!sessionId || !rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings)) {
+            continue;
+        }
+
+        const valueObject = rawSettings as Partial<BusinessHoursSessionSettings>;
+        normalized[sessionId] = {
+            enabled: parseBooleanSetting(valueObject.enabled, DEFAULT_BUSINESS_HOURS_SETTINGS.enabled),
+            start: normalizeBusinessHoursTime(valueObject.start, DEFAULT_BUSINESS_HOURS_SETTINGS.start),
+            end: normalizeBusinessHoursTime(valueObject.end, DEFAULT_BUSINESS_HOURS_SETTINGS.end)
+        };
+    }
+
+    return normalized;
+}
+
+function getBusinessHoursSessionSettings(sessionId: string): BusinessHoursSessionSettings {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    const fallback: BusinessHoursSessionSettings = {
+        enabled: DEFAULT_BUSINESS_HOURS_SETTINGS.enabled,
+        start: DEFAULT_BUSINESS_HOURS_SETTINGS.start,
+        end: DEFAULT_BUSINESS_HOURS_SETTINGS.end
+    };
+    if (!normalizedSessionId) return fallback;
+
+    const cached = businessHoursBySessionCache[normalizedSessionId];
+    if (!cached) return fallback;
+
+    return {
+        enabled: parseBooleanSetting(cached.enabled, fallback.enabled),
+        start: normalizeBusinessHoursTime(cached.start, fallback.start),
+        end: normalizeBusinessHoursTime(cached.end, fallback.end)
+    };
+}
+
+function upsertBusinessHoursSessionSettings(sessionId: string, partial: Partial<BusinessHoursSessionSettings>) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId) return;
+
+    const current = getBusinessHoursSessionSettings(normalizedSessionId);
+    businessHoursBySessionCache = {
+        ...businessHoursBySessionCache,
+        [normalizedSessionId]: {
+            enabled: parseBooleanSetting(partial.enabled, current.enabled),
+            start: normalizeBusinessHoursTime(partial.start, current.start),
+            end: normalizeBusinessHoursTime(partial.end, current.end)
+        }
+    };
+}
+
+function updateLocalBusinessHoursBySessionStorage() {
+    const localSettings = readLocalSettingsStorage();
+    writeLocalSettingsStorage({
+        ...localSettings,
+        businessHoursBySession: { ...businessHoursBySessionCache }
+    });
+}
+
+function renderBusinessHoursAccountsManager() {
+    const container = document.getElementById('businessHoursAccountsList') as HTMLElement | null;
+    if (!container) return;
+
+    if (!whatsappSessionsCache.length) {
+        container.innerHTML = `
+            <div class="connection-account-item">
+                <p style="margin: 0; color: var(--gray-600);">
+                    Nenhuma conta encontrada. Acesse <a href="#/whatsapp">WhatsApp</a> para adicionar uma conta.
+                </p>
+            </div>
+        `;
+        return;
+    }
+
+    const sortedSessions = [...whatsappSessionsCache].sort((a, b) => {
+        const byConnected = Number(parseConnectedStatus(b)) - Number(parseConnectedStatus(a));
+        if (byConnected !== 0) return byConnected;
+        return sanitizeSessionId(a.session_id).localeCompare(sanitizeSessionId(b.session_id));
+    });
+
+    container.innerHTML = sortedSessions.map((session) => {
+        const sessionId = sanitizeSessionId(session.session_id);
+        const sessionToken = encodeURIComponent(sessionId);
+        const displayName = getSessionDisplayName(session);
+        const phone = String(session.phone || '').trim();
+        const subtitle = phone ? `${sessionId} - ${phone}` : sessionId;
+
+        const businessHours = getBusinessHoursSessionSettings(sessionId);
+        const businessStatusClass = businessHours.enabled ? 'connected' : 'disconnected';
+        const businessStatusLabel = businessHours.enabled ? 'Horário comercial ativo' : 'Horário comercial inativo';
+        const toggleButtonClass = businessHours.enabled ? 'btn btn-outline-danger' : 'btn btn-outline';
+        const toggleButtonLabel = businessHours.enabled ? 'Desativar horário comercial' : 'Ativar horário comercial';
+
+        return `
+            <div class="connection-account-item">
+                <div class="connection-account-head">
+                    <div>
+                        <strong>${escapeHtml(displayName)}</strong>
+                        <div class="connection-account-session">${escapeHtml(subtitle)}</div>
+                    </div>
+                    <span class="connection-status-pill ${businessStatusClass}">${businessStatusLabel}</span>
+                </div>
+                <div class="business-hours-account-body">
+                    <div class="form-group">
+                        <label class="form-label">Início do expediente</label>
+                        <input
+                            type="time"
+                            class="form-input business-hours-session-start-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            value="${escapeHtml(businessHours.start)}"
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Fim do expediente</label>
+                        <input
+                            type="time"
+                            class="form-input business-hours-session-end-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            value="${escapeHtml(businessHours.end)}"
+                        />
+                    </div>
+                    <button class="btn btn-outline" onclick="saveBusinessHoursSession('${sessionToken}')">Salvar horários</button>
+                    <button class="${toggleButtonClass}" onclick="toggleBusinessHoursSession('${sessionToken}')">${toggleButtonLabel}</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function persistBusinessHoursBySessionToServer() {
+    updateLocalBusinessHoursBySessionStorage();
+    await api.put('/api/settings', {
+        business_hours_by_session: businessHoursBySessionCache
+    });
+}
+
+async function saveBusinessHoursSession(sessionToken: string) {
+    const sessionId = sanitizeSessionId(decodeSessionToken(sessionToken));
+    if (!sessionId) return;
+
+    const selectorSessionId = escapeAttributeSelector(sessionId);
+    const startInput = document.querySelector<HTMLInputElement>(`.business-hours-session-start-input[data-session-id="${selectorSessionId}"]`);
+    const endInput = document.querySelector<HTMLInputElement>(`.business-hours-session-end-input[data-session-id="${selectorSessionId}"]`);
+    const current = getBusinessHoursSessionSettings(sessionId);
+
+    upsertBusinessHoursSessionSettings(sessionId, {
+        enabled: current.enabled,
+        start: normalizeBusinessHoursTime(startInput?.value, current.start),
+        end: normalizeBusinessHoursTime(endInput?.value, current.end)
+    });
+
+    try {
+        await persistBusinessHoursBySessionToServer();
+        renderBusinessHoursAccountsManager();
+        showToast('success', 'Sucesso', 'Horários da conta atualizados.');
+    } catch (error) {
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
+    }
+}
+
+async function toggleBusinessHoursSession(sessionToken: string) {
+    const sessionId = sanitizeSessionId(decodeSessionToken(sessionToken));
+    if (!sessionId) return;
+
+    const current = getBusinessHoursSessionSettings(sessionId);
+    const nextEnabled = !current.enabled;
+    upsertBusinessHoursSessionSettings(sessionId, {
+        enabled: nextEnabled,
+        start: current.start,
+        end: current.end
+    });
+
+    try {
+        await persistBusinessHoursBySessionToServer();
+        renderBusinessHoursAccountsManager();
+        showToast('success', 'Sucesso', `Horário comercial ${nextEnabled ? 'ativado' : 'desativado'} para a conta.`);
+    } catch (error) {
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
+    }
+}
+
 function applyNotificationSettings(values: Partial<{ notifyNewLead: boolean; notifyNewMessage: boolean; notifySound: boolean }>) {
     const notifyNewLeadInput = document.getElementById('notifyNewLead') as HTMLInputElement | null;
     const notifyNewMessageInput = document.getElementById('notifyNewMessage') as HTMLInputElement | null;
@@ -505,6 +711,8 @@ async function loadSettings() {
     const localSettings: Settings = readLocalSettingsStorage();
     applyCompanySettings(localSettings.company || {});
     applyBusinessHoursSettings(localSettings.businessHours || DEFAULT_BUSINESS_HOURS_SETTINGS);
+    businessHoursBySessionCache = normalizeBusinessHoursBySession(localSettings.businessHoursBySession || {});
+    renderBusinessHoursAccountsManager();
     applyNotificationSettings(localSettings.notifications || DEFAULT_NOTIFICATION_SETTINGS);
     applyAiSettings(localSettings.ai || DEFAULT_AI_SETTINGS);
 
@@ -526,6 +734,9 @@ async function loadSettings() {
             start: normalizeBusinessHoursTime(serverSettings.business_hours_start, localSettings.businessHours?.start || DEFAULT_BUSINESS_HOURS_SETTINGS.start),
             end: normalizeBusinessHoursTime(serverSettings.business_hours_end, localSettings.businessHours?.end || DEFAULT_BUSINESS_HOURS_SETTINGS.end)
         };
+        const businessHoursBySession = normalizeBusinessHoursBySession(
+            serverSettings.business_hours_by_session ?? localSettings.businessHoursBySession ?? {}
+        );
         const notifications = {
             notifyNewLead: parseBooleanSetting(serverSettings.notify_new_lead, localSettings.notifications?.notifyNewLead ?? DEFAULT_NOTIFICATION_SETTINGS.notifyNewLead),
             notifyNewMessage: parseBooleanSetting(serverSettings.notify_new_message, localSettings.notifications?.notifyNewMessage ?? DEFAULT_NOTIFICATION_SETTINGS.notifyNewMessage),
@@ -541,6 +752,8 @@ async function loadSettings() {
             applyCompanySettings(company);
         }
         applyBusinessHoursSettings(businessHours);
+        businessHoursBySessionCache = businessHoursBySession;
+        renderBusinessHoursAccountsManager();
         applyNotificationSettings(notifications);
         applyAiSettings(aiSettings);
 
@@ -548,6 +761,7 @@ async function loadSettings() {
             ...localSettings,
             company: hasCompanySettings ? company : (localSettings.company || {}),
             businessHours,
+            businessHoursBySession,
             notifications,
             ai: aiSettings
         });
@@ -769,23 +983,13 @@ async function saveGeneralSettings() {
 }
 
 async function saveBusinessHoursSettings() {
-    const settings: Settings = readLocalSettingsStorage();
-    const businessHours = readBusinessHoursSettingsFromForm();
-
-    settings.businessHours = businessHours;
-    writeLocalSettingsStorage(settings);
-
     try {
-        await api.put('/api/settings', {
-            business_hours_enabled: businessHours.enabled,
-            business_hours_start: businessHours.start,
-            business_hours_end: businessHours.end
-        });
+        await persistBusinessHoursBySessionToServer();
+        renderBusinessHoursAccountsManager();
         showToast('success', 'Sucesso', 'Horários atualizados!');
     } catch (error) {
         showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
     }
-    clearBusinessHoursMessageField();
 }
 
 async function loadSettingsTags() {
@@ -1600,6 +1804,12 @@ async function refreshWhatsAppAccounts() {
     }
 
     renderWhatsAppAccountsManager();
+    renderBusinessHoursAccountsManager();
+}
+
+async function refreshBusinessHoursAccounts() {
+    await refreshWhatsAppAccounts();
+    renderBusinessHoursAccountsManager();
 }
 
 async function saveWhatsAppSessionName(sessionToken: string) {
@@ -2188,6 +2398,9 @@ const windowAny = window as Window & {
     saveWhatsAppSettings?: () => void;
     saveAiSettings?: () => Promise<void>;
     saveBusinessHoursSettings?: () => Promise<void>;
+    refreshBusinessHoursAccounts?: () => Promise<void>;
+    saveBusinessHoursSession?: (sessionToken: string) => Promise<void>;
+    toggleBusinessHoursSession?: (sessionToken: string) => Promise<void>;
     saveNotificationSettings?: () => Promise<void>;
     createContactField?: () => Promise<void>;
     updateContactField?: (key: string) => Promise<void>;
@@ -2233,6 +2446,9 @@ windowAny.removeWhatsAppSession = removeWhatsAppSession;
 windowAny.saveWhatsAppSettings = saveWhatsAppSettings;
 windowAny.saveAiSettings = saveAiSettings;
 windowAny.saveBusinessHoursSettings = saveBusinessHoursSettings;
+windowAny.refreshBusinessHoursAccounts = refreshBusinessHoursAccounts;
+windowAny.saveBusinessHoursSession = saveBusinessHoursSession;
+windowAny.toggleBusinessHoursSession = toggleBusinessHoursSession;
 windowAny.saveNotificationSettings = saveNotificationSettings;
 windowAny.createContactField = createContactField;
 windowAny.updateContactField = updateContactField;

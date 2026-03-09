@@ -22,6 +22,7 @@ type ConfiguracoesGlobals = {
   saveWhatsAppSettings?: () => void;
   saveAiSettings?: () => Promise<void>;
   saveBusinessHoursSettings?: () => void;
+  refreshBusinessHoursAccounts?: () => Promise<void>;
   saveNotificationSettings?: () => Promise<void>;
   createContactField?: () => Promise<void>;
   updateContactField?: (key: string) => Promise<void>;
@@ -264,6 +265,19 @@ export default function Configuracoes() {
             width: 16px;
             height: 16px;
         }
+        .business-hours-account-body {
+            display: grid;
+            grid-template-columns: 180px 180px auto auto;
+            gap: 10px;
+            align-items: end;
+        }
+        .business-hours-account-body .form-group {
+            margin-bottom: 0;
+        }
+        .business-hours-account-body .btn {
+            width: auto;
+            white-space: nowrap;
+        }
         @media (max-width: 768px) {
             .configuracoes-react .settings-nav {
                 position: static !important;
@@ -274,7 +288,13 @@ export default function Configuracoes() {
             .connection-account-body {
                 grid-template-columns: 1fr;
             }
+            .business-hours-account-body {
+                grid-template-columns: 1fr;
+            }
             .connection-account-body .btn {
+                width: 100%;
+            }
+            .business-hours-account-body .btn {
                 width: 100%;
             }
             .settings-panel {
@@ -610,44 +630,28 @@ export default function Configuracoes() {
                       <div className="settings-panel" id="panel-hours">
                           <div className="settings-section">
                               <h3 className="settings-section-title"><span className="icon icon-clock icon-sm"></span> Horários de funcionamento</h3>
-                              <p className="text-muted mb-3">Defina quando transmissões e campanhas podem enviar mensagens.</p>
+                              <p className="text-muted mb-3">Defina por conta quando transmissões e campanhas podem enviar mensagens.</p>
 
                               <div className="copy-card">
-                                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                      <label className="checkbox-wrapper">
-                                          <input type="checkbox" id="businessHoursEnabled" />
-                                          <span className="checkbox-custom"></span>
-                                      </label>
-                                      <label className="form-label" htmlFor="businessHoursEnabled" style={{ margin: 0 }}>Ativar controle de horários</label>
-                                  </div>
-
-                                  <div className="form-row">
-                                      <div className="form-group">
-                                          <label className="form-label">Início do expediente</label>
-                                          <input type="time" className="form-input" id="businessHoursStart" defaultValue="08:00" />
-                                      </div>
-                                      <div className="form-group">
-                                          <label className="form-label">Fim do expediente</label>
-                                          <input type="time" className="form-input" id="businessHoursEnd" defaultValue="18:00" />
-                                      </div>
-                                  </div>
-
-                                  <div className="form-group">
-                                      <label className="form-label">Mensagem automática fora do horário</label>
-                                      <textarea
-                                          className="form-textarea"
-                                          id="outsideHoursAutoReplyMessage"
-                                          rows={4}
-                                          placeholder=""
-                                      ></textarea>
-                                      <p className="form-help">Esse texto fica apenas no formulário e não é salvo.</p>
-                                  </div>
-
+                                  <p style={{ margin: 0, color: 'var(--gray-700)' }}>
+                                      Configure início/fim do expediente por conta e ative/desative o horário comercial individualmente.
+                                  </p>
                               </div>
 
-                              <button className="btn btn-primary" onClick={() => globals.saveBusinessHoursSettings?.()}>
-                                  <span className="icon icon-save icon-sm"></span> Salvar horários
-                              </button>
+                              <div className="settings-users-actions" style={{ marginTop: 0 }}>
+                                  <button className="btn btn-outline" onClick={() => globals.refreshBusinessHoursAccounts?.()}>
+                                      <span className="icon icon-refresh icon-sm"></span> Atualizar lista
+                                  </button>
+                                  <Link className="btn btn-primary" to="/whatsapp">
+                                      Ir para WhatsApp
+                                  </Link>
+                              </div>
+
+                              <div className="copy-card">
+                                  <div className="connection-accounts-list" id="businessHoursAccountsList">
+                                      <p style={{ margin: 0, color: 'var(--gray-500)' }}>Carregando contas...</p>
+                                  </div>
+                              </div>
                           </div>
                       </div>
                       <div className="settings-panel" id="panel-funnel">
