@@ -185,9 +185,9 @@ function setAutomationModalTitle(mode: 'new' | 'edit') {
     if (!modalTitle) return;
 
     if (mode === 'edit') {
-        modalTitle.innerHTML = '<span class="icon icon-edit icon-sm"></span> Editar AutomaÃ§Ã£o';
+        modalTitle.innerHTML = '<span class="icon icon-edit icon-sm"></span> Editar Automação';
     } else {
-        modalTitle.innerHTML = '<span class="icon icon-add icon-sm"></span> Nova AutomaÃ§Ã£o';
+        modalTitle.innerHTML = '<span class="icon icon-add icon-sm"></span> Nova Automação';
     }
 }
 
@@ -664,7 +664,7 @@ onReady(initAutomacao);
 
 async function loadAutomations() {
     try {
-        showLoading('Carregando automaÃ§Ãµes...');
+        showLoading('Carregando automações...');
         const response: AutomationsResponse = await api.get('/api/automations');
         automations = response.automations || [];
         updateStats();
@@ -672,7 +672,7 @@ async function loadAutomations() {
         hideLoading();
     } catch (error) {
         hideLoading();
-        // AutomaÃ§Ãµes de exemplo
+        // Automações de exemplo
         automations = [
             {
                 id: 1,
@@ -681,7 +681,7 @@ async function loadAutomations() {
                 trigger_type: 'new_lead',
                 trigger_value: '',
                 action_type: 'send_message',
-                action_value: 'OlÃ¡ {{nome}}! Seja bem-vindo Ã  ZapVender.',
+                action_value: 'Olá {{nome}}! Seja bem-vindo à ZapVender.',
                 delay: 0,
                 is_active: true,
                 executions: 156,
@@ -689,7 +689,7 @@ async function loadAutomations() {
             },
             {
                 id: 2,
-                name: 'Follow-up AutomÃ¡tico',
+                name: 'Follow-up Automático',
                 description: 'Envia follow-up a cada mensagem recebida',
                 trigger_type: 'message_received',
                 trigger_value: '',
@@ -702,10 +702,10 @@ async function loadAutomations() {
             },
             {
                 id: 3,
-                name: 'NotificaÃ§Ã£o de Interesse',
+                name: 'Notificação de Interesse',
                 description: 'Notifica equipe quando lead demonstra interesse',
                 trigger_type: 'keyword',
-                trigger_value: 'interesse, preÃ§o',
+                trigger_value: 'interesse, preço',
                 action_type: 'notify',
                 action_value: 'Lead interessado: {{nome}}',
                 delay: 0,
@@ -892,26 +892,26 @@ function updateTriggerOptions() {
                     <option value="">Qualquer</option>
                     <option value="1">Novo</option>
                     <option value="2">Em Andamento</option>
-                    <option value="3">ConcluÃ­do</option>
+                    <option value="3">Concluído</option>
                 </select>
                 <label class="form-label mt-3">Para status</label>
                 <select class="form-select" id="triggerToStatus">
                     <option value="">Qualquer</option>
                     <option value="1">Novo</option>
                     <option value="2">Em Andamento</option>
-                    <option value="3">ConcluÃ­do</option>
+                    <option value="3">Concluído</option>
                 </select>
             `;
             break;
         case 'keyword':
             html = `
-                <label class="form-label">Palavras-chave (separadas por vÃ­rgula)</label>
-                <input type="text" class="form-input" id="triggerKeywords" placeholder="interesse, preÃ§o, quanto custa">
+                <label class="form-label">Palavras-chave (separadas por vírgula)</label>
+                <input type="text" class="form-input" id="triggerKeywords" placeholder="interesse, preço, quanto custa">
             `;
             break;
         case 'schedule':
             html = `
-                <label class="form-label">HorÃ¡rio de execuÃ§Ã£o</label>
+                <label class="form-label">Horário de execução</label>
                 <input type="time" class="form-input" id="triggerTime">
                 <label class="form-label mt-3">Dias da semana</label>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
@@ -920,7 +920,7 @@ function updateTriggerOptions() {
                     <label class="checkbox-wrapper"><input type="checkbox" value="3"><span class="checkbox-custom"></span>Qua</label>
                     <label class="checkbox-wrapper"><input type="checkbox" value="4"><span class="checkbox-custom"></span>Qui</label>
                     <label class="checkbox-wrapper"><input type="checkbox" value="5"><span class="checkbox-custom"></span>Sex</label>
-                    <label class="checkbox-wrapper"><input type="checkbox" value="6"><span class="checkbox-custom"></span>SÃ¡b</label>
+                    <label class="checkbox-wrapper"><input type="checkbox" value="6"><span class="checkbox-custom"></span>Sáb</label>
                     <label class="checkbox-wrapper"><input type="checkbox" value="0"><span class="checkbox-custom"></span>Dom</label>
                 </div>
             `;
@@ -956,9 +956,9 @@ function updateActionOptions() {
         case 'send_message':
             html = `
                 <label class="form-label">Mensagem</label>
-                <textarea class="form-textarea" id="actionMessage" rows="4" placeholder="OlÃ¡ {{nome}}! Seja bem-vindo...
+                <textarea class="form-textarea" id="actionMessage" rows="4" placeholder="Olá {{nome}}! Seja bem-vindo...
 
-VariÃ¡veis: {{nome}}"></textarea>
+Variáveis: {{nome}}"></textarea>
             `;
             break;
         case 'change_status':
@@ -967,7 +967,7 @@ VariÃ¡veis: {{nome}}"></textarea>
                 <select class="form-select" id="actionStatus">
                     <option value="1">Novo</option>
                     <option value="2">Em Andamento</option>
-                    <option value="3">ConcluÃ­do</option>
+                    <option value="3">Concluído</option>
                     <option value="4">Perdido</option>
                 </select>
             `;
@@ -988,7 +988,7 @@ VariÃ¡veis: {{nome}}"></textarea>
             break;
         case 'notify':
             html = `
-                <label class="form-label">Mensagem de notificaÃ§Ã£o</label>
+                <label class="form-label">Mensagem de notificação</label>
                 <textarea class="form-textarea" id="actionNotification" rows="2" placeholder="Novo lead interessado: {{nome}}"></textarea>
             `;
             break;
@@ -1003,12 +1003,12 @@ async function toggleAutomation(id: number, active: boolean) {
         const automation = automations.find(a => a.id === id);
         if (automation) automation.is_active = active;
         updateStats();
-        showToast('success', 'Sucesso', `AutomaÃ§Ã£o ${active ? 'ativada' : 'desativada'}!`);
+        showToast('success', 'Sucesso', `Automação ${active ? 'ativada' : 'desativada'}!`);
     } catch (error) {
         const automation = automations.find(a => a.id === id);
         if (automation) automation.is_active = active;
         updateStats();
-        showToast('success', 'Sucesso', `AutomaÃ§Ã£o ${active ? 'ativada' : 'desativada'}!`);
+        showToast('success', 'Sucesso', `Automação ${active ? 'ativada' : 'desativada'}!`);
     }
 }
 
@@ -1062,7 +1062,7 @@ async function saveAutomation() {
         closeModal('newAutomationModal');
         resetAutomationForm();
         await loadAutomations();
-        showToast('success', 'Sucesso', automationId ? 'Automa??o atualizada!' : 'Automa??o criada!');
+        showToast('success', 'Sucesso', automationId ? 'Automação atualizada!' : 'Automação criada!');
     } catch (error) {
         hideLoading();
         if (automationId) {
@@ -1073,7 +1073,7 @@ async function saveAutomation() {
                     ...data
                 };
             }
-            showToast('success', 'Sucesso', 'Automa??o atualizada!');
+            showToast('success', 'Sucesso', 'Automação atualizada!');
         } else {
             // Simular sucesso
             automations.push({
@@ -1082,7 +1082,7 @@ async function saveAutomation() {
                 executions: 0,
                 last_execution: null
             });
-            showToast('success', 'Sucesso', 'Automa??o criada!');
+            showToast('success', 'Sucesso', 'Automação criada!');
         }
         closeModal('newAutomationModal');
         resetAutomationForm();
@@ -1138,7 +1138,7 @@ async function deleteAutomation(id: number) {
     automations = automations.filter(a => a.id !== id);
     renderAutomations();
     updateStats();
-    showToast('success', 'Sucesso', 'Automa??o exclu?da!');
+    showToast('success', 'Sucesso', 'Automação excluída!');
 }
 
 const windowAny = window as Window & {
