@@ -62,6 +62,21 @@ type CustomEventsStatsResponse = {
     };
     period?: string;
 };
+type SettingsResponse = {
+    settings?: Record<string, unknown> | null;
+    onboarding_video_url?: string;
+};
+type OnboardingStepId =
+    | 'connect_whatsapp'
+    | 'create_first_contact'
+    | 'open_inbox'
+    | 'create_tags'
+    | 'create_campaign'
+    | 'create_flow';
+type OnboardingState = {
+    completedSteps: OnboardingStepId[];
+    updatedAt: number;
+};
 
 let allLeads: Lead[] = [];
 let selectedLeads: number[] = [];
@@ -72,6 +87,11 @@ let dashboardLeadSummary: LeadSummary = {
     pending: 0,
     completed: 0
 };
+let onboardingState: OnboardingState = {
+    completedSteps: [],
+    updatedAt: 0
+};
+let onboardingVideoUrl = '';
 
 let statsChartInstance: { destroy?: () => void } | null = null;
 let statsChartType: StatsChartType = 'line';
@@ -88,6 +108,24 @@ const CUSTOM_EVENT_PERIODS: Record<string, CustomEventsPeriod> = {
     year: 'year',
     last_30_days: 'last_30_days'
 };
+const ONBOARDING_STEP_IDS: OnboardingStepId[] = [
+    'connect_whatsapp',
+    'create_first_contact',
+    'open_inbox',
+    'create_tags',
+    'create_campaign',
+    'create_flow'
+];
+const ONBOARDING_STEP_ROUTES: Record<OnboardingStepId, string> = {
+    connect_whatsapp: '#/whatsapp',
+    create_first_contact: '#/contatos',
+    open_inbox: '#/inbox',
+    create_tags: '#/configuracoes?panel=labels',
+    create_campaign: '#/campanhas',
+    create_flow: '#/fluxos'
+};
+const DASHBOARD_ONBOARDING_STORAGE_KEY_PREFIX = 'zapvender_dashboard_onboarding_v1:';
+const ONBOARDING_VIDEO_SETTING_KEY = 'onboarding_video_url';
 
 function appConfirm(message: string, title = 'Confirmacao') {
     const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
@@ -178,6 +216,256 @@ function writeDashboardSummaryCache(summary: LeadSummary) {
     } catch (_) {
         // ignore storage failure
     }
+}
+
+function getDashboardOnboardingStorageKey() {
+    const userId = String(sessionStorage.getItem('selfDashboardUserId') || '').trim();
+    if (userId) return `${DASHBOARD_ONBOARDING_STORAGE_KEY_PREFIX}user:${userId}`;
+
+    const email = String(sessionStorage.getItem('selfDashboardUserEmail') || '').trim().toLowerCase();
+    if (email) return `${DASHBOARD_ONBOARDING_STORAGE_KEY_PREFIX}email:${email}`;
+
+    const token = String(sessionStorage.getItem('selfDashboardToken') || '').trim();
+    const suffix = token ? token.slice(-14) : 'anon';
+    return `${DASHBOARD_ONBOARDING_STORAGE_KEY_PREFIX}token:${suffix}`;
+}
+
+function normalizeOnboardingStepId(value: unknown): OnboardingStepId | null {
+    const normalized = String(value || '').trim() as OnboardingStepId;
+    return ONBOARDING_STEP_IDS.includes(normalized) ? normalized : null;
+}
+
+function normalizeOnboardingState(value: unknown): OnboardingState {
+    const source = value && typeof value === 'object' ? (value as { completedSteps?: unknown; updatedAt?: unknown }) : {};
+    const completedRaw = Array.isArray(source.completedSteps) ? source.completedSteps : [];
+    const completedSteps = completedRaw
+        .map((item) => normalizeOnboardingStepId(item))
+        .filter((stepId): stepId is OnboardingStepId => Boolean(stepId));
+    const uniqueSteps = ONBOARDING_STEP_IDS.filter((stepId) => completedSteps.includes(stepId));
+    const updatedAt = Number(source.updatedAt || 0);
+    return {
+        completedSteps: uniqueSteps,
+        updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? Math.floor(updatedAt) : 0
+    };
+}
+
+function readOnboardingState(): OnboardingState {
+    try {
+        const raw = localStorage.getItem(getDashboardOnboardingStorageKey());
+        if (!raw) return { completedSteps: [], updatedAt: 0 };
+        return normalizeOnboardingState(JSON.parse(raw));
+    } catch (_) {
+        return { completedSteps: [], updatedAt: 0 };
+    }
+}
+
+function writeOnboardingState(state: OnboardingState) {
+    try {
+        localStorage.setItem(getDashboardOnboardingStorageKey(), JSON.stringify(state));
+    } catch (_) {
+        // ignore storage failure
+    }
+}
+
+function isOnboardingStepCompleted(stepId: OnboardingStepId) {
+    return onboardingState.completedSteps.includes(stepId);
+}
+
+function renderOnboardingChecklist() {
+    const totalSteps = ONBOARDING_STEP_IDS.length;
+    let completedCount = 0;
+
+    ONBOARDING_STEP_IDS.forEach((stepId) => {
+        const checked = isOnboardingStepCompleted(stepId);
+        if (checked) completedCount += 1;
+
+        const input = document.getElementById(`onboarding-step-${stepId}`) as HTMLInputElement | null;
+        if (input) input.checked = checked;
+
+        const row = document.getElementById(`onboarding-row-${stepId}`) as HTMLElement | null;
+        row?.classList.toggle('is-complete', checked);
+    });
+
+    const progress = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : 0;
+    const progressText = document.getElementById('onboardingProgressText') as HTMLElement | null;
+    const progressFill = document.getElementById('onboardingProgressFill') as HTMLElement | null;
+    const completedBadge = document.getElementById('onboardingCompletedBadge') as HTMLElement | null;
+
+    if (progressText) {
+        progressText.textContent = `${completedCount}/${totalSteps} etapas concluidas`;
+    }
+    if (progressFill) {
+        progressFill.style.width = `${progress}%`;
+    }
+    if (completedBadge) {
+        completedBadge.style.display = completedCount === totalSteps && totalSteps > 0 ? 'inline-flex' : 'none';
+    }
+}
+
+function toggleOnboardingStep(stepIdInput: string, checked?: boolean) {
+    const stepId = normalizeOnboardingStepId(stepIdInput);
+    if (!stepId) return;
+
+    const shouldCheck = typeof checked === 'boolean' ? checked : !isOnboardingStepCompleted(stepId);
+    const nextCompleted = new Set(onboardingState.completedSteps);
+    if (shouldCheck) {
+        nextCompleted.add(stepId);
+    } else {
+        nextCompleted.delete(stepId);
+    }
+
+    onboardingState = {
+        completedSteps: ONBOARDING_STEP_IDS.filter((id) => nextCompleted.has(id)),
+        updatedAt: Date.now()
+    };
+    writeOnboardingState(onboardingState);
+    renderOnboardingChecklist();
+}
+
+function resetOnboardingChecklist() {
+    onboardingState = {
+        completedSteps: [],
+        updatedAt: Date.now()
+    };
+    writeOnboardingState(onboardingState);
+    renderOnboardingChecklist();
+}
+
+function goToOnboardingStep(stepIdInput: string) {
+    const stepId = normalizeOnboardingStepId(stepIdInput);
+    if (!stepId) return;
+    const route = ONBOARDING_STEP_ROUTES[stepId];
+    if (!route) return;
+    window.location.hash = route;
+}
+
+function normalizeAbsoluteHttpUrl(value: unknown) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    try {
+        const parsed = new URL(raw, window.location.origin);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+        return parsed.toString();
+    } catch (_) {
+        return '';
+    }
+}
+
+function extractEmbedVideoUrl(videoUrl: string) {
+    try {
+        const parsed = new URL(videoUrl);
+        const hostname = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+        const pathParts = parsed.pathname.split('/').filter(Boolean);
+
+        if (hostname === 'youtu.be') {
+            const videoId = pathParts[0];
+            return videoId ? `https://www.youtube.com/embed/${encodeURIComponent(videoId)}` : '';
+        }
+
+        if (hostname === 'youtube.com' || hostname === 'm.youtube.com') {
+            if (pathParts[0] === 'embed' && pathParts[1]) {
+                return `https://www.youtube.com/embed/${encodeURIComponent(pathParts[1])}`;
+            }
+            if (pathParts[0] === 'shorts' && pathParts[1]) {
+                return `https://www.youtube.com/embed/${encodeURIComponent(pathParts[1])}`;
+            }
+            const videoId = parsed.searchParams.get('v');
+            if (videoId) {
+                return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}`;
+            }
+        }
+
+        if (hostname === 'vimeo.com' || hostname === 'player.vimeo.com') {
+            const videoId = pathParts.find((part) => /^\d+$/.test(part));
+            return videoId ? `https://player.vimeo.com/video/${videoId}` : '';
+        }
+    } catch (_) {
+        return '';
+    }
+    return '';
+}
+
+function renderOnboardingVideo() {
+    const placeholder = document.getElementById('onboardingVideoPlaceholder') as HTMLElement | null;
+    const hint = document.getElementById('onboardingVideoHint') as HTMLElement | null;
+    const frame = document.getElementById('onboardingVideoFrame') as HTMLIFrameElement | null;
+    const openLink = document.getElementById('onboardingVideoOpenLink') as HTMLAnchorElement | null;
+    const safeVideoUrl = normalizeAbsoluteHttpUrl(onboardingVideoUrl);
+
+    if (!safeVideoUrl) {
+        if (frame) {
+            frame.style.display = 'none';
+            frame.removeAttribute('src');
+        }
+        if (placeholder) {
+            placeholder.style.display = 'flex';
+        }
+        if (hint) {
+            hint.textContent = 'Defina onboarding_video_url em Configuracoes para exibir aqui.';
+        }
+        if (openLink) {
+            openLink.style.display = 'none';
+            openLink.removeAttribute('href');
+        }
+        return;
+    }
+
+    const embedUrl = extractEmbedVideoUrl(safeVideoUrl);
+    if (frame) {
+        if (embedUrl) {
+            frame.src = embedUrl;
+            frame.style.display = 'block';
+        } else {
+            frame.style.display = 'none';
+            frame.removeAttribute('src');
+        }
+    }
+
+    if (placeholder) {
+        placeholder.style.display = embedUrl ? 'none' : 'flex';
+    }
+    if (hint) {
+        hint.textContent = embedUrl
+            ? ''
+            : 'Video configurado. Use o botao abaixo para abrir em nova aba.';
+    }
+    if (openLink) {
+        openLink.href = safeVideoUrl;
+        openLink.style.display = 'inline-flex';
+    }
+}
+
+async function loadOnboardingVideo(options: { silent?: boolean } = {}) {
+    const hasVideoCard = Boolean(document.getElementById('dashboardOnboardingCard'));
+    if (!hasVideoCard) return;
+
+    let nextVideoUrl = '';
+    try {
+        const response: SettingsResponse = await api.get('/api/settings');
+        const settings = response?.settings && typeof response.settings === 'object'
+            ? response.settings
+            : null;
+        const fromSettings = settings && Object.prototype.hasOwnProperty.call(settings, ONBOARDING_VIDEO_SETTING_KEY)
+            ? (settings as Record<string, unknown>)[ONBOARDING_VIDEO_SETTING_KEY]
+            : response?.onboarding_video_url;
+        nextVideoUrl = String(fromSettings || '').trim();
+    } catch (error) {
+        if (!options.silent) {
+            showToast('warning', 'Aviso', 'Nao foi possivel carregar video de onboarding');
+        }
+        console.error(error);
+    }
+
+    onboardingVideoUrl = nextVideoUrl;
+    renderOnboardingVideo();
+}
+
+function initOnboardingCard() {
+    const hasOnboarding = Boolean(document.getElementById('dashboardOnboardingCard'));
+    if (!hasOnboarding) return;
+    onboardingState = readOnboardingState();
+    renderOnboardingChecklist();
+    void loadOnboardingVideo({ silent: true });
 }
 
 function normalizeDateInputValue(value: string | null | undefined) {
@@ -611,6 +899,7 @@ function initDashboard() {
     bindStatsPeriodControls();
     bindCustomEventsControls();
     initStatsChart();
+    initOnboardingCard();
     loadDashboardData();
 }
 
@@ -647,7 +936,8 @@ async function loadDashboardData() {
             loadDashboardLeadSummary({ silent: true }),
             leadsTablePromise,
             updateStatsPeriodChart({ silent: true }),
-            loadCustomEvents({ silent: true })
+            loadCustomEvents({ silent: true }),
+            loadOnboardingVideo({ silent: true })
         ]);
         
         hideLoading();
@@ -1119,6 +1409,9 @@ const windowAny = window as Window & {
     initDashboard?: () => void;
     loadDashboardData?: () => Promise<void>;
     loadCustomEvents?: (options?: { silent?: boolean }) => Promise<void>;
+    toggleOnboardingStep?: (stepId: string, checked?: boolean) => void;
+    goToOnboardingStep?: (stepId: string) => void;
+    resetOnboardingChecklist?: () => void;
     openCustomEventModal?: (id?: number) => void;
     saveCustomEvent?: () => Promise<void>;
     deleteCustomEvent?: (id: number) => Promise<void>;
@@ -1140,6 +1433,9 @@ const windowAny = window as Window & {
 windowAny.initDashboard = initDashboard;
 windowAny.loadDashboardData = loadDashboardData;
 windowAny.loadCustomEvents = loadCustomEvents;
+windowAny.toggleOnboardingStep = toggleOnboardingStep;
+windowAny.goToOnboardingStep = goToOnboardingStep;
+windowAny.resetOnboardingChecklist = resetOnboardingChecklist;
 windowAny.openCustomEventModal = openCustomEventModal;
 windowAny.saveCustomEvent = saveCustomEvent;
 windowAny.deleteCustomEvent = deleteCustomEvent;
