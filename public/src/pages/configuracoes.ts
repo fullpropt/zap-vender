@@ -557,6 +557,7 @@ function renderBusinessHoursAccountsManager() {
                             data-session-id="${escapeHtml(sessionId)}"
                             rows="2"
                             placeholder="Digite a mensagem enviada fora do horário"
+                            onchange="saveBusinessHoursSession('${sessionToken}')"
                         >${escapeHtml(businessHours.autoReplyMessage)}</textarea>
                     </div>
                     <div class="form-group">
@@ -566,6 +567,7 @@ function renderBusinessHoursAccountsManager() {
                             class="form-input business-hours-session-start-input"
                             data-session-id="${escapeHtml(sessionId)}"
                             value="${escapeHtml(businessHours.start)}"
+                            onchange="saveBusinessHoursSession('${sessionToken}')"
                         />
                     </div>
                     <div class="form-group">
@@ -575,9 +577,9 @@ function renderBusinessHoursAccountsManager() {
                             class="form-input business-hours-session-end-input"
                             data-session-id="${escapeHtml(sessionId)}"
                             value="${escapeHtml(businessHours.end)}"
+                            onchange="saveBusinessHoursSession('${sessionToken}')"
                         />
                     </div>
-                    <button class="btn btn-outline" onclick="saveBusinessHoursSession('${sessionToken}')">Salvar horários</button>
                 </div>
                 ` : ''}
             </div>
