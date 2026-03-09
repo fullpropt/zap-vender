@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS leads (
     uuid TEXT UNIQUE NOT NULL,
     phone TEXT NOT NULL,
     phone_formatted TEXT,
-    jid TEXT UNIQUE,
+    jid TEXT,
     name TEXT,
     email TEXT,
     vehicle TEXT,
@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS leads (
     custom_fields TEXT,
     source TEXT DEFAULT 'manual',
     assigned_to INTEGER REFERENCES users(id),
+    owner_user_id INTEGER REFERENCES users(id),
     is_blocked INTEGER DEFAULT 0,
     last_message_at TEXT,
     created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
@@ -53,6 +54,7 @@ CREATE TABLE IF NOT EXISTS flows (
     description TEXT,
     trigger_type TEXT NOT NULL CHECK(trigger_type IN ('keyword', 'new_contact', 'webhook', 'schedule', 'manual')),
     trigger_value TEXT,
+    session_id TEXT,
     nodes TEXT NOT NULL,
     edges TEXT,
     is_active INTEGER DEFAULT 1,
@@ -141,6 +143,9 @@ CREATE TABLE IF NOT EXISTS campaigns (
     delay_min INTEGER DEFAULT 0,
     delay_max INTEGER DEFAULT 0,
     start_at TEXT,
+    send_window_enabled INTEGER DEFAULT 0,
+    send_window_start TEXT,
+    send_window_end TEXT,
     sent INTEGER DEFAULT 0,
     delivered INTEGER DEFAULT 0,
     read INTEGER DEFAULT 0,
@@ -174,6 +179,7 @@ CREATE TABLE IF NOT EXISTS automations (
     action_value TEXT,
     delay INTEGER DEFAULT 0,
     session_scope TEXT,
+    tag_filter TEXT,
     is_active INTEGER DEFAULT 1,
     executions INTEGER DEFAULT 0,
     last_execution TEXT,
@@ -263,6 +269,13 @@ CREATE TABLE IF NOT EXISTS message_queue (
     processed_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS api_rate_limits (
+    bucket_key TEXT PRIMARY KEY,
+    count INTEGER NOT NULL DEFAULT 0,
+    reset_at TEXT NOT NULL,
+    updated_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+);
+
 -- Tabela de Webhooks
 CREATE TABLE IF NOT EXISTS webhooks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -281,6 +294,20 @@ CREATE TABLE IF NOT EXISTS webhooks (
     updated_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
+CREATE TABLE IF NOT EXISTS incoming_webhook_credentials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    secret_hash TEXT NOT NULL UNIQUE,
+    secret_prefix TEXT NOT NULL,
+    secret_suffix TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id),
+    last_rotated_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    last_used_at TEXT,
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE (owner_user_id)
+);
+
 -- Tabela de Log de Webhooks
 CREATE TABLE IF NOT EXISTS webhook_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -290,6 +317,44 @@ CREATE TABLE IF NOT EXISTS webhook_logs (
     response_status INTEGER,
     response_body TEXT,
     duration_ms INTEGER,
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+);
+
+-- Fila de entrega de webhooks (retry + idempotencia por dedupe_key)
+CREATE TABLE IF NOT EXISTS webhook_delivery_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT UNIQUE NOT NULL,
+    webhook_id INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+    event TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    dedupe_key TEXT NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    max_attempts INTEGER DEFAULT 3,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'sent', 'failed', 'cancelled')),
+    next_attempt_at TEXT,
+    locked_at TEXT,
+    last_error TEXT,
+    response_status INTEGER,
+    response_body TEXT,
+    duration_ms INTEGER,
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    processed_at TEXT,
+    UNIQUE (webhook_id, dedupe_key)
+);
+
+CREATE TABLE IF NOT EXISTS support_inbox_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    external_message_id TEXT,
+    provider TEXT DEFAULT 'unknown',
+    from_name TEXT,
+    from_email TEXT NOT NULL,
+    to_email TEXT NOT NULL DEFAULT 'support@zapvender.com',
+    subject TEXT,
+    body_text TEXT,
+    body_html TEXT,
+    raw_payload TEXT,
+    received_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    is_read INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
@@ -309,6 +374,17 @@ CREATE TABLE IF NOT EXISTS whatsapp_sessions (
     last_connected_at TEXT,
     created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
     updated_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+);
+
+CREATE TABLE IF NOT EXISTS whatsapp_auth_state (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    state_type TEXT NOT NULL,
+    state_key TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    UNIQUE (session_id, state_type, state_key)
 );
 
 -- Tabela de Configurações
@@ -344,13 +420,8 @@ CREATE TABLE IF NOT EXISTS tags (
     created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
--- Tabela de relação Lead-Tag
-CREATE TABLE IF NOT EXISTS lead_tags (
-    lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
-    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
-    PRIMARY KEY (lead_id, tag_id)
-);
+-- lead_tags foi descontinuada. A fonte de verdade de etiquetas segue em leads.tags.
+DROP TABLE IF EXISTS lead_tags;
 
 -- ============================================
 -- ÍNDICES
@@ -359,6 +430,7 @@ CREATE TABLE IF NOT EXISTS lead_tags (
 ALTER TABLE messages ADD COLUMN campaign_id INTEGER;
 ALTER TABLE message_queue ADD COLUMN campaign_id INTEGER;
 ALTER TABLE message_queue ADD COLUMN session_id TEXT;
+ALTER TABLE flows ADD COLUMN session_id TEXT;
 ALTER TABLE message_queue ADD COLUMN is_first_contact INTEGER DEFAULT 1;
 ALTER TABLE message_queue ADD COLUMN assignment_meta TEXT;
 ALTER TABLE campaigns ADD COLUMN delay_min INTEGER;
@@ -366,21 +438,55 @@ ALTER TABLE campaigns ADD COLUMN delay_max INTEGER;
 ALTER TABLE campaigns ADD COLUMN tag_filter TEXT;
 ALTER TABLE campaigns ADD COLUMN distribution_strategy TEXT DEFAULT 'single';
 ALTER TABLE campaigns ADD COLUMN distribution_config TEXT;
+ALTER TABLE campaigns ADD COLUMN send_window_enabled INTEGER DEFAULT 0;
+ALTER TABLE campaigns ADD COLUMN send_window_start TEXT;
+ALTER TABLE campaigns ADD COLUMN send_window_end TEXT;
 ALTER TABLE automations ADD COLUMN session_scope TEXT;
+ALTER TABLE automations ADD COLUMN tag_filter TEXT;
+ALTER TABLE leads ADD COLUMN owner_user_id INTEGER REFERENCES users(id);
 ALTER TABLE whatsapp_sessions ADD COLUMN campaign_enabled INTEGER DEFAULT 1;
 ALTER TABLE whatsapp_sessions ADD COLUMN daily_limit INTEGER DEFAULT 0;
 ALTER TABLE whatsapp_sessions ADD COLUMN dispatch_weight INTEGER DEFAULT 1;
 ALTER TABLE whatsapp_sessions ADD COLUMN hourly_limit INTEGER DEFAULT 0;
 ALTER TABLE whatsapp_sessions ADD COLUMN cooldown_until TEXT;
+ALTER TABLE whatsapp_sessions ADD COLUMN created_by INTEGER REFERENCES users(id);
+ALTER TABLE tags ADD COLUMN created_by INTEGER REFERENCES users(id);
+
+UPDATE leads
+SET owner_user_id = (
+    SELECT COALESCE(u.owner_user_id, u.id)
+    FROM users u
+    WHERE u.id = leads.assigned_to
+)
+WHERE owner_user_id IS NULL
+  AND assigned_to IS NOT NULL;
+
+UPDATE leads
+SET owner_user_id = (
+    SELECT COALESCE(u.owner_user_id, u.id)
+    FROM conversations c
+    JOIN whatsapp_sessions ws ON ws.session_id = c.session_id
+    JOIN users u ON u.id = ws.created_by
+    WHERE c.lead_id = leads.id
+      AND ws.created_by IS NOT NULL
+    ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
+    LIMIT 1
+)
+WHERE owner_user_id IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone);
 CREATE INDEX IF NOT EXISTS idx_leads_jid ON leads(jid);
 CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
 CREATE INDEX IF NOT EXISTS idx_leads_assigned ON leads(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_leads_owner ON leads(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_email_confirmation_token_hash ON users(email_confirmation_token_hash);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_auth_state_session ON whatsapp_auth_state(session_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_auth_state_lookup ON whatsapp_auth_state(session_id, state_type);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_active_unique ON users(email) WHERE is_active = 1;
-CREATE UNIQUE INDEX IF NOT EXISTS leads_phone_unique ON leads(phone);
+DROP INDEX IF EXISTS leads_phone_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS leads_owner_phone_unique ON leads(owner_user_id, phone) WHERE owner_user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS leads_owner_jid_unique ON leads(owner_user_id, jid) WHERE owner_user_id IS NOT NULL AND jid IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_conversations_lead ON conversations(lead_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
@@ -410,6 +516,15 @@ CREATE INDEX IF NOT EXISTS idx_queue_scheduled ON message_queue(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_queue_priority ON message_queue(priority DESC);
 CREATE INDEX IF NOT EXISTS idx_queue_campaign ON message_queue(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_queue_session ON message_queue(session_id);
+CREATE INDEX IF NOT EXISTS idx_api_rate_limits_reset ON api_rate_limits(reset_at);
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery_queue_status ON webhook_delivery_queue(status);
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery_queue_next_attempt ON webhook_delivery_queue(next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery_queue_webhook ON webhook_delivery_queue(webhook_id);
+CREATE INDEX IF NOT EXISTS idx_incoming_webhook_credentials_owner ON incoming_webhook_credentials(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_incoming_webhook_credentials_last_used ON incoming_webhook_credentials(last_used_at DESC);
+CREATE INDEX IF NOT EXISTS idx_support_inbox_messages_received_at ON support_inbox_messages(received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_support_inbox_messages_is_read ON support_inbox_messages(is_read);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_support_inbox_messages_external_id_unique ON support_inbox_messages(external_message_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_campaign ON campaign_sender_accounts(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_session ON campaign_sender_accounts(session_id);
 
@@ -457,3 +572,5 @@ INSERT OR IGNORE INTO settings (key, value, type, description) VALUES
     ('working_hours_end', '18:00', 'string', 'Fim do horário de atendimento'),
     ('away_message', 'Olá! No momento estamos fora do horário de atendimento. Retornaremos em breve!', 'string', 'Mensagem de ausência'),
     ('welcome_message', 'Olá! Bem-vindo à SELF Proteção Veicular! Como posso ajudar?', 'string', 'Mensagem de boas-vindas');
+
+

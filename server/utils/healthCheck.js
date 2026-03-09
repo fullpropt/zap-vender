@@ -1,13 +1,13 @@
 /**
- * SELF PROTEÇÃO VEICULAR - Health Check Avançado
- * Verifica status de todos os componentes críticos do sistema
+ * SELF PROTECAO VEICULAR - Health Check Avancado
+ * Verifica status de todos os componentes criticos do sistema
  */
 
 const fs = require('fs');
 const path = require('path');
 
 /**
- * Verifica se o banco de dados está acessível
+ * Verifica se o banco de dados esta acessivel
  */
 async function checkDatabase() {
     try {
@@ -29,27 +29,28 @@ async function checkDatabase() {
 }
 
 /**
- * Verifica status das sessões WhatsApp
+ * Verifica status das sessoes WhatsApp
  */
 function checkWhatsAppSessions() {
     try {
         const whatsappService = require('../services/whatsapp');
         const sessions = whatsappService.sessions;
-        
-        const sessionList = Object.keys(sessions).map(sessionId => {
-            const session = sessions[sessionId];
-            return {
-                id: sessionId,
-                connected: session.isConnected || false,
-                status: session.status || 'unknown'
-            };
-        });
-        
-        const connectedCount = sessionList.filter(s => s.connected).length;
-        
+
+        const sessionEntries = sessions instanceof Map
+            ? Array.from(sessions.entries())
+            : Object.entries(sessions || {});
+
+        const sessionList = sessionEntries.map(([sessionId, session]) => ({
+            id: sessionId,
+            connected: Boolean(session?.isConnected),
+            status: session?.status || 'unknown'
+        }));
+
+        const connectedCount = sessionList.filter((session) => session.connected).length;
+
         return {
             status: 'healthy',
-            message: `${connectedCount} de ${sessionList.length} sessões conectadas`,
+            message: `${connectedCount} de ${sessionList.length} sessoes conectadas`,
             sessions: sessionList,
             totalSessions: sessionList.length,
             connectedSessions: connectedCount
@@ -57,7 +58,7 @@ function checkWhatsAppSessions() {
     } catch (error) {
         return {
             status: 'degraded',
-            message: 'Erro ao verificar sessões WhatsApp',
+            message: 'Erro ao verificar sessoes WhatsApp',
             error: error.message
         };
     }
@@ -69,11 +70,11 @@ function checkWhatsAppSessions() {
 async function checkMessageQueue() {
     try {
         const { query } = require('../database/connection');
-        
+
         const pending = (await query("SELECT COUNT(*) as count FROM message_queue WHERE status = 'pending'"))[0]?.count || 0;
         const processing = (await query("SELECT COUNT(*) as count FROM message_queue WHERE status = 'processing'"))[0]?.count || 0;
         const failed = (await query("SELECT COUNT(*) as count FROM message_queue WHERE status = 'failed'"))[0]?.count || 0;
-        
+
         return {
             status: 'healthy',
             message: 'Fila de mensagens operacional',
@@ -94,49 +95,49 @@ async function checkMessageQueue() {
 }
 
 /**
- * Verifica espaço em disco
+ * Verifica espaco em disco
  */
 function checkDiskSpace() {
     try {
         const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
         const uploadsDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', '..', 'uploads');
         const sessionsDir = process.env.SESSIONS_DIR || path.join(__dirname, '..', '..', 'sessions');
-        
+
         const getDirSize = (dirPath) => {
             if (!fs.existsSync(dirPath)) return 0;
-            
+
             let size = 0;
             const files = fs.readdirSync(dirPath);
-            
+
             for (const file of files) {
                 const filePath = path.join(dirPath, file);
                 const stats = fs.statSync(filePath);
-                
+
                 if (stats.isDirectory()) {
                     size += getDirSize(filePath);
                 } else {
                     size += stats.size;
                 }
             }
-            
+
             return size;
         };
-        
+
         const formatSize = (bytes) => {
-            if (bytes < 1024) return bytes + ' B';
-            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-            return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+            if (bytes < 1024) return `${bytes} B`;
+            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+            if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+            return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
         };
-        
+
         const dataSize = getDirSize(dataDir);
         const uploadsSize = getDirSize(uploadsDir);
         const sessionsSize = getDirSize(sessionsDir);
         const totalSize = dataSize + uploadsSize + sessionsSize;
-        
+
         return {
             status: 'healthy',
-            message: 'Espaço em disco verificado',
+            message: 'Espaco em disco verificado',
             disk: {
                 data: formatSize(dataSize),
                 uploads: formatSize(uploadsSize),
@@ -147,25 +148,23 @@ function checkDiskSpace() {
     } catch (error) {
         return {
             status: 'degraded',
-            message: 'Erro ao verificar espaço em disco',
+            message: 'Erro ao verificar espaco em disco',
             error: error.message
         };
     }
 }
 
 /**
- * Verifica memória do processo
+ * Verifica memoria do processo
  */
 function checkMemory() {
     const usage = process.memoryUsage();
-    
-    const formatMemory = (bytes) => {
-        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-    };
-    
+
+    const formatMemory = (bytes) => `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+
     return {
         status: 'healthy',
-        message: 'Uso de memória monitorado',
+        message: 'Uso de memoria monitorado',
         memory: {
             rss: formatMemory(usage.rss),
             heapTotal: formatMemory(usage.heapTotal),
@@ -180,7 +179,7 @@ function checkMemory() {
  */
 async function getHealthStatus() {
     const startTime = Date.now();
-    
+
     const checks = {
         database: await checkDatabase(),
         whatsapp: checkWhatsAppSessions(),
@@ -188,20 +187,20 @@ async function getHealthStatus() {
         disk: checkDiskSpace(),
         memory: checkMemory()
     };
-    
-    // Determinar status geral
+
     let overallStatus = 'healthy';
     for (const check of Object.values(checks)) {
         if (check.status === 'unhealthy') {
             overallStatus = 'unhealthy';
             break;
-        } else if (check.status === 'degraded' && overallStatus !== 'unhealthy') {
+        }
+        if (check.status === 'degraded' && overallStatus !== 'unhealthy') {
             overallStatus = 'degraded';
         }
     }
-    
+
     const responseTime = Date.now() - startTime;
-    
+
     return {
         status: overallStatus,
         version: '4.1.0',

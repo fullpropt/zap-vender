@@ -1,29 +1,59 @@
 import { useEffect } from 'react';
 
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { brandLogoUrl, brandName } from '../lib/brand';
 type WhatsappGlobals = {
   initWhatsapp?: () => void;
   startConnection?: () => void;
-  requestPairingCode?: () => void;
   disconnect?: () => void;
   changeSession?: (sessionId: string) => void;
   createSessionPrompt?: () => void;
   toggleSidebar?: () => void;
   logout?: () => void;
+  api?: {
+    get?: (endpoint: string) => Promise<any>;
+  };
+  showToast?: (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string, duration?: number) => void;
 };
 
 export default function Whatsapp() {
+  const navigate = useNavigate();
+
   useEffect(() => {
     let cancelled = false;
 
     const boot = async () => {
+      const token = sessionStorage.getItem('selfDashboardToken');
+      const expiry = Number(sessionStorage.getItem('selfDashboardExpiry') || 0);
+      if (!token || !expiry || Date.now() > expiry) {
+        navigate('/login', { replace: true });
+        return;
+      }
+
       await import('../../core/app');
-      const mod = await import('../../pages/whatsapp');
 
       if (cancelled) return;
 
       const win = window as Window & WhatsappGlobals;
+      const allowedStatuses = new Set(['active', 'trialing']);
+      try {
+        const response = await win.api?.get?.('/api/plan/status');
+        const status = String(response?.plan?.status || '').trim().toLowerCase();
+        if (!allowedStatuses.has(status)) {
+          win.showToast?.('warning', 'Assinatura inativa', 'Sua assinatura não está ativa. Reative para poder usar a aplicação.');
+          navigate('/configuracoes?panel=plan', { replace: true });
+          return;
+        }
+      } catch (_) {
+        win.showToast?.('warning', 'Assinatura inativa', 'Não foi possível validar a assinatura. Reative seu plano para usar a aplicação.');
+        navigate('/configuracoes?panel=plan', { replace: true });
+        return;
+      }
+
+      const mod = await import('../../pages/whatsapp');
+
+      if (cancelled) return;
+
       if (typeof win.initWhatsapp === 'function') {
         win.initWhatsapp();
       } else if (typeof (mod as { initWhatsapp?: () => void }).initWhatsapp === 'function') {
@@ -36,7 +66,7 @@ export default function Whatsapp() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [navigate]);
 
   const globals = window as Window & WhatsappGlobals;
   const toggleSidebar = () => {
@@ -252,6 +282,19 @@ export default function Whatsapp() {
             height: 230px;
         }
 
+        .whatsapp-react .qr-loading-idle {
+            gap: 12px;
+            padding: 0 14px;
+        }
+
+        .whatsapp-react .qr-idle-arrow {
+            font-size: 64px;
+            line-height: 1;
+            color: var(--whatsapp);
+            font-weight: 700;
+            animation: qrArrowBounce 1.3s ease-in-out infinite;
+        }
+
         .whatsapp-react .spinner {
             width: 60px;
             height: 60px;
@@ -265,6 +308,11 @@ export default function Whatsapp() {
         .whatsapp-react .qr-loading p {
             color: var(--gray);
             font-size: 15px;
+        }
+
+        @keyframes qrArrowBounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(6px); }
         }
 
         .whatsapp-react .qr-timer {
@@ -759,9 +807,9 @@ export default function Whatsapp() {
                               <div className="qr-container">
                                   <div className="qr-wrapper">
                                       <div id="qr-code">
-                                          <div className="qr-loading">
-                                              <div className="spinner"></div>
-                                              <p>Aguardando conexão...</p>
+                                          <div className="qr-loading qr-loading-idle">
+                                              <div className="qr-idle-arrow" aria-hidden="true">&darr;</div>
+                                              <p>Clique no bot&atilde;o abaixo para gerar QR Code de acesso</p>
                                           </div>
                                       </div>
                                   </div>
@@ -772,19 +820,6 @@ export default function Whatsapp() {
                                   
                                   <button className="btn btn-whatsapp" id="connect-btn" onClick={() => globals.startConnection?.()}>Conectar WhatsApp</button>
 
-                                  <div className="pairing-actions">
-                                      <label className="pairing-label" htmlFor="pairing-phone">Ou conecte sem QR (codigo de pareamento)</label>
-                                      <div className="pairing-row">
-                                          <input id="pairing-phone" className="pairing-input" type="tel" placeholder="Ex: 5531999999999" />
-                                          <button type="button" className="btn btn-outline pairing-btn" id="pairing-btn" onClick={() => globals.requestPairingCode?.()}>Gerar codigo</button>
-                                      </div>
-                                      <p className="pairing-help">No WhatsApp: Dispositivos conectados &gt; Conectar com numero.</p>
-                                      <div className="pairing-code-box" id="pairing-code-box">
-                                          <div className="pairing-code-title">Codigo de pareamento</div>
-                                          <div className="pairing-code-value" id="pairing-code-value"></div>
-                                          <div className="pairing-code-meta" id="pairing-code-meta"></div>
-                                      </div>
-                                  </div>
                               </div>
                               
                               <div className="instructions">

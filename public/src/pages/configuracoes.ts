@@ -1,11 +1,33 @@
-// Configuracoes page logic migrated to module
+﻿// Configuracoes page logic migrated to module
 
 type Settings = {
     company?: { name?: string; cnpj?: string; phone?: string; email?: string };
     funnel?: Array<{ name?: string; color?: string; description?: string }>;
     whatsapp?: { interval?: string; messagesPerHour?: string; workStart?: string; workEnd?: string };
     businessHours?: { enabled?: boolean; start?: string; end?: string; autoReplyMessage?: string };
+    businessHoursBySession?: Record<string, BusinessHoursSessionSettings>;
     notifications?: { notifyNewLead?: boolean; notifyNewMessage?: boolean; notifySound?: boolean };
+    ai?: AiSettingsConfig;
+};
+
+type BusinessHoursSessionSettings = {
+    enabled: boolean;
+    start: string;
+    end: string;
+    autoReplyMessage: string;
+};
+
+type AiSettingsConfig = {
+    enabled?: boolean;
+    businessDescription?: string;
+    productsServices?: string;
+    targetAudience?: string;
+    toneOfVoice?: string;
+    rulesPolicies?: string;
+    faqs?: string;
+    websiteUrl?: string;
+    documentsNotes?: string;
+    internalNotes?: string;
 };
 
 type TemplateItem = {
@@ -52,9 +74,53 @@ type ManagedUser = {
     email?: string;
     role?: string;
     owner_user_id?: number | string | null;
+    is_primary_admin?: boolean | number;
+    is_online?: boolean | number;
     is_active?: number | boolean;
     last_login_at?: string | null;
     created_at?: string | null;
+};
+
+type PlanStatusApiPayload = {
+    owner_admin?: {
+        id?: number;
+        name?: string;
+        email?: string;
+    };
+    plan?: {
+        name?: string;
+        code?: string;
+        status?: string;
+        status_label?: string;
+        renewal_date?: string | null;
+        last_verified_at?: string | null;
+        provider?: string;
+        source?: string;
+        api_configured?: boolean;
+        message?: string;
+    };
+};
+
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
+
+type PlanStatusViewModel = {
+    ownerName: string;
+    ownerEmail: string;
+    planName: string;
+    status: string;
+    statusLabel: string;
+    renewalDate: string | null;
+    lastVerifiedAt: string | null;
+    provider: string;
+    source: string;
+    apiConfigured: boolean;
+    message: string;
 };
 
 let templatesCache: TemplateItem[] = [];
@@ -62,7 +128,11 @@ let settingsTagsCache: SettingsTag[] = [];
 let contactFieldsCache: ContactField[] = [];
 let customContactFieldsCache: ContactField[] = [];
 let whatsappSessionsCache: WhatsAppSessionRecord[] = [];
+let businessHoursBySessionCache: Record<string, BusinessHoursSessionSettings> = {};
 let usersCache: ManagedUser[] = [];
+let usersPresencePollingTimer: number | null = null;
+let planStatusCache: PlanStatusViewModel | null = null;
+let planStatusLoading = false;
 
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', source: 'name', is_default: true, required: true, placeholder: 'Nome completo' },
@@ -75,6 +145,7 @@ const DEFAULT_BUSINESS_HOURS_SETTINGS = {
     start: '08:00',
     end: '18:00'
 };
+const DEFAULT_OUTSIDE_HOURS_AUTO_REPLY_MESSAGE = 'Olá! Nosso atendimento está fora do horário de funcionamento no momento. Retornaremos assim que estivermos online.';
 
 const DEFAULT_NOTIFICATION_SETTINGS = {
     notifyNewLead: true,
@@ -82,12 +153,38 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
     notifySound: true
 };
 
+const DEFAULT_AI_SETTINGS: AiSettingsConfig = {
+    enabled: false,
+    businessDescription: '',
+    productsServices: '',
+    targetAudience: '',
+    toneOfVoice: 'consultivo',
+    rulesPolicies: '',
+    faqs: '',
+    websiteUrl: '',
+    documentsNotes: '',
+    internalNotes: ''
+};
+const MOBILE_VISIBLE_SETTINGS_PANELS = new Set(['conexao', 'users', 'plan']);
+
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', callback);
     } else {
         callback();
     }
+}
+
+function isConfiguracoesMobileMode() {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function normalizePanelForMobile(panelId: string | null | undefined) {
+    const normalized = String(panelId || '').trim();
+    if (!isConfiguracoesMobileMode()) return normalized;
+    if (MOBILE_VISIBLE_SETTINGS_PANELS.has(normalized)) return normalized;
+    return 'conexao';
 }
 
 
@@ -113,6 +210,7 @@ function initConfiguracoes() {
     loadTemplates();
     loadSettingsTags();
     loadUsers();
+    loadPlanStatus({ silent: true });
     refreshWhatsAppAccounts();
     updateNewTemplateForm();
     const typeSelect = document.getElementById('newTemplateType') as HTMLSelectElement | null;
@@ -121,33 +219,41 @@ function initConfiguracoes() {
     }
     const panelFromUrl = getPanelFromLocation();
     if (panelFromUrl) {
-        const panel = document.getElementById(`panel-${panelFromUrl}`);
-        if (panel) {
-            document.querySelectorAll('.settings-nav-item').forEach(i => i.classList.remove('active'));
-            document.querySelector(`[onclick="showPanel('${panelFromUrl}')"]`)?.classList.add('active');
-            document.querySelectorAll('.settings-panel').forEach(p => p.classList.remove('active'));
-            panel.classList.add('active');
-        }
+        showPanel(panelFromUrl);
+    } else if (isConfiguracoesMobileMode()) {
+        showPanel('conexao');
     }
     clearBusinessHoursMessageField();
     setTimeout(clearBusinessHoursMessageField, 250);
+    startUsersPresencePolling();
 }
 
 onReady(initConfiguracoes);
 
 function showPanel(panelId: string) {
+    let nextPanelId = normalizePanelForMobile(panelId) || 'conexao';
+    let nextPanel = document.getElementById(`panel-${nextPanelId}`) as HTMLElement | null;
+    if (!nextPanel) {
+        nextPanelId = 'conexao';
+        nextPanel = document.getElementById('panel-conexao') as HTMLElement | null;
+    }
+    if (!nextPanel) return;
+
     document.querySelectorAll('.settings-nav-item').forEach(item => item.classList.remove('active'));
-    const target = (window as any).event?.target as HTMLElement | undefined;
-    target?.closest('.settings-nav-item')?.classList.add('active');
+    const navTarget = document.querySelector(`.settings-nav-item[data-panel="${nextPanelId}"]`) as HTMLElement | null;
+    navTarget?.classList.add('active');
     document.querySelectorAll('.settings-panel').forEach(panel => panel.classList.remove('active'));
-    document.getElementById(`panel-${panelId}`).classList.add('active');
-    if (panelId === 'conexao') {
+    nextPanel.classList.add('active');
+
+    if (nextPanelId === 'conexao') {
         refreshWhatsAppAccounts();
-    } else if (panelId === 'users') {
+    } else if (nextPanelId === 'users') {
         loadUsers();
-    } else if (panelId === 'hours') {
-        clearBusinessHoursMessageField();
-        setTimeout(clearBusinessHoursMessageField, 150);
+    } else if (nextPanelId === 'plan') {
+        loadPlanStatus();
+    } else if (nextPanelId === 'hours') {
+        renderBusinessHoursAccountsManager();
+        void refreshBusinessHoursAccounts();
     }
 }
 
@@ -266,6 +372,12 @@ function parseBooleanSetting(value: unknown, fallback = false) {
     return fallback;
 }
 
+function normalizeBusinessHoursAutoReplyMessage(value: unknown, fallback = DEFAULT_OUTSIDE_HOURS_AUTO_REPLY_MESSAGE) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return fallback;
+    return normalized.slice(0, 1200);
+}
+
 function clearBusinessHoursMessageField() {
     const messageInput = document.getElementById('outsideHoursAutoReplyMessage') as HTMLTextAreaElement | null;
     if (!messageInput) return;
@@ -303,6 +415,234 @@ function readBusinessHoursSettingsFromForm() {
     };
 }
 
+function normalizeBusinessHoursBySession(value: unknown) {
+    let parsed: unknown = value;
+    if (typeof parsed === 'string') {
+        const raw = parsed.trim();
+        if (!raw) return {} as Record<string, BusinessHoursSessionSettings>;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            return {} as Record<string, BusinessHoursSessionSettings>;
+        }
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return {} as Record<string, BusinessHoursSessionSettings>;
+    }
+
+    const normalized: Record<string, BusinessHoursSessionSettings> = {};
+    for (const [rawSessionId, rawSettings] of Object.entries(parsed as Record<string, unknown>)) {
+        const sessionId = sanitizeSessionId(rawSessionId);
+        if (!sessionId || !rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings)) {
+            continue;
+        }
+
+        const valueObject = rawSettings as Partial<BusinessHoursSessionSettings>;
+        normalized[sessionId] = {
+            enabled: parseBooleanSetting(valueObject.enabled, DEFAULT_BUSINESS_HOURS_SETTINGS.enabled),
+            start: normalizeBusinessHoursTime(valueObject.start, DEFAULT_BUSINESS_HOURS_SETTINGS.start),
+            end: normalizeBusinessHoursTime(valueObject.end, DEFAULT_BUSINESS_HOURS_SETTINGS.end),
+            autoReplyMessage: normalizeBusinessHoursAutoReplyMessage(valueObject.autoReplyMessage, DEFAULT_OUTSIDE_HOURS_AUTO_REPLY_MESSAGE)
+        };
+    }
+
+    return normalized;
+}
+
+function getBusinessHoursSessionSettings(sessionId: string): BusinessHoursSessionSettings {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    const fallback: BusinessHoursSessionSettings = {
+        enabled: DEFAULT_BUSINESS_HOURS_SETTINGS.enabled,
+        start: DEFAULT_BUSINESS_HOURS_SETTINGS.start,
+        end: DEFAULT_BUSINESS_HOURS_SETTINGS.end,
+        autoReplyMessage: DEFAULT_OUTSIDE_HOURS_AUTO_REPLY_MESSAGE
+    };
+    if (!normalizedSessionId) return fallback;
+
+    const cached = businessHoursBySessionCache[normalizedSessionId];
+    if (!cached) return fallback;
+
+    return {
+        enabled: parseBooleanSetting(cached.enabled, fallback.enabled),
+        start: normalizeBusinessHoursTime(cached.start, fallback.start),
+        end: normalizeBusinessHoursTime(cached.end, fallback.end),
+        autoReplyMessage: normalizeBusinessHoursAutoReplyMessage(cached.autoReplyMessage, fallback.autoReplyMessage)
+    };
+}
+
+function upsertBusinessHoursSessionSettings(sessionId: string, partial: Partial<BusinessHoursSessionSettings>) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId) return;
+
+    const current = getBusinessHoursSessionSettings(normalizedSessionId);
+    businessHoursBySessionCache = {
+        ...businessHoursBySessionCache,
+        [normalizedSessionId]: {
+            enabled: parseBooleanSetting(partial.enabled, current.enabled),
+            start: normalizeBusinessHoursTime(partial.start, current.start),
+            end: normalizeBusinessHoursTime(partial.end, current.end),
+            autoReplyMessage: normalizeBusinessHoursAutoReplyMessage(partial.autoReplyMessage, current.autoReplyMessage)
+        }
+    };
+}
+
+function updateLocalBusinessHoursBySessionStorage() {
+    const localSettings = readLocalSettingsStorage();
+    writeLocalSettingsStorage({
+        ...localSettings,
+        businessHoursBySession: { ...businessHoursBySessionCache }
+    });
+}
+
+function renderBusinessHoursAccountsManager() {
+    const container = document.getElementById('businessHoursAccountsList') as HTMLElement | null;
+    if (!container) return;
+
+    if (!whatsappSessionsCache.length) {
+        container.innerHTML = `
+            <div class="connection-account-item">
+                <p style="margin: 0; color: var(--gray-600);">
+                    Nenhuma conta encontrada. Acesse <a href="#/whatsapp">WhatsApp</a> para adicionar uma conta.
+                </p>
+            </div>
+        `;
+        return;
+    }
+
+    const sortedSessions = [...whatsappSessionsCache].sort((a, b) => {
+        const byConnected = Number(parseConnectedStatus(b)) - Number(parseConnectedStatus(a));
+        if (byConnected !== 0) return byConnected;
+        return sanitizeSessionId(a.session_id).localeCompare(sanitizeSessionId(b.session_id));
+    });
+
+    container.innerHTML = sortedSessions.map((session) => {
+        const sessionId = sanitizeSessionId(session.session_id);
+        const sessionToken = encodeURIComponent(sessionId);
+        const displayName = getSessionDisplayName(session);
+        const phone = String(session.phone || '').trim();
+        const subtitle = phone ? `${sessionId} - ${phone}` : sessionId;
+
+        const businessHours = getBusinessHoursSessionSettings(sessionId);
+        const businessStatusClass = businessHours.enabled ? 'connected' : 'disconnected';
+        const businessStatusLabel = businessHours.enabled ? 'Horário comercial ativo' : 'Horário comercial inativo';
+        const toggleChecked = businessHours.enabled ? 'checked' : '';
+
+        return `
+            <div class="connection-account-item">
+                <div class="connection-account-head">
+                    <div>
+                        <strong>${escapeHtml(displayName)}</strong>
+                        <div class="connection-account-session">${escapeHtml(subtitle)}</div>
+                    </div>
+                    <span class="connection-status-pill ${businessStatusClass}">${businessStatusLabel}</span>
+                </div>
+                <div class="business-hours-account-controls">
+                    <label class="connection-campaign-toggle business-hours-checkbox-toggle">
+                        <input
+                            type="checkbox"
+                            class="business-hours-session-enabled-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            ${toggleChecked}
+                            onchange="toggleBusinessHoursSession('${sessionToken}', this.checked)"
+                        />
+                        <span>Ativar horário comercial</span>
+                    </label>
+                    <div class="business-hours-toggle-hint">Ative para exibir e configurar mensagem e horário desta conta.</div>
+                </div>
+                ${businessHours.enabled ? `<div class="business-hours-account-body">
+                    <div class="form-group business-hours-account-message">
+                        <label class="form-label">Mensagem automática fora do horário</label>
+                        <textarea
+                            class="form-textarea business-hours-session-message-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            rows="2"
+                            placeholder="Digite a mensagem enviada fora do horário"
+                            onchange="saveBusinessHoursSession('${sessionToken}')"
+                        >${escapeHtml(businessHours.autoReplyMessage)}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Início do expediente</label>
+                        <input
+                            type="time"
+                            class="form-input business-hours-session-start-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            value="${escapeHtml(businessHours.start)}"
+                            onchange="saveBusinessHoursSession('${sessionToken}')"
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Fim do expediente</label>
+                        <input
+                            type="time"
+                            class="form-input business-hours-session-end-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            value="${escapeHtml(businessHours.end)}"
+                            onchange="saveBusinessHoursSession('${sessionToken}')"
+                        />
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+async function persistBusinessHoursBySessionToServer() {
+    updateLocalBusinessHoursBySessionStorage();
+    await api.put('/api/settings', {
+        business_hours_by_session: businessHoursBySessionCache
+    });
+}
+
+async function saveBusinessHoursSession(sessionToken: string) {
+    const sessionId = sanitizeSessionId(decodeSessionToken(sessionToken));
+    if (!sessionId) return;
+
+    const selectorSessionId = escapeAttributeSelector(sessionId);
+    const startInput = document.querySelector<HTMLInputElement>(`.business-hours-session-start-input[data-session-id="${selectorSessionId}"]`);
+    const endInput = document.querySelector<HTMLInputElement>(`.business-hours-session-end-input[data-session-id="${selectorSessionId}"]`);
+    const messageInput = document.querySelector<HTMLTextAreaElement>(`.business-hours-session-message-input[data-session-id="${selectorSessionId}"]`);
+    const current = getBusinessHoursSessionSettings(sessionId);
+
+    upsertBusinessHoursSessionSettings(sessionId, {
+        enabled: current.enabled,
+        start: normalizeBusinessHoursTime(startInput?.value, current.start),
+        end: normalizeBusinessHoursTime(endInput?.value, current.end),
+        autoReplyMessage: normalizeBusinessHoursAutoReplyMessage(messageInput?.value, current.autoReplyMessage)
+    });
+
+    try {
+        await persistBusinessHoursBySessionToServer();
+        renderBusinessHoursAccountsManager();
+        showToast('success', 'Sucesso', 'Horários da conta atualizados.');
+    } catch (error) {
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
+    }
+}
+
+async function toggleBusinessHoursSession(sessionToken: string, explicitEnabled?: boolean) {
+    const sessionId = sanitizeSessionId(decodeSessionToken(sessionToken));
+    if (!sessionId) return;
+
+    const current = getBusinessHoursSessionSettings(sessionId);
+    const nextEnabled = typeof explicitEnabled === 'boolean' ? explicitEnabled : !current.enabled;
+    upsertBusinessHoursSessionSettings(sessionId, {
+        enabled: nextEnabled,
+        start: current.start,
+        end: current.end,
+        autoReplyMessage: current.autoReplyMessage
+    });
+
+    try {
+        await persistBusinessHoursBySessionToServer();
+        renderBusinessHoursAccountsManager();
+        showToast('success', 'Sucesso', `Horário comercial ${nextEnabled ? 'ativado' : 'desativado'} para a conta.`);
+    } catch (error) {
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
+    }
+}
+
 function applyNotificationSettings(values: Partial<{ notifyNewLead: boolean; notifyNewMessage: boolean; notifySound: boolean }>) {
     const notifyNewLeadInput = document.getElementById('notifyNewLead') as HTMLInputElement | null;
     const notifyNewMessageInput = document.getElementById('notifyNewMessage') as HTMLInputElement | null;
@@ -331,11 +671,88 @@ function readNotificationSettingsFromForm() {
     };
 }
 
+function sanitizeAiText(value: unknown, maxLength = 4000) {
+    return String(value || '').replace(/\r/g, '').trim().slice(0, maxLength);
+}
+
+function sanitizeAiUrl(value: unknown) {
+    return String(value || '').trim().slice(0, 300);
+}
+
+function normalizeAiSettings(values: Partial<AiSettingsConfig> | null | undefined): AiSettingsConfig {
+    return {
+        enabled: parseBooleanSetting(values?.enabled, DEFAULT_AI_SETTINGS.enabled),
+        businessDescription: sanitizeAiText(values?.businessDescription, 5000),
+        productsServices: sanitizeAiText(values?.productsServices, 5000),
+        targetAudience: sanitizeAiText(values?.targetAudience, 3000),
+        toneOfVoice: sanitizeAiText(values?.toneOfVoice, 120) || String(DEFAULT_AI_SETTINGS.toneOfVoice || ''),
+        rulesPolicies: sanitizeAiText(values?.rulesPolicies, 5000),
+        faqs: sanitizeAiText(values?.faqs, 8000),
+        websiteUrl: sanitizeAiUrl(values?.websiteUrl),
+        documentsNotes: sanitizeAiText(values?.documentsNotes, 8000),
+        internalNotes: sanitizeAiText(values?.internalNotes, 8000)
+    };
+}
+
+function applyAiSettings(values: Partial<AiSettingsConfig> | null | undefined) {
+    const normalized = normalizeAiSettings(values);
+    const enabledInput = document.getElementById('aiEnabled') as HTMLInputElement | null;
+    const businessDescriptionInput = document.getElementById('aiBusinessDescription') as HTMLTextAreaElement | null;
+    const productsServicesInput = document.getElementById('aiProductsServices') as HTMLTextAreaElement | null;
+    const targetAudienceInput = document.getElementById('aiTargetAudience') as HTMLTextAreaElement | null;
+    const toneOfVoiceInput = document.getElementById('aiToneOfVoice') as HTMLInputElement | HTMLSelectElement | null;
+    const rulesPoliciesInput = document.getElementById('aiRulesPolicies') as HTMLTextAreaElement | null;
+    const faqsInput = document.getElementById('aiFaqs') as HTMLTextAreaElement | null;
+    const websiteUrlInput = document.getElementById('aiWebsiteUrl') as HTMLInputElement | null;
+    const documentsNotesInput = document.getElementById('aiDocumentsNotes') as HTMLTextAreaElement | null;
+    const internalNotesInput = document.getElementById('aiInternalNotes') as HTMLTextAreaElement | null;
+
+    if (enabledInput) enabledInput.checked = Boolean(normalized.enabled);
+    if (businessDescriptionInput) businessDescriptionInput.value = String(normalized.businessDescription || '');
+    if (productsServicesInput) productsServicesInput.value = String(normalized.productsServices || '');
+    if (targetAudienceInput) targetAudienceInput.value = String(normalized.targetAudience || '');
+    if (toneOfVoiceInput) toneOfVoiceInput.value = String(normalized.toneOfVoice || DEFAULT_AI_SETTINGS.toneOfVoice || 'consultivo');
+    if (rulesPoliciesInput) rulesPoliciesInput.value = String(normalized.rulesPolicies || '');
+    if (faqsInput) faqsInput.value = String(normalized.faqs || '');
+    if (websiteUrlInput) websiteUrlInput.value = String(normalized.websiteUrl || '');
+    if (documentsNotesInput) documentsNotesInput.value = String(normalized.documentsNotes || '');
+    if (internalNotesInput) internalNotesInput.value = String(normalized.internalNotes || '');
+}
+
+function readAiSettingsFromForm(): AiSettingsConfig {
+    const enabledInput = document.getElementById('aiEnabled') as HTMLInputElement | null;
+    const businessDescriptionInput = document.getElementById('aiBusinessDescription') as HTMLTextAreaElement | null;
+    const productsServicesInput = document.getElementById('aiProductsServices') as HTMLTextAreaElement | null;
+    const targetAudienceInput = document.getElementById('aiTargetAudience') as HTMLTextAreaElement | null;
+    const toneOfVoiceInput = document.getElementById('aiToneOfVoice') as HTMLInputElement | HTMLSelectElement | null;
+    const rulesPoliciesInput = document.getElementById('aiRulesPolicies') as HTMLTextAreaElement | null;
+    const faqsInput = document.getElementById('aiFaqs') as HTMLTextAreaElement | null;
+    const websiteUrlInput = document.getElementById('aiWebsiteUrl') as HTMLInputElement | null;
+    const documentsNotesInput = document.getElementById('aiDocumentsNotes') as HTMLTextAreaElement | null;
+    const internalNotesInput = document.getElementById('aiInternalNotes') as HTMLTextAreaElement | null;
+
+    return normalizeAiSettings({
+        enabled: Boolean(enabledInput?.checked),
+        businessDescription: businessDescriptionInput?.value || '',
+        productsServices: productsServicesInput?.value || '',
+        targetAudience: targetAudienceInput?.value || '',
+        toneOfVoice: toneOfVoiceInput?.value || String(DEFAULT_AI_SETTINGS.toneOfVoice || 'consultivo'),
+        rulesPolicies: rulesPoliciesInput?.value || '',
+        faqs: faqsInput?.value || '',
+        websiteUrl: websiteUrlInput?.value || '',
+        documentsNotes: documentsNotesInput?.value || '',
+        internalNotes: internalNotesInput?.value || ''
+    });
+}
+
 async function loadSettings() {
     const localSettings: Settings = readLocalSettingsStorage();
     applyCompanySettings(localSettings.company || {});
     applyBusinessHoursSettings(localSettings.businessHours || DEFAULT_BUSINESS_HOURS_SETTINGS);
+    businessHoursBySessionCache = normalizeBusinessHoursBySession(localSettings.businessHoursBySession || {});
+    renderBusinessHoursAccountsManager();
     applyNotificationSettings(localSettings.notifications || DEFAULT_NOTIFICATION_SETTINGS);
+    applyAiSettings(localSettings.ai || DEFAULT_AI_SETTINGS);
 
     try {
         const response = await api.get('/api/settings');
@@ -355,26 +772,226 @@ async function loadSettings() {
             start: normalizeBusinessHoursTime(serverSettings.business_hours_start, localSettings.businessHours?.start || DEFAULT_BUSINESS_HOURS_SETTINGS.start),
             end: normalizeBusinessHoursTime(serverSettings.business_hours_end, localSettings.businessHours?.end || DEFAULT_BUSINESS_HOURS_SETTINGS.end)
         };
+        const businessHoursBySession = normalizeBusinessHoursBySession(
+            serverSettings.business_hours_by_session ?? localSettings.businessHoursBySession ?? {}
+        );
         const notifications = {
             notifyNewLead: parseBooleanSetting(serverSettings.notify_new_lead, localSettings.notifications?.notifyNewLead ?? DEFAULT_NOTIFICATION_SETTINGS.notifyNewLead),
             notifyNewMessage: parseBooleanSetting(serverSettings.notify_new_message, localSettings.notifications?.notifyNewMessage ?? DEFAULT_NOTIFICATION_SETTINGS.notifyNewMessage),
             notifySound: parseBooleanSetting(serverSettings.notify_sound, localSettings.notifications?.notifySound ?? DEFAULT_NOTIFICATION_SETTINGS.notifySound)
         };
+        const aiSettings = normalizeAiSettings(
+            (serverSettings.ai_assistant && typeof serverSettings.ai_assistant === 'object')
+                ? serverSettings.ai_assistant as AiSettingsConfig
+                : (localSettings.ai || DEFAULT_AI_SETTINGS)
+        );
 
         if (hasCompanySettings) {
             applyCompanySettings(company);
         }
         applyBusinessHoursSettings(businessHours);
+        businessHoursBySessionCache = businessHoursBySession;
+        renderBusinessHoursAccountsManager();
         applyNotificationSettings(notifications);
+        applyAiSettings(aiSettings);
 
         writeLocalSettingsStorage({
             ...localSettings,
             company: hasCompanySettings ? company : (localSettings.company || {}),
             businessHours,
-            notifications
+            businessHoursBySession,
+            notifications,
+            ai: aiSettings
         });
     } catch (error) {
         // Mantem fallback local sem interromper a pagina
+    }
+}
+
+function normalizePlanStatus(status: unknown) {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (!normalized) return 'active';
+    const allowed = new Set(['active', 'trialing', 'past_due', 'canceled', 'suspended', 'expired']);
+    return allowed.has(normalized) ? normalized : 'unknown';
+}
+
+function getPlanStatusLabel(status: string, fallback = 'NÃ£o configurado') {
+    const normalized = normalizePlanStatus(status);
+    const labels: Record<string, string> = {
+        active: 'Ativo',
+        trialing: 'Em teste',
+        past_due: 'Pagamento pendente',
+        canceled: 'Cancelado',
+        suspended: 'Suspenso',
+        expired: 'Expirado',
+        unknown: fallback
+    };
+    return labels[normalized] || fallback;
+}
+
+function getPlanStatusBadgeClass(status: string) {
+    const normalized = normalizePlanStatus(status);
+    if (normalized === 'active' || normalized === 'trialing') return 'badge-success';
+    if (normalized === 'past_due') return 'badge-warning';
+    if (normalized === 'canceled' || normalized === 'suspended' || normalized === 'expired') return 'badge-danger';
+    return 'badge-secondary';
+}
+
+function formatPlanDateTime(value: unknown) {
+    const raw = String(value || '').trim();
+    if (!raw) return '-';
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw;
+    return new Intl.DateTimeFormat('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    }).format(parsed);
+}
+
+function getCurrentOwnerFromUsersCache() {
+    const ownerUser = usersCache.find((user) => isManagedUserPrimaryAdmin(user));
+    if (ownerUser) {
+        return {
+            name: String(ownerUser.name || 'Admin principal'),
+            email: String(ownerUser.email || '-')
+        };
+    }
+    return {
+        name: 'Admin principal',
+        email: '-'
+    };
+}
+
+function buildFallbackPlanStatus(): PlanStatusViewModel {
+    const owner = getCurrentOwnerFromUsersCache();
+    return {
+        ownerName: owner.name,
+        ownerEmail: owner.email,
+        planName: 'Plano de teste',
+        status: 'active',
+        statusLabel: 'Ativo',
+        renewalDate: null,
+        lastVerifiedAt: null,
+        provider: 'API nÃ£o configurada',
+        source: 'local',
+        apiConfigured: false,
+        message: 'A confirmaÃ§Ã£o automÃ¡tica do plano via API serÃ¡ habilitada apÃ³s configurar a integraÃ§Ã£o.'
+    };
+}
+
+function normalizePlanStatusPayload(payload: PlanStatusApiPayload | null | undefined): PlanStatusViewModel {
+    const fallback = buildFallbackPlanStatus();
+    const ownerName = String(payload?.owner_admin?.name || '').trim() || fallback.ownerName;
+    const ownerEmail = String(payload?.owner_admin?.email || '').trim() || fallback.ownerEmail;
+    const status = normalizePlanStatus(payload?.plan?.status);
+    const statusLabel = String(payload?.plan?.status_label || '').trim() || getPlanStatusLabel(status);
+
+    return {
+        ownerName,
+        ownerEmail,
+        planName: String(payload?.plan?.name || '').trim() || fallback.planName,
+        status,
+        statusLabel,
+        renewalDate: payload?.plan?.renewal_date || null,
+        lastVerifiedAt: payload?.plan?.last_verified_at || null,
+        provider: String(payload?.plan?.provider || '').trim() || fallback.provider,
+        source: String(payload?.plan?.source || '').trim() || fallback.source,
+        apiConfigured: Boolean(payload?.plan?.api_configured),
+        message: String(payload?.plan?.message || '').trim() || fallback.message
+    };
+}
+
+function renderPlanStatus() {
+    const container = document.getElementById('planStatusCard') as HTMLElement | null;
+    if (!container) return;
+
+    if (planStatusLoading && !planStatusCache) {
+        container.innerHTML = '<p style="color: var(--gray-500); margin: 0;">Carregando situacao do plano...</p>';
+        return;
+    }
+
+    const data = planStatusCache || buildFallbackPlanStatus();
+    const statusBadgeClass = getPlanStatusBadgeClass(data.status);
+    const apiBadgeClass = data.apiConfigured ? 'badge-success' : 'badge-secondary';
+    const apiBadgeLabel = data.apiConfigured ? 'API configurada' : 'API pendente';
+
+    container.innerHTML = `
+        <div class="copy-card" style="margin-bottom: 0;">
+            <div class="copy-card-header" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <span class="copy-card-title">Situacao do Plano</span>
+                <span class="badge ${statusBadgeClass}">${escapeHtml(data.statusLabel)}</span>
+                <span class="badge ${apiBadgeClass}">${apiBadgeLabel}</span>
+            </div>
+            <p class="text-muted mb-3">${escapeHtml(data.message)}</p>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Admin principal</label>
+                    <input type="text" class="form-input" value="${escapeHtml(data.ownerName)}" readonly />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">E-mail do admin principal</label>
+                    <input type="text" class="form-input" value="${escapeHtml(data.ownerEmail)}" readonly />
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Plano</label>
+                    <input type="text" class="form-input" value="${escapeHtml(data.planName)}" readonly />
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Renovacao</label>
+                    <input type="text" class="form-input" value="${escapeHtml(formatPlanDateTime(data.renewalDate))}" readonly />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Ãšltima confirmaÃ§Ã£o</label>
+                    <input type="text" class="form-input" value="${escapeHtml(formatPlanDateTime(data.lastVerifiedAt))}" readonly />
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+async function loadPlanStatus(options: { silent?: boolean } = {}) {
+    const shouldShowLoading = !options.silent;
+    if (shouldShowLoading) {
+        planStatusLoading = true;
+        renderPlanStatus();
+    }
+
+    try {
+        const response = await api.get('/api/plan/status');
+        planStatusCache = normalizePlanStatusPayload(response as PlanStatusApiPayload);
+    } catch (error) {
+        if (!planStatusCache) {
+            planStatusCache = buildFallbackPlanStatus();
+        }
+        if (shouldShowLoading) {
+            showToast('warning', 'Aviso', 'NÃ£o foi possÃ­vel carregar o status do plano');
+        }
+    } finally {
+        planStatusLoading = false;
+        renderPlanStatus();
+    }
+}
+
+async function refreshPlanStatus() {
+    planStatusLoading = true;
+    renderPlanStatus();
+    try {
+        const response = await api.post('/api/plan/status/refresh');
+        planStatusCache = normalizePlanStatusPayload(response as PlanStatusApiPayload);
+        showToast('success', 'Sucesso', 'Situacao do plano atualizada');
+    } catch (error) {
+        await loadPlanStatus({ silent: true });
+        showToast('warning', 'Aviso', 'NÃ£o foi possÃ­vel confirmar o plano via API');
+    } finally {
+        planStatusLoading = false;
+        renderPlanStatus();
     }
 }
 
@@ -397,30 +1014,20 @@ async function saveGeneralSettings() {
             company_phone: company.phone,
             company_email: company.email
         });
-        showToast('success', 'Sucesso', 'Configurações salvas!');
+        showToast('success', 'Sucesso', 'ConfiguraÃ§Ãµes salvas!');
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas nÃ£o foi possÃ­vel sincronizar no servidor');
     }
 }
 
 async function saveBusinessHoursSettings() {
-    const settings: Settings = readLocalSettingsStorage();
-    const businessHours = readBusinessHoursSettingsFromForm();
-
-    settings.businessHours = businessHours;
-    writeLocalSettingsStorage(settings);
-
     try {
-        await api.put('/api/settings', {
-            business_hours_enabled: businessHours.enabled,
-            business_hours_start: businessHours.start,
-            business_hours_end: businessHours.end
-        });
-        showToast('success', 'Sucesso', 'Horários atualizados!');
+        await persistBusinessHoursBySessionToServer();
+        renderBusinessHoursAccountsManager();
+        showToast('success', 'Sucesso', 'HorÃ¡rios atualizados!');
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas nÃ£o foi possÃ­vel sincronizar no servidor');
     }
-    clearBusinessHoursMessageField();
 }
 
 async function loadSettingsTags() {
@@ -428,9 +1035,13 @@ async function loadSettingsTags() {
         const response = await api.get('/api/tags');
         settingsTagsCache = response?.tags || [];
         renderSettingsTags();
+        return true;
     } catch (error) {
-        settingsTagsCache = [];
-        renderSettingsTags();
+        if (!settingsTagsCache.length) {
+            settingsTagsCache = [];
+            renderSettingsTags();
+        }
+        return false;
     }
 }
 
@@ -441,7 +1052,7 @@ function renderSettingsTags() {
     if (!settingsTagsCache.length) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="4" class="table-empty">
+                <td colspan="3" class="table-empty">
                     <div class="table-empty-icon icon icon-empty icon-lg"></div>
                     <p>Nenhuma etiqueta encontrada</p>
                 </td>
@@ -453,7 +1064,6 @@ function renderSettingsTags() {
     tbody.innerHTML = settingsTagsCache.map((tag) => `
         <tr data-tag-id="${tag.id}">
             <td><input type="text" class="form-input settings-tag-name" value="${escapeHtml(tag.name || '')}" /></td>
-            <td style="width: 110px;"><input type="color" class="form-input settings-tag-color" value="${escapeHtml(tag.color || '#5a2a6b')}" style="height: 40px; min-width: 70px;" /></td>
             <td><input type="text" class="form-input settings-tag-description" value="${escapeHtml(tag.description || '')}" placeholder="Opcional" /></td>
             <td style="width: 180px;">
                 <div style="display: flex; gap: 8px;">
@@ -467,11 +1077,9 @@ function renderSettingsTags() {
 
 async function createSettingsTag() {
     const nameInput = document.getElementById('newTagName') as HTMLInputElement | null;
-    const colorInput = document.getElementById('newTagColor') as HTMLInputElement | null;
     const descriptionInput = document.getElementById('newTagDescription') as HTMLInputElement | null;
 
     const name = (nameInput?.value || '').trim();
-    const color = (colorInput?.value || '#5a2a6b').trim();
     const description = (descriptionInput?.value || '').trim();
 
     if (!name) {
@@ -481,19 +1089,38 @@ async function createSettingsTag() {
     }
 
     try {
-        await api.post('/api/tags', { name, color, description });
+        const response = await api.post('/api/tags', { name, description });
         if (nameInput) nameInput.value = '';
         if (descriptionInput) descriptionInput.value = '';
-        if (colorInput) colorInput.value = '#5a2a6b';
-        await loadSettingsTags();
+
+        const createdTag = response?.tag && typeof response.tag === 'object'
+            ? response.tag as SettingsTag
+            : null;
+
+        if (createdTag && Number(createdTag.id || 0) > 0) {
+            const normalizedCreatedName = String(createdTag.name || '').trim().toLowerCase();
+            const mergedTags = settingsTagsCache
+                .filter((tag) => String(tag?.name || '').trim().toLowerCase() !== normalizedCreatedName);
+            mergedTags.push(createdTag);
+            settingsTagsCache = mergedTags.sort((a, b) =>
+                String(a?.name || '').localeCompare(String(b?.name || ''), 'pt-BR', { sensitivity: 'base' })
+            );
+            renderSettingsTags();
+        }
+
+        const reloadSucceeded = await loadSettingsTags();
+        if (!reloadSucceeded) {
+            showToast('warning', 'Aviso', 'Etiqueta criada, mas nÃƒÂ£o foi possÃƒÂ­vel atualizar a lista agora');
+            return;
+        }
         showToast('success', 'Sucesso', 'Etiqueta criada!');
     } catch (error: any) {
         const message = String(error?.message || '').toLowerCase();
         if (message.includes('409') || message.includes('ja existe')) {
-            showToast('warning', 'Aviso', 'Já existe uma etiqueta com esse nome');
+            showToast('warning', 'Aviso', 'JÃ¡ existe uma etiqueta com esse nome');
             return;
         }
-        showToast('error', 'Erro', 'Não foi possível criar a etiqueta');
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel criar a etiqueta');
     }
 }
 
@@ -506,37 +1133,44 @@ async function updateSettingsTag(id: number) {
     if (!row) return;
 
     const name = ((row.querySelector('.settings-tag-name') as HTMLInputElement | null)?.value || '').trim();
-    const color = ((row.querySelector('.settings-tag-color') as HTMLInputElement | null)?.value || '#5a2a6b').trim();
     const description = ((row.querySelector('.settings-tag-description') as HTMLInputElement | null)?.value || '').trim();
 
     if (!name) {
-        showToast('warning', 'Aviso', 'Nome da etiqueta é obrigatório');
+        showToast('warning', 'Aviso', 'Nome da etiqueta Ã© obrigatÃ³rio');
         return;
     }
 
     try {
-        await api.put(`/api/tags/${id}`, { name, color, description });
-        await loadSettingsTags();
+        await api.put(`/api/tags/${id}`, { name, description });
+        const reloadSucceeded = await loadSettingsTags();
+        if (!reloadSucceeded) {
+            showToast('warning', 'Aviso', 'Etiqueta atualizada, mas nao foi possivel atualizar a lista agora');
+            return;
+        }
         showToast('success', 'Sucesso', 'Etiqueta atualizada!');
     } catch (error: any) {
         const message = String(error?.message || '').toLowerCase();
         if (message.includes('409') || message.includes('ja existe')) {
-            showToast('warning', 'Aviso', 'Já existe uma etiqueta com esse nome');
+            showToast('warning', 'Aviso', 'JÃ¡ existe uma etiqueta com esse nome');
             return;
         }
-        showToast('error', 'Erro', 'Não foi possível atualizar a etiqueta');
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel atualizar a etiqueta');
     }
 }
 
 async function deleteSettingsTag(id: number) {
-    if (!confirm('Deseja remover esta etiqueta?')) return;
+    if (!await appConfirm('Deseja remover esta etiqueta?', 'Remover etiqueta')) return;
 
     try {
         await api.delete(`/api/tags/${id}`);
-        await loadSettingsTags();
+        const reloadSucceeded = await loadSettingsTags();
+        if (!reloadSucceeded) {
+            showToast('warning', 'Aviso', 'Etiqueta removida, mas nao foi possivel atualizar a lista agora');
+            return;
+        }
         showToast('success', 'Sucesso', 'Etiqueta removida!');
     } catch (error) {
-        showToast('error', 'Erro', 'Não foi possível remover a etiqueta');
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel remover a etiqueta');
     }
 }
 
@@ -674,7 +1308,7 @@ async function persistContactFields(showSuccess = true) {
     await api.put('/api/contact-fields', { fields: payload });
     await loadContactFields();
     if (showSuccess) {
-        showToast('success', 'Sucesso', 'Campos dinâmicos atualizados!');
+        showToast('success', 'Sucesso', 'Campos dinÃ¢micos atualizados!');
     }
 }
 
@@ -888,9 +1522,9 @@ function renderTemplateCard(template: TemplateItem) {
     const body = mediaType === 'audio'
         ? `
             <div class="template-audio">
-                ${audioUrl ? `<audio controls preload="metadata" src="${audioUrl}"></audio>` : `<p class="text-muted">Nenhum áudio enviado.</p>`}
+                ${audioUrl ? `<audio controls preload="metadata" src="${audioUrl}"></audio>` : `<p class="text-muted">Nenhum Ã¡udio enviado.</p>`}
                 <input type="file" class="form-input template-audio-input" accept="audio/*" onchange="replaceTemplateAudio(${template.id}, event)" />
-                <small class="text-muted">Envie um novo áudio para substituir o atual.</small>
+                <small class="text-muted">Envie um novo Ã¡udio para substituir o atual.</small>
             </div>
         `
         : `
@@ -920,7 +1554,7 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
     const name = nameInput?.value.trim() || '';
 
     if (!id || !name) {
-        if (showToastMessage) showToast('warning', 'Aviso', 'Preencha o título da resposta rápida');
+        if (showToastMessage) showToast('warning', 'Aviso', 'Preencha o tÃ­tulo da resposta rÃ¡pida');
         return;
     }
 
@@ -931,7 +1565,7 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
 
     if (mediaType === 'audio') {
         if (!mediaUrl) {
-            if (showToastMessage) showToast('warning', 'Aviso', 'Envie um áudio para a resposta rápida');
+            if (showToastMessage) showToast('warning', 'Aviso', 'Envie um Ã¡udio para a resposta rÃ¡pida');
             return;
         }
         payload.media_type = 'audio';
@@ -939,7 +1573,7 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
     } else {
         const content = contentInput?.value.trim() || '';
         if (!content) {
-            if (showToastMessage) showToast('warning', 'Aviso', 'Preencha a mensagem da resposta rápida');
+            if (showToastMessage) showToast('warning', 'Aviso', 'Preencha a mensagem da resposta rÃ¡pida');
             return;
         }
         payload.content = content;
@@ -947,7 +1581,7 @@ async function saveTemplateInternal(card: HTMLElement, showToastMessage = true) 
 
     await api.put(`/api/templates/${id}`, payload);
     if (showToastMessage) {
-        showToast('success', 'Sucesso', 'Resposta rápida atualizada!');
+        showToast('success', 'Sucesso', 'Resposta rÃ¡pida atualizada!');
     }
 }
 
@@ -957,14 +1591,14 @@ async function saveTemplate(id: number) {
     try {
         await saveTemplateInternal(card, true);
     } catch (error) {
-        showToast('error', 'Erro', 'Não foi possível salvar');
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel salvar');
     }
 }
 
 async function saveCopysSettings() {
     const cards = Array.from(document.querySelectorAll('.template-card')) as HTMLElement[];
     if (!cards.length) {
-        showToast('info', 'Info', 'Nenhuma resposta rápida para salvar');
+        showToast('info', 'Info', 'Nenhuma resposta rÃ¡pida para salvar');
         return;
     }
 
@@ -973,20 +1607,20 @@ async function saveCopysSettings() {
             await saveTemplateInternal(card, false);
         }
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Respostas rápidas salvas!');
+        showToast('success', 'Sucesso', 'Respostas rÃ¡pidas salvas!');
     } catch (error) {
-        showToast('error', 'Erro', 'Não foi possível salvar as respostas rápidas');
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel salvar as respostas rÃ¡pidas');
     }
 }
 
 async function deleteTemplate(id: number) {
-    if (!confirm('Excluir esta resposta rápida?')) return;
+    if (!await appConfirm('Excluir esta resposta rapida?', 'Excluir resposta rapida')) return;
     try {
         await api.delete(`/api/templates/${id}`);
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Resposta rápida removida!');
+        showToast('success', 'Sucesso', 'Resposta rÃ¡pida removida!');
     } catch (error) {
-        showToast('error', 'Erro', 'Não foi possível remover');
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel remover');
     }
 }
 
@@ -996,7 +1630,7 @@ async function replaceTemplateAudio(id: number, event: Event) {
     if (!file) return;
 
     try {
-        showLoading('Enviando áudio...');
+        showLoading('Enviando Ã¡udio...');
         const uploaded = await uploadFile(file);
         hideLoading();
 
@@ -1005,17 +1639,17 @@ async function replaceTemplateAudio(id: number, event: Event) {
         const name = nameInput?.value.trim() || '';
 
         await api.put(`/api/templates/${id}`, {
-            name: name || `Resposta rápida ${id}`,
+            name: name || `Resposta rÃ¡pida ${id}`,
             category: 'quick_reply',
             media_type: 'audio',
             media_url: uploaded.url,
             content: ''
         });
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Áudio atualizado!');
+        showToast('success', 'Sucesso', 'Ãudio atualizado!');
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', 'Não foi possível atualizar o áudio');
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel atualizar o Ã¡udio');
     } finally {
         if (target) target.value = '';
     }
@@ -1059,14 +1693,14 @@ async function saveNewTemplate() {
     const message = (document.getElementById('newTemplateMessage') as HTMLTextAreaElement | null)?.value.trim() || '';
     const audioInput = document.getElementById('newTemplateAudio') as HTMLInputElement | null;
     const audioFile = audioInput?.files?.[0];
-    if (!name) { showToast('error', 'Erro', 'Preencha o título da resposta rápida'); return; }
+    if (!name) { showToast('error', 'Erro', 'Preencha o tÃ­tulo da resposta rÃ¡pida'); return; }
     try {
         if (type === 'audio') {
             if (!audioFile) {
-                showToast('error', 'Erro', 'Selecione um arquivo de áudio');
+                showToast('error', 'Erro', 'Selecione um arquivo de Ã¡udio');
                 return;
             }
-            showLoading('Enviando áudio...');
+            showLoading('Enviando Ã¡udio...');
             const uploaded = await uploadFile(audioFile);
             hideLoading();
             await api.post('/api/templates', {
@@ -1095,10 +1729,10 @@ async function saveNewTemplate() {
         if (newTemplateType) newTemplateType.value = 'text';
         updateNewTemplateForm();
         await loadTemplates();
-        showToast('success', 'Sucesso', 'Resposta rápida adicionada!');
+        showToast('success', 'Sucesso', 'Resposta rÃ¡pida adicionada!');
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', 'Não foi possível adicionar a resposta rápida');
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel adicionar a resposta rÃ¡pida');
     }
 }
 
@@ -1167,7 +1801,7 @@ function renderWhatsAppAccountsManager() {
                         />
                     </div>
                     <div class="form-group connection-account-inline-field">
-                        <label class="form-label">Limite diário</label>
+                        <label class="form-label">Limite diÃ¡rio</label>
                         <input
                             type="number"
                             min="0"
@@ -1177,7 +1811,7 @@ function renderWhatsAppAccountsManager() {
                             value="${dailyLimit}"
                         />
                     </div>
-                    <label class="connection-campaign-toggle" title="Participa de campanhas e transmissões">
+                    <label class="connection-campaign-toggle" title="Participa de campanhas e transmissÃµes">
                         <input
                             type="checkbox"
                             class="connection-session-enabled-input"
@@ -1208,6 +1842,12 @@ async function refreshWhatsAppAccounts() {
     }
 
     renderWhatsAppAccountsManager();
+    renderBusinessHoursAccountsManager();
+}
+
+async function refreshBusinessHoursAccounts() {
+    await refreshWhatsAppAccounts();
+    renderBusinessHoursAccountsManager();
 }
 
 async function saveWhatsAppSessionName(sessionToken: string) {
@@ -1232,10 +1872,10 @@ async function saveWhatsAppSessionName(sessionToken: string) {
             daily_limit: dailyLimit,
             dispatch_weight: dispatchWeight
         });
-        showToast('success', 'Sucesso', 'Configurações da conta atualizadas.');
+        showToast('success', 'Sucesso', 'ConfiguraÃ§Ãµes da conta atualizadas.');
         await refreshWhatsAppAccounts();
     } catch (error) {
-        showToast('error', 'Erro', 'Nao foi possivel atualizar a conta.');
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel atualizar a conta.');
     }
 }
 
@@ -1243,7 +1883,7 @@ async function removeWhatsAppSession(sessionToken: string) {
     const sessionId = sanitizeSessionId(decodeSessionToken(sessionToken));
     if (!sessionId) return;
 
-    const confirmed = confirm(`Remover a conta ${sessionId}? Essa acao desconecta e exclui a sessao.`);
+    const confirmed = await appConfirm(`Remover a conta ${sessionId}? Essa acao desconecta e exclui a sessao.`, 'Remover conta WhatsApp');
     if (!confirmed) return;
 
     try {
@@ -1255,7 +1895,7 @@ async function removeWhatsAppSession(sessionToken: string) {
         showToast('success', 'Sucesso', 'Conta removida.');
         await refreshWhatsAppAccounts();
     } catch (error) {
-        showToast('error', 'Erro', 'Nao foi possivel remover a conta.');
+        showToast('error', 'Erro', 'NÃ£o foi possÃ­vel remover a conta.');
     }
 }
 
@@ -1270,7 +1910,7 @@ async function connectWhatsApp() {
             if (qrContainer) qrContainer.style.display = 'block';
             if (qrCode) qrCode.innerHTML = `<img src="${response.qr}" alt="QR Code" style="max-width: 250px;">`;
         }
-    } catch (error) { hideLoading(); showToast('error', 'Erro', 'Não foi possível gerar o QR Code'); }
+    } catch (error) { hideLoading(); showToast('error', 'Erro', 'NÃ£o foi possÃ­vel gerar o QR Code'); }
 }
 
 async function disconnectWhatsApp() {
@@ -1286,7 +1926,24 @@ function saveWhatsAppSettings() {
         workEnd: (document.getElementById('workEnd') as HTMLInputElement | null)?.value || ''
     };
     writeLocalSettingsStorage(settings);
-    showToast('success', 'Sucesso', 'Configurações salvas!');
+    showToast('success', 'Sucesso', 'ConfiguraÃ§Ãµes salvas!');
+}
+
+async function saveAiSettings() {
+    const settings: Settings = readLocalSettingsStorage();
+    const ai = readAiSettingsFromForm();
+
+    settings.ai = ai;
+    writeLocalSettingsStorage(settings);
+
+    try {
+        await api.put('/api/settings', {
+            ai_assistant: ai
+        });
+        showToast('success', 'Sucesso', 'ConfiguraÃ§Ãµes de InteligÃªncia Artificial salvas!');
+    } catch (error) {
+        showToast('warning', 'Aviso', 'Salvo localmente, mas nÃ£o foi possÃ­vel sincronizar no servidor');
+    }
 }
 
 async function saveNotificationSettings() {
@@ -1304,7 +1961,7 @@ async function saveNotificationSettings() {
         });
         showToast('success', 'Sucesso', 'Notificacoes salvas!');
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas nao foi possivel sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas nÃ£o foi possÃ­vel sincronizar no servidor');
     }
 }
 
@@ -1319,7 +1976,7 @@ function getUserRoleLabel(role: unknown) {
     const normalized = normalizeUserRole(role);
     if (normalized === 'admin') return 'Administrador';
     if (normalized === 'supervisor') return 'Supervisor';
-    return 'Usuário';
+    return 'UsuÃ¡rio';
 }
 
 function getUserRoleBadgeClass(role: unknown) {
@@ -1330,8 +1987,19 @@ function getUserRoleBadgeClass(role: unknown) {
 }
 
 function isManagedUserActive(user: ManagedUser) {
+    if (typeof user.is_online === 'boolean') return user.is_online;
+    if (typeof user.is_online === 'number') return user.is_online > 0;
     if (typeof user.is_active === 'boolean') return user.is_active;
     return Number(user.is_active) > 0;
+}
+
+function isManagedUserPrimaryAdmin(user?: ManagedUser | null) {
+    if (!user) return false;
+    if (typeof user.is_primary_admin === 'boolean') return user.is_primary_admin;
+    if (Number(user.is_primary_admin) > 0) return true;
+    const userId = Number(user.id || 0);
+    const ownerUserId = Number(user.owner_user_id || 0);
+    return userId > 0 && ownerUserId > 0 && userId === ownerUserId;
 }
 
 function getCurrentUserTokenPayload() {
@@ -1390,10 +2058,28 @@ function updateUsersPanelPermissions() {
     if (deleteAccountButton) deleteAccountButton.style.display = isCurrentUserOwnerAdmin() ? '' : 'none';
 }
 
+function isUsersPanelActive() {
+    const panel = document.getElementById('panel-users');
+    return Boolean(panel?.classList.contains('active'));
+}
+
+function startUsersPresencePolling() {
+    if (usersPresencePollingTimer !== null) {
+        window.clearInterval(usersPresencePollingTimer);
+        usersPresencePollingTimer = null;
+    }
+
+    usersPresencePollingTimer = window.setInterval(() => {
+        if (!isUsersPanelActive()) return;
+        void loadUsers({ silent: true });
+    }, 15000);
+}
+
 function renderUsersTable() {
     const tbody = document.getElementById('usersTableBody') as HTMLElement | null;
     if (!tbody) return;
     const isAdmin = isCurrentUserAdmin();
+    const isOwnerAdmin = isCurrentUserOwnerAdmin();
     const currentUserId = getCurrentUserIdFromToken();
 
     if (!usersCache.length) {
@@ -1401,7 +2087,7 @@ function renderUsersTable() {
             <tr>
                 <td colspan="5" class="table-empty">
                     <div class="table-empty-icon icon icon-empty icon-lg"></div>
-                    <p>Nenhum usuário encontrado</p>
+                    <p>Nenhum usuÃ¡rio encontrado</p>
                 </td>
             </tr>
         `;
@@ -1411,17 +2097,24 @@ function renderUsersTable() {
     tbody.innerHTML = usersCache.map((user) => {
         const active = isManagedUserActive(user);
         const userId = Number(user.id) || 0;
-        const canDelete = isAdmin && userId > 0 && userId !== currentUserId;
+        const isPrimaryAdmin = isManagedUserPrimaryAdmin(user);
+        const canEdit = !isPrimaryAdmin || isOwnerAdmin;
+        const canDelete = isAdmin && userId > 0 && userId !== currentUserId && !isPrimaryAdmin;
         return `
             <tr data-user-id="${userId}">
                 <td>${escapeHtml(String(user.name || 'Sem nome'))}</td>
                 <td>${escapeHtml(String(user.email || '-'))}</td>
-                <td><span class="badge ${getUserRoleBadgeClass(user.role)}">${getUserRoleLabel(user.role)}</span></td>
+                <td>
+                    <span class="badge ${getUserRoleBadgeClass(user.role)}">${getUserRoleLabel(user.role)}</span>
+                    ${isPrimaryAdmin ? '<span class="badge badge-success ml-2">Principal</span>' : ''}
+                </td>
                 <td><span class="badge ${active ? 'badge-success' : 'badge-secondary'}">${active ? 'Ativo' : 'Inativo'}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-outline" onclick="openEditUserModal(${userId})" title="Editar usuário">
+                    ${canEdit ? `
+                    <button class="btn btn-sm btn-outline" onclick="openEditUserModal(${userId})" title="Editar usuÃ¡rio">
                         <span class="icon icon-edit icon-sm"></span>
                     </button>
+                    ` : ''}
                     ${canDelete ? `
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${userId})" title="Remover usuario">
                         <span class="icon icon-delete icon-sm"></span>
@@ -1433,15 +2126,15 @@ function renderUsersTable() {
     }).join('');
 }
 
-async function loadUsers() {
+async function loadUsers(options: { silent?: boolean } = {}) {
     updateUsersPanelPermissions();
     const tbody = document.getElementById('usersTableBody') as HTMLElement | null;
-    if (tbody) {
+    if (tbody && !options.silent) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="5" class="table-empty">
                     <div class="table-empty-icon icon icon-empty icon-lg"></div>
-                    <p>Carregando usuários...</p>
+                    <p>Carregando usuÃ¡rios...</p>
                 </td>
             </tr>
         `;
@@ -1460,14 +2153,14 @@ async function loadUsers() {
                 <tr>
                     <td colspan="5" class="table-empty">
                         <div class="table-empty-icon icon icon-empty icon-lg"></div>
-                        <p>Não foi possível carregar os usuários</p>
+                        <p>NÃ£o foi possÃ­vel carregar os usuÃ¡rios</p>
                     </td>
                 </tr>
             `;
         }
         const message = String(error?.message || '').toLowerCase();
         if (message.includes('permiss')) {
-            showToast('warning', 'Aviso', 'Sua conta não tem permissão para listar todos os usuários.');
+            showToast('warning', 'Aviso', 'Sua conta nÃ£o tem permissÃ£o para listar todos os usuÃ¡rios.');
         }
     }
 }
@@ -1478,7 +2171,12 @@ function openEditUserModal(id: number) {
 
     const user = usersCache.find((item) => Number(item.id) === userId);
     if (!user) {
-        showToast('warning', 'Aviso', 'Usuário não encontrado');
+        showToast('warning', 'Aviso', 'UsuÃ¡rio nÃ£o encontrado');
+        return;
+    }
+    const isPrimaryAdmin = isManagedUserPrimaryAdmin(user);
+    if (isPrimaryAdmin && !isCurrentUserOwnerAdmin()) {
+        showToast('warning', 'Aviso', 'Somente o admin principal pode editar os prÃ³prios dados');
         return;
     }
 
@@ -1486,17 +2184,20 @@ function openEditUserModal(id: number) {
     const editUserName = document.getElementById('editUserName') as HTMLInputElement | null;
     const editUserEmail = document.getElementById('editUserEmail') as HTMLInputElement | null;
     const editUserRole = document.getElementById('editUserRole') as HTMLSelectElement | null;
-    const editUserActive = document.getElementById('editUserActive') as HTMLSelectElement | null;
 
     if (editUserId) editUserId.value = String(userId);
     if (editUserName) editUserName.value = String(user.name || '');
     if (editUserEmail) editUserEmail.value = String(user.email || '');
     if (editUserRole) editUserRole.value = normalizeUserRole(user.role);
-    if (editUserActive) editUserActive.value = isManagedUserActive(user) ? '1' : '0';
 
     const isAdmin = isCurrentUserAdmin();
-    if (editUserRole) editUserRole.disabled = !isAdmin;
-    if (editUserActive) editUserActive.disabled = !isAdmin;
+    const lockPrimaryForCurrent = isPrimaryAdmin && !isCurrentUserOwnerAdmin();
+    if (editUserName) editUserName.disabled = lockPrimaryForCurrent;
+    if (editUserEmail) {
+        editUserEmail.disabled = false;
+        editUserEmail.readOnly = true;
+    }
+    if (editUserRole) editUserRole.disabled = !isAdmin || isPrimaryAdmin;
 
     openModal('editUserModal');
 }
@@ -1504,33 +2205,35 @@ function openEditUserModal(id: number) {
 async function updateUser() {
     const editUserId = document.getElementById('editUserId') as HTMLInputElement | null;
     const editUserName = document.getElementById('editUserName') as HTMLInputElement | null;
-    const editUserEmail = document.getElementById('editUserEmail') as HTMLInputElement | null;
     const editUserRole = document.getElementById('editUserRole') as HTMLSelectElement | null;
-    const editUserActive = document.getElementById('editUserActive') as HTMLSelectElement | null;
 
     const id = parseInt(editUserId?.value || '0', 10);
     const name = String(editUserName?.value || '').trim();
-    const email = String(editUserEmail?.value || '').trim();
 
-    if (!id || !name || !email) {
-        showToast('error', 'Erro', 'Nome e e-mail são obrigatórios');
+    if (!id || !name) {
+        showToast('error', 'Erro', 'Nome Ã© obrigatÃ³rio');
         return;
     }
 
-    const payload: Record<string, unknown> = { name, email };
+    const editedUser = usersCache.find((item) => Number(item.id) === id);
+    const isPrimaryAdmin = isManagedUserPrimaryAdmin(editedUser);
+    if (isPrimaryAdmin && !isCurrentUserOwnerAdmin()) {
+        showToast('warning', 'Aviso', 'Somente o admin principal pode editar os prÃ³prios dados');
+        return;
+    }
+    const payload: Record<string, unknown> = { name };
     const isAdmin = isCurrentUserAdmin();
     if (isAdmin) {
-        payload.role = normalizeUserRole(editUserRole?.value || 'agent');
-        payload.is_active = editUserActive?.value === '0' ? 0 : 1;
+        payload.role = isPrimaryAdmin ? 'admin' : normalizeUserRole(editUserRole?.value || 'agent');
     }
 
     try {
         await api.put(`/api/users/${id}`, payload);
         closeModal('editUserModal');
         await loadUsers();
-        showToast('success', 'Sucesso', 'Usuário atualizado!');
+        showToast('success', 'Sucesso', 'UsuÃ¡rio atualizado!');
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'Não foi possível atualizar o usuário');
+        showToast('error', 'Erro', error?.message || 'NÃ£o foi possÃ­vel atualizar o usuÃ¡rio');
     }
 }
 
@@ -1567,9 +2270,9 @@ async function addUser() {
         if (newUserPassword) newUserPassword.value = '';
         if (newUserRole) newUserRole.value = 'agent';
         await loadUsers();
-        showToast('success', 'Sucesso', 'Usuário adicionado!');
+        showToast('success', 'Sucesso', 'UsuÃ¡rio adicionado!');
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'Não foi possível adicionar o usuário');
+        showToast('error', 'Erro', error?.message || 'NÃ£o foi possÃ­vel adicionar o usuÃ¡rio');
     }
 }
 
@@ -1581,11 +2284,15 @@ async function deleteUser(id: number) {
 
     const userId = Number(id);
     if (!Number.isFinite(userId) || userId <= 0) {
-        showToast('error', 'Erro', 'Usuario invalido');
+        showToast('error', 'Erro', 'UsuÃ¡rio invÃ¡lido');
         return;
     }
 
     const user = usersCache.find((item) => Number(item.id) === userId);
+    if (isManagedUserPrimaryAdmin(user)) {
+        showToast('warning', 'Aviso', 'NÃ£o Ã© permitido remover o admin principal da conta');
+        return;
+    }
     const name = String(user?.name || 'este usuario');
     const confirmDeleteUserId = document.getElementById('confirmDeleteUserId') as HTMLInputElement | null;
     const confirmDeleteUserName = document.getElementById('confirmDeleteUserName') as HTMLElement | null;
@@ -1603,7 +2310,14 @@ async function confirmDeleteUser() {
     const confirmDeleteUserId = document.getElementById('confirmDeleteUserId') as HTMLInputElement | null;
     const userId = Number(confirmDeleteUserId?.value || 0);
     if (!Number.isFinite(userId) || userId <= 0) {
-        showToast('error', 'Erro', 'Usuario invalido');
+        showToast('error', 'Erro', 'UsuÃ¡rio invÃ¡lido');
+        return;
+    }
+    const user = usersCache.find((item) => Number(item.id) === userId);
+    if (isManagedUserPrimaryAdmin(user)) {
+        closeModal('confirmDeleteUserModal');
+        if (confirmDeleteUserId) confirmDeleteUserId.value = '';
+        showToast('warning', 'Aviso', 'NÃ£o Ã© permitido remover o admin principal da conta');
         return;
     }
 
@@ -1612,9 +2326,9 @@ async function confirmDeleteUser() {
         closeModal('confirmDeleteUserModal');
         if (confirmDeleteUserId) confirmDeleteUserId.value = '';
         await loadUsers();
-        showToast('success', 'Sucesso', 'Usuario removido!');
+        showToast('success', 'Sucesso', 'UsuÃ¡rio removido!');
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'Nao foi possivel remover o usuario');
+        showToast('error', 'Erro', error?.message || 'NÃ£o foi possÃ­vel remover o usuÃ¡rio');
     }
 }
 
@@ -1648,13 +2362,14 @@ async function confirmDeleteAccount() {
         sessionStorage.removeItem('selfDashboardUser');
         sessionStorage.removeItem('selfDashboardUserId');
         sessionStorage.removeItem('selfDashboardUserEmail');
+        localStorage.removeItem('self_dashboard_auth_v1');
 
         setTimeout(() => {
             window.location.href = '#/login';
             window.location.reload();
         }, 400);
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'Nao foi possivel excluir a conta');
+        showToast('error', 'Erro', error?.message || 'NÃ£o foi possÃ­vel excluir a conta');
     }
 }
 
@@ -1667,7 +2382,7 @@ async function changePassword() {
     const newPass = (document.getElementById('newPassword') as HTMLInputElement | null)?.value || '';
     const confirm = (document.getElementById('confirmPassword') as HTMLInputElement | null)?.value || '';
     if (!current || !newPass || !confirm) { showToast('error', 'Erro', 'Preencha todos os campos'); return; }
-    if (newPass !== confirm) { showToast('error', 'Erro', 'As senhas não conferem'); return; }
+    if (newPass !== confirm) { showToast('error', 'Erro', 'As senhas nÃ£o conferem'); return; }
     if (newPass.length < 6) { showToast('error', 'Erro', 'A senha deve ter pelo menos 6 caracteres'); return; }
 
     try {
@@ -1683,7 +2398,7 @@ async function changePassword() {
         if (newPassword) newPassword.value = '';
         if (confirmPassword) confirmPassword.value = '';
     } catch (error: any) {
-        showToast('error', 'Erro', error?.message || 'Não foi possível alterar a senha');
+        showToast('error', 'Erro', error?.message || 'NÃ£o foi possÃ­vel alterar a senha');
     }
 }
 
@@ -1692,14 +2407,14 @@ function copyApiKey() {
     navigator.clipboard.writeText(apiKey);
     showToast('success', 'Copiado', 'API Key copiada!');
 }
-function regenerateApiKey() {
-    if (!confirm('Regenerar a API Key?')) return;
+async function regenerateApiKey() {
+    if (!await appConfirm('Regenerar a API Key?', 'Regenerar API Key')) return;
     const apiKey = document.getElementById('apiKey') as HTMLInputElement | null;
     if (apiKey) apiKey.value = 'sk_live_' + Math.random().toString(36).substring(2, 15);
     showToast('success', 'Sucesso', 'Nova API Key gerada!');
 }
-function testWebhook() { showToast('info', 'Testando', 'Enviando requisição de teste...'); setTimeout(() => { showToast('success', 'Sucesso', 'Webhook respondeu corretamente!'); }, 1500); }
-function saveApiSettings() { showToast('success', 'Sucesso', 'Configurações de API salvas!'); }
+function testWebhook() { showToast('info', 'Testando', 'Enviando requisiÃ§Ã£o de teste...'); setTimeout(() => { showToast('success', 'Sucesso', 'Webhook respondeu corretamente!'); }, 1500); }
+function saveApiSettings() { showToast('success', 'Sucesso', 'ConfiguraÃ§Ãµes de API salvas!'); }
 
 const windowAny = window as Window & {
     initConfiguracoes?: () => void;
@@ -1719,7 +2434,11 @@ const windowAny = window as Window & {
     saveWhatsAppSessionName?: (sessionToken: string) => Promise<void>;
     removeWhatsAppSession?: (sessionToken: string) => Promise<void>;
     saveWhatsAppSettings?: () => void;
+    saveAiSettings?: () => Promise<void>;
     saveBusinessHoursSettings?: () => Promise<void>;
+    refreshBusinessHoursAccounts?: () => Promise<void>;
+    saveBusinessHoursSession?: (sessionToken: string) => Promise<void>;
+    toggleBusinessHoursSession?: (sessionToken: string, explicitEnabled?: boolean) => Promise<void>;
     saveNotificationSettings?: () => Promise<void>;
     createContactField?: () => Promise<void>;
     updateContactField?: (key: string) => Promise<void>;
@@ -1741,9 +2460,10 @@ const windowAny = window as Window & {
     updateUser?: () => Promise<void>;
     changePassword?: () => Promise<void>;
     copyApiKey?: () => void;
-    regenerateApiKey?: () => void;
+    regenerateApiKey?: () => Promise<void>;
     testWebhook?: () => void;
     saveApiSettings?: () => void;
+    loadPlanStatus?: (options?: { silent?: boolean }) => Promise<void>;
 };
 windowAny.initConfiguracoes = initConfiguracoes;
 windowAny.showPanel = showPanel;
@@ -1762,7 +2482,11 @@ windowAny.refreshWhatsAppAccounts = refreshWhatsAppAccounts;
 windowAny.saveWhatsAppSessionName = saveWhatsAppSessionName;
 windowAny.removeWhatsAppSession = removeWhatsAppSession;
 windowAny.saveWhatsAppSettings = saveWhatsAppSettings;
+windowAny.saveAiSettings = saveAiSettings;
 windowAny.saveBusinessHoursSettings = saveBusinessHoursSettings;
+windowAny.refreshBusinessHoursAccounts = refreshBusinessHoursAccounts;
+windowAny.saveBusinessHoursSession = saveBusinessHoursSession;
+windowAny.toggleBusinessHoursSession = toggleBusinessHoursSession;
 windowAny.saveNotificationSettings = saveNotificationSettings;
 windowAny.createContactField = createContactField;
 windowAny.updateContactField = updateContactField;
@@ -1787,5 +2511,7 @@ windowAny.copyApiKey = copyApiKey;
 windowAny.regenerateApiKey = regenerateApiKey;
 windowAny.testWebhook = testWebhook;
 windowAny.saveApiSettings = saveApiSettings;
+windowAny.loadPlanStatus = loadPlanStatus;
 
 export { initConfiguracoes };
+

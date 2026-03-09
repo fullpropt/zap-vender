@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 
 import { Link } from 'react-router-dom';
 import { brandLogoUrl, brandName } from '../lib/brand';
 type ContatosGlobals = {
   initContacts?: () => void;
-  loadContacts?: () => void;
+  loadContacts?: (options?: { forceRefresh?: boolean; silent?: boolean; bypassMinRevalidate?: boolean }) => void;
   changeContactsSessionFilter?: (sessionId: string) => void;
   exportContacts?: () => void;
   openModal?: (id: string) => void;
@@ -16,6 +16,10 @@ type ContatosGlobals = {
   bulkSendMessage?: () => void;
   bulkChangeStatus?: () => void;
   bulkAddTag?: () => void;
+  bulkRemoveTag?: () => void;
+  submitBulkChangeStatus?: () => void;
+  submitBulkAddTag?: () => void;
+  submitBulkRemoveTag?: () => void;
   bulkDelete?: () => void;
   clearSelection?: () => void;
   filterContacts?: () => void;
@@ -68,6 +72,49 @@ export default function Contatos() {
 
   return (
     <div className="contatos-react">
+      <style>{`
+        @media (max-width: 640px) {
+          .contatos-react .stats-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+          }
+          .contatos-react .stats-grid .stat-card {
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: flex-start;
+            gap: 8px;
+            min-width: 0;
+            padding: 12px;
+            border-radius: 12px;
+          }
+          .contatos-react .stats-grid .stat-icon {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+          }
+          .contatos-react .stats-grid .stat-icon .icon {
+            width: 16px;
+            height: 16px;
+          }
+          .contatos-react .stats-grid .stat-content {
+            width: 100%;
+            min-width: 0;
+            text-align: left;
+          }
+          .contatos-react .stats-grid .stat-value { font-size: 20px; }
+          .contatos-react .stats-grid .stat-label { font-size: 11px; line-height: 1.2; }
+        }
+
+        .contatos-react .bulk-tag-selected-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 10px;
+          min-height: 36px;
+          align-items: center;
+        }
+      `}</style>
       <button
         className="mobile-menu-toggle"
         onClick={() => {
@@ -162,13 +209,13 @@ export default function Contatos() {
             <p>Gerencie todos os seus leads e contatos</p>
           </div>
           <div className="page-actions">
-            <button className="btn btn-outline" onClick={() => globals.loadContacts?.()}>
+            <button className="btn btn-outline btn-refresh-outline" onClick={() => globals.loadContacts?.({ forceRefresh: true })}>
               <span className="icon icon-refresh icon-sm"></span> Atualizar
             </button>
-            <button className="btn btn-outline" onClick={() => globals.openModal?.('importModal')}>
+            <button className="btn btn-outline btn-import-contacts" onClick={() => globals.openModal?.('importModal')}>
               <span className="icon icon-import icon-sm"></span> Importar
             </button>
-            <button className="btn btn-success" onClick={() => globals.exportContacts?.()}>
+            <button className="btn btn-success btn-export-contacts" onClick={() => globals.exportContacts?.()}>
               <span className="icon icon-export icon-sm"></span> Exportar
             </button>
             <button className="btn btn-primary" onClick={() => globals.openModal?.('addContactModal')}>
@@ -219,6 +266,9 @@ export default function Contatos() {
             </button>
             <button className="btn btn-sm btn-outline" onClick={() => globals.bulkAddTag?.()}>
               <span className="icon icon-tag icon-sm"></span> Adicionar Tag
+            </button>
+            <button className="btn btn-sm btn-outline" onClick={() => globals.bulkRemoveTag?.()}>
+              <span className="icon icon-delete icon-sm"></span> Remover Tag
             </button>
             <button className="btn btn-sm btn-outline-danger" onClick={() => globals.bulkDelete?.()}>
               <span className="icon icon-delete icon-sm"></span> Excluir
@@ -287,11 +337,11 @@ export default function Contatos() {
           <div className="card-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span id="paginationInfo">Mostrando 0 de 0 contatos</span>
             <div style={{ display: 'flex', gap: '5px' }}>
-              <button className="btn btn-sm btn-outline" id="prevPage" onClick={() => globals.changePage?.(-1)} disabled>
-                ← Anterior
+              <button type="button" className="btn btn-sm btn-outline" id="prevPage" disabled>
+                {'\u2190'} Anterior
               </button>
-              <button className="btn btn-sm btn-outline" id="nextPage" onClick={() => globals.changePage?.(1)} disabled>
-                Próximo →
+              <button type="button" className="btn btn-sm btn-outline" id="nextPage" disabled>
+                {'Pr\u00F3ximo \u2192'}
               </button>
             </div>
           </div>
@@ -318,6 +368,22 @@ export default function Contatos() {
               <div className="form-group">
                 <label className="form-label">Email</label>
                 <input type="email" className="form-input" id="contactEmail" placeholder="email@exemplo.com" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Tags</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  id="contactTags"
+                  list="contactTagsOptions"
+                  placeholder="Ex.: VIP, Renovacao"
+                />
+                <datalist id="contactTagsOptions"></datalist>
+                <div
+                  id="contactTagsSuggestions"
+                  style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}
+                ></div>
+                <p className="form-help">Use as etiquetas cadastradas abaixo ou separe multiplas tags por virgula.</p>
               </div>
               <div className="form-row" id="contactCustomFields"></div>
               <div className="form-row">
@@ -401,6 +467,22 @@ export default function Contatos() {
                     </select>
                   </div>
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Tags</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    id="editContactTags"
+                    list="editContactTagsOptions"
+                    placeholder="Ex.: VIP, Renovacao"
+                  />
+                  <datalist id="editContactTagsOptions"></datalist>
+                  <div
+                    id="editContactTagsSuggestions"
+                    style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}
+                  ></div>
+                  <p className="form-help">Use as etiquetas cadastradas abaixo ou separe multiplas tags por virgula.</p>
+                </div>
                 <div className="form-row" id="editContactCustomFields"></div>
                 <div className="form-group">
                   <label className="form-label">Observações</label>
@@ -469,6 +551,14 @@ João Silva,27999999999,joao@email.com`}
               </select>
               <p className="form-help">Aplicada em todos os contatos importados.</p>
             </div>
+            <div className="form-group">
+              <label className="form-label">Coluna de tags do CSV (opcional)</label>
+              <select className="form-select" id="importTagColumn" defaultValue="__auto__">
+                <option value="__auto__">Detectar automaticamente (tag/tags/etiqueta)</option>
+                <option value="">Não usar coluna de tags</option>
+              </select>
+              <p className="form-help">Mescla com a tag global. Célula pode ter várias tags separadas por vírgula, ponto e vírgula ou barra vertical.</p>
+            </div>
           </div>
           <div className="modal-footer">
             <button className="btn btn-outline" onClick={() => globals.closeModal?.('importModal')}>Cancelar</button>
@@ -529,6 +619,100 @@ Use {{nome}} para personalizar`}
             <button className="btn btn-outline" onClick={() => globals.closeModal?.('bulkMessageModal')}>Cancelar</button>
             <button className="btn btn-whatsapp" onClick={() => globals.sendBulkMessage?.()}>
               <span className="icon icon-whatsapp icon-sm"></span> Enviar para Todos
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-overlay" id="bulkStatusModal">
+        <div className="modal">
+          <div className="modal-header">
+            <h3 className="modal-title"><span className="icon icon-refresh icon-sm"></span> Alterar Status em Lote</h3>
+            <button className="modal-close" onClick={() => globals.closeModal?.('bulkStatusModal')}>×</button>
+          </div>
+          <div className="modal-body">
+            <div className="form-group">
+              <label className="form-label">Destinatários</label>
+              <p className="text-muted"><span id="bulkStatusRecipients">0</span> contatos selecionados</p>
+            </div>
+            <div className="form-group">
+              <label className="form-label required" htmlFor="bulkStatusValue">Novo status</label>
+              <select className="form-select" id="bulkStatusValue" defaultValue="1">
+                <option value="1">Novo</option>
+                <option value="2">Em Andamento</option>
+                <option value="3">Concluído</option>
+                <option value="4">Perdido</option>
+              </select>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-outline" onClick={() => globals.closeModal?.('bulkStatusModal')}>Cancelar</button>
+            <button className="btn btn-primary" onClick={() => globals.submitBulkChangeStatus?.()}>
+              <span className="icon icon-refresh icon-sm"></span> Aplicar Status
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-overlay" id="bulkTagModal">
+        <div className="modal">
+          <div className="modal-header">
+            <h3 className="modal-title"><span className="icon icon-tag icon-sm"></span> Adicionar Tag em Lote</h3>
+            <button className="modal-close" onClick={() => globals.closeModal?.('bulkTagModal')}>×</button>
+          </div>
+          <div className="modal-body">
+            <div className="form-group">
+              <label className="form-label">Destinatários</label>
+              <p className="text-muted"><span id="bulkTagRecipients">0</span> contatos selecionados</p>
+            </div>
+            <div className="form-group">
+              <label className="form-label required" htmlFor="bulkTagInput">Tags para adicionar</label>
+              <input
+                type="text"
+                className="form-input"
+                id="bulkTagInput"
+                list="bulkTagOptions"
+                placeholder="Ex.: Lead, Campanha Março"
+              />
+              <datalist id="bulkTagOptions"></datalist>
+              <p className="form-help">Separe múltiplas tags por vírgula.</p>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-outline" onClick={() => globals.closeModal?.('bulkTagModal')}>Cancelar</button>
+            <button className="btn btn-primary" onClick={() => globals.submitBulkAddTag?.()}>
+              <span className="icon icon-tag icon-sm"></span> Adicionar Tags
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="modal-overlay" id="bulkRemoveTagModal">
+        <div className="modal">
+          <div className="modal-header">
+            <h3 className="modal-title"><span className="icon icon-delete icon-sm"></span> Remover Tag em Lote</h3>
+            <button className="modal-close" onClick={() => globals.closeModal?.('bulkRemoveTagModal')}>×</button>
+          </div>
+          <div className="modal-body">
+            <div className="form-group">
+              <label className="form-label">Destinatários</label>
+              <p className="text-muted"><span id="bulkRemoveTagRecipients">0</span> contatos selecionados</p>
+            </div>
+            <div className="form-group">
+              <label className="form-label required" htmlFor="bulkRemoveTagSelect">Tags para remover</label>
+              <select className="form-select" id="bulkRemoveTagSelect" defaultValue="">
+                <option value="">Selecione uma tag...</option>
+              </select>
+              <div id="bulkRemoveTagSelectedChips" className="bulk-tag-selected-chips">
+                <span className="text-muted">Nenhuma tag selecionada.</span>
+              </div>
+              <p className="form-help">Selecione uma ou mais tags na lista acima.</p>
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-outline" onClick={() => globals.closeModal?.('bulkRemoveTagModal')}>Cancelar</button>
+            <button className="btn btn-primary" onClick={() => globals.submitBulkRemoveTag?.()}>
+              <span className="icon icon-delete icon-sm"></span> Remover Tags
             </button>
           </div>
         </div>

@@ -28,6 +28,7 @@ const CONFIG = {
     QR_REFRESH_INTERVAL: 30000
 };
 const LEGACY_DEFAULT_SESSION_ID = 'self_whatsapp_session';
+const QR_IDLE_PLACEHOLDER_TEXT = 'Clique no bot&atilde;o abaixo para gerar QR Code de acesso';
 
 // Estado
 let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
@@ -42,6 +43,27 @@ let timerCountdown = 30;
 let pairingCodeHideTimer: number | null = null;
 let pairingCodeVisible = false;
 let lastPairingCode = '';
+
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
+
+function appPrompt(message: string, options: { title?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string; cancelLabel?: string } = {}) {
+    const win = window as Window & {
+        showAppPrompt?: (
+            message: string,
+            options?: { title?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string; cancelLabel?: string }
+        ) => Promise<string | null>;
+    };
+    if (typeof win.showAppPrompt === 'function') {
+        return win.showAppPrompt(message, options);
+    }
+    return Promise.resolve(window.prompt(message, options.defaultValue || ''));
+}
 
 // Inicialização
 function onReady(callback: () => void) {
@@ -96,20 +118,47 @@ function normalizeSessionToken(value: string) {
         .replace(/^_+|_+$/g, '');
 }
 
-function buildCompanyDefaultSessionId(companyName: unknown) {
+function getOwnerUserIdFromSessionToken() {
+    const token = String(sessionStorage.getItem('selfDashboardToken') || '').trim();
+    if (!token) return 0;
+
+    try {
+        const parts = token.split('.');
+        if (parts.length < 2) return 0;
+        const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = payloadBase64 + '='.repeat((4 - (payloadBase64.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        const ownerUserId = Number(payload?.owner_user_id || payload?.id || 0);
+        return Number.isFinite(ownerUserId) && ownerUserId > 0 ? Math.floor(ownerUserId) : 0;
+    } catch (_) {
+        return 0;
+    }
+}
+
+function buildOwnerFallbackSessionId(ownerUserId: unknown, fallback = CONFIG.DEFAULT_SESSION_ID) {
+    const parsedOwnerUserId = Number(ownerUserId || 0);
+    if (!Number.isFinite(parsedOwnerUserId) || parsedOwnerUserId <= 0) {
+        return fallback;
+    }
+    return `owner_${Math.floor(parsedOwnerUserId)}_session`;
+}
+
+function buildCompanyDefaultSessionId(companyName: unknown, ownerUserId: unknown = 0) {
     const normalized = normalizeSessionToken(String(companyName || ''));
-    if (!normalized) return CONFIG.DEFAULT_SESSION_ID;
+    if (!normalized) return buildOwnerFallbackSessionId(ownerUserId, CONFIG.DEFAULT_SESSION_ID);
     if (normalized.endsWith('_session')) return normalized;
     return `${normalized}_session`;
 }
 
 async function resolvePreferredDefaultSessionId() {
+    const ownerUserId = getOwnerUserIdFromSessionToken();
+    preferredDefaultSessionId = buildOwnerFallbackSessionId(ownerUserId, CONFIG.DEFAULT_SESSION_ID);
     try {
         if (!api?.get) throw new Error('API indisponivel');
         const response = await api.get('/api/settings');
-        preferredDefaultSessionId = buildCompanyDefaultSessionId(response?.settings?.company_name);
+        preferredDefaultSessionId = buildCompanyDefaultSessionId(response?.settings?.company_name, ownerUserId);
     } catch (_) {
-        preferredDefaultSessionId = CONFIG.DEFAULT_SESSION_ID;
+        preferredDefaultSessionId = buildOwnerFallbackSessionId(ownerUserId, CONFIG.DEFAULT_SESSION_ID);
     }
 }
 
@@ -311,9 +360,14 @@ function changeSession(sessionId: string) {
 
 async function createSessionPrompt() {
     const suggestedSessionId = getSuggestedNewSessionId();
-    const rawInput = window.prompt(
+    const rawInput = await appPrompt(
         'Informe o identificador da nova conta WhatsApp (ex: vendas_sp_session):',
-        suggestedSessionId
+        {
+            title: 'Nova conta WhatsApp',
+            defaultValue: suggestedSessionId,
+            placeholder: 'ex.: vendas_sp_session',
+            confirmLabel: 'Criar'
+        }
     );
     if (rawInput === null) return;
 
@@ -549,9 +603,9 @@ function requestPairingCode() {
 }
 
 // Desconectar
-function disconnect() {
+async function disconnect() {
     const sessionId = getCurrentSessionId();
-    if (confirm(`Tem certeza que deseja desconectar a conta ${sessionId}?`)) {
+    if (await appConfirm(`Tem certeza que deseja desconectar a conta ${sessionId}?`, 'Desconectar conta')) {
         socket?.emit('logout', { sessionId });
         handleDisconnected();
         void loadSessionOptions(sessionId);
@@ -585,14 +639,34 @@ function displayQRCode(qrData: string) {
     if (connectBtn) connectBtn.style.display = 'none';
 }
 
+function isIdleQrLoadingMessage(message: string) {
+    const normalized = String(message || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+    return normalized.startsWith('aguardando conexao');
+}
+
 // Mostrar loading do QR
 function showQRLoading(message: string) {
     const qrContainer = document.getElementById('qr-code') as HTMLElement | null;
     if (!qrContainer) return;
+
+    if (isIdleQrLoadingMessage(message)) {
+        qrContainer.innerHTML = `
+            <div class="qr-loading qr-loading-idle">
+                <div class="qr-idle-arrow" aria-hidden="true">&darr;</div>
+                <p>${QR_IDLE_PLACEHOLDER_TEXT}</p>
+            </div>
+        `;
+        return;
+    }
+
     qrContainer.innerHTML = `
         <div class="qr-loading">
             <div class="spinner"></div>
-            <p>${message}</p>
+            <p>${escapeHtml(message)}</p>
         </div>
     `;
 }
@@ -865,8 +939,25 @@ function toggleSidebar() {
 }
 
 // Logout
-function logout() {
+async function logout() {
+    const token = sessionStorage.getItem('selfDashboardToken');
+    if (token) {
+        try {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                keepalive: true,
+                body: '{}'
+            });
+        } catch (_) {
+            // best-effort
+        }
+    }
     localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('self_dashboard_auth_v1');
     sessionStorage.removeItem('selfDashboardToken');
     sessionStorage.removeItem('selfDashboardExpiry');
     sessionStorage.removeItem('selfDashboardUser');
@@ -881,7 +972,7 @@ const windowAny = window as Window & {
     initWhatsapp?: () => void;
     startConnection?: () => void;
     requestPairingCode?: () => void;
-    disconnect?: () => void;
+    disconnect?: () => Promise<void>;
     changeSession?: (sessionId: string) => void;
     createSessionPrompt?: () => void;
     toggleSidebar?: () => void;

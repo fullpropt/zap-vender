@@ -1,0 +1,227 @@
+.faq-section-premium {
+  width: min(1100px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: 44px 0 18px;
+}
+
+.faq-section-head {
+  text-align: center;
+  margin-bottom: 30px;
+  display: grid;
+  gap: 10px;
+}
+
+.faq-section-head h2 {
+  margin: 0;
+  color: #ecf7f7;
+  font-size: clamp(26px, 3vw, 36px);
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+}
+
+.faq-section-head p {
+  margin: 0 auto;
+  max-width: 620px;
+  color: #9eb6b6;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.faq-accordion-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.faq-accordion-item {
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(10, 20, 20, 0.55);
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.48s ease,
+    transform 0.48s ease,
+    border-color 0.24s ease,
+    box-shadow 0.24s ease;
+}
+
+.faq-accordion-item.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.faq-accordion-item:hover {
+  border-color: rgba(35, 198, 111, 0.18);
+  box-shadow:
+    0 8px 22px rgba(6, 15, 16, 0.55),
+    0 0 0 1px rgba(35, 198, 111, 0.08);
+}
+
+.faq-accordion-trigger {
+  width: 100%;
+  padding: 22px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.faq-accordion-trigger:focus-visible {
+  outline: 2px solid rgba(35, 198, 111, 0.58);
+  outline-offset: -2px;
+}
+
+.faq-trigger-copy {
+  display: grid;
+  gap: 9px;
+}
+
+.faq-badge {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.02);
+  color: #9bb2b2;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.faq-question {
+  color: #edf8f8;
+  font-size: 15.5px;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.faq-arrow {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.01);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #bed3d3;
+  flex: 0 0 auto;
+  transition:
+    transform 0.28s ease,
+    border-color 0.28s ease,
+    color 0.28s ease,
+    background 0.28s ease;
+}
+
+.faq-arrow svg {
+  width: 15px;
+  height: 15px;
+}
+
+.faq-arrow.is-open {
+  transform: rotate(180deg);
+  border-color: rgba(35, 198, 111, 0.32);
+  color: #d8ffe9;
+  background: rgba(35, 198, 111, 0.08);
+}
+
+.faq-accordion-panel {
+  overflow: hidden;
+  will-change: max-height, opacity, transform;
+  transition:
+    max-height 0.4s ease,
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+
+.faq-accordion-content {
+  padding: 0 22px 22px;
+}
+
+.faq-accordion-content p {
+  margin: 0;
+  color: #b1c7c7;
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
+.faq-accordion-content ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #b1c7c7;
+  display: grid;
+  gap: 7px;
+}
+
+.faq-accordion-content li {
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+@media (max-width: 1080px) {
+  .faq-section-premium {
+    width: min(960px, calc(100% - 30px));
+  }
+
+  .faq-accordion-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+}
+
+@media (max-width: 760px) {
+  .faq-section-premium {
+    width: calc(100% - 16px);
+    padding-top: 24px;
+    padding-bottom: 10px;
+  }
+
+  .faq-section-head {
+    margin-bottom: 18px;
+    gap: 7px;
+  }
+
+  .faq-accordion-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .faq-accordion-item {
+    border-radius: 18px;
+  }
+
+  .faq-accordion-trigger {
+    padding: 16px;
+    gap: 10px;
+  }
+
+  .faq-accordion-content {
+    padding: 0 16px 16px;
+  }
+
+  .faq-question {
+    font-size: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .faq-accordion-item,
+  .faq-arrow,
+  .faq-accordion-panel {
+    transition: none !important;
+  }
+
+  .faq-accordion-item {
+    opacity: 1;
+    transform: none;
+  }
+}

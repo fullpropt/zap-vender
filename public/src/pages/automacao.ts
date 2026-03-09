@@ -1,4 +1,4 @@
-// Automacao page logic migrated to module
+﻿// Automacao page logic migrated to module
 
 type TriggerType = 'new_lead' | 'status_change' | 'message_received' | 'keyword' | 'schedule' | 'inactivity';
 type ActionType = 'send_message' | 'change_status' | 'add_tag' | 'start_flow' | 'notify';
@@ -14,6 +14,8 @@ type Automation = {
     delay?: number;
     session_scope?: string | null;
     session_ids?: string[];
+    tag_filter?: string | null;
+    tag_filters?: string[];
     is_active: boolean;
     executions?: number;
     last_execution?: string | null;
@@ -29,9 +31,19 @@ type WhatsappSessionItem = {
     phone?: string;
 };
 
+type TagItem = {
+    id?: number;
+    name?: string;
+    color?: string;
+};
+
 let automations: Automation[] = [];
 let automationSessions: WhatsappSessionItem[] = [];
 let pendingAutomationSessionScope: string[] | null = null;
+let automationTags: TagItem[] = [];
+let pendingAutomationTagFilters: string[] | null = null;
+let automationTagFilterGlobalEventsBound = false;
+let expandedAutomationId: number | null = null;
 const RUNTIME_SUPPORTED_TRIGGER_TYPES: TriggerType[] = [
     'new_lead',
     'status_change',
@@ -40,6 +52,14 @@ const RUNTIME_SUPPORTED_TRIGGER_TYPES: TriggerType[] = [
     'schedule',
     'inactivity'
 ];
+
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
 
 function isRuntimeSupportedTriggerType(type: string): type is TriggerType {
     return RUNTIME_SUPPORTED_TRIGGER_TYPES.includes(type as TriggerType);
@@ -82,12 +102,60 @@ function parseAutomationSessionIds(value: unknown) {
     return [];
 }
 
+function normalizeAutomationTagLabel(value: unknown) {
+    return String(value || '').trim();
+}
+
+function normalizeAutomationTagKey(value: unknown) {
+    return normalizeAutomationTagLabel(value).toLowerCase();
+}
+
+function parseAutomationTagFilters(value: unknown) {
+    if (Array.isArray(value)) {
+        const seen = new Set<string>();
+        const normalized: string[] = [];
+        for (const item of value) {
+            const label = normalizeAutomationTagLabel(item);
+            const key = normalizeAutomationTagKey(label);
+            if (!label || !key || seen.has(key)) continue;
+            seen.add(key);
+            normalized.push(label);
+        }
+        return normalized;
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return [];
+        try {
+            const parsed = JSON.parse(trimmed);
+            return parseAutomationTagFilters(parsed);
+        } catch (_) {
+            return parseAutomationTagFilters(
+                trimmed
+                    .split(',')
+                    .map((item) => normalizeAutomationTagLabel(item))
+                    .filter(Boolean)
+            );
+        }
+    }
+
+    return [];
+}
+
 function getAutomationSessionIds(automation: Automation | undefined) {
     if (!automation) return [];
     const fromApi = parseAutomationSessionIds(automation.session_ids);
     if (fromApi.length) return Array.from(new Set(fromApi));
     const fromScope = parseAutomationSessionIds(automation.session_scope);
     return Array.from(new Set(fromScope));
+}
+
+function getAutomationTagFilters(automation: Automation | undefined) {
+    if (!automation) return [];
+    const fromApi = parseAutomationTagFilters(automation.tag_filters);
+    if (fromApi.length) return fromApi;
+    return parseAutomationTagFilters(automation.tag_filter);
 }
 
 function getSessionStatusLabel(session: WhatsappSessionItem) {
@@ -131,6 +199,8 @@ function resetAutomationForm() {
     updateTriggerOptions();
     updateActionOptions();
     setAutomationSessionScopeSelection([]);
+    setAutomationTagFilterSelection([]);
+    closeAutomationTagFilterMenu();
     setAutomationModalTitle('new');
 }
 
@@ -264,14 +334,17 @@ function setAutomationSessionScopeSelection(sessionIds: string[]) {
 }
 
 function updateAutomationSessionScopeInputs() {
-    const allCheckbox = document.getElementById('automationAllSessions') as HTMLInputElement | null;
-    const isAll = !!allCheckbox?.checked;
-    document.querySelectorAll<HTMLInputElement>('.automation-session-checkbox').forEach((input) => {
-        input.disabled = isAll;
-    });
+    // Mantemos as opcoes especificas sempre clicaveis para permitir
+    // a troca rapida de "todas" para uma conta especifica.
 }
 
 function toggleAutomationAllSessions() {
+    const allCheckbox = document.getElementById('automationAllSessions') as HTMLInputElement | null;
+    if (allCheckbox?.checked) {
+        document.querySelectorAll<HTMLInputElement>('.automation-session-checkbox').forEach((input) => {
+            input.checked = false;
+        });
+    }
     updateAutomationSessionScopeInputs();
 }
 
@@ -329,6 +402,224 @@ function renderAutomationSessionScopeOptions() {
     updateAutomationSessionScopeInputs();
 }
 
+function setAutomationTagFilterSelection(tags: string[]) {
+    pendingAutomationTagFilters = Array.from(new Set(
+        (tags || [])
+            .map((item) => normalizeAutomationTagLabel(item))
+            .filter(Boolean)
+    ));
+    renderAutomationTagFilterOptions();
+}
+
+function getAutomationTagFilterElements() {
+    const toggleButton = document.getElementById('automationTagFilterToggle') as HTMLButtonElement | null;
+    const menu = document.getElementById('automationTagFilterMenu') as HTMLElement | null;
+    return { toggleButton, menu };
+}
+
+function setAutomationTagFilterMenuOpen(isOpen: boolean) {
+    const { toggleButton, menu } = getAutomationTagFilterElements();
+    if (!menu) return;
+
+    menu.hidden = !isOpen;
+    if (toggleButton) {
+        toggleButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    }
+}
+
+function closeAutomationTagFilterMenu() {
+    setAutomationTagFilterMenuOpen(false);
+}
+
+function toggleAutomationTagFilterMenu() {
+    const { menu } = getAutomationTagFilterElements();
+    if (!menu) return;
+    setAutomationTagFilterMenuOpen(menu.hidden);
+}
+
+function updateAutomationTagFilterToggleLabel() {
+    const toggleButton = document.getElementById('automationTagFilterToggle') as HTMLButtonElement | null;
+    if (!toggleButton) return;
+
+    const selected = getSelectedAutomationTagFilters();
+    if (!selected.length) {
+        toggleButton.textContent = 'Todas as tags';
+        return;
+    }
+
+    if (selected.length <= 2) {
+        toggleButton.textContent = selected.join(', ');
+        return;
+    }
+
+    toggleButton.textContent = `${selected.length} tags selecionadas`;
+}
+
+function updateAutomationTagFilterInputs() {
+    // Mantemos as opcoes especificas sempre clicaveis para permitir
+    // que "Todas as tags" seja desmarcado ao escolher uma tag.
+    updateAutomationTagFilterToggleLabel();
+}
+
+function toggleAutomationAllTags() {
+    const allCheckbox = document.getElementById('automationAllTags') as HTMLInputElement | null;
+    if (allCheckbox?.checked) {
+        document.querySelectorAll<HTMLInputElement>('.automation-tag-filter-checkbox').forEach((input) => {
+            input.checked = false;
+        });
+    }
+    updateAutomationTagFilterInputs();
+}
+
+function getSelectedAutomationTagFilters() {
+    const allCheckbox = document.getElementById('automationAllTags') as HTMLInputElement | null;
+    if (allCheckbox?.checked) return [];
+
+    return Array.from(document.querySelectorAll<HTMLInputElement>('.automation-tag-filter-checkbox:checked'))
+        .map((input) => normalizeAutomationTagLabel(input.value))
+        .filter(Boolean);
+}
+
+function renderAutomationTagFilterOptions() {
+    const allCheckbox = document.getElementById('automationAllTags') as HTMLInputElement | null;
+    const container = document.getElementById('automationTagFilterList') as HTMLElement | null;
+    if (!container) return;
+
+    const selectedSet = new Set((pendingAutomationTagFilters || []).map((tag) => normalizeAutomationTagKey(tag)));
+    const hasSpecificSelection = selectedSet.size > 0;
+    if (allCheckbox) {
+        allCheckbox.checked = !hasSpecificSelection;
+    }
+
+    const tags = [...automationTags];
+    const knownKeys = new Set(
+        tags
+            .map((tag) => normalizeAutomationTagKey(tag?.name))
+            .filter(Boolean)
+    );
+
+    for (const selectedTag of pendingAutomationTagFilters || []) {
+        const selectedKey = normalizeAutomationTagKey(selectedTag);
+        if (!selectedKey || knownKeys.has(selectedKey)) continue;
+        knownKeys.add(selectedKey);
+        tags.push({ name: normalizeAutomationTagLabel(selectedTag) });
+    }
+
+    if (!tags.length) {
+        container.innerHTML = '<p style="color: var(--gray-500); font-size: 12px; margin: 0;">Nenhuma tag cadastrada.</p>';
+        if (allCheckbox) allCheckbox.checked = true;
+        updateAutomationTagFilterInputs();
+        return;
+    }
+
+    container.innerHTML = tags.map((tag) => {
+        const tagName = normalizeAutomationTagLabel(tag.name);
+        if (!tagName) return '';
+        const normalizedKey = normalizeAutomationTagKey(tagName);
+        const checked = selectedSet.has(normalizedKey);
+        const safeName = escapeAutomationText(tagName);
+        const color = String(tag.color || '').trim() || '#178c49';
+
+        return `
+            <label class="checkbox-wrapper automation-session-option">
+                <input
+                    type="checkbox"
+                    class="automation-tag-filter-checkbox"
+                    value="${safeName}"
+                    ${checked ? 'checked' : ''}
+                >
+                <span class="checkbox-custom"></span>
+                <span style="display: inline-flex; align-items: center; gap: 8px;">
+                    <span style="width: 10px; height: 10px; border-radius: 999px; background: ${escapeAutomationText(color)};"></span>
+                    <strong>${safeName}</strong>
+                </span>
+            </label>
+        `;
+    }).join('');
+
+    updateAutomationTagFilterInputs();
+}
+
+function bindAutomationSessionScopeInteractions() {
+    const container = document.getElementById('automationSessionScopeList') as HTMLElement | null;
+    if (!container || container.dataset.bound === '1') return;
+
+    container.dataset.bound = '1';
+    container.addEventListener('change', (event) => {
+        const target = event.target as HTMLInputElement | null;
+        if (!target || !target.classList.contains('automation-session-checkbox')) return;
+
+        const allCheckbox = document.getElementById('automationAllSessions') as HTMLInputElement | null;
+        if (!allCheckbox) return;
+
+        const hasSpecificSelection = Array.from(document.querySelectorAll<HTMLInputElement>('.automation-session-checkbox'))
+            .some((input) => input.checked);
+
+        allCheckbox.checked = !hasSpecificSelection;
+        updateAutomationSessionScopeInputs();
+    });
+}
+
+function bindAutomationTagFilterDropdown() {
+    const { toggleButton, menu } = getAutomationTagFilterElements();
+    if (!toggleButton || !menu) return;
+
+    if (toggleButton.dataset.bound !== '1') {
+        toggleButton.dataset.bound = '1';
+        toggleButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleAutomationTagFilterMenu();
+        });
+    }
+
+    if (menu.dataset.bound !== '1') {
+        menu.dataset.bound = '1';
+        menu.addEventListener('click', (event) => {
+            event.stopPropagation();
+        });
+        menu.addEventListener('change', (event) => {
+            const target = event.target as HTMLInputElement | null;
+            if (!target) return;
+
+            if (target.id === 'automationAllTags') {
+                toggleAutomationAllTags();
+                return;
+            }
+
+            if (target.classList.contains('automation-tag-filter-checkbox')) {
+                const allCheckbox = document.getElementById('automationAllTags') as HTMLInputElement | null;
+                if (allCheckbox) {
+                    const hasSpecificSelection = Array.from(document.querySelectorAll<HTMLInputElement>('.automation-tag-filter-checkbox'))
+                        .some((input) => input.checked);
+                    allCheckbox.checked = !hasSpecificSelection;
+                }
+                updateAutomationTagFilterInputs();
+            }
+        });
+    }
+
+    if (!automationTagFilterGlobalEventsBound) {
+        automationTagFilterGlobalEventsBound = true;
+
+        document.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target instanceof Element) {
+                if (target.closest('#automationTagFilterToggle') || target.closest('#automationTagFilterMenu')) {
+                    return;
+                }
+            }
+            closeAutomationTagFilterMenu();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                closeAutomationTagFilterMenu();
+            }
+        });
+    }
+}
+
 async function loadAutomationSessions() {
     try {
         const response = await api.get('/api/whatsapp/sessions?includeDisabled=true');
@@ -342,9 +633,28 @@ async function loadAutomationSessions() {
     }
 }
 
+async function loadAutomationTags() {
+    try {
+        const response = await api.get('/api/tags');
+        automationTags = Array.isArray(response?.tags) ? response.tags : [];
+    } catch (_) {
+        automationTags = [];
+    }
+
+    automationTags.sort((a, b) => normalizeAutomationTagLabel(a?.name).localeCompare(normalizeAutomationTagLabel(b?.name), 'pt-BR'));
+    renderAutomationTagFilterOptions();
+    if (automations.length) {
+        renderAutomations();
+    }
+}
+
 function initAutomacao() {
     pendingAutomationSessionScope = [];
+    pendingAutomationTagFilters = [];
+    bindAutomationTagFilterDropdown();
+    bindAutomationSessionScopeInteractions();
     void loadAutomationSessions();
+    void loadAutomationTags();
     loadAutomations();
     updateTriggerOptions();
     updateActionOptions();
@@ -434,63 +744,93 @@ function updateStats() {
 function renderAutomations() {
     const container = document.getElementById('automationsList') as HTMLElement | null;
     if (!container) return;
+    const collapseDetails = window.matchMedia('(max-width: 768px)').matches;
     
     if (automations.length === 0) {
         container.innerHTML = `
             <div class="empty-state" style="grid-column: 1 / -1;">
                 <div class="empty-state-icon icon icon-empty icon-lg"></div>
                 <p>Nenhuma automação criada</p>
-                <button class="btn btn-primary mt-3" onclick="openAutomationModal()"><span class="icon icon-add icon-sm"></span> Criar Automação</button>
+                <button class="btn btn-primary mt-3 automation-empty-create-btn" onclick="openAutomationModal()"><span class="icon icon-add icon-sm"></span> Criar Automação</button>
             </div>
         `;
         return;
     }
 
-    container.innerHTML = automations.map(a => `
-        <div class="automation-card">
+    if (expandedAutomationId !== null && !automations.some((automation) => Number(automation.id) === Number(expandedAutomationId))) {
+        expandedAutomationId = null;
+    }
+
+    container.innerHTML = automations.map((a) => {
+        const isExpanded = !collapseDetails || expandedAutomationId === a.id;
+        return `
+        <div class="automation-card${isExpanded ? ' is-expanded' : ''}">
             <div class="automation-header">
-                <h3 class="automation-title">${a.name}</h3>
-                <label class="toggle-switch">
+                <button
+                    type="button"
+                    class="automation-header-toggle"
+                    onclick="toggleAutomationCardDetails(${a.id}, event)"
+                    aria-expanded="${isExpanded ? 'true' : 'false'}"
+                    aria-controls="automation-details-${a.id}"
+                >
+                    <span class="automation-header-main">
+                        <h3 class="automation-title">${escapeAutomationText(a.name)}</h3>
+                    </span>
+                    <span class="automation-expand-icon" aria-hidden="true">&#9662;</span>
+                </button>
+                <label class="toggle-switch" onclick="event.stopPropagation()">
                     <input type="checkbox" ${a.is_active ? 'checked' : ''} onchange="toggleAutomation(${a.id}, this.checked)">
                     <span class="toggle-slider"></span>
                 </label>
             </div>
-            <div class="automation-body">
-                <p style="color: var(--gray-600); margin-bottom: 10px; font-size: 13px;">${a.description || 'Sem descrição'}</p>
-                <p style="color: var(--gray-500); margin-bottom: 15px; font-size: 12px;"><strong>Contas:</strong> ${getAutomationSessionScopeSummary(a)}</p>
-                
-                <div class="automation-trigger">
-                    <div class="automation-trigger-icon trigger"><span class="icon icon-bolt icon-sm"></span></div>
-                    <div>
-                        <div style="font-weight: 600; font-size: 13px;">Gatilho</div>
-                        <div style="font-size: 12px; color: var(--gray-500);">${getTriggerLabel(a.trigger_type)}</div>
+            <div class="automation-details" id="automation-details-${a.id}">
+                <div class="automation-body">
+                    <p style="color: var(--gray-600); margin-bottom: 10px; font-size: 13px;">${escapeAutomationText(a.description || 'Sem descrição')}</p>
+                    <p style="color: var(--gray-500); margin-bottom: 6px; font-size: 12px;"><strong>Contas:</strong> ${escapeAutomationText(getAutomationSessionScopeSummary(a))}</p>
+                    <p style="color: var(--gray-500); margin-bottom: 15px; font-size: 12px;"><strong>Tags:</strong> ${escapeAutomationText(getAutomationTagFilterSummary(a))}</p>
+                    
+                    <div class="automation-trigger">
+                        <div class="automation-trigger-icon trigger"><span class="icon icon-bolt icon-sm"></span></div>
+                        <div>
+                            <div style="font-weight: 600; font-size: 13px;">Gatilho</div>
+                            <div style="font-size: 12px; color: var(--gray-500);">${getTriggerLabel(a.trigger_type)}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="automation-arrow">↓</div>
+                    
+                    <div class="automation-trigger">
+                        <div class="automation-trigger-icon action"><span class="icon icon-target icon-sm"></span></div>
+                        <div>
+                            <div style="font-weight: 600; font-size: 13px;">Ação</div>
+                            <div style="font-size: 12px; color: var(--gray-500);">${getActionLabel(a.action_type)}</div>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="automation-arrow">↓</div>
-                
-                <div class="automation-trigger">
-                    <div class="automation-trigger-icon action"><span class="icon icon-target icon-sm"></span></div>
-                    <div>
-                        <div style="font-weight: 600; font-size: 13px;">Ação</div>
-                        <div style="font-size: 12px; color: var(--gray-500);">${getActionLabel(a.action_type)}</div>
+                <div class="automation-footer">
+                    <div style="font-size: 12px; color: var(--gray-500);">
+                        <strong>${formatNumber(a.executions || 0)}</strong> execuções
+                        ${a.last_execution ? `• Última: ${timeAgo(a.last_execution)}` : ''}
                     </div>
-                </div>
-            </div>
-            <div class="automation-footer">
-                <div style="font-size: 12px; color: var(--gray-500);">
-                    <strong>${formatNumber(a.executions || 0)}</strong> execuções
-                    ${a.last_execution ? `• Última: ${timeAgo(a.last_execution)}` : ''}
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-sm btn-outline" onclick="editAutomation(${a.id})"><span class="icon icon-edit icon-sm"></span></button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="deleteAutomation(${a.id})"><span class="icon icon-delete icon-sm"></span></button>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-sm btn-outline" onclick="editAutomation(${a.id})"><span class="icon icon-edit icon-sm"></span></button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteAutomation(${a.id})"><span class="icon icon-delete icon-sm"></span></button>
+                    </div>
                 </div>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
+function toggleAutomationCardDetails(id: number, event?: Event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    if (!window.matchMedia('(max-width: 768px)').matches) return;
+    expandedAutomationId = expandedAutomationId === id ? null : id;
+    renderAutomations();
+}
 function getTriggerLabel(type: TriggerType | string) {
     const labels = {
         'new_lead': 'Novo lead cadastrado',
@@ -521,6 +861,18 @@ function getAutomationSessionScopeSummary(automation: Automation) {
     const labels = sessionIds.map((sessionId) => {
         const found = automationSessions.find((session) => sanitizeSessionId(session.session_id) === sessionId);
         return found ? getSessionDisplayName(found) : sessionId;
+    });
+    return labels.join(' | ');
+}
+
+function getAutomationTagFilterSummary(automation: Automation) {
+    const tags = getAutomationTagFilters(automation);
+    if (!tags.length) return 'Todas as tags';
+
+    const labels = tags.map((tagName) => {
+        const normalizedKey = normalizeAutomationTagKey(tagName);
+        const found = automationTags.find((tag) => normalizeAutomationTagKey(tag?.name) === normalizedKey);
+        return normalizeAutomationTagLabel(found?.name || tagName);
     });
     return labels.join(' | ');
 }
@@ -606,7 +958,7 @@ function updateActionOptions() {
                 <label class="form-label">Mensagem</label>
                 <textarea class="form-textarea" id="actionMessage" rows="4" placeholder="Olá {{nome}}! Seja bem-vindo...
 
-Variáveis: {{nome}}, {{veiculo}}, {{placa}}"></textarea>
+Variáveis: {{nome}}"></textarea>
             `;
             break;
         case 'change_status':
@@ -685,6 +1037,7 @@ async function saveAutomation() {
     const actionValue = getActionValue(actionType);
     const existing = automationId ? automations.find(a => a.id === automationId) : null;
     const selectedSessionIds = getSelectedAutomationSessionIds();
+    const selectedTagFilters = getSelectedAutomationTagFilters();
 
     const data: Record<string, unknown> = {
         name,
@@ -695,6 +1048,7 @@ async function saveAutomation() {
         action_value: actionValue,
         delay,
         session_ids: selectedSessionIds,
+        tag_filters: selectedTagFilters,
         is_active: existing ? existing.is_active : true
     };
 
@@ -708,7 +1062,7 @@ async function saveAutomation() {
         closeModal('newAutomationModal');
         resetAutomationForm();
         await loadAutomations();
-        showToast('success', 'Sucesso', automationId ? 'Automa??o atualizada!' : 'Automa??o criada!');
+        showToast('success', 'Sucesso', automationId ? 'Automação atualizada!' : 'Automação criada!');
     } catch (error) {
         hideLoading();
         if (automationId) {
@@ -719,7 +1073,7 @@ async function saveAutomation() {
                     ...data
                 };
             }
-            showToast('success', 'Sucesso', 'Automa??o atualizada!');
+            showToast('success', 'Sucesso', 'Automação atualizada!');
         } else {
             // Simular sucesso
             automations.push({
@@ -728,7 +1082,7 @@ async function saveAutomation() {
                 executions: 0,
                 last_execution: null
             });
-            showToast('success', 'Sucesso', 'Automa??o criada!');
+            showToast('success', 'Sucesso', 'Automação criada!');
         }
         closeModal('newAutomationModal');
         resetAutomationForm();
@@ -764,6 +1118,7 @@ function editAutomation(id: number) {
     if (delaySelect) delaySelect.value = String(automation.delay || 0);
 
     setAutomationSessionScopeSelection(getAutomationSessionIds(automation));
+    setAutomationTagFilterSelection(getAutomationTagFilters(automation));
 
     setAutomationModalTitle('edit');
 
@@ -772,7 +1127,7 @@ function editAutomation(id: number) {
 }
 
 async function deleteAutomation(id: number) {
-    if (!confirm('Excluir esta automa??o?')) return;
+    if (!await appConfirm('Excluir esta automacao?', 'Excluir automacao')) return;
 
     try {
         await api.delete(`/api/automations/${id}`);
@@ -783,7 +1138,7 @@ async function deleteAutomation(id: number) {
     automations = automations.filter(a => a.id !== id);
     renderAutomations();
     updateStats();
-    showToast('success', 'Sucesso', 'Automa??o exclu?da!');
+    showToast('success', 'Sucesso', 'Automação excluída!');
 }
 
 const windowAny = window as Window & {
@@ -794,6 +1149,7 @@ const windowAny = window as Window & {
     updateActionOptions?: () => void;
     toggleAutomationAllSessions?: () => void;
     toggleAutomation?: (id: number, active: boolean) => Promise<void>;
+    toggleAutomationCardDetails?: (id: number, event?: Event) => void;
     saveAutomation?: () => Promise<void>;
     editAutomation?: (id: number) => void;
     deleteAutomation?: (id: number) => Promise<void>;
@@ -805,6 +1161,7 @@ windowAny.updateTriggerOptions = updateTriggerOptions;
 windowAny.updateActionOptions = updateActionOptions;
 windowAny.toggleAutomationAllSessions = toggleAutomationAllSessions;
 windowAny.toggleAutomation = toggleAutomation;
+windowAny.toggleAutomationCardDetails = toggleAutomationCardDetails;
 windowAny.saveAutomation = saveAutomation;
 windowAny.editAutomation = editAutomation;
 windowAny.deleteAutomation = deleteAutomation;

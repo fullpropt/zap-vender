@@ -21,6 +21,7 @@ type Conversation = {
     lastMessageAt?: string;
     unread?: number;
     status?: LeadStatus;
+    hasConversation?: boolean;
 };
 
 type ChatMessage = {
@@ -37,7 +38,19 @@ type ChatMessage = {
 
 type ConversationsResponse = { conversations?: Array<Record<string, any>> };
 type MessagesResponse = { messages?: Array<Record<string, any>> };
+type InboxLeadsResponse = { leads?: Array<Record<string, any>>; total?: number };
 type QuickRepliesResponse = { templates?: Array<Record<string, any>> };
+type InboxHistoryResyncResponse = {
+    success?: boolean;
+    sessionId?: string;
+    summary?: {
+        conversationsScanned?: number;
+        conversationsUpdated?: number;
+        messagesInserted?: number;
+        mediaHydrated?: number;
+        skipped?: string | null;
+    };
+};
 
 type TemplateItem = {
     id: number;
@@ -78,6 +91,18 @@ type WhatsappSessionItem = {
     phone?: string;
 };
 
+type InboxLeadItem = {
+    id: number;
+    name?: string;
+    phone?: string;
+    avatar_url?: string;
+    avatarUrl?: string;
+    status?: LeadStatus | number | string;
+    updated_at?: string;
+    created_at?: string;
+    last_message_at?: string;
+};
+
 let conversations: Conversation[] = [];
 let currentConversation: Conversation | null = null;
 let messages: ChatMessage[] = [];
@@ -87,20 +112,97 @@ let socketBound = false;
 let refreshInterval: number | null = null;
 let currentFilter: 'all' | 'unread' = 'all';
 let quickReplyDismissBound = false;
+let emojiPickerDismissBound = false;
 let currentLeadDetails: LeadDetails | null = null;
 let contactFieldsCache: ContactField[] = [];
 let isContactInfoOpen = false;
 let inboxSessionFilter = '';
 let inboxAvailableSessions: WhatsappSessionItem[] = [];
+let inboxHistoryResyncInFlight = false;
 let mediaUploadInProgress = false;
+let inboxLifecycleBound = false;
+let inboxViewportSyncRaf: number | null = null;
+let inboxMobileLayoutViewportHeight = 0;
+let inboxComposerFocusActive = false;
+const stickerMediaRehydrateAttempts = new Set<string>();
+let activeChatScrollContainer: HTMLElement | null = null;
+let chatMediaPreviewBindingsBound = false;
+let chatMediaPreviewLastFocusedElement: HTMLElement | null = null;
+let pendingInboxOpenLeadId = 0;
+let inboxSearchVirtualConversations: Conversation[] = [];
+let inboxSearchLeadsCache: InboxLeadItem[] = [];
+let inboxSearchLeadsCacheKey = '';
+let inboxSearchLeadsCacheAt = 0;
+let inboxSearchLeadsFetchInFlight: Promise<InboxLeadItem[]> | null = null;
+let inboxStartConversationLeadsCache: InboxLeadItem[] = [];
+let inboxStartConversationLeadsCacheAt = 0;
+let inboxStartConversationLeadsFetchInFlight: Promise<InboxLeadItem[]> | null = null;
+let inboxSearchRequestToken = 0;
+let inboxStartConversationLeads: InboxLeadItem[] = [];
+let inboxStartConversationModalBound = false;
 
 const INBOX_SESSION_FILTER_STORAGE_KEY = 'zapvender_inbox_session_filter';
+const INBOX_OPEN_LEAD_QUERY_KEYS = ['leadId', 'lead_id', 'id'] as const;
+const INBOX_SEARCH_CONTACTS_CACHE_TTL_MS = 30 * 1000;
+const INBOX_SEARCH_CONTACTS_BATCH_SIZE = 200;
+const INBOX_SEARCH_CONTACTS_MAX_PAGES = 20;
+const INBOX_NEW_CONVERSATION_PREVIEW = 'Clique para iniciar uma nova conversa';
+const INBOX_START_CONVERSATION_MAX_RESULTS = 300;
 
 const DEFAULT_CONTACT_FIELDS: ContactField[] = [
     { key: 'nome', label: 'Nome', is_default: true, source: 'name' },
     { key: 'telefone', label: 'Telefone', is_default: true, source: 'phone' },
     { key: 'email', label: 'Email', is_default: true, source: 'email' }
 ];
+
+const TEXT_EMOJI_CATEGORIES: Array<{ id: string; label: string; emojis: string[] }> = [
+    {
+        id: 'faces',
+        label: 'Rostos',
+        emojis: [
+            '😀', '😁', '😂', '🤣', '😅', '😊', '🙂', '😉',
+            '😎', '🤩', '🥳', '😍', '🥰', '😘', '😗', '😚',
+            '😋', '😛', '😜', '🤪', '🤗', '🥹', '😌', '🤔',
+            '🫡', '😮', '😯', '😴', '😪', '😭', '😢', '😤',
+            '😡', '🤯', '😬', '🙄', '😇'
+        ]
+    },
+    {
+        id: 'gestures',
+        label: 'Gestos',
+        emojis: [
+            '🫶', '🤝', '🙏', '👏', '🙌', '👍', '👎', '👌',
+            '✌️', '🤞', '👊'
+        ]
+    },
+    {
+        id: 'hearts',
+        label: 'Corações',
+        emojis: [
+            '💚', '❤️', '🩵', '💙', '💛', '🧡', '💜', '🖤'
+        ]
+    },
+    {
+        id: 'highlights',
+        label: 'Destaques',
+        emojis: [
+            '🔥', '✨', '⭐', '🌟', '💯', '✅', '⚡', '🚀'
+        ]
+    },
+    {
+        id: 'business',
+        label: 'Trabalho',
+        emojis: [
+            '🎉', '🎊', '🎯', '🏆', '📌', '📝', '📩', '💬',
+            '📞', '📲', '⏰', '📅', '📎', '💡', '🔔', '🤖'
+        ]
+    }
+];
+
+const TEXT_EMOJIS = TEXT_EMOJI_CATEGORIES.reduce<string[]>((all, category) => {
+    all.push(...category.emojis);
+    return all;
+}, []);
 
 function normalizeDirection(message: Record<string, any>): 'outgoing' | 'incoming' {
     const rawDirection = String(message.direction || '').trim().toLowerCase();
@@ -145,6 +247,31 @@ function normalizeContactFieldKey(value: string) {
 function sanitizeSessionId(value: unknown, fallback = '') {
     const normalized = String(value || '').trim();
     return normalized || fallback;
+}
+
+function getOwnerUserIdFromSessionToken() {
+    const token = sanitizeSessionId(sessionStorage.getItem('selfDashboardToken'));
+    if (!token) return 0;
+
+    try {
+        const parts = token.split('.');
+        if (parts.length < 2) return 0;
+        const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = payloadBase64 + '='.repeat((4 - (payloadBase64.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        const ownerUserId = Number(payload?.owner_user_id || payload?.id || 0);
+        return Number.isFinite(ownerUserId) && ownerUserId > 0 ? Math.floor(ownerUserId) : 0;
+    } catch (_) {
+        return 0;
+    }
+}
+
+function buildOwnerFallbackSessionId(ownerUserId: unknown, fallback = 'default_whatsapp_session') {
+    const parsedOwnerUserId = Number(ownerUserId || 0);
+    if (!Number.isFinite(parsedOwnerUserId) || parsedOwnerUserId <= 0) {
+        return fallback;
+    }
+    return `owner_${Math.floor(parsedOwnerUserId)}_session`;
 }
 
 function getStoredInboxSessionFilter() {
@@ -252,10 +379,9 @@ function renderInboxSessionFilterOptions() {
         ...inboxAvailableSessions.map((session) => {
             const sessionId = sanitizeSessionId(session.session_id);
             const displayName = getSessionDisplayName(session);
-            const status = getSessionStatusLabel(session);
             const label = displayName === sessionId
-                ? `${displayName} - ${status}`
-                : `${displayName} - ${sessionId} - ${status}`;
+                ? displayName
+                : `${displayName} (${sessionId})`;
             return `<option value="${escapeHtml(sessionId)}">${escapeHtml(label)}</option>`;
         })
     ];
@@ -269,27 +395,31 @@ function renderInboxSessionIndicator() {
     const container = document.getElementById('inboxSessionIndicator') as HTMLElement | null;
     if (!container) return;
 
-    const nameEl = container.querySelector('.inbox-session-highlight-name') as HTMLElement | null;
+    const selectEl = container.querySelector('#inboxSessionFilter') as HTMLSelectElement | null;
     const metaEl = container.querySelector('.inbox-session-highlight-meta') as HTMLElement | null;
     const statusEl = container.querySelector('.inbox-session-highlight-status') as HTMLElement | null;
+    if (selectEl) {
+        selectEl.value = inboxSessionFilter;
+    }
 
     if (!inboxSessionFilter) {
-        if (nameEl) nameEl.textContent = 'Todas as contas';
         if (metaEl) metaEl.textContent = 'Mostrando conversas de todas as contas';
         if (statusEl) {
             statusEl.textContent = 'Filtro geral';
             statusEl.className = 'inbox-session-highlight-status all';
         }
+        renderInboxHistoryResyncButtonState();
         return;
     }
 
     const selectedSession = findInboxSessionById(inboxSessionFilter);
-    const sessionDisplayName = selectedSession ? getSessionDisplayName(selectedSession) : inboxSessionFilter;
     const sessionId = selectedSession ? sanitizeSessionId(selectedSession.session_id, inboxSessionFilter) : inboxSessionFilter;
     const connected = selectedSession ? isInboxSessionConnected(selectedSession) : false;
     const statusLabel = selectedSession ? getSessionStatusLabel(selectedSession) : 'Indisponível';
 
-    if (nameEl) nameEl.textContent = sessionDisplayName;
+    if (selectEl) {
+        selectEl.value = selectedSession ? sessionId : inboxSessionFilter;
+    }
     if (metaEl) {
         metaEl.textContent = selectedSession
             ? `${sessionId} • ${statusLabel}`
@@ -298,6 +428,152 @@ function renderInboxSessionIndicator() {
     if (statusEl) {
         statusEl.textContent = statusLabel;
         statusEl.className = `inbox-session-highlight-status ${connected ? 'connected' : 'disconnected'}`;
+    }
+    renderInboxHistoryResyncButtonState();
+}
+
+function resolveInboxHistoryResyncSessionTargets() {
+    const selectedSessionId = sanitizeSessionId(inboxSessionFilter);
+    if (selectedSessionId) {
+        return [selectedSessionId];
+    }
+
+    return Array.from(
+        new Set(
+            inboxAvailableSessions
+                .filter((session) => isInboxSessionConnected(session))
+                .map((session) => sanitizeSessionId(session.session_id))
+                .filter(Boolean)
+        )
+    );
+}
+
+function renderInboxHistoryResyncButtonState() {
+    const button = document.getElementById('inboxResyncHistoryBtn') as HTMLButtonElement | null;
+    if (!button) return;
+
+    const selectedSessionId = sanitizeSessionId(inboxSessionFilter);
+    const targetSessionIds = resolveInboxHistoryResyncSessionTargets();
+    const canRun = targetSessionIds.length > 0;
+    const isLoading = inboxHistoryResyncInFlight;
+
+    button.disabled = isLoading || !canRun;
+    button.classList.toggle('is-loading', isLoading);
+    button.textContent = isLoading ? 'Ressincronizando...' : 'Ressincronizar';
+
+    if (selectedSessionId) {
+        button.title = `Ressincronizar histórico da conta ${selectedSessionId}`;
+    } else if (targetSessionIds.length > 0) {
+        button.title = `Ressincronizar ${targetSessionIds.length} conta(s) conectada(s)`;
+    } else {
+        button.title = 'Nenhuma conta conectada para ressincronizar';
+    }
+}
+
+async function resyncInboxHistory() {
+    if (inboxHistoryResyncInFlight) return;
+
+    const selectedSessionId = sanitizeSessionId(inboxSessionFilter);
+    const targetSessionIds = resolveInboxHistoryResyncSessionTargets();
+    if (targetSessionIds.length === 0) {
+        showToast('warning', 'Aviso', 'Nenhuma conta conectada disponivel para ressincronizacao');
+        renderInboxHistoryResyncButtonState();
+        return;
+    }
+
+    if (!selectedSessionId && targetSessionIds.length > 1) {
+        const confirmed = window.confirm(
+            `Ressincronizar historico de ${targetSessionIds.length} contas conectadas agora?`
+        );
+        if (!confirmed) return;
+    }
+
+    inboxHistoryResyncInFlight = true;
+    renderInboxHistoryResyncButtonState();
+    showLoading('Ressincronizando historico do WhatsApp...');
+
+    const summary = {
+        processedSessions: 0,
+        failedSessions: 0,
+        conversationsScanned: 0,
+        conversationsUpdated: 0,
+        messagesInserted: 0,
+        mediaHydrated: 0,
+        truncatedSessions: 0
+    };
+    const failed: string[] = [];
+
+    try {
+        for (const sessionId of targetSessionIds) {
+            try {
+                const response: InboxHistoryResyncResponse = await api.post(
+                    `/api/whatsapp/sessions/${encodeURIComponent(sessionId)}/history/resync`,
+                    {
+                        scope: 'all',
+                        trigger: 'inbox-manual-button',
+                        maxConversations: 200,
+                        messagesPerConversation: 220,
+                        maxRuntimeMs: 180000
+                    }
+                );
+
+                const result = response?.summary || {};
+                summary.processedSessions += 1;
+                summary.conversationsScanned += Number(result.conversationsScanned || 0);
+                summary.conversationsUpdated += Number(result.conversationsUpdated || 0);
+                summary.messagesInserted += Number(result.messagesInserted || 0);
+                summary.mediaHydrated += Number(result.mediaHydrated || 0);
+                if (String(result.skipped || '').trim() === 'runtime_limit_reached') {
+                    summary.truncatedSessions += 1;
+                }
+            } catch (error) {
+                summary.failedSessions += 1;
+                const errorMessage = error instanceof Error ? error.message : 'Falha ao ressincronizar';
+                failed.push(`${sessionId}: ${errorMessage}`);
+            }
+        }
+
+        await loadConversations();
+
+        if (currentConversation) {
+            const refreshed = conversations.find((item) => item.id === currentConversation?.id) || null;
+            if (refreshed) {
+                currentConversation = refreshed;
+                await loadMessages(refreshed.leadId, refreshed.id, refreshed.sessionId, refreshed.phone);
+            }
+        }
+
+        const totalsText =
+            `${summary.messagesInserted} mensagem(ns) recuperada(s) em ` +
+            `${summary.conversationsUpdated} conversa(s)`;
+
+        if (summary.failedSessions > 0 && summary.processedSessions > 0) {
+            showToast(
+                'warning',
+                'Ressincronizacao parcial',
+                `${summary.processedSessions}/${targetSessionIds.length} conta(s) processadas. ${totalsText}.`
+            );
+        } else if (summary.truncatedSessions > 0) {
+            showToast(
+                'warning',
+                'Ressincronizacao parcial',
+                `${totalsText}. ${summary.truncatedSessions} conta(s) atingiram limite de varredura; execute novamente para completar.`
+            );
+        } else if (summary.failedSessions > 0) {
+            showToast('error', 'Erro', failed[0] || 'Nao foi possivel ressincronizar o historico');
+        } else {
+            const scopeText = selectedSessionId
+                ? `Conta ${selectedSessionId}`
+                : `${summary.processedSessions} conta(s)`;
+            showToast('success', 'Ressincronizacao concluida', `${scopeText}: ${totalsText}.`);
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Nao foi possivel ressincronizar o historico';
+        showToast('error', 'Erro', message);
+    } finally {
+        hideLoading();
+        inboxHistoryResyncInFlight = false;
+        renderInboxHistoryResyncButtonState();
     }
 }
 
@@ -326,6 +602,10 @@ async function loadInboxSessionFilters() {
 function changeInboxSessionFilter(sessionId: string) {
     inboxSessionFilter = sanitizeSessionId(sessionId);
     persistInboxSessionFilter(inboxSessionFilter);
+    inboxSearchLeadsCache = [];
+    inboxSearchLeadsCacheKey = '';
+    inboxSearchLeadsCacheAt = 0;
+    inboxSearchVirtualConversations = [];
     renderInboxSessionIndicator();
     currentConversation = null;
     currentLeadDetails = null;
@@ -334,14 +614,482 @@ function changeInboxSessionFilter(sessionId: string) {
     loadConversations();
 }
 
+function getInboxSearchValue() {
+    const input = document.getElementById('searchConversations') as HTMLInputElement | null;
+    return String(input?.value || '').trim().toLowerCase();
+}
+
+function getInboxSearchLeadsCacheKey() {
+    return inboxSessionFilter ? `session:${inboxSessionFilter}` : 'session:all';
+}
+
+function normalizeInboxLeadId(value: unknown) {
+    const parsed = Number(value || 0);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function buildVirtualConversationFromLead(lead: InboxLeadItem): Conversation | null {
+    const leadId = normalizeInboxLeadId(lead.id);
+    if (!leadId) return null;
+
+    const leadPhone = String(lead.phone || '').trim();
+    return {
+        id: -leadId,
+        leadId,
+        sessionId: '',
+        sessionLabel: '',
+        name: String(lead.name || leadPhone || `Contato ${leadId}`).trim(),
+        phone: leadPhone,
+        avatarUrl: sanitizeAvatarUrl(lead.avatar_url || lead.avatarUrl),
+        lastMessage: INBOX_NEW_CONVERSATION_PREVIEW,
+        lastMessageAt: String(lead.last_message_at || lead.updated_at || lead.created_at || ''),
+        unread: 0,
+        status: Number(lead.status || 0) as LeadStatus,
+        hasConversation: false
+    };
+}
+
+async function fetchInboxSearchLeads(force = false) {
+    const cacheKey = getInboxSearchLeadsCacheKey();
+    const cacheValid =
+        !force &&
+        inboxSearchLeadsCacheKey === cacheKey &&
+        Array.isArray(inboxSearchLeadsCache) &&
+        (Date.now() - inboxSearchLeadsCacheAt) < INBOX_SEARCH_CONTACTS_CACHE_TTL_MS;
+
+    if (cacheValid) {
+        return inboxSearchLeadsCache;
+    }
+
+    if (inboxSearchLeadsFetchInFlight) {
+        return inboxSearchLeadsFetchInFlight;
+    }
+
+    inboxSearchLeadsFetchInFlight = (async () => {
+        const leads: InboxLeadItem[] = [];
+        let offset = 0;
+        let page = 0;
+        let totalExpected: number | null = null;
+
+        while (page < INBOX_SEARCH_CONTACTS_MAX_PAGES) {
+            const params = new URLSearchParams();
+            params.set('limit', String(INBOX_SEARCH_CONTACTS_BATCH_SIZE));
+            params.set('offset', String(offset));
+            if (inboxSessionFilter) {
+                params.set('session_id', inboxSessionFilter);
+            }
+
+            const response: InboxLeadsResponse = await api.get(`/api/leads?${params.toString()}`);
+            const batch = Array.isArray(response?.leads) ? response.leads : [];
+            const reportedTotal = Number(response?.total || 0);
+
+            if (Number.isFinite(reportedTotal) && reportedTotal > 0) {
+                totalExpected = reportedTotal;
+            }
+
+            leads.push(...batch.map((item) => ({
+                id: normalizeInboxLeadId(item.id),
+                name: String(item.name || '').trim(),
+                phone: String(item.phone || '').trim(),
+                avatar_url: String(item.avatar_url || '').trim(),
+                avatarUrl: String(item.avatarUrl || '').trim(),
+                status: item.status,
+                updated_at: String(item.updated_at || '').trim(),
+                created_at: String(item.created_at || '').trim(),
+                last_message_at: String(item.last_message_at || '').trim()
+            })).filter((item) => item.id > 0));
+
+            page += 1;
+            offset += batch.length;
+
+            if (batch.length < INBOX_SEARCH_CONTACTS_BATCH_SIZE) break;
+            if (totalExpected !== null && leads.length >= totalExpected) break;
+        }
+
+        inboxSearchLeadsCache = leads;
+        inboxSearchLeadsCacheKey = cacheKey;
+        inboxSearchLeadsCacheAt = Date.now();
+        return leads;
+    })().finally(() => {
+        inboxSearchLeadsFetchInFlight = null;
+    });
+
+    return inboxSearchLeadsFetchInFlight;
+}
+
+async function fetchInboxStartConversationLeads(force = false) {
+    const cacheValid =
+        !force &&
+        Array.isArray(inboxStartConversationLeadsCache) &&
+        (Date.now() - inboxStartConversationLeadsCacheAt) < INBOX_SEARCH_CONTACTS_CACHE_TTL_MS;
+
+    if (cacheValid) {
+        return inboxStartConversationLeadsCache;
+    }
+
+    if (inboxStartConversationLeadsFetchInFlight) {
+        return inboxStartConversationLeadsFetchInFlight;
+    }
+
+    inboxStartConversationLeadsFetchInFlight = (async () => {
+        const leads: InboxLeadItem[] = [];
+        let offset = 0;
+        let page = 0;
+        let totalExpected: number | null = null;
+
+        while (page < INBOX_SEARCH_CONTACTS_MAX_PAGES) {
+            const params = new URLSearchParams();
+            params.set('limit', String(INBOX_SEARCH_CONTACTS_BATCH_SIZE));
+            params.set('offset', String(offset));
+
+            const response: InboxLeadsResponse = await api.get(`/api/leads?${params.toString()}`);
+            const batch = Array.isArray(response?.leads) ? response.leads : [];
+            const reportedTotal = Number(response?.total || 0);
+
+            if (Number.isFinite(reportedTotal) && reportedTotal > 0) {
+                totalExpected = reportedTotal;
+            }
+
+            leads.push(...batch.map((item) => ({
+                id: normalizeInboxLeadId(item.id),
+                name: String(item.name || '').trim(),
+                phone: String(item.phone || '').trim(),
+                avatar_url: String(item.avatar_url || '').trim(),
+                avatarUrl: String(item.avatarUrl || '').trim(),
+                status: item.status,
+                updated_at: String(item.updated_at || '').trim(),
+                created_at: String(item.created_at || '').trim(),
+                last_message_at: String(item.last_message_at || '').trim()
+            })).filter((item) => item.id > 0));
+
+            page += 1;
+            offset += batch.length;
+
+            if (batch.length < INBOX_SEARCH_CONTACTS_BATCH_SIZE) break;
+            if (totalExpected !== null && leads.length >= totalExpected) break;
+        }
+
+        inboxStartConversationLeadsCache = leads;
+        inboxStartConversationLeadsCacheAt = Date.now();
+        return leads;
+    })().finally(() => {
+        inboxStartConversationLeadsFetchInFlight = null;
+    });
+
+    return inboxStartConversationLeadsFetchInFlight;
+}
+
+async function buildInboxConversationSearchPool() {
+    const leads = await fetchInboxSearchLeads();
+    const leadIdsWithConversation = new Set(
+        conversations
+            .map((conversation) => normalizeInboxLeadId(conversation.leadId))
+            .filter((leadId) => leadId > 0)
+    );
+
+    const virtualConversations = leads
+        .map((lead) => buildVirtualConversationFromLead(lead))
+        .filter((item): item is Conversation => !!item)
+        .filter((item) => !leadIdsWithConversation.has(item.leadId));
+
+    inboxSearchVirtualConversations = virtualConversations;
+    return conversations.concat(virtualConversations);
+}
+
 function resolveConversationSessionId(conversation: Conversation | null | undefined) {
     const fromConversation = sanitizeSessionId(conversation?.sessionId);
     if (fromConversation) return fromConversation;
-    const appSession = sanitizeSessionId((window as any).APP?.sessionId);
-    if (appSession) return appSession;
+
+    const filteredSession = sanitizeSessionId(inboxSessionFilter);
+    if (filteredSession) return filteredSession;
+
+    const connectedSession = inboxAvailableSessions.find((session) => {
+        const sessionId = sanitizeSessionId(session?.session_id);
+        return Boolean(sessionId) && isInboxSessionConnected(session);
+    });
+    const connectedSessionId = sanitizeSessionId(connectedSession?.session_id);
+    if (connectedSessionId) return connectedSessionId;
+
     const storedSession = sanitizeSessionId(localStorage.getItem('zapvender_active_whatsapp_session'));
     if (storedSession) return storedSession;
-    return 'default_whatsapp_session';
+
+    const appSession = sanitizeSessionId((window as any).APP?.sessionId);
+    if (appSession) return appSession;
+
+    const anyListedSession = inboxAvailableSessions.find((session) => sanitizeSessionId(session?.session_id));
+    const anyListedSessionId = sanitizeSessionId(anyListedSession?.session_id);
+    if (anyListedSessionId) return anyListedSessionId;
+
+    return buildOwnerFallbackSessionId(getOwnerUserIdFromSessionToken(), 'default_whatsapp_session');
+}
+
+function isStartConversationModalOpen() {
+    const modal = document.getElementById('inboxStartConversationModal') as HTMLElement | null;
+    if (!modal) return false;
+    return !modal.hasAttribute('hidden');
+}
+
+function closeStartConversationModal() {
+    const modal = document.getElementById('inboxStartConversationModal') as HTMLElement | null;
+    if (!modal) return;
+
+    modal.setAttribute('hidden', '');
+    modal.setAttribute('aria-hidden', 'true');
+    modal.classList.remove('active');
+}
+
+function resolvePreferredStartConversationSessionId() {
+    const preferredFilter = sanitizeSessionId(inboxSessionFilter);
+    if (preferredFilter) {
+        const filteredSession = findInboxSessionById(preferredFilter);
+        if (filteredSession && isInboxSessionConnected(filteredSession)) {
+            return preferredFilter;
+        }
+    }
+
+    const connectedSession = inboxAvailableSessions.find((session) => {
+        const sessionId = sanitizeSessionId(session?.session_id);
+        return Boolean(sessionId) && isInboxSessionConnected(session);
+    });
+    const connectedSessionId = sanitizeSessionId(connectedSession?.session_id);
+    if (connectedSessionId) {
+        return connectedSessionId;
+    }
+
+    return sanitizeSessionId(inboxAvailableSessions[0]?.session_id);
+}
+
+function renderStartConversationSessionOptions(preferredSessionId = '') {
+    const sessionSelect = document.getElementById('inboxStartConversationSessionSelect') as HTMLSelectElement | null;
+    if (!sessionSelect) return;
+
+    const options = inboxAvailableSessions
+        .map((session) => {
+            const sessionId = sanitizeSessionId(session?.session_id);
+            if (!sessionId) return null;
+
+            const displayName = getSessionDisplayName(session);
+            const statusLabel = getSessionStatusLabel(session);
+            const connected = isInboxSessionConnected(session);
+            const label = displayName === sessionId
+                ? `${displayName} - ${statusLabel}`
+                : `${displayName} - ${sessionId} - ${statusLabel}`;
+
+            return {
+                sessionId,
+                connected,
+                html: `<option value="${escapeHtml(sessionId)}"${connected ? '' : ' disabled'}>${escapeHtml(label)}</option>`
+            };
+        })
+        .filter((item): item is { sessionId: string; connected: boolean; html: string } => Boolean(item));
+
+    if (options.length === 0) {
+        sessionSelect.innerHTML = '<option value="">Nenhuma conta WhatsApp disponivel</option>';
+        sessionSelect.value = '';
+        return;
+    }
+
+    sessionSelect.innerHTML = options.map((item) => item.html).join('');
+
+    const normalizedPreferred = sanitizeSessionId(preferredSessionId);
+    let nextSessionId = normalizedPreferred;
+    if (!nextSessionId || !options.some((item) => item.sessionId === nextSessionId && item.connected)) {
+        nextSessionId = resolvePreferredStartConversationSessionId();
+    }
+    if (!nextSessionId || !options.some((item) => item.sessionId === nextSessionId && item.connected)) {
+        nextSessionId = options.find((item) => item.connected)?.sessionId || options[0]?.sessionId || '';
+    }
+    sessionSelect.value = nextSessionId;
+}
+
+function renderStartConversationLeadHint() {
+    const hint = document.getElementById('inboxStartConversationLeadHint') as HTMLElement | null;
+    const leadSelect = document.getElementById('inboxStartConversationLeadSelect') as HTMLSelectElement | null;
+    if (!hint || !leadSelect) return;
+
+    const selectedLeadId = normalizeInboxLeadId(leadSelect.value);
+    const selectedLead = inboxStartConversationLeads.find((lead) => normalizeInboxLeadId(lead.id) === selectedLeadId) || null;
+    if (!selectedLead) {
+        hint.textContent = 'Selecione um contato para iniciar o chat.';
+        return;
+    }
+
+    const leadPhone = String(selectedLead.phone || '').trim();
+    hint.textContent = leadPhone
+        ? `${selectedLead.name || 'Contato'} • ${formatPhone(leadPhone)}`
+        : `${selectedLead.name || 'Contato'} • sem telefone`;
+}
+
+function renderStartConversationLeadOptions() {
+    const leadSelect = document.getElementById('inboxStartConversationLeadSelect') as HTMLSelectElement | null;
+    const searchInput = document.getElementById('inboxStartConversationLeadSearch') as HTMLInputElement | null;
+    if (!leadSelect) return;
+
+    const search = normalizeName(String(searchInput?.value || '').trim());
+    const previousSelection = normalizeInboxLeadId(leadSelect.value);
+
+    const filteredLeads = inboxStartConversationLeads
+        .filter((lead) => Boolean(String(lead?.phone || '').trim()))
+        .filter((lead) => {
+            if (!search) return true;
+            const leadName = normalizeName(String(lead?.name || ''));
+            const leadPhone = String(lead?.phone || '').replace(/\D+/g, '');
+            return leadName.includes(search) || leadPhone.includes(search.replace(/\D+/g, ''));
+        })
+        .slice(0, INBOX_START_CONVERSATION_MAX_RESULTS);
+
+    if (filteredLeads.length === 0) {
+        leadSelect.innerHTML = '<option value="">Nenhum contato encontrado</option>';
+        leadSelect.value = '';
+        renderStartConversationLeadHint();
+        return;
+    }
+
+    leadSelect.innerHTML = filteredLeads
+        .map((lead) => {
+            const leadId = normalizeInboxLeadId(lead.id);
+            const leadName = String(lead.name || lead.phone || `Contato ${leadId}`).trim() || `Contato ${leadId}`;
+            const leadPhone = String(lead.phone || '').trim();
+            const label = leadPhone
+                ? `${leadName} - ${formatPhone(leadPhone)}`
+                : `${leadName} - sem telefone`;
+            return `<option value="${leadId}">${escapeHtml(label)}</option>`;
+        })
+        .join('');
+
+    const hasPreviousSelection = previousSelection > 0
+        && filteredLeads.some((lead) => normalizeInboxLeadId(lead.id) === previousSelection);
+    leadSelect.value = hasPreviousSelection ? String(previousSelection) : String(normalizeInboxLeadId(filteredLeads[0]?.id));
+    renderStartConversationLeadHint();
+}
+
+function filterStartConversationContacts() {
+    renderStartConversationLeadOptions();
+}
+
+async function openStartConversationModal() {
+    const modal = document.getElementById('inboxStartConversationModal') as HTMLElement | null;
+    const searchInput = document.getElementById('inboxStartConversationLeadSearch') as HTMLInputElement | null;
+    if (!modal) return;
+
+    if (inboxAvailableSessions.length === 0) {
+        await loadInboxSessionFilters();
+    }
+
+    renderStartConversationSessionOptions(resolvePreferredStartConversationSessionId());
+
+    inboxStartConversationLeads = await fetchInboxStartConversationLeads();
+    if (!inboxStartConversationLeads.length) {
+        showToast('warning', 'Aviso', 'Nenhum contato encontrado para iniciar conversa');
+        return;
+    }
+
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    renderStartConversationLeadOptions();
+
+    modal.removeAttribute('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    modal.classList.add('active');
+
+    window.setTimeout(() => {
+        searchInput?.focus();
+    }, 0);
+}
+
+async function confirmStartConversationModal() {
+    const leadSelect = document.getElementById('inboxStartConversationLeadSelect') as HTMLSelectElement | null;
+    const sessionSelect = document.getElementById('inboxStartConversationSessionSelect') as HTMLSelectElement | null;
+    if (!leadSelect || !sessionSelect) return;
+
+    const selectedLeadId = normalizeInboxLeadId(leadSelect.value);
+    const selectedSessionId = sanitizeSessionId(sessionSelect.value);
+    if (!selectedLeadId) {
+        showToast('warning', 'Aviso', 'Selecione um contato para iniciar conversa');
+        return;
+    }
+    if (!selectedSessionId) {
+        showToast('warning', 'Aviso', 'Selecione uma conta WhatsApp');
+        return;
+    }
+
+    const selectedLead = inboxStartConversationLeads.find(
+        (lead) => normalizeInboxLeadId(lead.id) === selectedLeadId
+    ) || null;
+    const selectedPhone = String(selectedLead?.phone || '').trim();
+    if (!selectedLead || !selectedPhone) {
+        showToast('warning', 'Aviso', 'Contato sem telefone valido para iniciar conversa');
+        return;
+    }
+
+    const sessionConnected = await ensureSessionConnected(selectedSessionId);
+    if (!sessionConnected) {
+        showToast('warning', 'Aviso', 'Conta WhatsApp selecionada nao esta conectada');
+        return;
+    }
+
+    let targetConversation = conversations.find((conversation) => {
+        const leadId = normalizeInboxLeadId(conversation.leadId);
+        const sessionId = sanitizeSessionId(conversation.sessionId);
+        return leadId === selectedLeadId && sessionId === selectedSessionId;
+    }) || null;
+
+    if (!targetConversation) {
+        const virtualConversation = buildVirtualConversationFromLead(selectedLead);
+        if (!virtualConversation) {
+            showToast('error', 'Erro', 'Nao foi possivel preparar a conversa para este contato');
+            return;
+        }
+
+        targetConversation = {
+            ...virtualConversation,
+            sessionId: selectedSessionId,
+            sessionLabel: resolveConversationSessionLabel(selectedSessionId),
+            hasConversation: false
+        };
+
+        inboxSearchVirtualConversations = [
+            targetConversation,
+            ...inboxSearchVirtualConversations.filter((conversation) => Number(conversation.id) !== Number(targetConversation?.id))
+        ];
+    }
+
+    closeStartConversationModal();
+    await selectConversation(Number(targetConversation.id));
+}
+
+function bindStartConversationModal() {
+    if (inboxStartConversationModalBound) return;
+    inboxStartConversationModalBound = true;
+
+    const modal = document.getElementById('inboxStartConversationModal') as HTMLElement | null;
+    const searchInput = document.getElementById('inboxStartConversationLeadSearch') as HTMLInputElement | null;
+    const leadSelect = document.getElementById('inboxStartConversationLeadSelect') as HTMLSelectElement | null;
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            filterStartConversationContacts();
+        });
+    }
+    if (leadSelect) {
+        leadSelect.addEventListener('change', () => {
+            renderStartConversationLeadHint();
+        });
+    }
+
+    if (modal) {
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeStartConversationModal();
+            }
+        });
+    }
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && isStartConversationModalOpen()) {
+            closeStartConversationModal();
+        }
+    });
 }
 
 function parseLeadCustomFields(value: unknown) {
@@ -480,19 +1228,117 @@ function getContatosUrl(id: string | number) {
     return `#/contatos?id=${id}`;
 }
 
+function getInboxRouteParams() {
+    if (window.location.search) {
+        return new URLSearchParams(window.location.search);
+    }
+    const hash = String(window.location.hash || '');
+    const queryIndex = hash.indexOf('?');
+    const query = queryIndex >= 0 ? hash.slice(queryIndex + 1) : '';
+    return new URLSearchParams(query);
+}
+
+function resolveInboxOpenLeadIdFromRouteParams() {
+    const params = getInboxRouteParams();
+    for (const key of INBOX_OPEN_LEAD_QUERY_KEYS) {
+        const rawValue = String(params.get(key) || '').trim();
+        const parsedValue = Number.parseInt(rawValue, 10);
+        if (Number.isInteger(parsedValue) && parsedValue > 0) {
+            return parsedValue;
+        }
+    }
+    return 0;
+}
+
+function clearInboxOpenLeadIdFromRouteParams() {
+    const currentUrl = new URL(window.location.href);
+    const hasSearchParam = INBOX_OPEN_LEAD_QUERY_KEYS.some((key) => currentUrl.searchParams.has(key));
+    if (hasSearchParam) {
+        INBOX_OPEN_LEAD_QUERY_KEYS.forEach((key) => currentUrl.searchParams.delete(key));
+        window.history.replaceState({}, '', currentUrl.toString());
+        return;
+    }
+
+    const hash = String(window.location.hash || '');
+    if (!hash) return;
+
+    const queryIndex = hash.indexOf('?');
+    if (queryIndex < 0) return;
+
+    const hashPath = hash.slice(0, queryIndex);
+    const hashQuery = hash.slice(queryIndex + 1);
+    const params = new URLSearchParams(hashQuery);
+    let changed = false;
+
+    INBOX_OPEN_LEAD_QUERY_KEYS.forEach((key) => {
+        if (!params.has(key)) return;
+        params.delete(key);
+        changed = true;
+    });
+
+    if (!changed) return;
+
+    const nextQuery = params.toString();
+    const nextHash = nextQuery ? `${hashPath}?${nextQuery}` : hashPath;
+    const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+    window.history.replaceState({}, '', nextUrl);
+}
+
+async function tryOpenPendingLeadConversation() {
+    if (!Number.isInteger(pendingInboxOpenLeadId) || pendingInboxOpenLeadId <= 0) return;
+
+    let targetConversation = conversations.find(
+        (conversation) => Number(conversation.leadId) === pendingInboxOpenLeadId
+    );
+    if (!targetConversation) {
+        try {
+            const leads = await fetchInboxSearchLeads();
+            const targetLead = leads.find((lead) => normalizeInboxLeadId(lead.id) === pendingInboxOpenLeadId) || null;
+            const virtualConversation = targetLead ? buildVirtualConversationFromLead(targetLead) : null;
+            if (virtualConversation) {
+                inboxSearchVirtualConversations = [
+                    virtualConversation,
+                    ...inboxSearchVirtualConversations.filter((conversation) => conversation.id !== virtualConversation.id)
+                ];
+                targetConversation = virtualConversation;
+            }
+        } catch (_) {
+            // Falha em carregar contatos nao deve quebrar a tela
+        }
+    }
+    if (!targetConversation) return;
+
+    const targetConversationId = Number(targetConversation.id || 0);
+    if (!Number.isInteger(targetConversationId) || targetConversationId === 0) return;
+
+    pendingInboxOpenLeadId = 0;
+    clearInboxOpenLeadIdFromRouteParams();
+    void selectConversation(targetConversationId);
+}
+
 function initInbox() {
+    pendingInboxOpenLeadId = resolveInboxOpenLeadIdFromRouteParams();
+    bindInboxLifecycle();
+    syncInboxMobileViewportState();
+    bindStartConversationModal();
     bindQuickReplyDismiss();
+    bindEmojiPickerDismiss();
+    bindChatMediaPreviewModal();
     loadContactFields();
     void loadInboxSessionFilters().finally(() => {
+        if (pendingInboxOpenLeadId > 0 && inboxSessionFilter) {
+            inboxSessionFilter = '';
+            persistInboxSessionFilter('');
+            renderInboxSessionFilterOptions();
+        }
         loadConversations();
     });
     loadQuickReplies();
     initSocket();
     renderContactInfoPanel();
     setMobileConversationMode(false);
-    if (refreshInterval === null) {
-        refreshInterval = window.setInterval(loadConversations, 10000);
-    }
+    setInboxComposerFocusState(false);
+    startInboxAutoRefresh();
 }
 
 onReady(initInbox);
@@ -505,6 +1351,94 @@ function isTabletOrMobileView() {
     return window.matchMedia('(max-width: 1024px)').matches;
 }
 
+function isMessageComposerFocused() {
+    if (inboxComposerFocusActive) return true;
+    const activeElement = document.activeElement as HTMLElement | null;
+    if (!activeElement) return false;
+    if (activeElement.id === 'messageInput') return true;
+    return Boolean(activeElement.closest?.('.chat-input'));
+}
+
+function setInboxComposerFocusState(focused: boolean) {
+    inboxComposerFocusActive = Boolean(focused);
+    document.body.classList.toggle('inbox-mobile-composing', inboxComposerFocusActive);
+    document.documentElement.classList.toggle('inbox-mobile-composing', inboxComposerFocusActive);
+}
+
+function syncInboxMobileViewportHeight() {
+    const root = document.documentElement;
+    const currentInnerHeight = Math.max(320, Math.round(window.innerHeight || 0));
+    if (!inboxMobileLayoutViewportHeight || currentInnerHeight > (inboxMobileLayoutViewportHeight - 24)) {
+        inboxMobileLayoutViewportHeight = currentInnerHeight;
+    }
+
+    const visualViewport = window.visualViewport;
+    const hasVisualViewport = Boolean(visualViewport && Number.isFinite(visualViewport.height) && visualViewport.height > 0);
+    const visualHeight = hasVisualViewport
+        ? Math.max(320, Math.round(Number(visualViewport?.height || 0)))
+        : currentInnerHeight;
+    const visualOffsetTop = hasVisualViewport && Number.isFinite(visualViewport?.offsetTop)
+        ? Math.max(0, Math.round(Number(visualViewport?.offsetTop || 0)))
+        : 0;
+    const keyboardInsetFromVisual = hasVisualViewport
+        ? Math.max(0, inboxMobileLayoutViewportHeight - (visualHeight + visualOffsetTop))
+        : 0;
+    const keyboardInsetFromInner = Math.max(0, inboxMobileLayoutViewportHeight - currentInnerHeight);
+    const keyboardInset = Math.max(keyboardInsetFromVisual, keyboardInsetFromInner);
+
+    root.style.setProperty('--inbox-mobile-vh', `${inboxMobileLayoutViewportHeight || currentInnerHeight}px`);
+    root.style.setProperty('--inbox-mobile-keyboard-inset', `${keyboardInset}px`);
+}
+
+function syncInboxRouteScrollLock() {
+    const hash = String(window.location.hash || '').toLowerCase();
+    const isInboxRoute = hash.startsWith('#/inbox');
+    document.body.classList.toggle('inbox-route-lock', isInboxRoute);
+    document.documentElement.classList.toggle('inbox-route-lock', isInboxRoute);
+
+    if (isInboxRoute) {
+        if (!isMessageComposerFocused()) {
+            if ((window.scrollY || 0) > 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            }
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+        }
+    }
+}
+
+function syncInboxMobileViewportState() {
+    syncInboxMobileViewportHeight();
+    syncInboxRouteScrollLock();
+    syncInboxBodyScrollLock();
+    syncContactInfoPanelLayout();
+}
+
+function scheduleInboxMobileViewportStateSync() {
+    if (inboxViewportSyncRaf !== null) return;
+    inboxViewportSyncRaf = window.requestAnimationFrame(() => {
+        inboxViewportSyncRaf = null;
+        syncInboxMobileViewportState();
+    });
+}
+
+function syncInboxBodyScrollLock() {
+    const chatPanel = document.getElementById('chatPanel') as HTMLElement | null;
+    const chatOpenOnMobile = isMobileInboxView() && Boolean(chatPanel?.classList.contains('active'));
+    document.body.classList.toggle('inbox-mobile-chat-lock', chatOpenOnMobile);
+    document.documentElement.classList.toggle('inbox-mobile-chat-lock', chatOpenOnMobile);
+
+    if (chatOpenOnMobile) {
+        if (!isMessageComposerFocused()) {
+            if ((window.scrollY || 0) > 0) {
+                window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            }
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+        }
+    }
+}
+
 function setMobileConversationMode(chatOpen: boolean) {
     const conversationsPanel = document.getElementById('conversationsPanel') as HTMLElement | null;
     const chatPanel = document.getElementById('chatPanel') as HTMLElement | null;
@@ -513,27 +1447,81 @@ function setMobileConversationMode(chatOpen: boolean) {
     if (!isMobileInboxView()) {
         conversationsPanel.classList.remove('hidden');
         chatPanel.classList.remove('active');
+        syncInboxMobileViewportState();
         return;
     }
 
     if (chatOpen) {
         conversationsPanel.classList.add('hidden');
         chatPanel.classList.add('active');
+        window.requestAnimationFrame(() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            scheduleInboxMobileViewportStateSync();
+        });
+        window.setTimeout(() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            scheduleInboxMobileViewportStateSync();
+        }, 120);
     } else {
         conversationsPanel.classList.remove('hidden');
         chatPanel.classList.remove('active');
     }
+    syncInboxMobileViewportState();
+}
+
+function isCurrentChatVisible() {
+    if (!currentConversation) return false;
+    if (!isMobileInboxView()) return true;
+    const chatPanel = document.getElementById('chatPanel') as HTMLElement | null;
+    return Boolean(chatPanel?.classList.contains('active'));
+}
+
+function setConversationUnreadLocal(conversationId: number, unread: number) {
+    const normalizedConversationId = Number(conversationId);
+    if (!Number.isFinite(normalizedConversationId) || normalizedConversationId <= 0) return;
+
+    const safeUnread = Math.max(0, Number(unread) || 0);
+    let changed = false;
+
+    if (currentConversation && Number(currentConversation.id) === normalizedConversationId) {
+        if ((currentConversation.unread || 0) !== safeUnread) {
+            currentConversation.unread = safeUnread;
+            changed = true;
+        }
+    }
+
+    conversations = conversations.map((conversation) => {
+        if (Number(conversation.id) !== normalizedConversationId) return conversation;
+        if ((conversation.unread || 0) === safeUnread) return conversation;
+        changed = true;
+        return { ...conversation, unread: safeUnread };
+    });
+
+    if (!changed) return;
+
+    if (currentFilter === 'unread') {
+        renderFilteredConversations(conversations.filter((conversation) => (conversation.unread || 0) > 0));
+    } else {
+        renderConversations();
+    }
+    updateUnreadBadge();
+}
+
+function syncContactInfoPanelLayout() {
+    const panel = document.getElementById('inboxRightPanel') as HTMLElement | null;
+    const backdrop = document.getElementById('contactInfoBackdrop') as HTMLElement | null;
+    const inboxContainer = document.querySelector('.inbox-container') as HTMLElement | null;
+    const overlayMode = isTabletOrMobileView();
+
+    panel?.classList.toggle('active', overlayMode && isContactInfoOpen);
+    backdrop?.classList.toggle('active', overlayMode && isContactInfoOpen);
+    inboxContainer?.classList.toggle('contact-info-collapsed', !overlayMode && !isContactInfoOpen);
 }
 
 function setContactInfoPanelState(forceOpen?: boolean) {
-    const panel = document.getElementById('inboxRightPanel') as HTMLElement | null;
-    const backdrop = document.getElementById('contactInfoBackdrop') as HTMLElement | null;
-    if (!panel || !backdrop) return;
-
     const nextState = typeof forceOpen === 'boolean' ? forceOpen : !isContactInfoOpen;
     isContactInfoOpen = nextState;
-    panel.classList.toggle('active', isContactInfoOpen);
-    backdrop.classList.toggle('active', isContactInfoOpen);
+    syncContactInfoPanelLayout();
 }
 
 function closeContactInfoPanel() {
@@ -674,7 +1662,6 @@ function renderContactInfoPanel() {
             </div>
 
             <div class="contact-card-actions">
-                <button class="btn btn-outline btn-sm" onclick="openWhatsApp()">Abrir no WhatsApp</button>
                 <button class="btn btn-primary btn-sm" onclick="viewContact()">Abrir contato</button>
             </div>
         </div>
@@ -689,8 +1676,21 @@ function bindQuickReplyDismiss() {
         const target = event.target as HTMLElement | null;
         const picker = document.getElementById('quickReplyPicker') as HTMLElement | null;
         if (!picker || !picker.classList.contains('open')) return;
-        if (target?.closest('.quick-reply-toolbar')) return;
+        if (target?.closest('.chat-input')) return;
         closeQuickReplyPicker();
+    });
+}
+
+function bindEmojiPickerDismiss() {
+    if (emojiPickerDismissBound) return;
+    emojiPickerDismissBound = true;
+
+    document.addEventListener('click', (event) => {
+        const target = event.target as HTMLElement | null;
+        const picker = document.getElementById('emojiPicker') as HTMLElement | null;
+        if (!picker || !picker.classList.contains('open')) return;
+        if (target?.closest('.chat-input')) return;
+        closeEmojiPicker();
     });
 }
 
@@ -725,9 +1725,21 @@ function initSocket() {
         socketBound = true;
         
         socket.on('new-message', (data) => {
+            const incomingConversationId = Number(data?.conversationId || 0);
+            const incomingLeadId = Number(data?.leadId || 0);
+            const incomingSessionId = sanitizeSessionId(data?.sessionId || data?.session_id || '');
+            const isFromMe = Boolean(data?.isFromMe);
             const isCurrent =
                 currentConversation &&
-                (data.conversationId === currentConversation.id || data.leadId === currentConversation.leadId);
+                (
+                    (incomingConversationId > 0 && incomingConversationId === Number(currentConversation.id))
+                    || (
+                        incomingLeadId > 0
+                        && incomingLeadId === Number(currentConversation.leadId)
+                        && incomingSessionId
+                        && incomingSessionId === resolveConversationSessionId(currentConversation)
+                    )
+                );
             if (isCurrent) {
                 const mediaType = String(data.mediaType || data.media_type || 'text');
                 const mediaUrl = data.mediaUrl || data.media_url || null;
@@ -747,6 +1759,21 @@ function initSocket() {
                 const chatMessages = document.getElementById('chatMessages') as HTMLElement | null;
                 renderMessagesInto(chatMessages);
                 scrollToBottom();
+
+                if (!isFromMe && isCurrentChatVisible()) {
+                    const activeConversationId = Number(currentConversation?.id || 0);
+                    if (activeConversationId > 0) {
+                        setConversationUnreadLocal(activeConversationId, 0);
+                        const conversationSessionId = resolveConversationSessionId(currentConversation);
+                        socket?.emit('mark-read', {
+                            sessionId: conversationSessionId,
+                            conversationId: activeConversationId
+                        });
+                        void api.post(`/api/conversations/${activeConversationId}/read`, {}).catch(() => {
+                            // Melhor esforço para manter badge sincronizada
+                        });
+                    }
+                }
             }
             loadConversations();
         });
@@ -787,11 +1814,15 @@ function initSocket() {
 
 async function loadConversations() {
     try {
+        const activeOpenConversationId = isCurrentChatVisible()
+            ? Number(currentConversation?.id || 0)
+            : 0;
         const query = inboxSessionFilter
             ? `?session_id=${encodeURIComponent(inboxSessionFilter)}`
             : '';
         const response: ConversationsResponse = await api.get(`/api/conversations${query}`);
         const items = response.conversations || [];
+        inboxSearchVirtualConversations = [];
         conversations = items.map((c) => ({
             sessionId: sanitizeSessionId(c.session_id || c.sessionId),
             id: c.id,
@@ -800,44 +1831,133 @@ async function loadConversations() {
             name: c.name || c.lead_name || c.phone,
             phone: c.phone,
             avatarUrl: sanitizeAvatarUrl(c.avatar_url || c.avatarUrl),
-            lastMessage: c.lastMessage || c.last_message || 'Clique para iniciar conversa',
+            lastMessage: c.lastMessage || c.last_message || INBOX_NEW_CONVERSATION_PREVIEW,
             lastMessageAt: c.lastMessageAt || c.last_message_at || c.updated_at || c.created_at,
-            unread: c.unread || c.unread_count || 0,
-            status: c.status
+            unread: activeOpenConversationId > 0 && Number(c.id) === activeOpenConversationId
+                ? 0
+                : (c.unread || c.unread_count || 0),
+            status: c.status,
+            hasConversation: true
         }));
 
         if (currentConversation) {
-            const refreshedConversation = conversations.find((conversation) => conversation.id === currentConversation?.id) || null;
+            const currentConversationId = Number(currentConversation.id || 0);
+            const currentLeadId = normalizeInboxLeadId(currentConversation.leadId);
+            const refreshedConversationById =
+                conversations.find((conversation) => conversation.id === currentConversationId) || null;
+            const refreshedConversationByLead =
+                currentConversationId <= 0 && currentLeadId > 0
+                    ? conversations.find((conversation) => normalizeInboxLeadId(conversation.leadId) === currentLeadId) || null
+                    : null;
+            const refreshedConversation = refreshedConversationById || refreshedConversationByLead;
+
             if (!refreshedConversation) {
-                currentConversation = null;
-                currentLeadDetails = null;
-                const chatPanel = document.getElementById('chatPanel') as HTMLElement | null;
-                if (chatPanel) {
-                    chatPanel.innerHTML = `
-                        <div class="chat-empty">
-                            <div class="chat-empty-icon icon icon-empty icon-lg"></div>
-                            <h3>Nenhum chat selecionado</h3>
-                            <p>Selecione uma conversa da lista ao lado para começar a conversar</p>
-                        </div>
-                    `;
+                const isVirtualConversation = currentConversationId <= 0 && currentLeadId > 0;
+                if (isVirtualConversation) {
+                    const fallbackSessionId = resolveConversationSessionId(currentConversation);
+                    currentConversation = {
+                        ...currentConversation,
+                        sessionId: fallbackSessionId,
+                        sessionLabel: resolveConversationSessionLabel(fallbackSessionId),
+                        hasConversation: false
+                    };
+                } else {
+                    currentConversation = null;
+                    currentLeadDetails = null;
+                    const chatPanel = document.getElementById('chatPanel') as HTMLElement | null;
+                    if (chatPanel) {
+                        chatPanel.innerHTML = `
+                            <div class="chat-empty">
+                                <div class="chat-empty-icon icon icon-empty icon-lg"></div>
+                                <h3>Nenhum chat selecionado</h3>
+                                <p>Selecione uma conversa da lista ao lado para começar a conversar</p>
+                            </div>
+                        `;
+                    }
+                    renderContactInfoPanel();
+                    setMobileConversationMode(false);
                 }
-                renderContactInfoPanel();
-                setMobileConversationMode(false);
             } else {
                 currentConversation = refreshedConversation;
             }
         }
 
-        if (currentFilter === 'unread') {
+        const activeSearch = getInboxSearchValue();
+        if (activeSearch) {
+            await searchConversations();
+        } else if (currentFilter === 'unread') {
             renderFilteredConversations(conversations.filter((conversation) => (conversation.unread || 0) > 0));
         } else {
             renderConversations();
         }
         updateUnreadBadge();
+        tryOpenPendingLeadConversation();
     } catch (error) {
+        const hasToken = Boolean(sessionStorage.getItem('selfDashboardToken'));
+        const isLoginRoute = String(window.location.hash || '').startsWith('#/login');
+        if (!hasToken || isLoginRoute) {
+            return;
+        }
         console.error(error);
         showToast('error', 'Erro', 'Não foi possível carregar as conversas');
     }
+}
+
+function stopInboxAutoRefresh() {
+    if (refreshInterval !== null) {
+        window.clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+}
+
+function startInboxAutoRefresh() {
+    if (refreshInterval !== null) return;
+    refreshInterval = window.setInterval(() => {
+        const hash = String(window.location.hash || '').toLowerCase();
+        if (!hash.startsWith('#/inbox')) {
+            stopInboxAutoRefresh();
+            return;
+        }
+        if (isMessageComposerFocused()) {
+            return;
+        }
+        void loadConversations();
+    }, 10000);
+}
+
+function bindInboxLifecycle() {
+    if (inboxLifecycleBound) return;
+    inboxLifecycleBound = true;
+    const handleViewportChange = () => {
+        scheduleInboxMobileViewportStateSync();
+    };
+
+    window.addEventListener('app:logout', () => {
+        stopInboxAutoRefresh();
+        setInboxComposerFocusState(false);
+        document.body.classList.remove('inbox-route-lock');
+        document.documentElement.classList.remove('inbox-route-lock');
+        document.body.classList.remove('inbox-mobile-chat-lock');
+        document.documentElement.classList.remove('inbox-mobile-chat-lock');
+    });
+    window.addEventListener('beforeunload', stopInboxAutoRefresh);
+    window.addEventListener('hashchange', () => {
+        const hash = String(window.location.hash || '').toLowerCase();
+        if (!hash.startsWith('#/inbox')) {
+            setInboxComposerFocusState(false);
+            document.body.classList.remove('inbox-route-lock');
+            document.documentElement.classList.remove('inbox-route-lock');
+            document.body.classList.remove('inbox-mobile-chat-lock');
+            document.documentElement.classList.remove('inbox-mobile-chat-lock');
+            return;
+        }
+        scheduleInboxMobileViewportStateSync();
+    });
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
+    window.visualViewport?.addEventListener('resize', handleViewportChange);
+    window.visualViewport?.addEventListener('scroll', handleViewportChange);
+    scheduleInboxMobileViewportStateSync();
 }
 
 function renderConversations() {
@@ -849,6 +1969,7 @@ function renderConversations() {
             <div class="empty-state" style="padding: 40px;">
                 <div class="empty-state-icon icon icon-empty icon-lg"></div>
                 <p>Nenhuma conversa</p>
+                <p class="empty-state-subtext">Quando houver mensagens, elas aparecerao aqui.</p>
             </div>
         `;
         return;
@@ -867,7 +1988,7 @@ function renderConversations() {
                     <div class="conversation-name">${escapeHtml(c.name || 'Sem nome')}</div>
                     ${c.sessionLabel ? `<span class="conversation-session-chip" title="${escapeHtml(c.sessionId || '')}">${escapeHtml(c.sessionLabel)}</span>` : ''}
                 </div>
-                <div class="conversation-preview">${escapeHtml(c.lastMessage || 'Sem mensagens')}</div>
+                <div class="conversation-preview">${renderConversationPreview(c.lastMessage, 'Sem mensagens')}</div>
             </div>
             <div class="conversation-meta">
                 <div class="conversation-time">${c.lastMessageAt ? timeAgo(c.lastMessageAt) : ''}</div>
@@ -882,25 +2003,38 @@ function filterConversations(filter: 'all' | 'unread') {
     document.querySelectorAll('.conversations-tabs button').forEach((button) => button.classList.remove('active'));
     document.getElementById('filterAllBtn')?.classList.toggle('active', filter === 'all');
     document.getElementById('filterUnreadBtn')?.classList.toggle('active', filter === 'unread');
-    
+
+    const activeSearch = getInboxSearchValue();
+    if (activeSearch) {
+        void searchConversations();
+        return;
+    }
+
     if (filter === 'unread') {
         const filtered = conversations.filter(c => c.unread > 0);
         renderFilteredConversations(filtered);
-    } else {
-        renderConversations();
+        return;
     }
+
+    renderConversations();
 }
 
 function renderFilteredConversations(filtered: Conversation[]) {
     const list = document.getElementById('conversationsList') as HTMLElement | null;
     if (!list) return;
     if (filtered.length === 0) {
-        list.innerHTML = `<div class="empty-state" style="padding: 40px;"><p>Nenhuma conversa encontrada</p></div>`;
+        list.innerHTML = `
+            <div class="empty-state" style="padding: 40px;">
+                <div class="empty-state-icon icon icon-empty icon-lg"></div>
+                <p>Nenhuma conversa encontrada</p>
+                <p class="empty-state-subtext">Tente ajustar a busca ou trocar o filtro.</p>
+            </div>
+        `;
         return;
     }
     // Usar mesma lógica de renderConversations
     list.innerHTML = filtered.map(c => `
-        <div class="conversation-item ${c.unread > 0 ? 'unread' : ''}" onclick="selectConversation(${c.id})">
+        <div class="conversation-item ${c.unread > 0 ? 'unread' : ''} ${currentConversation?.id === c.id ? 'active' : ''}" onclick="selectConversation(${c.id})">
             ${renderAvatarMarkup({
                 name: c.name,
                 avatarUrl: resolveConversationAvatarUrl(c),
@@ -911,7 +2045,7 @@ function renderFilteredConversations(filtered: Conversation[]) {
                     <div class="conversation-name">${escapeHtml(c.name || 'Sem nome')}</div>
                     ${c.sessionLabel ? `<span class="conversation-session-chip" title="${escapeHtml(c.sessionId || '')}">${escapeHtml(c.sessionLabel)}</span>` : ''}
                 </div>
-                <div class="conversation-preview">${escapeHtml(c.lastMessage || '')}</div>
+                <div class="conversation-preview">${renderConversationPreview(c.lastMessage, '')}</div>
             </div>
             <div class="conversation-meta">
                 <div class="conversation-time">${c.lastMessageAt ? timeAgo(c.lastMessageAt) : ''}</div>
@@ -921,17 +2055,68 @@ function renderFilteredConversations(filtered: Conversation[]) {
     `).join('');
 }
 
-function searchConversations() {
-    const search = (document.getElementById('searchConversations') as HTMLInputElement | null)?.value.toLowerCase() || '';
-    const filtered = conversations.filter(c => 
-        (c.name && c.name.toLowerCase().includes(search)) ||
-        (c.phone && c.phone.includes(search))
-    );
-    renderFilteredConversations(filtered);
+async function searchConversations() {
+    const requestToken = ++inboxSearchRequestToken;
+    const search = getInboxSearchValue();
+
+    if (!search) {
+        inboxSearchVirtualConversations = [];
+        if (currentFilter === 'unread') {
+            renderFilteredConversations(conversations.filter((conversation) => (conversation.unread || 0) > 0));
+        } else {
+            renderConversations();
+        }
+        return;
+    }
+
+    const normalizedSearch = search.toLowerCase();
+    const normalizedDigits = normalizedSearch.replace(/\D/g, '');
+    const matchesConversation = (conversation: Conversation) => {
+        const name = String(conversation.name || '').toLowerCase();
+        const phoneRaw = String(conversation.phone || '');
+        const phoneText = phoneRaw.toLowerCase();
+        const phoneDigits = phoneRaw.replace(/\D/g, '');
+
+        if (name.includes(normalizedSearch)) return true;
+        if (phoneText.includes(normalizedSearch)) return true;
+        if (normalizedDigits && phoneDigits.includes(normalizedDigits)) return true;
+        return false;
+    };
+
+    try {
+        const pool = await buildInboxConversationSearchPool();
+        if (requestToken !== inboxSearchRequestToken) return;
+
+        const filtered = pool
+            .filter((conversation) => matchesConversation(conversation))
+            .filter((conversation) => (currentFilter === 'unread' ? (conversation.unread || 0) > 0 : true))
+            .sort((left, right) => {
+                if (Boolean(left.hasConversation) !== Boolean(right.hasConversation)) {
+                    return left.hasConversation ? -1 : 1;
+                }
+
+                const leftTime = left.lastMessageAt ? new Date(left.lastMessageAt).getTime() : 0;
+                const rightTime = right.lastMessageAt ? new Date(right.lastMessageAt).getTime() : 0;
+                return rightTime - leftTime;
+            });
+
+        renderFilteredConversations(filtered);
+    } catch (_) {
+        if (requestToken !== inboxSearchRequestToken) return;
+
+        const fallback = conversations
+            .filter((conversation) => matchesConversation(conversation))
+            .filter((conversation) => (currentFilter === 'unread' ? (conversation.unread || 0) > 0 : true));
+
+        renderFilteredConversations(fallback);
+    }
 }
 
 async function selectConversation(id: number) {
-    currentConversation = conversations.find(c => c.id === id);
+    currentConversation =
+        conversations.find((conversation) => conversation.id === id)
+        || inboxSearchVirtualConversations.find((conversation) => conversation.id === id)
+        || null;
     if (!currentConversation) return;
     currentLeadDetails = null;
 
@@ -951,18 +2136,19 @@ async function selectConversation(id: number) {
     document.querySelectorAll('.conversation-item').forEach(i => i.classList.remove('active'));
     document.querySelector(`.conversation-item[onclick="selectConversation(${id})"]`)?.classList.add('active');
 
-    // Persistir no backend que a conversa foi lida
-    try {
-        const conversationSessionId = resolveConversationSessionId(currentConversation);
-        socket?.emit('mark-read', {
-            sessionId: conversationSessionId,
-            conversationId: id
-        });
-        await api.post(`/api/conversations/${id}/read`, {});
-    } catch {
-        // Não bloqueia abertura da conversa se falhar sincronização de leitura
+    // Persistir no backend que a conversa foi lida apenas para conversas reais
+    if (Number(id) > 0) {
+        try {
+            const conversationSessionId = resolveConversationSessionId(currentConversation);
+            socket?.emit('mark-read', {
+                sessionId: conversationSessionId,
+                conversationId: id
+            });
+            await api.post(`/api/conversations/${id}/read`, {});
+        } catch {
+            // Nao bloqueia abertura da conversa se falhar sincronizacao de leitura
+        }
     }
-
     // Carregar mensagens e dados completos do contato
     const conversationSessionId = resolveConversationSessionId(currentConversation);
     await Promise.all([
@@ -977,6 +2163,9 @@ async function selectConversation(id: number) {
     if (isTabletOrMobileView()) {
         closeContactInfoPanel();
     }
+    focusMessageComposerOnOpen();
+
+    void tryAutoRehydrateMissingStickerMedia(currentConversation);
 }
 
 async function loadMessages(leadId: number, conversationId?: number, sessionId?: string, contactJid?: string) {
@@ -1000,7 +2189,7 @@ async function loadMessages(leadId: number, conversationId?: number, sessionId?:
         messages = (response.messages || []).map(m => ({
             ...m,
             direction: normalizeDirection(m),
-            created_at: m.created_at || m.sent_at || new Date().toISOString(),
+            created_at: m.sent_at || m.created_at || new Date().toISOString(),
             media_type: m.media_type || 'text',
             media_url: m.media_url || null,
             media_mime_type: m.media_mime_type || null,
@@ -1008,6 +2197,58 @@ async function loadMessages(leadId: number, conversationId?: number, sessionId?:
         }));
     } catch (error) {
         messages = [];
+    }
+}
+
+function hasMissingStickerMedia(items: ChatMessage[] = messages) {
+    return items.some((item) => {
+        const mediaType = String(item?.media_type || '').trim().toLowerCase();
+        if (mediaType !== 'sticker') return false;
+        return !String(item?.media_url || '').trim();
+    });
+}
+
+async function tryAutoRehydrateMissingStickerMedia(conversation: Conversation | null) {
+    if (!conversation) return;
+
+    const conversationId = Number(conversation.id);
+    const leadId = Number(conversation.leadId);
+    if (!Number.isFinite(conversationId) || conversationId <= 0) return;
+    if (!Number.isFinite(leadId) || leadId <= 0) return;
+    if (!hasMissingStickerMedia(messages)) return;
+
+    const sessionId = resolveConversationSessionId(conversation);
+    const attemptKey = `${conversationId}:${sessionId || ''}`;
+    if (stickerMediaRehydrateAttempts.has(attemptKey)) return;
+    stickerMediaRehydrateAttempts.add(attemptKey);
+
+    try {
+        const response = await api.post(`/api/messages/${leadId}/rehydrate-missing-media`, {
+            conversationId,
+            sessionId,
+            contactJid: conversation.phone || '',
+            limit: 250
+        });
+
+        const hydratedMedia = Number(response?.backfill?.hydratedMedia || 0) || 0;
+        const missingBefore = Number(response?.missingStickersBefore || 0) || 0;
+        const missingAfter = Number(response?.missingStickersAfter || 0) || 0;
+        const changed = hydratedMedia > 0 || (missingBefore > missingAfter);
+        if (!changed) return;
+
+        if (!currentConversation || Number(currentConversation.id) !== conversationId) return;
+
+        await loadMessages(leadId, conversationId, sessionId, conversation.phone);
+
+        if (!currentConversation || Number(currentConversation.id) !== conversationId) return;
+
+        renderChat();
+        setMobileConversationMode(true);
+        if (isTabletOrMobileView()) {
+            closeContactInfoPanel();
+        }
+    } catch (error) {
+        // Silencioso: tentativa opportunistic para preencher stickers antigos
     }
 }
 
@@ -1082,6 +2323,32 @@ function renderQuickReplyItems() {
         .join('');
 }
 
+function renderEmojiPickerItems() {
+    let emojiIndex = 0;
+
+    return TEXT_EMOJI_CATEGORIES
+        .map((category) => {
+            const title = escapeHtml(category.label);
+            const items = category.emojis
+                .map((emoji) => {
+                    const currentIndex = emojiIndex++;
+                    const label = escapeHtml(`Inserir emoji ${emoji}`);
+                    return `<button type="button" class="chat-emoji-item" onclick="selectEmojiByIndex(${currentIndex})" title="${label}" aria-label="${label}">${emoji}</button>`;
+                })
+                .join('');
+
+            return `
+                <section class="chat-emoji-section" aria-label="${title}">
+                    <div class="chat-emoji-section-title">${title}</div>
+                    <div class="chat-emoji-section-grid">
+                        ${items}
+                    </div>
+                </section>
+            `;
+        })
+        .join('');
+}
+
 function applyQuickReplyVariables(content: string) {
     if (!currentConversation) return content;
 
@@ -1111,6 +2378,7 @@ function applyQuickReplyVariables(content: string) {
 function toggleQuickReplyPicker() {
     const picker = document.getElementById('quickReplyPicker') as HTMLElement | null;
     if (!picker) return;
+    closeEmojiPicker();
     picker.classList.toggle('open');
 }
 
@@ -1118,6 +2386,39 @@ function closeQuickReplyPicker() {
     const picker = document.getElementById('quickReplyPicker') as HTMLElement | null;
     if (!picker) return;
     picker.classList.remove('open');
+}
+
+function toggleEmojiPicker() {
+    const picker = document.getElementById('emojiPicker') as HTMLElement | null;
+    if (!picker) return;
+    closeQuickReplyPicker();
+    picker.classList.toggle('open');
+}
+
+function closeEmojiPicker() {
+    const picker = document.getElementById('emojiPicker') as HTMLElement | null;
+    if (!picker) return;
+    picker.classList.remove('open');
+}
+
+function insertTextAtCursor(input: HTMLTextAreaElement, text: string) {
+    const start = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+    const end = typeof input.selectionEnd === 'number' ? input.selectionEnd : input.value.length;
+    const before = input.value.slice(0, start);
+    const after = input.value.slice(end);
+    input.value = `${before}${text}${after}`;
+    const nextPos = start + text.length;
+    input.focus();
+    input.setSelectionRange(nextPos, nextPos);
+}
+
+function selectEmojiByIndex(index: number) {
+    const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+    if (!input) return;
+    const emoji = TEXT_EMOJIS[index];
+    if (!emoji) return;
+
+    insertTextAtCursor(input, emoji);
 }
 
 function selectQuickReply(id: number) {
@@ -1169,10 +2470,16 @@ async function sendQuickReplyAudio(quickReply: TemplateItem) {
             to: currentConversation.phone,
             message: mediaUrl,
             type: 'audio',
-            options: { url: mediaUrl }
+            options: {
+                url: mediaUrl,
+                conversationId: currentConversation.id
+            }
         });
         if (response?.messageId) {
             (newMessage as Record<string, any>).message_id = String(response.messageId);
+        }
+        if (response?.sentAt || response?.timestamp) {
+            newMessage.created_at = String(response.sentAt || response.timestamp);
         }
         newMessage.status = 'sent';
         renderMessagesInto(chatMessages);
@@ -1185,9 +2492,58 @@ async function sendQuickReplyAudio(quickReply: TemplateItem) {
 
 function getMediaUrl(url?: string | null) {
     if (!url) return '';
-    if (url.startsWith('http')) return url;
-    const base = (window as any).APP?.socketUrl || '';
-    return `${base}${url}`;
+
+    const raw = String(url || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('data:') || raw.startsWith('blob:')) return raw;
+
+    const appBaseRaw = String((window as any).APP?.socketUrl || window.location.origin || '').trim();
+    const appOrigin = (() => {
+        try {
+            return new URL(appBaseRaw || window.location.origin).origin;
+        } catch (_) {
+            return window.location.origin;
+        }
+    })();
+
+    const normalizeUploadsPath = (value: string) => {
+        const normalized = String(value || '').trim().replace(/\\/g, '/');
+        if (!normalized) return '';
+
+        if (normalized.startsWith('/uploads/')) return normalized;
+        if (normalized.startsWith('uploads/')) return `/${normalized}`;
+
+        const markerIndex = normalized.toLowerCase().indexOf('/uploads/');
+        if (markerIndex >= 0) {
+            return normalized.slice(markerIndex);
+        }
+
+        return normalized;
+    };
+
+    if (/^https?:\/\//i.test(raw)) {
+        try {
+            const parsed = new URL(raw);
+            const host = String(parsed.hostname || '').toLowerCase();
+            const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+
+            if (isLocalHost) {
+                const normalizedLocalPath = normalizeUploadsPath(`${parsed.pathname || ''}${parsed.search || ''}${parsed.hash || ''}`);
+                if (normalizedLocalPath.startsWith('/')) {
+                    return `${appOrigin}${normalizedLocalPath}`;
+                }
+            }
+        } catch (_) {
+            // keep raw url fallback
+        }
+        return raw;
+    }
+
+    const normalizedPath = normalizeUploadsPath(raw);
+    if (normalizedPath.startsWith('/')) {
+        return `${appOrigin}${normalizedPath}`;
+    }
+    return `${appOrigin}/${normalizedPath}`;
 }
 
 function normalizeMessageStatus(status?: string) {
@@ -1234,6 +2590,35 @@ function isMediaPreviewText(value?: string | null) {
     ].includes(normalized);
 }
 
+function getConversationPreviewMediaMeta(value?: string | null) {
+    const normalized = String(value || '').trim().toLowerCase();
+
+    if (normalized === '[imagem]') return { icon: '▣', label: 'Imagem' };
+    if (normalized === '[video]') return { icon: '▶', label: 'Video' };
+    if (normalized === '[audio]') return { icon: '♫', label: 'Audio' };
+    if (normalized === '[documento]') return { icon: '⎘', label: 'Documento' };
+    if (normalized === '[sticker]') return { icon: '✦', label: 'Sticker' };
+    if (normalized === '[contato]') return { icon: '◉', label: 'Contato' };
+    if (normalized === '[localizacao]') return { icon: '⌖', label: 'Localizacao' };
+    if (normalized === '[mensagem]') return { icon: '✉', label: 'Mensagem' };
+
+    return null;
+}
+
+function renderConversationPreview(lastMessage?: string | null, fallback = '') {
+    const text = String(lastMessage || '').trim();
+    if (!text) {
+        return escapeHtml(fallback);
+    }
+
+    const mediaMeta = getConversationPreviewMediaMeta(text);
+    if (!mediaMeta) {
+        return escapeHtml(text);
+    }
+
+    return `<span class="conversation-preview-media-icon" title="${escapeHtml(mediaMeta.label)}" aria-label="${escapeHtml(mediaMeta.label)}">${mediaMeta.icon}</span>`;
+}
+
 function resolveDocumentLabel(message: ChatMessage) {
     const explicit = String(message.media_filename || '').trim();
     if (explicit) return explicit;
@@ -1255,6 +2640,115 @@ function resolveDocumentLabel(message: ChatMessage) {
     return 'documento';
 }
 
+function getChatMediaPreviewElements() {
+    return {
+        modal: document.getElementById('chatMediaPreviewModal') as HTMLElement | null,
+        dialog: document.getElementById('chatMediaPreviewDialog') as HTMLElement | null,
+        content: document.getElementById('chatMediaPreviewContent') as HTMLElement | null,
+        closeButton: document.getElementById('chatMediaPreviewCloseBtn') as HTMLButtonElement | null
+    };
+}
+
+function openChatMediaPreview(kind: 'image' | 'video', rawUrl: string) {
+    const url = String(rawUrl || '').trim();
+    if (!url) return;
+
+    const { modal, content, closeButton } = getChatMediaPreviewElements();
+    if (!modal || !content) return;
+
+    closeQuickReplyPicker();
+    closeEmojiPicker();
+
+    const safeUrl = escapeHtml(url);
+    content.innerHTML = kind === 'video'
+        ? `<video class="chat-media-preview-video" src="${safeUrl}" controls preload="metadata" autoplay playsinline></video>`
+        : `<img class="chat-media-preview-image" src="${safeUrl}" alt="Midia da conversa" loading="eager" />`;
+
+    chatMediaPreviewLastFocusedElement = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    modal.classList.add('open');
+
+    window.requestAnimationFrame(() => {
+        closeButton?.focus();
+    });
+}
+
+function closeChatMediaPreview() {
+    const { modal, content } = getChatMediaPreviewElements();
+    if (!modal || !content || modal.hidden) return;
+
+    const video = content.querySelector('video') as HTMLVideoElement | null;
+    if (video) {
+        try {
+            video.pause();
+        } catch {
+            // noop
+        }
+    }
+
+    content.innerHTML = '';
+    modal.classList.remove('open');
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+
+    if (chatMediaPreviewLastFocusedElement && document.contains(chatMediaPreviewLastFocusedElement)) {
+        chatMediaPreviewLastFocusedElement.focus();
+    }
+    chatMediaPreviewLastFocusedElement = null;
+}
+
+function bindChatMediaPreviewModal() {
+    if (chatMediaPreviewBindingsBound) return;
+    chatMediaPreviewBindingsBound = true;
+
+    document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const previewTrigger = target.closest<HTMLElement>('[data-chat-media-preview][data-chat-media-url]');
+        if (previewTrigger) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const kind = String(previewTrigger.dataset.chatMediaPreview || '').trim().toLowerCase();
+            const url = String(previewTrigger.dataset.chatMediaUrl || '').trim();
+            if ((kind === 'image' || kind === 'video') && url) {
+                openChatMediaPreview(kind as 'image' | 'video', url);
+            }
+            return;
+        }
+
+        const { modal, dialog } = getChatMediaPreviewElements();
+        if (!modal || modal.hidden) return;
+        if (target.closest('#chatMediaPreviewCloseBtn')) {
+            event.preventDefault();
+            closeChatMediaPreview();
+            return;
+        }
+
+        if (target === modal && (!dialog || !dialog.contains(target))) {
+            closeChatMediaPreview();
+            return;
+        }
+
+        if (!dialog) return;
+        if (!dialog.contains(target) && modal.contains(target)) {
+            closeChatMediaPreview();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        const { modal } = getChatMediaPreviewElements();
+        if (!modal || modal.hidden) return;
+        closeChatMediaPreview();
+    });
+}
+
 function renderMessageContent(message: ChatMessage) {
     const mediaType = String(message.media_type || 'text').toLowerCase();
     const mediaUrl = getMediaUrl(message.media_url);
@@ -1266,9 +2760,16 @@ function renderMessageContent(message: ChatMessage) {
         const safeUrl = escapeHtml(mediaUrl);
         return `
             <div class="message-media">
-                <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">
+                <button
+                    type="button"
+                    class="message-media-preview-trigger"
+                    data-chat-media-preview="image"
+                    data-chat-media-url="${safeUrl}"
+                    aria-label="Abrir imagem"
+                    title="Abrir imagem"
+                >
                     <img class="message-media-image" src="${safeUrl}" alt="Imagem recebida" loading="lazy" />
-                </a>
+                </button>
             </div>
             ${hasReadableText ? `<div class="message-caption">${safeText}</div>` : ''}
         `;
@@ -1278,8 +2779,39 @@ function renderMessageContent(message: ChatMessage) {
         const safeUrl = escapeHtml(mediaUrl);
         return `
             <div class="message-media message-media-audio-wrap">
-                <audio controls preload="metadata" class="message-media-audio" src="${safeUrl}"></audio>
-                <a class="message-media-download" href="${safeUrl}" target="_blank" rel="noopener noreferrer" download>Baixar audio</a>
+                <div class="message-audio-player" data-audio-player>
+                    <audio preload="metadata" class="message-media-audio-native" src="${safeUrl}"></audio>
+                    <button
+                        class="message-audio-toggle"
+                        type="button"
+                        data-audio-toggle
+                        aria-label="Reproduzir audio"
+                        title="Reproduzir audio"
+                    >
+                        <span class="message-audio-toggle-icon" data-audio-icon aria-hidden="true">▶</span>
+                    </button>
+                    <input
+                        class="message-audio-range"
+                        data-audio-range
+                        type="range"
+                        min="0"
+                        max="1000"
+                        step="1"
+                        value="0"
+                        aria-label="Progresso do audio"
+                        style="--audio-progress: 0%;"
+                    />
+                    <span class="message-audio-time" data-audio-time>0:00 / 0:00</span>
+                    <a
+                        class="message-media-download message-audio-download"
+                        href="${safeUrl}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download
+                        aria-label="Baixar audio"
+                        title="Baixar audio"
+                    >↓</a>
+                </div>
             </div>
             ${hasReadableText ? `<div class="message-caption">${safeText}</div>` : ''}
         `;
@@ -1288,8 +2820,28 @@ function renderMessageContent(message: ChatMessage) {
     if (mediaType === 'video' && mediaUrl) {
         const safeUrl = escapeHtml(mediaUrl);
         return `
-            <div class="message-media">
-                <video controls preload="metadata" class="message-media-video" src="${safeUrl}"></video>
+            <div class="message-media message-media-video-frame">
+                <video controls preload="metadata" playsinline class="message-media-video" src="${safeUrl}"></video>
+                <button
+                    type="button"
+                    class="message-media-preview-fab"
+                    data-chat-media-preview="video"
+                    data-chat-media-url="${safeUrl}"
+                    aria-label="Abrir video"
+                    title="Abrir video"
+                >⤢</button>
+            </div>
+            ${hasReadableText ? `<div class="message-caption">${safeText}</div>` : ''}
+        `;
+    }
+
+    if (mediaType === 'sticker' && mediaUrl) {
+        const safeUrl = escapeHtml(mediaUrl);
+        return `
+            <div class="message-media message-media-sticker-wrap">
+                <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">
+                    <img class="message-media-sticker" src="${safeUrl}" alt="Sticker recebido" loading="lazy" />
+                </a>
             </div>
             ${hasReadableText ? `<div class="message-caption">${safeText}</div>` : ''}
         `;
@@ -1421,11 +2973,15 @@ async function handleMediaInputChange(event: Event) {
                 mimetype: uploadedFile.mimetype || file.type || '',
                 fileName: uploadedFile.originalname || file.name || 'arquivo',
                 caption,
-                ptt: false
+                ptt: false,
+                conversationId: activeConversation.id
             }
         });
         if (response?.messageId) {
             (tempMessage as Record<string, any>).message_id = String(response.messageId);
+        }
+        if (response?.sentAt || response?.timestamp) {
+            tempMessage.created_at = String(response.sentAt || response.timestamp);
         }
 
         tempMessage.status = 'sent';
@@ -1447,11 +3003,12 @@ function renderChat() {
     if (!panel || !currentConversation) return;
 
     const quickReplyItems = renderQuickReplyItems();
+    const emojiPickerItems = renderEmojiPickerItems();
 
     panel.innerHTML = `
         <div class="chat-header">
-            <button class="btn btn-sm btn-outline btn-icon chat-back-btn" onclick="backToList()" id="backBtn" title="Voltar para lista">
-                <span class="icon icon-arrow-left icon-sm"></span>
+            <button class="btn btn-sm btn-outline chat-back-btn" onclick="backToList()" id="backBtn" title="Voltar para conversas" aria-label="Voltar para conversas">
+                <span class="chat-back-btn-arrow" aria-hidden="true">←</span>
             </button>
             ${renderAvatarMarkup({
                 name: currentConversation.name,
@@ -1464,8 +3021,7 @@ function renderChat() {
                 <div class="chat-header-status">${formatPhone(currentConversation.phone)}</div>
             </div>
             <div class="chat-header-actions">
-                <button class="btn btn-sm btn-outline btn-icon" onclick="openWhatsApp()" title="Abrir no WhatsApp"><span class="icon icon-whatsapp icon-sm"></span></button>
-                <button class="btn btn-sm btn-outline btn-icon" onclick="toggleContactInfo(true)" title="Dados do contato"><span class="icon icon-user icon-sm"></span></button>
+                <button class="btn btn-sm btn-outline btn-icon" onclick="toggleContactInfo()" title="Dados do contato"><span class="icon icon-user icon-sm"></span></button>
             </div>
         </div>
 
@@ -1474,28 +3030,45 @@ function renderChat() {
                 ${renderMessages()}
             </div>
         </div>
-
-        <div class="quick-reply-toolbar">
-            <button class="btn btn-sm btn-outline quick-reply-trigger" onclick="toggleQuickReplyPicker()" title="Selecionar resposta rapida">
-                <span class="icon icon-bolt icon-sm"></span> Respostas rapidas
-            </button>
-            <div class="quick-reply-picker" id="quickReplyPicker">
-                ${quickReplyItems}
-            </div>
-        </div>
+        <button
+            class="chat-scroll-bottom-btn"
+            id="chatScrollBottomBtn"
+            type="button"
+            title="Voltar para a última mensagem"
+            aria-label="Voltar para a última mensagem"
+            onclick="scrollChatToLatest()"
+        >
+            <span class="chat-scroll-bottom-icon" aria-hidden="true">↓</span>
+        </button>
 
         <div class="chat-input">
             <input id="chatMediaInput" type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" onchange="handleMediaInputChange(event)" style="display:none" />
             <button class="chat-input-btn chat-attach-btn" onclick="triggerMediaPicker()" title="Anexar arquivo">
                 <span class="icon icon-attachment icon-sm"></span>
             </button>
-            <textarea id="messageInput" placeholder="Digite uma mensagem..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
+            <button class="chat-input-btn chat-emoji-btn" onclick="toggleEmojiPicker()" title="Inserir emoji" type="button">
+                <span class="icon icon-smile icon-sm"></span>
+            </button>
+            <div class="chat-emoji-picker" id="emojiPicker" aria-label="Selecionador de emojis">
+                ${emojiPickerItems}
+            </div>
+            <textarea id="messageInput" placeholder="Mensagem..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
+            <button class="quick-reply-trigger" onclick="toggleQuickReplyPicker()" title="Selecionar resposta rapida" type="button">
+                <span class="icon icon-bolt icon-sm"></span>
+                <span class="quick-reply-trigger-label">R&aacute;pidas</span>
+            </button>
+            <div class="quick-reply-picker" id="quickReplyPicker">
+                ${quickReplyItems}
+            </div>
             <button class="chat-input-btn chat-send-btn" onclick="sendMessage()" title="Enviar"><span class="icon icon-send icon-sm"></span></button>
         </div>
     `;
 
     setMobileConversationMode(true);
     closeContactInfoPanel();
+    bindInlineAudioPlayers(panel);
+    bindChatScrollBottomVisibility();
+    bindMessageComposerViewportSync();
     scrollToBottom();
 }
 function renderMessages() {
@@ -1526,13 +3099,195 @@ function renderMessages() {
 function renderMessagesInto(container: HTMLElement | null) {
     if (!container) return;
     container.innerHTML = `<div class="chat-messages-stack">${renderMessages()}</div>`;
+    bindInlineAudioPlayers(container);
+    updateChatScrollBottomVisibility();
 }
 
-function scrollToBottom() {
+function focusMessageComposerOnOpen() {
+    if (isMobileInboxView()) return;
+
+    const focusComposer = () => {
+        const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+        if (!input) return;
+
+        try {
+            input.focus({ preventScroll: true });
+        } catch {
+            input.focus();
+        }
+
+        const end = input.value.length;
+        if (typeof input.setSelectionRange === 'function') {
+            input.setSelectionRange(end, end);
+        }
+    };
+
+    window.requestAnimationFrame(focusComposer);
+}
+
+function bindMessageComposerViewportSync() {
+    const input = document.getElementById('messageInput') as HTMLTextAreaElement | null;
+    if (!input) return;
+    if (input.dataset.viewportSyncBound === '1') return;
+    input.dataset.viewportSyncBound = '1';
+
+    const syncComposerViewport = () => {
+        scheduleInboxMobileViewportStateSync();
+        window.setTimeout(() => {
+            scheduleInboxMobileViewportStateSync();
+            scrollToBottom();
+        }, 80);
+    };
+
+    input.addEventListener('focus', () => {
+        setInboxComposerFocusState(true);
+        syncComposerViewport();
+    });
+    input.addEventListener('click', syncComposerViewport);
+    input.addEventListener('input', () => {
+        window.requestAnimationFrame(() => {
+            scrollToBottom();
+        });
+    });
+    input.addEventListener('blur', () => {
+        setInboxComposerFocusState(false);
+        window.setTimeout(() => {
+            scheduleInboxMobileViewportStateSync();
+        }, 80);
+    });
+}
+
+function formatAudioPlayerTime(totalSeconds: number) {
+    const safe = Number.isFinite(totalSeconds) && totalSeconds > 0 ? Math.floor(totalSeconds) : 0;
+    const minutes = Math.floor(safe / 60);
+    const seconds = safe % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function pauseOtherInlineAudioPlayers(currentAudio: HTMLAudioElement | null) {
+    const audios = document.querySelectorAll('.message-media-audio-native') as NodeListOf<HTMLAudioElement>;
+    audios.forEach((audio) => {
+        if (!audio || audio === currentAudio) return;
+        if (!audio.paused) {
+            try { audio.pause(); } catch {}
+        }
+    });
+}
+
+function bindInlineAudioPlayers(root?: ParentNode | null) {
+    const scope = root || document;
+    const players = scope.querySelectorAll?.('.message-audio-player') as NodeListOf<HTMLElement> | undefined;
+    if (!players || players.length === 0) return;
+
+    players.forEach((player) => {
+        if (player.dataset.audioBound === '1') return;
+        player.dataset.audioBound = '1';
+
+        const audio = player.querySelector('.message-media-audio-native') as HTMLAudioElement | null;
+        const toggle = player.querySelector('[data-audio-toggle]') as HTMLButtonElement | null;
+        const icon = player.querySelector('[data-audio-icon]') as HTMLElement | null;
+        const range = player.querySelector('[data-audio-range]') as HTMLInputElement | null;
+        const timeLabel = player.querySelector('[data-audio-time]') as HTMLElement | null;
+        if (!audio || !toggle || !icon || !range || !timeLabel) return;
+
+        const syncUi = () => {
+            const duration = Number.isFinite(audio.duration) ? Math.max(0, audio.duration) : 0;
+            const current = Number.isFinite(audio.currentTime) ? Math.max(0, audio.currentTime) : 0;
+            const progress = duration > 0 ? Math.min(100, Math.max(0, (current / duration) * 100)) : 0;
+
+            range.value = duration > 0 ? String(Math.round((current / duration) * 1000)) : '0';
+            range.style.setProperty('--audio-progress', `${progress}%`);
+            icon.textContent = audio.paused ? '▶' : '❚❚';
+            toggle.setAttribute('aria-label', audio.paused ? 'Reproduzir audio' : 'Pausar audio');
+            toggle.setAttribute('title', audio.paused ? 'Reproduzir audio' : 'Pausar audio');
+            timeLabel.textContent = `${formatAudioPlayerTime(current)} / ${formatAudioPlayerTime(duration)}`;
+            player.classList.toggle('is-playing', !audio.paused);
+        };
+
+        toggle.addEventListener('click', async (event) => {
+            event.preventDefault();
+            if (audio.paused) {
+                pauseOtherInlineAudioPlayers(audio);
+                try {
+                    await audio.play();
+                } catch {
+                    // browser may block autoplay interactions in edge cases
+                }
+            } else {
+                audio.pause();
+            }
+            syncUi();
+        });
+
+        range.addEventListener('input', () => {
+            const duration = Number.isFinite(audio.duration) ? Math.max(0, audio.duration) : 0;
+            if (!duration) {
+                syncUi();
+                return;
+            }
+            const nextProgress = Math.min(1000, Math.max(0, Number(range.value) || 0)) / 1000;
+            audio.currentTime = duration * nextProgress;
+            syncUi();
+        });
+
+        audio.addEventListener('loadedmetadata', syncUi);
+        audio.addEventListener('durationchange', syncUi);
+        audio.addEventListener('timeupdate', syncUi);
+        audio.addEventListener('play', () => {
+            pauseOtherInlineAudioPlayers(audio);
+            syncUi();
+        });
+        audio.addEventListener('pause', syncUi);
+        audio.addEventListener('ended', () => {
+            audio.currentTime = 0;
+            syncUi();
+        });
+
+        syncUi();
+    });
+}
+
+function isChatNearBottom(container: HTMLElement, threshold = 96) {
+    const distance = container.scrollHeight - container.clientHeight - container.scrollTop;
+    return distance <= threshold;
+}
+
+function updateChatScrollBottomVisibility() {
+    const container = document.getElementById('chatMessages') as HTMLElement | null;
+    const button = document.getElementById('chatScrollBottomBtn') as HTMLButtonElement | null;
+    if (!container || !button) return;
+
+    const canScroll = (container.scrollHeight - container.clientHeight) > 24;
+    const shouldShow = canScroll && !isChatNearBottom(container);
+    button.classList.toggle('visible', shouldShow);
+}
+
+function bindChatScrollBottomVisibility() {
+    const container = document.getElementById('chatMessages') as HTMLElement | null;
+    if (!container) return;
+
+    if (activeChatScrollContainer !== container) {
+        activeChatScrollContainer = container;
+        container.addEventListener('scroll', updateChatScrollBottomVisibility, { passive: true });
+    }
+
+    window.requestAnimationFrame(updateChatScrollBottomVisibility);
+}
+
+function scrollToBottom(behavior: ScrollBehavior = 'auto') {
     const container = document.getElementById('chatMessages') as HTMLElement | null;
     if (container) {
-        container.scrollTop = container.scrollHeight;
+        if (typeof container.scrollTo === 'function') {
+            container.scrollTo({ top: container.scrollHeight, behavior });
+        } else {
+            container.scrollTop = container.scrollHeight;
+        }
+        window.requestAnimationFrame(updateChatScrollBottomVisibility);
     }
+}
+
+function scrollChatToLatest() {
+    scrollToBottom('smooth');
 }
 
 function handleKeyDown(event: KeyboardEvent) {
@@ -1548,6 +3303,7 @@ async function sendMessage() {
     
     const activeConversation = currentConversation;
     if (!content || !activeConversation) return;
+    closeEmojiPicker();
 
     const sessionId = resolveConversationSessionId(activeConversation);
     const sessionConnected = await ensureSessionConnected(sessionId);
@@ -1574,14 +3330,24 @@ async function sendMessage() {
     if (input) input.value = '';
 
     try {
-        const response = await api.post('/api/send', {
+        const sendPayload: Record<string, any> = {
             sessionId,
             to: activeConversation.phone,
             message: content,
             type: 'text'
-        });
+        };
+        if (Number(activeConversation.id) > 0) {
+            sendPayload.options = {
+                conversationId: activeConversation.id
+            };
+        }
+
+        const response = await api.post('/api/send', sendPayload);
         if (response?.messageId) {
             (newMessage as Record<string, any>).message_id = String(response.messageId);
+        }
+        if (response?.sentAt || response?.timestamp) {
+            newMessage.created_at = String(response.sentAt || response.timestamp);
         }
         
         newMessage.status = 'sent';
@@ -1619,7 +3385,6 @@ function toggleContactInfo(forceOpen?: boolean) {
     }
 
     renderContactInfoPanel();
-    if (!isTabletOrMobileView()) return;
     setContactInfoPanelState(forceOpen);
 }
 
@@ -1635,6 +3400,12 @@ async function registerCurrentUser() {
 
         hideLoading();
         showToast('success', 'Sucesso', 'Contato cadastrado com sucesso');
+
+        inboxSearchLeadsCache = [];
+        inboxSearchLeadsCacheKey = '';
+        inboxSearchLeadsCacheAt = 0;
+        inboxStartConversationLeadsCache = [];
+        inboxStartConversationLeadsCacheAt = 0;
 
         await loadConversations();
         const refreshedConversation =
@@ -1677,10 +3448,19 @@ const windowAny = window as Window & {
     filterConversations?: (filter: 'all' | 'unread') => void;
     searchConversations?: () => void;
     changeInboxSessionFilter?: (sessionId: string) => void;
+    resyncInboxHistory?: () => Promise<void>;
+    openStartConversationModal?: () => Promise<void>;
+    closeStartConversationModal?: () => void;
+    filterStartConversationContacts?: () => void;
+    confirmStartConversationModal?: () => Promise<void>;
     selectConversation?: (id: number) => Promise<void>;
     toggleQuickReplyPicker?: () => void;
     closeQuickReplyPicker?: () => void;
     selectQuickReply?: (id: number) => void;
+    toggleEmojiPicker?: () => void;
+    closeEmojiPicker?: () => void;
+    selectEmojiByIndex?: (index: number) => void;
+    scrollChatToLatest?: () => void;
     handleKeyDown?: (event: KeyboardEvent) => void;
     sendMessage?: () => Promise<void>;
     triggerMediaPicker?: () => void;
@@ -1696,12 +3476,21 @@ windowAny.initInbox = initInbox;
 windowAny.filterConversations = filterConversations;
 windowAny.searchConversations = searchConversations;
 windowAny.changeInboxSessionFilter = changeInboxSessionFilter;
+windowAny.resyncInboxHistory = resyncInboxHistory;
+windowAny.openStartConversationModal = openStartConversationModal;
+windowAny.closeStartConversationModal = closeStartConversationModal;
+windowAny.filterStartConversationContacts = filterStartConversationContacts;
+windowAny.confirmStartConversationModal = confirmStartConversationModal;
 windowAny.registerCurrentUser = registerCurrentUser;
 windowAny.logout = logout;
 windowAny.selectConversation = selectConversation;
 windowAny.toggleQuickReplyPicker = toggleQuickReplyPicker;
 windowAny.closeQuickReplyPicker = closeQuickReplyPicker;
 windowAny.selectQuickReply = selectQuickReply;
+windowAny.toggleEmojiPicker = toggleEmojiPicker;
+windowAny.closeEmojiPicker = closeEmojiPicker;
+windowAny.selectEmojiByIndex = selectEmojiByIndex;
+windowAny.scrollChatToLatest = scrollChatToLatest;
 windowAny.handleKeyDown = handleKeyDown;
 windowAny.sendMessage = sendMessage;
 windowAny.triggerMediaPicker = triggerMediaPicker;

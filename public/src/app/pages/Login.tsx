@@ -5,6 +5,7 @@ type LoginGlobals = {
   initLogin?: () => void;
   handleLogin?: (event: Event) => boolean | Promise<boolean>;
   handleRegister?: (event: Event) => boolean | Promise<boolean>;
+  resendEmailConfirmation?: () => Promise<void>;
   showLogin?: () => void;
   showRegister?: () => void;
 };
@@ -143,6 +144,27 @@ export default function Login() {
             background: rgba(34, 56, 84, 0.94);
         }
 
+        .remember-row {
+            margin-bottom: 14px;
+        }
+
+        .remember-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: #c8d7ec;
+            font-size: 14px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .remember-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: #1aae5e;
+        }
+
         .btn-login {
             width: 100%;
             padding: 15px;
@@ -206,6 +228,26 @@ export default function Login() {
             text-decoration: underline;
         }
 
+        .auth-resend-wrap {
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        .auth-resend-btn {
+            border: none;
+            background: transparent;
+            color: #9cc4ff;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: underline;
+            padding: 0;
+        }
+
+        .auth-resend-btn:disabled {
+            opacity: 0.65;
+            cursor: default;
+        }
+
         .security-badge {
             text-align: center;
             margin-top: 20px;
@@ -264,7 +306,25 @@ export default function Login() {
             <input type="password" className="form-input" id="password" placeholder="Digite sua senha" required />
           </div>
 
+          <div className="remember-row">
+            <label className="remember-label" htmlFor="rememberSession">
+              <input type="checkbox" className="remember-checkbox" id="rememberSession" />
+              Manter sessão salva
+            </label>
+          </div>
+
           <button type="submit" className="btn-login">Entrar</button>
+
+          <div className="auth-resend-wrap hidden" id="resendConfirmationWrap">
+            <button
+              type="button"
+              className="auth-resend-btn"
+              id="resendConfirmationBtn"
+              onClick={() => globals.resendEmailConfirmation?.()}
+            >
+              Reenviar confirmação
+            </button>
+          </div>
 
           <div className="auth-switch">
             {'Ainda n\u00E3o tem conta?'}
@@ -289,6 +349,18 @@ export default function Login() {
               placeholder="Digite seu nome"
               required
               autoComplete="name"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Nome da empresa</label>
+            <input
+              type="text"
+              className="form-input"
+              id="registerCompanyName"
+              placeholder="Digite o nome da empresa"
+              required
+              autoComplete="organization"
             />
           </div>
 

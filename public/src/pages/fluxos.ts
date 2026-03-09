@@ -1,4 +1,4 @@
-// Fluxos page logic migrated to module
+﻿// Fluxos page logic migrated to module
 
 type FlowStep = {
     message: string;
@@ -40,6 +40,35 @@ type FlowsResponse = { flows?: Flow[] };
 let flows: Flow[] = [];
 let stepCount = 1;
 let currentFlowId: number | null = null;
+let isSavingNewFlow = false;
+let isSavingFlowChanges = false;
+
+function setFlowActionButtonsDisabled(actionName: 'saveFlow' | 'saveFlowChanges', disabled: boolean) {
+    const buttons = Array.from(
+        document.querySelectorAll(`button[onclick*="${actionName}("]`)
+    ) as HTMLButtonElement[];
+    for (const button of buttons) {
+        button.disabled = disabled;
+        button.setAttribute('aria-busy', disabled ? 'true' : 'false');
+    }
+}
+
+function escapeFlowText(value: unknown) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
 
 function toBoolean(value: unknown) {
     if (typeof value === 'boolean') return value;
@@ -206,13 +235,13 @@ async function loadFlows() {
             {
                 id: 1,
                 name: 'Boas-vindas',
-                description: 'Sequência de boas-vindas para novos leads',
+                description: 'SequÃªncia de boas-vindas para novos leads',
                 trigger: 'new_lead',
                 is_active: true,
                 steps: [
-                    { message: 'Olá {{nome}}! Bem-vindo à ZapVender!', delay: 0 },
-                    { message: 'Somos especialistas em proteção veicular com os melhores preços do mercado.', delay: 300 },
-                    { message: 'Posso ajudar com alguma informação sobre seu veículo {{veiculo}}?', delay: 600 }
+                    { message: 'OlÃ¡ {{nome}}! Bem-vindo Ã  ZapVender!', delay: 0 },
+                    { message: 'Somos especialistas em proteÃ§Ã£o veicular com os melhores preÃ§os do mercado.', delay: 300 },
+                    { message: 'Posso ajudar com alguma informaÃ§Ã£o sobre seu veÃ­culo {{veiculo}}?', delay: 600 }
                 ],
                 leads_count: 45,
                 messages_sent: 135
@@ -220,25 +249,25 @@ async function loadFlows() {
             {
                 id: 2,
                 name: 'Follow-up',
-                description: 'Sequência de follow-up para leads sem resposta',
+                description: 'SequÃªncia de follow-up para leads sem resposta',
                 trigger: 'manual',
                 is_active: true,
                 steps: [
-                    { message: 'Olá {{nome}}! Vi que você demonstrou interesse em proteção veicular.', delay: 0 },
-                    { message: 'Temos condições especiais essa semana. Posso te enviar uma cotação?', delay: 86400 }
+                    { message: 'OlÃ¡ {{nome}}! Vi que vocÃª demonstrou interesse em proteÃ§Ã£o veicular.', delay: 0 },
+                    { message: 'Temos condiÃ§Ãµes especiais essa semana. Posso te enviar uma cotaÃ§Ã£o?', delay: 86400 }
                 ],
                 leads_count: 28,
                 messages_sent: 56
             },
             {
                 id: 3,
-                name: 'Pós-venda',
-                description: 'Mensagens após fechamento do contrato',
+                name: 'PÃ³s-venda',
+                description: 'Mensagens apÃ³s fechamento do contrato',
                 trigger: 'manual',
                 is_active: false,
                 steps: [
-                    { message: 'Parabéns {{nome}}! Seu veículo agora está protegido!', delay: 0 },
-                    { message: 'Qualquer dúvida, estamos à disposição.', delay: 3600 }
+                    { message: 'ParabÃ©ns {{nome}}! Seu veÃ­culo agora estÃ¡ protegido!', delay: 0 },
+                    { message: 'Qualquer dÃºvida, estamos Ã  disposiÃ§Ã£o.', delay: 3600 }
                 ],
                 leads_count: 12,
                 messages_sent: 24
@@ -283,7 +312,7 @@ function renderFlows() {
                         <div class="flow-step">
                             <div class="flow-step-number">${i + 1}</div>
                             <div style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                ${s.message.substring(0, 50)}${s.message.length > 50 ? '...' : ''}
+                                ${escapeFlowText(s.message.substring(0, 50))}${s.message.length > 50 ? '...' : ''}
                             </div>
                             <span class="text-muted" style="font-size: 11px;">${formatDelay(s.delay)}</span>
                         </div>
@@ -297,8 +326,8 @@ function renderFlows() {
         <div class="flow-card">
             <div class="flow-header">
                 <div>
-                    <h3 class="flow-title">${f.name}</h3>
-                    <p class="flow-description">${f.description || 'Sem descrição'}</p>
+                    <h3 class="flow-title">${escapeFlowText(f.name)}</h3>
+                    <p class="flow-description">${escapeFlowText(f.description || 'Sem descricao')}</p>
                 </div>
                 <span class="badge badge-${f.is_active ? 'success' : 'secondary'}">
                     ${f.is_active ? 'Ativo' : 'Inativo'}
@@ -361,10 +390,10 @@ function addStep() {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Condição</label>
+                        <label class="form-label">CondiÃ§Ã£o</label>
                         <select class="form-select step-condition">
                             <option value="always">Sempre enviar</option>
-                            <option value="no_reply" selected>Se não responder</option>
+                            <option value="no_reply" selected>Se nÃ£o responder</option>
                             <option value="replied">Se responder</option>
                         </select>
                     </div>
@@ -399,12 +428,13 @@ function renumberSteps() {
 }
 
 async function saveFlow() {
+    if (isSavingNewFlow) return;
     const name = (document.getElementById('flowName') as HTMLInputElement | null)?.value.trim() || '';
     const trigger = (document.getElementById('flowTrigger') as HTMLSelectElement | null)?.value || '';
     const description = (document.getElementById('flowDescription') as HTMLTextAreaElement | null)?.value.trim() || '';
 
     if (!name) {
-        showToast('error', 'Erro', 'Nome é obrigatório');
+        showToast('error', 'Erro', 'Nome Ã© obrigatÃ³rio');
         return;
     }
 
@@ -424,13 +454,6 @@ async function saveFlow() {
         return;
     }
 
-    const data: Omit<Flow, 'id' | 'leads_count' | 'messages_sent'> = {
-        name,
-        trigger,
-        description,
-        steps,
-        is_active: true
-    };
     const payload = buildNodesEdgesFromSteps({
         id: 0,
         name,
@@ -441,6 +464,8 @@ async function saveFlow() {
         steps
     });
 
+    isSavingNewFlow = true;
+    setFlowActionButtonsDisabled('saveFlow', true);
     try {
         showLoading('Salvando...');
         await api.post('/api/flows', {
@@ -457,19 +482,11 @@ async function saveFlow() {
         await loadFlows();
         showToast('success', 'Sucesso', 'Fluxo criado!');
     } catch (error) {
+        showToast('error', 'Erro', (error as Error)?.message || 'Nao foi possivel salvar o fluxo');
+    } finally {
         hideLoading();
-        // Simular sucesso
-        flows.push({
-            id: flows.length + 1,
-            ...data,
-            leads_count: 0,
-            messages_sent: 0
-        });
-        closeModal('newFlowModal');
-        resetFlowForm();
-        renderFlows();
-        updateStats();
-        showToast('success', 'Sucesso', 'Fluxo criado!');
+        isSavingNewFlow = false;
+        setFlowActionButtonsDisabled('saveFlow', false);
     }
 }
 
@@ -483,7 +500,7 @@ function resetFlowForm() {
             <div class="step-item-content">
                 <div class="form-group" style="margin-bottom: 10px;">
                     <label class="form-label">Mensagem</label>
-                    <textarea class="form-textarea step-message" rows="3" placeholder="Olá {{nome}}! Seja bem-vindo..."></textarea>
+                    <textarea class="form-textarea step-message" rows="3" placeholder="OlÃ¡ {{nome}}! Seja bem-vindo..."></textarea>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -497,10 +514,10 @@ function resetFlowForm() {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Condição</label>
+                        <label class="form-label">CondiÃ§Ã£o</label>
                         <select class="form-select step-condition">
                             <option value="always">Sempre enviar</option>
-                            <option value="no_reply">Se não responder</option>
+                            <option value="no_reply">Se nÃ£o responder</option>
                             <option value="replied">Se responder</option>
                         </select>
                     </div>
@@ -521,7 +538,7 @@ function editFlow(id: number) {
     currentFlowId = id;
     const editorTitle = document.getElementById('editorTitle') as HTMLElement | null;
     if (editorTitle) {
-        editorTitle.innerHTML = `<span class="icon icon-edit icon-sm"></span> ${flow.name}`;
+        editorTitle.innerHTML = `<span class="icon icon-edit icon-sm"></span> ${escapeFlowText(flow.name)}`;
     }
     
     const stepsForEdit = flow.steps && flow.steps.length > 0
@@ -533,7 +550,7 @@ function editFlow(id: number) {
             <div class="step-item-content">
                 <div class="form-group" style="margin-bottom: 10px;">
                     <label class="form-label">Mensagem</label>
-                    <textarea class="form-textarea step-message" rows="3">${s.message}</textarea>
+                    <textarea class="form-textarea step-message" rows="3">${escapeFlowText(s.message)}</textarea>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -547,10 +564,10 @@ function editFlow(id: number) {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Condição</label>
+                        <label class="form-label">CondiÃ§Ã£o</label>
                         <select class="form-select step-condition">
                             <option value="always" ${s.condition === 'always' ? 'selected' : ''}>Sempre enviar</option>
-                            <option value="no_reply" ${s.condition === 'no_reply' ? 'selected' : ''}>Se não responder</option>
+                            <option value="no_reply" ${s.condition === 'no_reply' ? 'selected' : ''}>Se nÃ£o responder</option>
                             <option value="replied" ${s.condition === 'replied' ? 'selected' : ''}>Se responder</option>
                         </select>
                     </div>
@@ -564,11 +581,11 @@ function editFlow(id: number) {
         flowEditorContent.innerHTML = `
         <div class="form-group">
             <label class="form-label">Nome</label>
-            <input type="text" class="form-input" id="editFlowName" value="${flow.name}">
+            <input type="text" class="form-input" id="editFlowName" value="${escapeFlowText(flow.name)}">
         </div>
         <div class="form-group">
-            <label class="form-label">Descrição</label>
-            <textarea class="form-textarea" id="editFlowDescription" rows="2">${flow.description || ''}</textarea>
+            <label class="form-label">DescriÃ§Ã£o</label>
+            <textarea class="form-textarea" id="editFlowDescription" rows="2">${escapeFlowText(flow.description || '')}</textarea>
         </div>
         <hr style="margin: 20px 0;">
         <h4 style="margin-bottom: 15px;"><span class="icon icon-list icon-sm"></span> Etapas</h4>
@@ -580,6 +597,7 @@ function editFlow(id: number) {
 }
 
 function saveFlowChanges() {
+    if (isSavingFlowChanges) return;
     const flow = flows.find(f => f.id === currentFlowId);
     if (!flow) return;
 
@@ -597,6 +615,8 @@ function saveFlowChanges() {
 
     const payload = buildNodesEdgesFromSteps(flow);
 
+    isSavingFlowChanges = true;
+    setFlowActionButtonsDisabled('saveFlowChanges', true);
     (async () => {
         try {
             showLoading('Salvando...');
@@ -613,11 +633,11 @@ function saveFlowChanges() {
             renderFlows();
             showToast('success', 'Sucesso', 'Fluxo atualizado!');
         } catch (error) {
-            closeModal('flowEditorModal');
-            renderFlows();
-            showToast('success', 'Sucesso', 'Fluxo atualizado!');
+            showToast('error', 'Erro', (error as Error)?.message || 'Nao foi possivel atualizar o fluxo');
         } finally {
             hideLoading();
+            isSavingFlowChanges = false;
+            setFlowActionButtonsDisabled('saveFlowChanges', false);
         }
     })();
 }
@@ -640,12 +660,12 @@ function toggleFlow(id: number) {
     }
 }
 
-function deleteFlow(id: number) {
-    if (!confirm('Excluir este fluxo?')) return;
+async function deleteFlow(id: number) {
+    if (!await appConfirm('Excluir este fluxo?', 'Excluir fluxo')) return;
     flows = flows.filter(f => f.id !== id);
     renderFlows();
     updateStats();
-    showToast('success', 'Sucesso', 'Fluxo excluído!');
+    showToast('success', 'Sucesso', 'Fluxo excluÃ­do!');
 }
 
 const windowAny = window as Window & {
@@ -657,7 +677,7 @@ const windowAny = window as Window & {
     editFlow?: (id: number) => void;
     saveFlowChanges?: () => void;
     toggleFlow?: (id: number) => void;
-    deleteFlow?: (id: number) => void;
+    deleteFlow?: (id: number) => Promise<void>;
 };
 windowAny.initFluxos = initFluxos;
 windowAny.loadFlows = loadFlows;

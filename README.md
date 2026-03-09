@@ -113,6 +113,10 @@ Abra no navegador: `http://localhost:3001`
 | `JWT_SECRET` | Chave secreta para tokens JWT (min 32 chars) | Sim |
 | `ENCRYPTION_KEY` | Chave para criptografia de mensagens | Sim |
 | `WEBHOOK_SECRET` | Chave para validar webhooks externos | Não |
+| `OPENAI_API_KEY` | Chave da OpenAI para gerar rascunhos de fluxo | Não |
+| `OPENAI_FLOW_MODEL` | Modelo OpenAI para geração de fluxo (ex.: gpt-5-mini) | Não |
+| `OPENAI_API_BASE_URL` | Base URL da API OpenAI (ou gateway compatível) | Não |
+| `OPENAI_FLOW_TIMEOUT_MS` | Timeout da chamada de geração de fluxo (ms) | Não |
 | `GEMINI_API_KEY` | Chave da API Gemini para classificador de intenção | Não |
 | `GEMINI_MODEL` | Modelo Gemini usado no classificador | Não |
 | `FLOW_INTENT_CLASSIFIER_ENABLED` | Habilita classificador de intenção para fluxos keyword | Não |
@@ -464,6 +468,10 @@ sudo certbot --nginx -d seu-dominio.com
 | `RATE_LIMIT_WINDOW_MS` | Janela de rate limit (ms) | 60000 |
 | `RATE_LIMIT_MAX_REQUESTS` | MÃ¡ximo de requisiÃ§Ãµes | 100 |
 | `WEBHOOK_SECRET` | Chave para webhooks | - |
+| `OPENAI_API_KEY` | Chave da OpenAI para gerar rascunhos de fluxo | - |
+| `OPENAI_FLOW_MODEL` | Modelo OpenAI para geração de fluxo | gpt-5-mini |
+| `OPENAI_API_BASE_URL` | Base URL da API OpenAI (ou gateway compatível) | https://api.openai.com/v1 |
+| `OPENAI_FLOW_TIMEOUT_MS` | Timeout da chamada de geração de fluxo (ms) | 25000 |
 | `GEMINI_API_KEY` | Chave da API Gemini para classificador de intenção | - |
 | `GEMINI_MODEL` | Modelo Gemini usado no classificador | gemini-2.0-flash-lite |
 | `FLOW_INTENT_CLASSIFIER_ENABLED` | Habilita classificador de intenção para fluxos keyword | true |

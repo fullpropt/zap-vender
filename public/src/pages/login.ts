@@ -1,9 +1,18 @@
 // Login page logic migrated to module
 
+import { restoreAuthSessionFromPersistence, writePersistedAuthSessionFromSessionStorage } from '../core/authPersistence';
+
 type LoginResponse = {
     token?: string;
     refreshToken?: string;
-    user?: { id?: number | string; uuid?: string; name?: string; email?: string };
+    user?: {
+        id?: number | string;
+        uuid?: string;
+        name?: string;
+        email?: string;
+        role?: string;
+        is_application_admin?: boolean;
+    };
     error?: string;
     code?: string;
 };
@@ -16,6 +25,8 @@ type RegisterResponse = LoginResponse & {
     requiresEmailConfirmation?: boolean;
     retryable?: boolean;
     accountCreated?: boolean;
+    sent?: boolean;
+    alreadyConfirmed?: boolean;
 };
 
 type AuthMode = 'login' | 'register';
@@ -41,6 +52,7 @@ const APP_LOCAL_STORAGE_PREFIXES = [
     'whatsapp_'
 ];
 const LAST_IDENTITY_STORAGE_KEY = 'self_last_identity';
+const REMEMBER_SESSION_PREF_STORAGE_KEY = 'self_dashboard_remember_session';
 
 function onReady(callback: () => void) {
     if (document.readyState === 'loading') {
@@ -50,8 +62,40 @@ function onReady(callback: () => void) {
     }
 }
 
-function getDashboardUrl() {
-    return '#/dashboard';
+function getDashboardUrl(isApplicationAdmin = false) {
+    return isApplicationAdmin ? '#/admin-dashboard' : '#/dashboard';
+}
+
+function getAuthApiBaseUrl() {
+    const location = window.location;
+    const hostname = String(location.hostname || '').trim();
+    const port = String(location.port || '').trim();
+
+    // In Vite dev/preview, backend API runs on port 3001 on the same host.
+    if (port === '5173' || port === '4173') {
+        return `${location.protocol}//${hostname}:3001`;
+    }
+
+    const normalizedHost = hostname.toLowerCase();
+    if (normalizedHost === 'localhost' || normalizedHost === '127.0.0.1' || normalizedHost === '::1') {
+        return `${location.protocol}//${hostname}:3001`;
+    }
+
+    return location.origin;
+}
+
+function buildAuthApiUrl(path: string) {
+    return `${getAuthApiBaseUrl()}${path}`;
+}
+
+async function readJsonResponse<T>(response: Response, fallback: T): Promise<T> {
+    try {
+        const raw = await response.text();
+        if (!raw) return fallback;
+        return JSON.parse(raw) as T;
+    } catch {
+        return fallback;
+    }
 }
 
 function getInputValue(id: string): string {
@@ -69,6 +113,38 @@ function getRegisterErrorElement(): HTMLElement | null {
 
 function getAuthInfoElement(): HTMLElement | null {
     return document.getElementById('authInfoMsg');
+}
+
+function getResendConfirmationButton(): HTMLButtonElement | null {
+    return document.getElementById('resendConfirmationBtn') as HTMLButtonElement | null;
+}
+
+function getResendConfirmationWrap(): HTMLElement | null {
+    return document.getElementById('resendConfirmationWrap');
+}
+
+function setResendConfirmationLoading(loading: boolean) {
+    const button = getResendConfirmationButton();
+    if (!button) return;
+    button.disabled = loading;
+    button.textContent = loading ? 'Reenviando...' : 'Reenviar confirmação';
+}
+
+function setResendConfirmationVisible(visible: boolean) {
+    const wrap = getResendConfirmationWrap();
+    if (!wrap) return;
+    wrap.classList.toggle('hidden', !visible);
+    if (!visible) {
+        setResendConfirmationLoading(false);
+    }
+}
+
+function normalizeEmailAddress(value: unknown) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function isValidEmailAddress(value: string) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 }
 
 function setErrorMessage(target: HTMLElement | null, message: string) {
@@ -137,6 +213,7 @@ function setAuthMode(mode: AuthMode) {
 
     if (loginError) loginError.style.display = 'none';
     if (registerError) registerError.style.display = 'none';
+    setResendConfirmationVisible(false);
 }
 
 function normalizeIdentityPart(value: unknown): string {
@@ -175,7 +252,15 @@ function clearAppLocalStorageState() {
     toRemove.forEach((key) => localStorage.removeItem(key));
 }
 
-function saveSession(data: LoginResponse, fallbackName: string) {
+function readRememberSessionPreference() {
+    return localStorage.getItem(REMEMBER_SESSION_PREF_STORAGE_KEY) === '1';
+}
+
+function persistRememberSessionPreference(remember: boolean) {
+    localStorage.setItem(REMEMBER_SESSION_PREF_STORAGE_KEY, remember ? '1' : '0');
+}
+
+function saveSession(data: LoginResponse, fallbackName: string, rememberSession = readRememberSessionPreference()) {
     if (!data?.token) return;
     const previousIdentity = normalizeIdentityPart(localStorage.getItem(LAST_IDENTITY_STORAGE_KEY));
     const nextIdentity = resolveSessionIdentity(data, fallbackName);
@@ -201,6 +286,11 @@ function saveSession(data: LoginResponse, fallbackName: string) {
     } else {
         sessionStorage.removeItem('selfDashboardUserEmail');
     }
+    if (data?.user?.is_application_admin === true) {
+        sessionStorage.setItem('selfDashboardIsAppAdmin', '1');
+    } else {
+        sessionStorage.removeItem('selfDashboardIsAppAdmin');
+    }
     if (nextIdentity) {
         sessionStorage.setItem('selfDashboardIdentity', nextIdentity);
         localStorage.setItem(LAST_IDENTITY_STORAGE_KEY, nextIdentity);
@@ -209,6 +299,12 @@ function saveSession(data: LoginResponse, fallbackName: string) {
         localStorage.removeItem(LAST_IDENTITY_STORAGE_KEY);
     }
     sessionStorage.setItem('selfDashboardExpiry', String(Date.now() + (8 * 60 * 60 * 1000)));
+    persistRememberSessionPreference(rememberSession);
+    if (rememberSession) {
+        writePersistedAuthSessionFromSessionStorage();
+    } else {
+        localStorage.removeItem('self_dashboard_auth_v1');
+    }
 }
 
 async function handleLogin(e: Event) {
@@ -216,11 +312,13 @@ async function handleLogin(e: Event) {
 
     const identifier = getInputValue('username').trim();
     const password = getInputValue('password');
+    const rememberSession = (document.getElementById('rememberSession') as HTMLInputElement | null)?.checked === true;
     const errorMsg = getErrorMessageElement();
     hideInfoMessage();
+    setResendConfirmationVisible(false);
 
     try {
-        const response = await fetch(`${window.location.origin}/api/auth/login`, {
+        const response = await fetch(buildAuthApiUrl('/api/auth/login'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -231,15 +329,20 @@ async function handleLogin(e: Event) {
             })
         });
 
-        const data: LoginResponse = await response.json();
+        const data = await readJsonResponse<LoginResponse>(response, {} as LoginResponse);
 
         if (!response.ok || !data?.token) {
+            const errorCode = String(data?.code || '').trim().toUpperCase();
+            if (errorCode === 'EMAIL_NOT_CONFIRMED') {
+                setResendConfirmationVisible(true);
+            }
             throw new Error(data?.error || 'Credenciais inv\u00E1lidas');
         }
 
-        saveSession(data, identifier);
+        saveSession(data, identifier, rememberSession);
 
-        window.location.href = getDashboardUrl();
+        const isApplicationAdmin = data?.user?.is_application_admin === true;
+        window.location.href = getDashboardUrl(isApplicationAdmin);
     } catch (error) {
         setErrorMessage(errorMsg, error instanceof Error ? error.message : 'Falha ao realizar login');
     }
@@ -251,6 +354,7 @@ async function handleRegister(e: Event) {
     e.preventDefault();
 
     const name = getInputValue('registerName').trim();
+    const companyName = getInputValue('registerCompanyName').trim();
     const email = getInputValue('registerEmail').trim();
     const password = getInputValue('registerPassword');
     const confirm = getInputValue('registerConfirm');
@@ -258,7 +362,7 @@ async function handleRegister(e: Event) {
     const infoMsg = getAuthInfoElement();
     hideInfoMessage();
 
-    if (!name || !email || !password || !confirm) {
+    if (!name || !companyName || !email || !password || !confirm) {
         setErrorMessage(errorMsg, 'Preencha todos os campos');
         return false;
     }
@@ -274,19 +378,20 @@ async function handleRegister(e: Event) {
     }
 
     try {
-        const response = await fetch(`${window.location.origin}/api/auth/register`, {
+        const response = await fetch(buildAuthApiUrl('/api/auth/register'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 name,
+                companyName,
                 email,
                 password
             })
         });
 
-        const data: RegisterResponse = await response.json();
+        const data = await readJsonResponse<RegisterResponse>(response, {} as RegisterResponse);
 
         if (!response.ok) {
             throw new Error(data?.error || 'Falha ao criar conta');
@@ -294,7 +399,8 @@ async function handleRegister(e: Event) {
 
         if (data?.token) {
             saveSession(data, name);
-            window.location.href = getDashboardUrl();
+            const isApplicationAdmin = data?.user?.is_application_admin === true;
+            window.location.href = getDashboardUrl(isApplicationAdmin);
             return false;
         }
 
@@ -323,6 +429,54 @@ async function handleRegister(e: Event) {
     return false;
 }
 
+async function resendEmailConfirmation() {
+    const errorMsg = getErrorMessageElement();
+    const infoMsg = getAuthInfoElement();
+    hideInfoMessage();
+
+    const email = normalizeEmailAddress(getInputValue('username'));
+    if (!email) {
+        setErrorMessage(errorMsg, 'Digite seu e-mail no campo Usuário para reenviar a confirmação');
+        return;
+    }
+
+    if (!isValidEmailAddress(email)) {
+        setErrorMessage(errorMsg, 'Informe um e-mail válido para reenviar a confirmação');
+        return;
+    }
+
+    setResendConfirmationLoading(true);
+
+    try {
+        const response = await fetch(buildAuthApiUrl('/api/auth/resend-confirmation'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email })
+        });
+
+        const data = await readJsonResponse<RegisterResponse>(response, {} as RegisterResponse);
+
+        if (!response.ok) {
+            throw new Error(data?.error || 'Não foi possível reenviar o e-mail de confirmação');
+        }
+
+        const message = String(
+            data?.message
+            || 'Se existir uma conta pendente para este e-mail, enviaremos um novo link de confirmação.'
+        );
+        setInfoMessage(infoMsg, message, true);
+    } catch (error) {
+        setErrorMessage(
+            errorMsg,
+            error instanceof Error ? error.message : 'Falha ao reenviar e-mail de confirmação'
+        );
+    } finally {
+        setResendConfirmationLoading(false);
+    }
+}
+
 let confirmEmailRequestInFlight = false;
 
 async function handleConfirmEmailFromRoute() {
@@ -349,11 +503,11 @@ async function handleConfirmEmailFromRoute() {
         setInfoMessage(infoMsg, 'Confirmando seu email...', true);
 
         const response = await fetch(
-            `${window.location.origin}/api/auth/confirm-email?token=${encodeURIComponent(confirmEmailToken)}`,
+            `${buildAuthApiUrl('/api/auth/confirm-email')}?token=${encodeURIComponent(confirmEmailToken)}`,
             { method: 'GET' }
         );
 
-        const data = await response.json().catch(() => ({} as RegisterResponse));
+        const data = await readJsonResponse<RegisterResponse>(response, {} as RegisterResponse);
 
         if (!response.ok) {
             setInfoMessage(infoMsg, String(data?.error || 'Falha ao confirmar email'), false);
@@ -378,15 +532,20 @@ async function handleConfirmEmailFromRoute() {
     }
 }
 
-function initLogin() {
+async function initLogin() {
     const hashParams = getHashRouteQueryParams();
     const hasPendingEmailConfirmation = Boolean(String(hashParams.get('confirmEmailToken') || '').trim());
 
     // Verificar se ja esta logado
+    if (!hasPendingEmailConfirmation) {
+        await restoreAuthSessionFromPersistence({ allowRefresh: true });
+    }
+
     if (!hasPendingEmailConfirmation && sessionStorage.getItem('selfDashboardToken')) {
         const expiry = sessionStorage.getItem('selfDashboardExpiry');
         if (expiry && Date.now() < parseInt(expiry)) {
-            window.location.href = getDashboardUrl();
+            const isApplicationAdmin = sessionStorage.getItem('selfDashboardIsAppAdmin') === '1';
+            window.location.href = getDashboardUrl(isApplicationAdmin);
             return;
         }
     }
@@ -394,17 +553,24 @@ function initLogin() {
     const windowAny = window as Window & {
         handleLogin?: (e: Event) => boolean | Promise<boolean>;
         handleRegister?: (e: Event) => boolean | Promise<boolean>;
+        resendEmailConfirmation?: () => Promise<void>;
         initLogin?: () => void;
         showLogin?: () => void;
         showRegister?: () => void;
     };
     windowAny.handleLogin = handleLogin;
     windowAny.handleRegister = handleRegister;
+    windowAny.resendEmailConfirmation = resendEmailConfirmation;
     windowAny.initLogin = initLogin;
     windowAny.showLogin = () => setAuthMode('login');
     windowAny.showRegister = () => setAuthMode('register');
 
     setAuthMode('login');
+    const rememberInput = document.getElementById('rememberSession') as HTMLInputElement | null;
+    if (rememberInput) {
+        rememberInput.checked = readRememberSessionPreference();
+    }
+    setResendConfirmationLoading(false);
     void handleConfirmEmailFromRoute();
 }
 

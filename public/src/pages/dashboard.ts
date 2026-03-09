@@ -88,6 +88,14 @@ const CUSTOM_EVENT_PERIODS: Record<string, CustomEventsPeriod> = {
     year: 'year',
     last_30_days: 'last_30_days'
 };
+
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
 const DASHBOARD_TABLE_FETCH_LIMIT = 100;
 const DASHBOARD_SUMMARY_CACHE_TTL_MS = 60 * 1000;
 
@@ -400,7 +408,7 @@ function renderCustomEventsEmptyState() {
             <span class="events-empty-emoji icon icon-target"></span>
             <p><strong>Nenhum evento personalizado ainda</strong></p>
             <p class="text-muted">Crie eventos e use o bloco "Registrar Evento" nos seus fluxos para medir resultados.</p>
-            <button class="btn btn-primary btn-sm mt-3" onclick="openCustomEventModal()">Criar primeiro evento</button>
+            <button class="btn btn-primary btn-sm mt-3 events-empty-create-btn" onclick="openCustomEventModal()">Criar primeiro evento</button>
         </div>
     `;
 }
@@ -570,7 +578,7 @@ async function deleteCustomEvent(id: number) {
 
     const eventItem = customEvents.find((item) => Number(item.id) === Math.trunc(eventId));
     const name = eventItem?.name || 'este evento';
-    if (!confirm(`Deseja excluir ${name}?`)) return;
+    if (!await appConfirm(`Deseja excluir ${name}?`, 'Excluir evento')) return;
 
     try {
         await api.delete(`/api/custom-events/${eventId}`);
@@ -810,7 +818,7 @@ function renderLeadsTable(leads: Lead[] | null = null) {
             ? `<a href="https://wa.me/55${phone}" target="_blank" style="color: var(--whatsapp); text-decoration: none;">${phoneDisplay}</a>`
             : phoneDisplay;
         const whatsappAction = phone
-            ? `onclick="sendWhatsApp('${phone}')" title="Mensagem"`
+            ? `onclick="sendWhatsApp(${Number(lead.id) || 0}, '${phone}')" title="Mensagem"`
             : 'disabled title="WhatsApp indisponível"';
 
         return `
@@ -985,7 +993,7 @@ async function updateLead() {
 
 // Excluir lead
 async function deleteLead(id: number) {
-    if (!confirm('Tem certeza que deseja excluir este lead?')) return;
+    if (!await appConfirm('Tem certeza que deseja excluir este lead?', 'Excluir lead')) return;
 
     try {
         showLoading('Excluindo...');
@@ -999,8 +1007,15 @@ async function deleteLead(id: number) {
 }
 
 // Enviar WhatsApp
-function sendWhatsApp(phone: string) {
-    const cleanPhone = phone.replace(/\D/g, '');
+function sendWhatsApp(leadId: number, phone: string) {
+    const normalizedLeadId = Number(leadId || 0);
+    if (Number.isFinite(normalizedLeadId) && normalizedLeadId > 0) {
+        window.location.href = `#/inbox?leadId=${Math.floor(normalizedLeadId)}`;
+        return;
+    }
+
+    const cleanPhone = String(phone || '').replace(/\D/g, '');
+    if (!cleanPhone) return;
     window.open(`https://wa.me/55${cleanPhone}`, '_blank');
 }
 
@@ -1093,9 +1108,9 @@ function exportLeads() {
 }
 
 // Confirmar reset
-function confirmReset() {
-    if (!confirm('ATENÇÃO: Esta ação irá excluir TODOS os leads. Deseja continuar?')) return;
-    if (!confirm('Tem certeza absoluta? Esta ação não pode ser desfeita!')) return;
+async function confirmReset() {
+    if (!await appConfirm('ATENCAO: Esta acao ira excluir TODOS os leads. Deseja continuar?', 'Reset de leads')) return;
+    if (!await appConfirm('Tem certeza absoluta? Esta acao nao pode ser desfeita!', 'Reset de leads')) return;
     
     showToast('info', 'Info', 'Função de reset desabilitada por segurança');
 }
@@ -1120,7 +1135,7 @@ const windowAny = window as Window & {
     sendWhatsApp?: (phone: string) => void;
     importLeads?: () => Promise<void>;
     exportLeads?: () => void;
-    confirmReset?: () => void;
+    confirmReset?: () => Promise<void>;
 };
 windowAny.initDashboard = initDashboard;
 windowAny.loadDashboardData = loadDashboardData;

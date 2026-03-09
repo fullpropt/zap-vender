@@ -1,3 +1,5 @@
+import { clearPersistedAuthSession, clearSessionAuthStorage, restoreAuthSessionFromPersistence } from './authPersistence';
+
 /**
  * ZapVender - JavaScript Global
  * Sistema estilo BotConversa
@@ -34,6 +36,27 @@ type ApiRequestOptions = RequestInit & {
     headers?: Record<string, string>;
 };
 
+type AppDialogMode = 'alert' | 'confirm' | 'prompt';
+type AppDialogRequest = {
+    mode: AppDialogMode;
+    title?: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    defaultValue?: string;
+    placeholder?: string;
+};
+type AppDialogElements = {
+    overlay: HTMLElement;
+    title: HTMLElement;
+    message: HTMLElement;
+    inputWrap: HTMLElement;
+    input: HTMLInputElement;
+    cancelBtn: HTMLButtonElement;
+    confirmBtn: HTMLButtonElement;
+    closeBtn: HTMLButtonElement;
+};
+
 // ============================================
 // CONFIGURAÇÃO GLOBAL
 // ============================================
@@ -56,6 +79,8 @@ const APP_LOCAL_STORAGE_EXACT_KEYS = [
     'zapvender_last_open_flow_id'
 ];
 const APP_LOCAL_STORAGE_PREFIXES = ['self_', 'zapvender_', 'whatsapp_'];
+const USER_PRESENCE_HEARTBEAT_INTERVAL_MS = 30000;
+let userPresenceHeartbeatTimer: number | null = null;
 
 function sanitizeSessionId(value: unknown, fallback = '') {
     const normalized = String(value || '').trim();
@@ -64,6 +89,31 @@ function sanitizeSessionId(value: unknown, fallback = '') {
 
 function normalizeIdentityPart(value: unknown): string {
     return String(value || '').trim().toLowerCase();
+}
+
+function getOwnerUserIdFromSessionToken() {
+    const token = sanitizeSessionId(sessionStorage.getItem('selfDashboardToken'));
+    if (!token) return 0;
+
+    try {
+        const parts = token.split('.');
+        if (parts.length < 2) return 0;
+        const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = payloadBase64 + '='.repeat((4 - (payloadBase64.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        const ownerUserId = Number(payload?.owner_user_id || payload?.id || 0);
+        return Number.isFinite(ownerUserId) && ownerUserId > 0 ? Math.floor(ownerUserId) : 0;
+    } catch {
+        return 0;
+    }
+}
+
+function buildOwnerFallbackSessionId(ownerUserId: unknown, fallback = DEFAULT_SESSION_ID) {
+    const parsedOwnerUserId = Number(ownerUserId || 0);
+    if (!Number.isFinite(parsedOwnerUserId) || parsedOwnerUserId <= 0) {
+        return fallback;
+    }
+    return `owner_${Math.floor(parsedOwnerUserId)}_session`;
 }
 
 function clearAppLocalStorageState() {
@@ -108,7 +158,8 @@ function ensureStorageIdentityConsistency() {
 
 function resolveInitialSessionId() {
     const stored = sanitizeSessionId(localStorage.getItem('zapvender_active_whatsapp_session'));
-    return stored || DEFAULT_SESSION_ID;
+    if (stored) return stored;
+    return buildOwnerFallbackSessionId(getOwnerUserIdFromSessionToken(), DEFAULT_SESSION_ID);
 }
 
 function isPayloadForCurrentSession(payload: any) {
@@ -165,11 +216,35 @@ function onReady(callback: () => void) {
     }
 }
 
-onReady(initApp);
+onReady(() => {
+    void initApp();
+});
 
-function initApp() {
+window.addEventListener('beforeunload', () => {
+    stopUserPresenceHeartbeat();
+    const token = sessionStorage.getItem('selfDashboardToken');
+    if (!token) return;
+    try {
+        fetch(`${APP.socketUrl}/api/auth/logout`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            keepalive: true,
+            body: '{}'
+        });
+    } catch (_) {
+        // best-effort
+    }
+});
+
+async function initApp() {
     // Verificar autenticação
-    checkAuth();
+    const isAuthenticated = await checkAuth();
+    if (!isAuthenticated) return;
+
+    startUserPresenceHeartbeat();
     
     // Inicializar Socket.IO
     initSocket();
@@ -179,6 +254,7 @@ function initApp() {
     
     // Inicializar modais
     initModals();
+    ensureAppDialogHost();
     
     // Carregar dados iniciais
     loadInitialData();
@@ -188,8 +264,9 @@ function initApp() {
 // AUTENTICAÇÃO
 // ============================================
 
-function checkAuth() {
+async function checkAuth() {
     ensureStorageIdentityConsistency();
+    await restoreAuthSessionFromPersistence({ allowRefresh: true });
 
     const token = sessionStorage.getItem('selfDashboardToken');
     const expiry = sessionStorage.getItem('selfDashboardExpiry');
@@ -220,14 +297,64 @@ function updateUserInfo() {
     });
 }
 
-function logout() {
-    sessionStorage.removeItem('selfDashboardToken');
-    sessionStorage.removeItem('selfDashboardUser');
-    sessionStorage.removeItem('selfDashboardExpiry');
-    sessionStorage.removeItem('selfDashboardRefreshToken');
-    sessionStorage.removeItem('selfDashboardUserId');
-    sessionStorage.removeItem('selfDashboardUserEmail');
-    sessionStorage.removeItem('selfDashboardIdentity');
+function stopUserPresenceHeartbeat() {
+    if (userPresenceHeartbeatTimer !== null) {
+        window.clearInterval(userPresenceHeartbeatTimer);
+        userPresenceHeartbeatTimer = null;
+    }
+}
+
+async function sendUserPresenceHeartbeat() {
+    const token = sessionStorage.getItem('selfDashboardToken');
+    if (!token || isLoginRoute()) return;
+
+    try {
+        await fetch(`${APP.socketUrl}/api/auth/presence`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            body: '{}'
+        });
+    } catch (_) {
+        // Heartbeat é best-effort
+    }
+}
+
+function startUserPresenceHeartbeat() {
+    stopUserPresenceHeartbeat();
+    void sendUserPresenceHeartbeat();
+    userPresenceHeartbeatTimer = window.setInterval(() => {
+        void sendUserPresenceHeartbeat();
+    }, USER_PRESENCE_HEARTBEAT_INTERVAL_MS);
+}
+
+async function notifyUserLogoutPresence() {
+    const token = sessionStorage.getItem('selfDashboardToken');
+    if (!token) return;
+
+    try {
+        await fetch(`${APP.socketUrl}/api/auth/logout`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            keepalive: true,
+            body: '{}'
+        });
+    } catch (_) {
+        // Logout de presença é best-effort
+    }
+}
+
+async function logout() {
+    stopUserPresenceHeartbeat();
+    await notifyUserLogoutPresence();
+    window.dispatchEvent(new CustomEvent('app:logout'));
+    clearSessionAuthStorage();
+    clearPersistedAuthSession();
     window.location.href = getLoginUrl();
 }
 
@@ -309,6 +436,13 @@ function initSocket() {
     });
     
     APP.socket.on('error', (data) => {
+        const code = String(data?.code || '').trim().toUpperCase();
+        if (code === 'SESSION_FORBIDDEN') {
+            localStorage.removeItem('zapvender_active_whatsapp_session');
+            APP.sessionId = buildOwnerFallbackSessionId(getOwnerUserIdFromSessionToken(), DEFAULT_SESSION_ID);
+            APP.socket?.emit('check-session', { sessionId: APP.sessionId });
+            return;
+        }
         showToast('error', 'Erro', data.message || 'Ocorreu um erro');
     });
 }
@@ -435,6 +569,259 @@ function closeModal(modalId) {
     }
 }
 
+const APP_DIALOG_IDS = {
+    style: 'appGlobalDialogStyles',
+    overlay: 'appGlobalDialogModal',
+    title: 'appGlobalDialogTitle',
+    message: 'appGlobalDialogMessage',
+    inputWrap: 'appGlobalDialogInputWrap',
+    input: 'appGlobalDialogInput',
+    cancelBtn: 'appGlobalDialogCancelBtn',
+    confirmBtn: 'appGlobalDialogConfirmBtn',
+    closeBtn: 'appGlobalDialogCloseBtn'
+} as const;
+
+let activeAppDialogDismiss: (() => void) | null = null;
+
+function ensureAppDialogHost() {
+    if (document.getElementById(APP_DIALOG_IDS.overlay)) return;
+
+    if (!document.getElementById(APP_DIALOG_IDS.style)) {
+        const style = document.createElement('style');
+        style.id = APP_DIALOG_IDS.style;
+        style.textContent = `
+            .app-dialog-modal {
+                width: min(560px, calc(100% - 24px));
+            }
+            .app-dialog-body {
+                display: flex;
+                flex-direction: column;
+                gap: 14px;
+            }
+            .app-dialog-message {
+                margin: 0;
+                color: var(--gray-800);
+                line-height: 1.45;
+                white-space: pre-wrap;
+            }
+            .app-dialog-input-wrap {
+                display: none;
+            }
+            .app-dialog-input-wrap.active {
+                display: block;
+            }
+            .app-dialog-footer {
+                justify-content: flex-end;
+            }
+            .app-dialog-actions {
+                width: 100%;
+                display: flex;
+                justify-content: flex-end;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            @media (max-width: 640px) {
+                .app-dialog-actions {
+                    flex-direction: column-reverse;
+                }
+                .app-dialog-actions .btn {
+                    width: 100%;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = APP_DIALOG_IDS.overlay;
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+        <div class="modal app-dialog-modal" role="dialog" aria-modal="true" aria-labelledby="${APP_DIALOG_IDS.title}">
+            <div class="modal-header">
+                <h2 class="modal-title" id="${APP_DIALOG_IDS.title}">Aviso</h2>
+                <button class="modal-close" id="${APP_DIALOG_IDS.closeBtn}" type="button">&times;</button>
+            </div>
+            <div class="modal-body app-dialog-body">
+                <p class="app-dialog-message" id="${APP_DIALOG_IDS.message}"></p>
+                <div class="app-dialog-input-wrap" id="${APP_DIALOG_IDS.inputWrap}">
+                    <input class="form-input" id="${APP_DIALOG_IDS.input}" type="text" />
+                </div>
+            </div>
+            <div class="modal-footer app-dialog-footer">
+                <div class="app-dialog-actions">
+                    <button class="btn btn-outline" id="${APP_DIALOG_IDS.cancelBtn}" type="button">Cancelar</button>
+                    <button class="btn btn-primary" id="${APP_DIALOG_IDS.confirmBtn}" type="button">OK</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+}
+
+function getAppDialogElements(): AppDialogElements | null {
+    ensureAppDialogHost();
+
+    const overlay = document.getElementById(APP_DIALOG_IDS.overlay) as HTMLElement | null;
+    const title = document.getElementById(APP_DIALOG_IDS.title) as HTMLElement | null;
+    const message = document.getElementById(APP_DIALOG_IDS.message) as HTMLElement | null;
+    const inputWrap = document.getElementById(APP_DIALOG_IDS.inputWrap) as HTMLElement | null;
+    const input = document.getElementById(APP_DIALOG_IDS.input) as HTMLInputElement | null;
+    const cancelBtn = document.getElementById(APP_DIALOG_IDS.cancelBtn) as HTMLButtonElement | null;
+    const confirmBtn = document.getElementById(APP_DIALOG_IDS.confirmBtn) as HTMLButtonElement | null;
+    const closeBtn = document.getElementById(APP_DIALOG_IDS.closeBtn) as HTMLButtonElement | null;
+
+    if (!overlay || !title || !message || !inputWrap || !input || !cancelBtn || !confirmBtn || !closeBtn) {
+        return null;
+    }
+
+    return { overlay, title, message, inputWrap, input, cancelBtn, confirmBtn, closeBtn };
+}
+
+function fallbackAppDialog(request: AppDialogRequest): Promise<any> {
+    if (request.mode === 'alert') {
+        window.alert(request.message);
+        return Promise.resolve();
+    }
+    if (request.mode === 'confirm') {
+        return Promise.resolve(window.confirm(request.message));
+    }
+    const value = window.prompt(request.message, request.defaultValue || '');
+    return Promise.resolve(value === null ? null : String(value));
+}
+
+function openAppDialog(request: AppDialogRequest): Promise<any> {
+    const elements = getAppDialogElements();
+    if (!elements) return fallbackAppDialog(request);
+
+    if (typeof activeAppDialogDismiss === 'function') {
+        activeAppDialogDismiss();
+    }
+
+    return new Promise((resolve) => {
+        const { overlay, title, message, inputWrap, input, cancelBtn, confirmBtn, closeBtn } = elements;
+        let settled = false;
+        const isPrompt = request.mode === 'prompt';
+        const isAlert = request.mode === 'alert';
+
+        const finish = (value: any) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(value);
+        };
+
+        const cancelValue = () => {
+            if (isAlert) return undefined;
+            if (isPrompt) return null;
+            return false;
+        };
+
+        const syncBodyOverflow = () => {
+            const hasOtherModalOpen = Boolean(document.querySelector('.modal-overlay.active'));
+            document.body.style.overflow = hasOtherModalOpen ? 'hidden' : '';
+        };
+
+        const onKeydown = (event: KeyboardEvent) => {
+            if (settled) return;
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                finish(cancelValue());
+                return;
+            }
+            if (event.key === 'Enter') {
+                if (isPrompt) {
+                    const target = event.target as HTMLElement | null;
+                    if (target === input) {
+                        event.preventDefault();
+                        finish(input.value);
+                    }
+                    return;
+                }
+                if (request.mode === 'confirm') {
+                    event.preventDefault();
+                    finish(true);
+                }
+            }
+        };
+
+        const cleanup = () => {
+            activeAppDialogDismiss = null;
+            overlay.classList.remove('active');
+            overlay.onclick = null;
+            cancelBtn.onclick = null;
+            confirmBtn.onclick = null;
+            closeBtn.onclick = null;
+            input.onkeydown = null;
+            document.removeEventListener('keydown', onKeydown, true);
+            syncBodyOverflow();
+        };
+
+        activeAppDialogDismiss = () => finish(cancelValue());
+
+        title.textContent = String(request.title || (isAlert ? 'Aviso' : isPrompt ? 'Digite um valor' : 'Confirmacao'));
+        message.textContent = String(request.message || '');
+        inputWrap.classList.toggle('active', isPrompt);
+        input.value = isPrompt ? String(request.defaultValue || '') : '';
+        input.placeholder = isPrompt ? String(request.placeholder || '') : '';
+
+        cancelBtn.style.display = isAlert ? 'none' : '';
+        cancelBtn.textContent = String(request.cancelLabel || 'Cancelar');
+        confirmBtn.textContent = String(request.confirmLabel || (isPrompt ? 'OK' : 'OK'));
+
+        overlay.onclick = (event) => {
+            if (event.target === overlay) {
+                finish(cancelValue());
+            }
+        };
+        cancelBtn.onclick = () => finish(cancelValue());
+        closeBtn.onclick = () => finish(cancelValue());
+        confirmBtn.onclick = () => finish(isPrompt ? input.value : (isAlert ? undefined : true));
+        input.onkeydown = (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                finish(input.value);
+            }
+        };
+
+        document.addEventListener('keydown', onKeydown, true);
+        overlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
+
+        requestAnimationFrame(() => {
+            if (isPrompt) {
+                input.focus();
+                input.select();
+                return;
+            }
+            if (!isAlert) {
+                confirmBtn.focus();
+                return;
+            }
+            closeBtn.focus();
+        });
+    });
+}
+
+function showAppAlert(message: string, title = 'Aviso') {
+    return openAppDialog({ mode: 'alert', title, message, confirmLabel: 'OK' }) as Promise<void>;
+}
+
+function showAppConfirm(message: string, title = 'Confirmacao') {
+    return openAppDialog({ mode: 'confirm', title, message, confirmLabel: 'OK', cancelLabel: 'Cancelar' }) as Promise<boolean>;
+}
+
+function showAppPrompt(message: string, options: { title?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string; cancelLabel?: string } = {}) {
+    return openAppDialog({
+        mode: 'prompt',
+        title: options.title,
+        message,
+        defaultValue: options.defaultValue,
+        placeholder: options.placeholder,
+        confirmLabel: options.confirmLabel || 'OK',
+        cancelLabel: options.cancelLabel || 'Cancelar'
+    }) as Promise<string | null>;
+}
+
 // ============================================
 // TOAST NOTIFICATIONS
 // ============================================
@@ -532,6 +919,26 @@ async function apiRequest(endpoint: string, options: ApiRequestOptions = {}) {
         }
 
         if (!response.ok) {
+            const responseCode =
+                data && typeof data.code === 'string'
+                    ? data.code.trim().toUpperCase()
+                    : '';
+            if (responseCode === 'PLAN_INACTIVE') {
+                const planInactiveMessage =
+                    (data && typeof data.error === 'string' && data.error.trim())
+                        ? data.error
+                        : 'Sua assinatura não está ativa. Reative para poder usar a aplicação.';
+
+                if (!isLoginRoute()) {
+                    showToast('warning', 'Assinatura inativa', planInactiveMessage);
+                    const currentHash = window.location.hash || '#/dashboard';
+                    if (!currentHash.startsWith('#/configuracoes?panel=plan')) {
+                        window.location.hash = '#/configuracoes?panel=plan';
+                    }
+                }
+                throw new Error(planInactiveMessage);
+            }
+
             const responseMessage =
                 (data && typeof data.error === 'string' && data.error.trim())
                     ? data.error
@@ -601,7 +1008,11 @@ function formatNumber(value: number) {
 }
 
 function formatPercent(value: number, decimals = 1) {
-    return `${(value || 0).toFixed(decimals)}%`;
+    const fixed = (value || 0).toFixed(decimals);
+    const normalized = fixed
+        .replace(/\.0+$/, '')
+        .replace(/(\.\d*?[1-9])0+$/, '$1');
+    return `${normalized}%`;
 }
 
 function timeAgo(date: Date | string | number) {
@@ -935,6 +1346,9 @@ const windowAny = window as Window & {
     APP?: AppState;
     api?: typeof api;
     showToast?: typeof showToast;
+    showAppAlert?: typeof showAppAlert;
+    showAppConfirm?: typeof showAppConfirm;
+    showAppPrompt?: typeof showAppPrompt;
     openModal?: typeof openModal;
     closeModal?: typeof closeModal;
     showLoading?: typeof showLoading;
@@ -961,6 +1375,9 @@ windowAny.BUILD_ID = BUILD_ID;
 console.info('ZapVender build', BUILD_ID);
 windowAny.api = api;
 windowAny.showToast = showToast;
+windowAny.showAppAlert = showAppAlert;
+windowAny.showAppConfirm = showAppConfirm;
+windowAny.showAppPrompt = showAppPrompt;
 windowAny.openModal = openModal;
 windowAny.closeModal = closeModal;
 windowAny.showLoading = showLoading;

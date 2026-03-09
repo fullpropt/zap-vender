@@ -24,19 +24,75 @@ type DashboardGlobals = {
 function DashboardStyles() {
   return (
     <style>{`
+        .dashboard-react .sidebar .nav-link:not(.active) {
+          background: transparent !important;
+          border: 1px solid transparent !important;
+          box-shadow: none !important;
+          -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
+        }
         .dashboard-botconversa { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px; }
         @media (max-width: 900px) { .dashboard-botconversa { grid-template-columns: 1fr; } }
         .stats-period-card, .stats-general-card, .events-personalized-card { background: var(--surface); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); padding: 24px; border: 1px solid var(--border-color); }
         .stats-period-card h3, .stats-general-card h3, .events-personalized-card h3 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
-        .stats-period-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; }
-        .stats-period-controls .form-input, .stats-period-controls .form-select { height: 38px; padding: 0 12px; }
-        .chart-type-toggle { display: flex; gap: 4px; }
-        .chart-type-toggle .chart-btn { padding: 8px 12px; border: 1px solid var(--border-color); background: var(--surface-muted); border-radius: 8px; cursor: pointer; color: var(--gray-700); }
+        .stats-period-controls {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+          align-items: stretch;
+          margin-bottom: 20px;
+        }
+        .stats-period-controls .form-input,
+        .stats-period-controls .form-select {
+          width: 100%;
+          min-width: 0;
+          height: 38px;
+          padding: 0 12px;
+          box-sizing: border-box;
+        }
+        .chart-type-toggle {
+          grid-column: 1 / -1;
+          width: 100%;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .chart-type-toggle .chart-btn {
+          width: 100%;
+          padding: 8px 12px;
+          border: 1px solid var(--border-color);
+          background: var(--surface-muted);
+          border-radius: 8px;
+          cursor: pointer;
+          color: var(--gray-700);
+        }
         .chart-type-toggle .chart-btn.active { background: rgba(var(--primary-rgb), 0.16); border-color: var(--primary); color: #eafff4; }
-        .stats-general-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--gray-100); }
-        .stats-general-item:last-child { border-bottom: none; }
-        .stats-general-label { font-size: 13px; color: var(--gray-600); }
-        .stats-general-value { font-weight: 700; font-size: 18px; }
+        .stats-general-card { display: flex; flex-direction: column; gap: 0; }
+        .stats-general-card h3 { text-align: left; margin-bottom: 10px; }
+        .stats-general-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          min-width: 0;
+          padding: 12px 0;
+          border-bottom: 1px solid var(--gray-100);
+        }
+        .stats-general-item:last-child {
+          border-bottom: none;
+          padding-bottom: 0;
+        }
+        .stats-general-label {
+          font-size: 13px;
+          color: var(--gray-600);
+          line-height: 1.3;
+        }
+        .stats-general-value {
+          font-weight: 700;
+          font-size: 18px;
+          margin-left: 12px;
+          flex-shrink: 0;
+        }
         .events-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
         .events-header h3 { margin: 0; }
         .events-controls { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
@@ -57,18 +113,138 @@ function DashboardStyles() {
         .custom-event-status { font-size: 11px; border-radius: 999px; padding: 3px 8px; border: 1px solid rgba(var(--primary-rgb), 0.25); color: var(--gray-500); background: rgba(15, 23, 42, 0.24); white-space: nowrap; }
         .custom-event-status.active { border-color: rgba(var(--primary-rgb), 0.45); color: #d8f4e6; background: rgba(var(--primary-rgb), 0.13); }
         .custom-event-status.inactive { border-color: rgba(148, 163, 184, 0.4); color: #cbd5e1; }
+        @media (max-width: 768px) {
+          .events-create-btn,
+          .events-empty-create-btn { display: none !important; }
+        }
         @media (max-width: 640px) {
           .dashboard-botconversa { gap: 14px; margin-bottom: 16px; }
           .stats-period-card, .stats-general-card, .events-personalized-card { padding: 12px; border-radius: 12px; }
           .stats-period-card h3, .stats-general-card h3, .events-personalized-card h3 { margin-bottom: 12px; font-size: 15px; }
-          .stats-period-controls { gap: 8px; }
-          .stats-period-controls .form-input, .stats-period-controls .form-select { width: 100%; min-width: 0; }
-          .chart-type-toggle { width: 100%; justify-content: flex-start; }
-          .chart-type-toggle .chart-btn { flex: 1 1 0; }
+          .dashboard-react .stats-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+          }
+          .dashboard-react .stats-grid .stat-card {
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: flex-start;
+            gap: 8px;
+            min-width: 0;
+            padding: 12px;
+            border-radius: 12px;
+          }
+          .dashboard-react .stats-grid .stat-icon {
+            width: 36px;
+            height: 36px;
+            flex-shrink: 0;
+          }
+          .dashboard-react .stats-grid .stat-icon .icon {
+            width: 16px;
+            height: 16px;
+          }
+          .dashboard-react .stats-grid .stat-content {
+            width: 100%;
+            min-width: 0;
+            text-align: left;
+          }
+          .dashboard-react .stats-grid .stat-value { font-size: 20px; }
+          .dashboard-react .stats-grid .stat-label { font-size: 11px; line-height: 1.2; }
+          .dashboard-react .stats-grid .stat-change {
+            margin-top: 6px;
+            font-size: 10px;
+            padding: 2px 6px;
+          }
+          .stats-period-controls {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            align-items: stretch;
+          }
+          .stats-period-controls .form-input,
+          .stats-period-controls .form-select {
+            width: 100%;
+            min-width: 0;
+            height: 42px;
+            padding: 0 12px;
+            font-size: 12px;
+            line-height: 1.2;
+            border-radius: 12px;
+            box-sizing: border-box;
+            font-variant-numeric: tabular-nums;
+            overflow: hidden;
+          }
+          .stats-period-controls input[type="date"] {
+            padding-left: 8px;
+            padding-right: 24px;
+            font-size: 11px;
+            letter-spacing: -0.01em;
+          }
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding: 0;
+          }
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-text,
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-day-field,
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-month-field,
+          .stats-period-controls input[type="date"]::-webkit-datetime-edit-year-field {
+            padding: 0;
+          }
+          .stats-period-controls input[type="date"]::-webkit-calendar-picker-indicator {
+            opacity: 0.9;
+            cursor: pointer;
+            margin-left: 4px;
+          }
+          .stats-period-controls .form-select {
+            padding-left: 8px;
+            padding-right: 24px;
+            font-size: 11px;
+            text-overflow: ellipsis;
+            background-position: right 8px center;
+            background-size: 9px;
+          }
+          .stats-period-controls .chart-type-toggle {
+            grid-column: 1 / -1;
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+          }
+          .stats-period-controls .chart-type-toggle .chart-btn {
+            width: 100%;
+            min-height: 40px;
+          }
           .stats-period-chart canvas { max-height: 150px !important; }
-          .stats-general-item { gap: 12px; }
+          .stats-general-card {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            align-items: stretch;
+          }
+          .stats-general-card h3 {
+            grid-column: 1 / -1;
+            text-align: center;
+            margin-bottom: 4px;
+          }
+          .stats-general-item {
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            gap: 4px;
+            padding: 8px 6px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+            background: rgba(15, 23, 42, 0.24);
+          }
+          .stats-general-item:last-child { padding-bottom: 8px; }
           .stats-general-label { font-size: 12px; }
-          .stats-general-value { font-size: 16px; }
+          .stats-general-value { font-size: 18px; margin-left: 0; }
           .events-header { gap: 8px; margin-bottom: 12px; }
           .events-controls { width: 100%; margin-left: 0; }
           .events-controls .form-select, .events-controls .btn { width: 100%; }
@@ -104,7 +280,7 @@ function StatsPeriod() {
         <div className="stats-period-controls">
           <input type="date" className="form-input" id="statsStartDate" />
           <input type="date" className="form-input" id="statsEndDate" />
-          <select className="form-select" id="statsMetric" style={{ width: 'auto' }}>
+          <select className="form-select" id="statsMetric">
             <option value="novos_contatos">Novos Contatos</option>
             <option value="mensagens">Mensagens</option>
             <option value="interacoes">Interações</option>
@@ -125,15 +301,15 @@ function StatsPeriod() {
       <div className="stats-general-card">
         <h3>Estatísticas gerais</h3>
         <div className="stats-general-item">
-          <span className="stats-general-label">Contatos que interagiram</span>
+          <span className="stats-general-label">Contatos com interação</span>
           <span className="stats-general-value" id="statsContacts">0</span>
         </div>
         <div className="stats-general-item">
-          <span className="stats-general-label">Mensagem enviada pelo contato</span>
+          <span className="stats-general-label">Mensagens do contato</span>
           <span className="stats-general-value" id="statsMessages">0</span>
         </div>
         <div className="stats-general-item">
-          <span className="stats-general-label">Interações/Inscrito</span>
+          <span className="stats-general-label">Interações por inscrito</span>
           <span className="stats-general-value" id="statsInteractionsPer">0</span>
         </div>
       </div>
@@ -163,7 +339,7 @@ function EventsCard() {
             <option value="year">Ano</option>
             <option value="last_30_days">Últimos 30 dias</option>
           </select>
-          <button className="btn btn-primary btn-sm" type="button" onClick={() => globals.openCustomEventModal?.()}>
+          <button className="btn btn-primary btn-sm events-create-btn" type="button" onClick={() => globals.openCustomEventModal?.()}>
             Criar
           </button>
         </div>
@@ -533,30 +709,6 @@ function LeadModals() {
   );
 }
 
-function FloatingAddLeadButton() {
-  const globals = window as Window & DashboardGlobals;
-
-  return (
-    <button
-      type="button"
-      className="btn btn-whatsapp btn-icon"
-      style={{
-        position: 'fixed',
-        bottom: '30px',
-        right: '30px',
-        width: '60px',
-        height: '60px',
-        borderRadius: '50%',
-        boxShadow: 'var(--shadow-lg)'
-      }}
-      onClick={() => globals.openModal?.('addLeadModal')}
-      title="Adicionar Lead"
-    >
-      <span className="icon icon-add icon-lg"></span>
-    </button>
-  );
-}
-
 export default function Dashboard() {
   useEffect(() => {
     let cancelled = false;
@@ -683,7 +835,6 @@ export default function Dashboard() {
         <Funnel />
       </main>
       <LeadModals />
-      <FloatingAddLeadButton />
     </div>
   );
 }

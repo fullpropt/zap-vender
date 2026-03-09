@@ -65,6 +65,31 @@ const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
     notifySound: true
 };
 
+function getOwnerUserIdFromSessionToken() {
+    const token = String(sessionStorage.getItem('selfDashboardToken') || '').trim();
+    if (!token) return 0;
+
+    try {
+        const parts = token.split('.');
+        if (parts.length < 2) return 0;
+        const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = payloadBase64 + '='.repeat((4 - (payloadBase64.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        const ownerUserId = Number(payload?.owner_user_id || payload?.id || 0);
+        return Number.isFinite(ownerUserId) && ownerUserId > 0 ? Math.floor(ownerUserId) : 0;
+    } catch (_) {
+        return 0;
+    }
+}
+
+function buildOwnerFallbackSessionId(ownerUserId: unknown, fallback = DEFAULT_SESSION_ID) {
+    const parsedOwnerUserId = Number(ownerUserId || 0);
+    if (!Number.isFinite(parsedOwnerUserId) || parsedOwnerUserId <= 0) {
+        return fallback;
+    }
+    return `owner_${Math.floor(parsedOwnerUserId)}_session`;
+}
+
 function parseNotificationFlag(value: unknown, fallback: boolean) {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'number') return value > 0;
@@ -101,7 +126,7 @@ function getSessionId() {
     const storedSessionId = String(localStorage.getItem('zapvender_active_whatsapp_session') || '').trim();
     if (storedSessionId) return storedSessionId;
 
-    return DEFAULT_SESSION_ID;
+    return buildOwnerFallbackSessionId(getOwnerUserIdFromSessionToken(), DEFAULT_SESSION_ID);
 }
 
 // ============================================

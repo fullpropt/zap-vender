@@ -58,6 +58,17 @@ type BulkLeadsDeleteResponse = {
     failed?: number;
     errors?: Array<{ id?: number; error?: string }>;
 };
+type BulkLeadsUpdateResponse = {
+    success?: boolean;
+    total?: number;
+    updated?: number;
+    skipped?: number;
+    failed?: number;
+    statusChanged?: number;
+    tagsUpdated?: number;
+    tagsRemoved?: number;
+    errors?: Array<{ id?: number; error?: string }>;
+};
 
 type ContactsCachePayload = {
     savedAt: number;
@@ -65,9 +76,19 @@ type ContactsCachePayload = {
     total?: number;
 };
 
+type LoadContactsOptions = {
+    forceRefresh?: boolean;
+    silent?: boolean;
+    bypassMinRevalidate?: boolean;
+};
+
+const CONTACT_NOTES_FALLBACK_KEY = 'observacoes';
+const CONTACT_NOTES_KEYS = ['observacoes', 'observacoes_contato', 'notes', 'note'];
+
 let allContacts: Contact[] = [];
 let filteredContacts: Contact[] = [];
 let selectedContacts: number[] = [];
+let bulkRemoveSelectedTags: string[] = [];
 let currentPage = 1;
 const perPage = 20;
 let tags: Tag[] = [];
@@ -86,6 +107,50 @@ const CONTACTS_CACHE_TTL_MS = 10 * 60 * 1000;
 const CONTACTS_CACHE_MIN_REVALIDATE_INTERVAL_MS = 45 * 1000;
 const CONTACTS_CACHE_PREFIX = 'zapvender_contacts_cache_v2';
 const FUNNEL_CACHE_PREFIX = 'zapvender_funnel_leads_cache_v1';
+const IMPORT_TAG_COLUMN_AUTO_VALUE = '__auto__';
+const IMPORT_TAG_COLUMN_ALIAS_CANDIDATES = [
+    'tag',
+    'tags',
+    'etiqueta',
+    'etiquetas',
+    'rotulo',
+    'rotulos',
+    'label',
+    'labels'
+];
+let contactsBootstrappedOnce = false;
+let importTagColumnRefreshTimer: number | null = null;
+
+function appConfirm(message: string, title = 'Confirmacao') {
+    const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
+    if (typeof win.showAppConfirm === 'function') {
+        return win.showAppConfirm(message, title);
+    }
+    return Promise.resolve(window.confirm(message));
+}
+
+function appPrompt(message: string, options: { title?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string; cancelLabel?: string } = {}) {
+    const win = window as Window & {
+        showAppPrompt?: (
+            message: string,
+            options?: { title?: string; defaultValue?: string; placeholder?: string; confirmLabel?: string; cancelLabel?: string }
+        ) => Promise<string | null>;
+    };
+    if (typeof win.showAppPrompt === 'function') {
+        return win.showAppPrompt(message, options);
+    }
+    return Promise.resolve(window.prompt(message, options.defaultValue || ''));
+}
+
+function getContactsTotalPages(total = filteredContacts.length) {
+    return Math.max(1, Math.ceil(Math.max(0, Number(total) || 0) / perPage));
+}
+
+function clampContactsPage(page: number, total = filteredContacts.length) {
+    const normalizedPage = Number.isFinite(page) ? Math.floor(page) : 1;
+    const totalPages = getContactsTotalPages(total);
+    return Math.min(totalPages, Math.max(1, normalizedPage));
+}
 
 function isContactsRouteActive() {
     const hash = String(window.location.hash || '').toLowerCase();
@@ -174,11 +239,49 @@ function parseLeadCustomFields(value: unknown) {
     if (!value) return {};
     if (typeof value === 'object') return Array.isArray(value) ? {} : { ...(value as Record<string, any>) };
     if (typeof value !== 'string') return {};
-    try {
-        const parsed = JSON.parse(value);
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-        return {};
+    let current: unknown = value;
+    for (let depth = 0; depth < 3; depth += 1) {
+        if (typeof current !== 'string') break;
+        const trimmed = current.trim();
+        if (!trimmed) return {};
+        try {
+            current = JSON.parse(trimmed);
+        } catch {
+            return {};
+        }
+    }
+    return current && typeof current === 'object' && !Array.isArray(current)
+        ? { ...(current as Record<string, any>) }
+        : {};
+}
+
+function extractLeadNotesFromCustomFields(customFields: Record<string, any>) {
+    for (const rawKey of CONTACT_NOTES_KEYS) {
+        const key = normalizeContactFieldKey(rawKey);
+        const value = customFields?.[key];
+        if (value === undefined || value === null) continue;
+        const text = String(value).trim();
+        if (text) return text;
+    }
+    return '';
+}
+
+function applyLeadNotesToCustomFields(customFields: Record<string, any>, notesValue: unknown) {
+    const notes = String(notesValue || '').trim();
+    const normalizedKeys = CONTACT_NOTES_KEYS.map((key) => normalizeContactFieldKey(key)).filter(Boolean);
+    const existingKey = normalizedKeys.find((key) => Object.prototype.hasOwnProperty.call(customFields, key));
+    const targetKey = existingKey || CONTACT_NOTES_FALLBACK_KEY;
+
+    for (const key of normalizedKeys) {
+        if (key !== targetKey && Object.prototype.hasOwnProperty.call(customFields, key)) {
+            delete customFields[key];
+        }
+    }
+
+    if (notes) {
+        customFields[targetKey] = notes;
+    } else {
+        delete customFields[targetKey];
     }
 }
 
@@ -210,6 +313,72 @@ function getImportValue(normalizedRow: Record<string, string>, aliases: string[]
         }
     }
     return '';
+}
+
+function getImportTagColumnSelect() {
+    return document.getElementById('importTagColumn') as HTMLSelectElement | null;
+}
+
+function detectTagColumnFromHeaders(rawHeaders: string[]) {
+    const normalizedHeaders = rawHeaders.map((header) => normalizeImportHeader(header)).filter(Boolean);
+    const aliasKeys = IMPORT_TAG_COLUMN_ALIAS_CANDIDATES.map((alias) => normalizeImportHeader(alias)).filter(Boolean);
+
+    for (const aliasKey of aliasKeys) {
+        if (normalizedHeaders.includes(aliasKey)) {
+            return aliasKey;
+        }
+    }
+    return '';
+}
+
+function updateImportTagColumnOptions(rawHeaders: string[] = []) {
+    const select = getImportTagColumnSelect();
+    if (!select) return;
+
+    const currentValue = String(select.value || '').trim() || IMPORT_TAG_COLUMN_AUTO_VALUE;
+    const headerMap = new Map<string, string>();
+    for (const header of rawHeaders) {
+        const raw = String(header || '').trim();
+        const normalized = normalizeImportHeader(raw);
+        if (!raw || !normalized || headerMap.has(normalized)) continue;
+        headerMap.set(normalized, raw);
+    }
+
+    const headerEntries = Array.from(headerMap.entries());
+    const autoDetectedKey = detectTagColumnFromHeaders(rawHeaders);
+    const autoDetectedLabel = autoDetectedKey ? (headerMap.get(autoDetectedKey) || autoDetectedKey) : '';
+    const autoLabel = autoDetectedLabel
+        ? `Detectar automaticamente (${autoDetectedLabel})`
+        : 'Detectar automaticamente (tag/tags/etiqueta)';
+
+    const options = [
+        `<option value="${IMPORT_TAG_COLUMN_AUTO_VALUE}">${escapeHtml(autoLabel)}</option>`,
+        '<option value="">Nao usar coluna de tags</option>',
+        ...headerEntries.map(([_, label]) => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`)
+    ];
+
+    select.innerHTML = options.join('');
+
+    const hasCurrent = currentValue === IMPORT_TAG_COLUMN_AUTO_VALUE
+        || currentValue === ''
+        || headerEntries.some(([_, label]) => label === currentValue);
+    select.value = hasCurrent ? currentValue : IMPORT_TAG_COLUMN_AUTO_VALUE;
+}
+
+async function refreshImportTagColumnOptionsFromInputs() {
+    const fileInput = document.getElementById('importFile') as HTMLInputElement | null;
+    const textInput = (document.getElementById('importText') as HTMLTextAreaElement | null)?.value || '';
+    let rows: Array<Record<string, string>> = [];
+
+    if (fileInput?.files && fileInput.files.length > 0) {
+        const text = await fileInput.files[0].text();
+        rows = parseCSV(text);
+    } else if (String(textInput).trim()) {
+        rows = parseCSV(String(textInput));
+    }
+
+    const headers = rows.length > 0 ? Object.keys(rows[0] || {}) : [];
+    updateImportTagColumnOptions(headers);
 }
 
 function escapeHtml(value: string) {
@@ -277,32 +446,9 @@ function parseLeadTags(value: unknown) {
         .filter(Boolean);
 }
 
-function getContactSessionId(contact: Contact) {
-    return sanitizeSessionId((contact as Record<string, any>).session_id || (contact as Record<string, any>).sessionId);
-}
-
-function getContactSessionLabel(contact: Contact) {
-    const sessionId = getContactSessionId(contact);
-    const fromApi = String((contact as Record<string, any>).session_label || (contact as Record<string, any>).sessionLabel || '').trim();
-    if (fromApi) return fromApi;
-    const known = contactsAvailableSessions.find((session) => sanitizeSessionId(session.session_id) === sessionId);
-    if (known) return getSessionDisplayName(known);
-    return sessionId;
-}
-
 function renderContactTagChips(contact: Contact) {
     const chips: string[] = [];
     const tags = parseLeadTags(contact.tags);
-
-    if (!contactsSessionFilter) {
-        const sessionId = getContactSessionId(contact);
-        if (sessionId) {
-            const sessionLabel = getContactSessionLabel(contact) || sessionId;
-            chips.push(
-                `<span class="badge contacts-tag-chip contacts-tag-chip-session" title="${escapeHtml(sessionId)}">Conta: ${escapeHtml(sessionLabel)}</span>`
-            );
-        }
-    }
 
     for (const tag of tags) {
         chips.push(`<span class="badge badge-gray contacts-tag-chip">${escapeHtml(tag)}</span>`);
@@ -350,7 +496,7 @@ function renderContactsTableHeader() {
     headerRow.innerHTML = `
         <th>
             <label class="checkbox-wrapper">
-                <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                <input type="checkbox" id="selectAll">
                 <span class="checkbox-custom"></span>
             </label>
         </th>
@@ -362,6 +508,25 @@ function renderContactsTableHeader() {
         <th>Última Interação</th>
         <th>Ações</th>
     `;
+}
+
+function bindContactsSelectionControls() {
+    const selectAll = document.getElementById('selectAll') as HTMLInputElement | null;
+    if (selectAll && selectAll.dataset.selectionBound !== '1') {
+        selectAll.dataset.selectionBound = '1';
+        selectAll.addEventListener('change', () => {
+            toggleSelectAll();
+        });
+    }
+
+    const checkboxes = document.querySelectorAll('.contact-checkbox') as NodeListOf<HTMLInputElement>;
+    checkboxes.forEach((checkbox) => {
+        if (checkbox.dataset.selectionBound === '1') return;
+        checkbox.dataset.selectionBound = '1';
+        checkbox.addEventListener('change', () => {
+            updateSelection();
+        });
+    });
 }
 
 function getStoredContactsSessionFilter() {
@@ -509,6 +674,61 @@ function applyUrlFilters() {
     }
 }
 
+function clearContactIdFromUrl() {
+    const currentUrl = new URL(window.location.href);
+
+    if (currentUrl.searchParams.has('id')) {
+        currentUrl.searchParams.delete('id');
+        window.history.replaceState({}, '', currentUrl.toString());
+        return;
+    }
+
+    const hash = String(window.location.hash || '');
+    if (!hash) return;
+
+    const queryIndex = hash.indexOf('?');
+    if (queryIndex < 0) return;
+
+    const hashPath = hash.slice(0, queryIndex);
+    const hashQuery = hash.slice(queryIndex + 1);
+    const params = new URLSearchParams(hashQuery);
+
+    if (!params.has('id')) return;
+
+    params.delete('id');
+    const nextQuery = params.toString();
+    const nextHash = nextQuery ? `${hashPath}?${nextQuery}` : hashPath;
+    const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+    window.history.replaceState({}, '', nextUrl);
+}
+
+function isContactsMobileViewport() {
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function bindContactsMobileCascadeBehavior() {
+    const tbody = document.getElementById('contactsTableBody') as HTMLElement | null;
+    if (!tbody || tbody.dataset.mobileCascadeBound === '1') return;
+
+    tbody.dataset.mobileCascadeBound = '1';
+    tbody.addEventListener('click', (event) => {
+        if (!isContactsMobileViewport()) return;
+
+        const target = event.target as HTMLElement | null;
+        if (!target) return;
+        if (target.closest('button, a, input, label, select, textarea')) return;
+
+        const row = target.closest('tr[data-id]') as HTMLElement | null;
+        if (!row) return;
+
+        const shouldExpand = !row.classList.contains('is-mobile-expanded');
+        tbody.querySelectorAll('tr.is-mobile-expanded').forEach((item) => {
+            if (item !== row) item.classList.remove('is-mobile-expanded');
+        });
+        row.classList.toggle('is-mobile-expanded', shouldExpand);
+    });
+}
+
 function initContacts() {
     if (!isContactsRouteActive()) {
         return;
@@ -521,12 +741,85 @@ function initContacts() {
         }, 50);
         return;
     }
+    bindContactsPaginationControls();
+    bindContactsMobileCascadeBehavior();
+    bindImportTagColumnMappingControls();
     loadContactFields();
     void loadContactsSessionFilters().finally(() => {
-        loadContacts();
+        void loadContacts({
+            // Ao reabrir a aba, atualiza em background mesmo com cache recente.
+            bypassMinRevalidate: true,
+            silent: contactsBootstrappedOnce
+        });
+        contactsBootstrappedOnce = true;
     });
-    loadTags();
+    bindCreateContactTagsSuggestions();
+    bindEditContactTagsSuggestions();
+    bindBulkRemoveTagPicker();
+    void loadTags();
     loadTemplates();
+}
+
+function bindImportTagColumnMappingControls() {
+    const fileInput = document.getElementById('importFile') as HTMLInputElement | null;
+    const textInput = document.getElementById('importText') as HTMLTextAreaElement | null;
+    const select = getImportTagColumnSelect();
+
+    const scheduleRefresh = () => {
+        if (importTagColumnRefreshTimer !== null) {
+            window.clearTimeout(importTagColumnRefreshTimer);
+        }
+        importTagColumnRefreshTimer = window.setTimeout(() => {
+            importTagColumnRefreshTimer = null;
+            void refreshImportTagColumnOptionsFromInputs();
+        }, 220);
+    };
+
+    if (fileInput && fileInput.dataset.tagColumnBound !== '1') {
+        fileInput.dataset.tagColumnBound = '1';
+        fileInput.addEventListener('change', () => {
+            void refreshImportTagColumnOptionsFromInputs();
+        });
+    }
+
+    if (textInput && textInput.dataset.tagColumnBound !== '1') {
+        textInput.dataset.tagColumnBound = '1';
+        textInput.addEventListener('input', () => {
+            scheduleRefresh();
+        });
+    }
+
+    if (select && select.dataset.tagColumnBound !== '1') {
+        select.dataset.tagColumnBound = '1';
+        select.addEventListener('focus', () => {
+            if (!select.options.length || select.options.length <= 2) {
+                void refreshImportTagColumnOptionsFromInputs();
+            }
+        });
+    }
+
+    updateImportTagColumnOptions([]);
+}
+
+function bindContactsPaginationControls() {
+    const prevPage = document.getElementById('prevPage') as HTMLButtonElement | null;
+    const nextPage = document.getElementById('nextPage') as HTMLButtonElement | null;
+
+    if (prevPage && prevPage.dataset.paginationBound !== '1') {
+        prevPage.dataset.paginationBound = '1';
+        prevPage.addEventListener('click', (event) => {
+            event.preventDefault();
+            changePage(-1);
+        });
+    }
+
+    if (nextPage && nextPage.dataset.paginationBound !== '1') {
+        nextPage.dataset.paginationBound = '1';
+        nextPage.addEventListener('click', (event) => {
+            event.preventDefault();
+            changePage(1);
+        });
+    }
 }
 
 async function fetchAllContacts() {
@@ -567,7 +860,16 @@ async function fetchAllContacts() {
 }
 
 function applyContactsSnapshot(nextContacts: Contact[]) {
-    allContacts = Array.isArray(nextContacts) ? nextContacts : [];
+    allContacts = Array.isArray(nextContacts)
+        ? nextContacts.map((contact) => {
+            const customFields = parseLeadCustomFields(contact.custom_fields);
+            const notes = String((contact as Record<string, any>).notes || '').trim() || extractLeadNotesFromCustomFields(customFields);
+            return {
+                ...contact,
+                notes
+            };
+        })
+        : [];
     pruneSelectedContactsByCurrentDataset();
     filteredContacts = [...allContacts];
     updateStats();
@@ -575,13 +877,14 @@ function applyContactsSnapshot(nextContacts: Contact[]) {
     applyUrlFilters();
 }
 
-async function loadContacts(options: { forceRefresh?: boolean; silent?: boolean } = {}) {
+async function loadContacts(options: LoadContactsOptions = {}) {
     const canRenderContacts = () => isContactsRouteActive() && Boolean(document.getElementById('contactsTableBody'));
     const shouldHandleUi = canRenderContacts();
     const forceRefresh = options.forceRefresh === true;
+    const bypassMinRevalidate = options.bypassMinRevalidate === true;
     const cached = forceRefresh ? null : readContactsCache();
     const cacheAgeMs = cached ? Math.max(0, Date.now() - cached.savedAt) : Number.POSITIVE_INFINITY;
-    const shouldSkipRefresh = !forceRefresh && !!cached && cacheAgeMs <= CONTACTS_CACHE_MIN_REVALIDATE_INTERVAL_MS;
+    const shouldSkipRefresh = !forceRefresh && !bypassMinRevalidate && !!cached && cacheAgeMs <= CONTACTS_CACHE_MIN_REVALIDATE_INTERVAL_MS;
 
     if (cached && canRenderContacts()) {
         applyContactsSnapshot(cached.contacts || []);
@@ -621,20 +924,254 @@ async function loadContacts(options: { forceRefresh?: boolean; silent?: boolean 
     }
 }
 
+function getUniqueTagNames() {
+    const seen = new Set<string>();
+    const names: string[] = [];
+
+    for (const tag of tags) {
+        const name = String(tag?.name || '').trim();
+        const key = name.toLowerCase();
+        if (!name || seen.has(key)) continue;
+        seen.add(key);
+        names.push(name);
+    }
+
+    return names.sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+}
+
+function getNormalizedUniqueLeadTags(value: unknown) {
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+
+    for (const tag of parseLeadTags(value)) {
+        const name = String(tag || '').trim();
+        const key = name.toLowerCase();
+        if (!name || seen.has(key)) continue;
+        seen.add(key);
+        normalized.push(name);
+    }
+
+    return normalized;
+}
+
+function normalizeUniqueTagArray(values: string[]) {
+    return getNormalizedUniqueLeadTags((values || []).join(', '));
+}
+
+function renderBulkRemoveTagSelectedChips() {
+    const container = document.getElementById('bulkRemoveTagSelectedChips') as HTMLElement | null;
+    if (!container) return;
+
+    if (!bulkRemoveSelectedTags.length) {
+        container.innerHTML = '<span class="text-muted">Nenhuma tag selecionada.</span>';
+        return;
+    }
+
+    container.innerHTML = bulkRemoveSelectedTags
+        .map((tag) => (
+            `<button type="button" class="btn btn-sm btn-outline" data-bulk-remove-tag-chip="${escapeHtml(tag)}">`
+            + `${escapeHtml(tag)} <span aria-hidden="true">×</span>`
+            + '</button>'
+        ))
+        .join('');
+}
+
+function bindBulkRemoveTagPicker() {
+    const select = document.getElementById('bulkRemoveTagSelect') as HTMLSelectElement | null;
+    const chipsContainer = document.getElementById('bulkRemoveTagSelectedChips') as HTMLElement | null;
+
+    if (select && select.dataset.bound !== '1') {
+        select.dataset.bound = '1';
+        select.addEventListener('change', () => {
+            const selectedTag = String(select.value || '').trim();
+            if (!selectedTag) return;
+
+            const hasTag = bulkRemoveSelectedTags.some((tag) => tag.toLowerCase() === selectedTag.toLowerCase());
+            if (!hasTag) {
+                bulkRemoveSelectedTags = normalizeUniqueTagArray([...bulkRemoveSelectedTags, selectedTag]);
+                renderBulkRemoveTagSelectedChips();
+            }
+
+            select.value = '';
+            select.focus();
+        });
+    }
+
+    if (chipsContainer && chipsContainer.dataset.bound !== '1') {
+        chipsContainer.dataset.bound = '1';
+        chipsContainer.addEventListener('click', (event) => {
+            const target = event.target as HTMLElement | null;
+            const chipButton = target?.closest('[data-bulk-remove-tag-chip]') as HTMLElement | null;
+            if (!chipButton) return;
+
+            event.preventDefault();
+            const tagName = String(chipButton.getAttribute('data-bulk-remove-tag-chip') || '').trim();
+            if (!tagName) return;
+
+            bulkRemoveSelectedTags = bulkRemoveSelectedTags.filter(
+                (tag) => tag.toLowerCase() !== tagName.toLowerCase()
+            );
+            renderBulkRemoveTagSelectedChips();
+        });
+    }
+
+    renderBulkRemoveTagSelectedChips();
+}
+
+function renderCreateContactTagSuggestions() {
+    const tagNames = getUniqueTagNames();
+    const datalist = document.getElementById('contactTagsOptions') as HTMLDataListElement | null;
+    const suggestions = document.getElementById('contactTagsSuggestions') as HTMLElement | null;
+    const contactTagsInput = document.getElementById('contactTags') as HTMLInputElement | null;
+
+    if (datalist) {
+        datalist.innerHTML = tagNames
+            .map((name) => `<option value="${escapeHtml(name)}"></option>`)
+            .join('');
+    }
+
+    if (!suggestions) return;
+
+    if (!tagNames.length) {
+        suggestions.innerHTML = '';
+        return;
+    }
+
+    const selectedTagKeys = new Set(
+        getNormalizedUniqueLeadTags(contactTagsInput?.value || '').map((tag) => tag.toLowerCase())
+    );
+
+    suggestions.innerHTML = tagNames
+        .map((name) => {
+            const selected = selectedTagKeys.has(name.toLowerCase());
+            const buttonClassName = selected ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-outline';
+            return `<button type="button" class="${buttonClassName}" data-contact-tag-option="${escapeHtml(name)}">${escapeHtml(name)}</button>`;
+        })
+        .join('');
+}
+
+function renderEditContactTagSuggestions() {
+    const tagNames = getUniqueTagNames();
+    const datalist = document.getElementById('editContactTagsOptions') as HTMLDataListElement | null;
+    const suggestions = document.getElementById('editContactTagsSuggestions') as HTMLElement | null;
+    const editTagsInput = document.getElementById('editContactTags') as HTMLInputElement | null;
+
+    if (datalist) {
+        datalist.innerHTML = tagNames
+            .map((name) => `<option value="${escapeHtml(name)}"></option>`)
+            .join('');
+    }
+
+    if (!suggestions) return;
+
+    if (!tagNames.length) {
+        suggestions.innerHTML = '';
+        return;
+    }
+
+    const selectedTagKeys = new Set(
+        getNormalizedUniqueLeadTags(editTagsInput?.value || '').map((tag) => tag.toLowerCase())
+    );
+
+    suggestions.innerHTML = tagNames
+        .map((name) => {
+            const selected = selectedTagKeys.has(name.toLowerCase());
+            const buttonClassName = selected ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-outline';
+            return `<button type="button" class="${buttonClassName}" data-edit-contact-tag-option="${escapeHtml(name)}">${escapeHtml(name)}</button>`;
+        })
+        .join('');
+}
+
+function bindEditContactTagsSuggestions() {
+    const editTagsInput = document.getElementById('editContactTags') as HTMLInputElement | null;
+    const suggestions = document.getElementById('editContactTagsSuggestions') as HTMLElement | null;
+
+    if (editTagsInput && editTagsInput.dataset.tagSuggestionsBound !== '1') {
+        editTagsInput.dataset.tagSuggestionsBound = '1';
+        editTagsInput.addEventListener('input', () => {
+            renderEditContactTagSuggestions();
+        });
+    }
+
+    if (suggestions && suggestions.dataset.tagSuggestionsBound !== '1') {
+        suggestions.dataset.tagSuggestionsBound = '1';
+        suggestions.addEventListener('click', (event) => {
+            const target = event.target as HTMLElement | null;
+            const button = target?.closest('[data-edit-contact-tag-option]') as HTMLElement | null;
+            if (!button || !editTagsInput) return;
+
+            event.preventDefault();
+
+            const clickedTag = String(button.getAttribute('data-edit-contact-tag-option') || '').trim();
+            if (!clickedTag) return;
+
+            const currentTags = getNormalizedUniqueLeadTags(editTagsInput.value || '');
+            const hasTag = currentTags.some((tag) => tag.toLowerCase() === clickedTag.toLowerCase());
+            const nextTags = hasTag
+                ? currentTags.filter((tag) => tag.toLowerCase() !== clickedTag.toLowerCase())
+                : [...currentTags, clickedTag];
+
+            editTagsInput.value = nextTags.join(', ');
+            renderEditContactTagSuggestions();
+        });
+    }
+}
+
+function bindCreateContactTagsSuggestions() {
+    const contactTagsInput = document.getElementById('contactTags') as HTMLInputElement | null;
+    const suggestions = document.getElementById('contactTagsSuggestions') as HTMLElement | null;
+
+    if (contactTagsInput && contactTagsInput.dataset.tagSuggestionsBound !== '1') {
+        contactTagsInput.dataset.tagSuggestionsBound = '1';
+        contactTagsInput.addEventListener('input', () => {
+            renderCreateContactTagSuggestions();
+        });
+    }
+
+    if (suggestions && suggestions.dataset.tagSuggestionsBound !== '1') {
+        suggestions.dataset.tagSuggestionsBound = '1';
+        suggestions.addEventListener('click', (event) => {
+            const target = event.target as HTMLElement | null;
+            const button = target?.closest('[data-contact-tag-option]') as HTMLElement | null;
+            if (!button || !contactTagsInput) return;
+
+            event.preventDefault();
+
+            const clickedTag = String(button.getAttribute('data-contact-tag-option') || '').trim();
+            if (!clickedTag) return;
+
+            const currentTags = getNormalizedUniqueLeadTags(contactTagsInput.value || '');
+            const hasTag = currentTags.some((tag) => tag.toLowerCase() === clickedTag.toLowerCase());
+            const nextTags = hasTag
+                ? currentTags.filter((tag) => tag.toLowerCase() !== clickedTag.toLowerCase())
+                : [...currentTags, clickedTag];
+
+            contactTagsInput.value = nextTags.join(', ');
+            renderCreateContactTagSuggestions();
+        });
+    }
+}
+
 async function loadTags() {
     try {
         const response: TagsResponse = await api.get('/api/tags');
         tags = response.tags || [];
         const filterSelect = document.getElementById('filterTag') as HTMLSelectElement | null;
         const importSelect = document.getElementById('importTag') as HTMLSelectElement | null;
-        const tagOptions = tags
-            .map((tag) => `<option value="${escapeHtml(tag.name)}">${escapeHtml(tag.name)}</option>`)
+        const bulkTagOptions = document.getElementById('bulkTagOptions') as HTMLDataListElement | null;
+        const bulkRemoveTagSelect = document.getElementById('bulkRemoveTagSelect') as HTMLSelectElement | null;
+        const tagNames = getUniqueTagNames();
+        const tagOptions = tagNames
+            .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+            .join('');
+        const datalistOptions = tagNames
+            .map((name) => `<option value="${escapeHtml(name)}"></option>`)
             .join('');
 
         if (filterSelect) {
             const currentFilterValue = String(filterSelect.value || '').trim();
             filterSelect.innerHTML = `<option value="">Todas as Tags</option>${tagOptions}`;
-            if (currentFilterValue && tags.some((tag) => tag.name === currentFilterValue)) {
+            if (currentFilterValue && tagNames.includes(currentFilterValue)) {
                 filterSelect.value = currentFilterValue;
             }
         }
@@ -642,11 +1179,25 @@ async function loadTags() {
         if (importSelect) {
             const currentImportValue = String(importSelect.value || '').trim();
             importSelect.innerHTML = `<option value="">Sem etiqueta</option>${tagOptions}`;
-            if (currentImportValue && tags.some((tag) => tag.name === currentImportValue)) {
+            if (currentImportValue && tagNames.includes(currentImportValue)) {
                 importSelect.value = currentImportValue;
             }
         }
-    } catch (e) {}
+
+        if (bulkTagOptions) {
+            bulkTagOptions.innerHTML = datalistOptions;
+        }
+
+        if (bulkRemoveTagSelect) {
+            bulkRemoveTagSelect.innerHTML = `<option value="">Selecione uma tag...</option>${tagOptions}`;
+        }
+    } catch (e) {
+        // ignore
+    } finally {
+        renderCreateContactTagSuggestions();
+        renderEditContactTagSuggestions();
+        renderBulkRemoveTagSelectedChips();
+    }
 }
 
 async function loadTemplates() {
@@ -821,6 +1372,8 @@ function renderContacts() {
     renderContactsTableHeader();
     const tbody = document.getElementById('contactsTableBody') as HTMLElement | null;
     if (!tbody) return;
+    const total = filteredContacts.length;
+    currentPage = clampContactsPage(currentPage, total);
     const start = (currentPage - 1) * perPage;
     const end = start + perPage;
     const pageContacts = filteredContacts.slice(start, end);
@@ -830,64 +1383,86 @@ function renderContacts() {
         tbody.innerHTML = `<tr><td colspan="${getContactsTableColumnCount()}" class="table-empty"><div class="table-empty-icon icon icon-empty icon-lg"></div><p>Nenhum contato encontrado</p></td></tr>`;
     } else {
         const dynamicColumns = getContactsVisibleCustomColumns();
-        tbody.innerHTML = pageContacts.map(c => `
-            <tr data-id="${c.id}">
-                <td><label class="checkbox-wrapper"><input type="checkbox" class="contact-checkbox" value="${c.id}" onchange="updateSelection()" ${selectedIds.has(c.id) ? 'checked' : ''}><span class="checkbox-custom"></span></label></td>
-                <td>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div class="avatar" style="background: ${getAvatarColor(c.name)}">${getInitials(c.name)}</div>
-                        <div>
-                            <div style="font-weight: 600;">${c.name || 'Sem nome'}</div>
-                            <div style="font-size: 12px; color: var(--gray-500);">${c.email || ''}</div>
+        tbody.innerHTML = pageContacts.map((c) => {
+            const parsedCustomFields = parseLeadCustomFields(c.custom_fields);
+            const whatsappLink = buildWhatsappLinkFromPhone(c.phone);
+            const phoneLabel = formatContactPhoneForDisplay(c.phone) || '-';
+            const whatsappMarkup = whatsappLink
+                ? `<a href="${whatsappLink}" target="_blank" rel="noopener noreferrer" style="color: var(--whatsapp);">${phoneLabel}</a>`
+                : '-';
+            const dynamicCells = dynamicColumns
+                .map((field) => {
+                    const value = resolveContactCustomFieldDisplayValue(c, field.key, parsedCustomFields);
+                    return `<td data-label="${escapeHtml(field.label || field.key)}">${value ? escapeHtml(value) : '-'}</td>`;
+                })
+                .join('');
+
+            return `
+                <tr data-id="${c.id}" class="contacts-row-item">
+                    <td data-label="Selecionar" class="contact-cell-select">
+                        <label class="checkbox-wrapper">
+                            <input type="checkbox" class="contact-checkbox" value="${c.id}" ${selectedIds.has(c.id) ? 'checked' : ''}>
+                            <span class="checkbox-custom"></span>
+                        </label>
+                    </td>
+                    <td data-label="Contato" class="contact-cell-main">
+                        <div class="contacts-cell-main-wrap">
+                            <div class="avatar" style="background: ${getAvatarColor(c.name)}">${getInitials(c.name)}</div>
+                            <div class="contacts-main-meta">
+                                <div class="contacts-main-name">${escapeHtml(c.name || 'Sem nome')}</div>
+                                <div class="contacts-main-email">${escapeHtml(c.email || '')}</div>
+                            </div>
+                            <span class="contacts-row-chevron" aria-hidden="true"></span>
                         </div>
-                    </div>
-                </td>
-                <td>${(() => {
-                    const whatsappLink = buildWhatsappLinkFromPhone(c.phone);
-                    const phoneLabel = formatContactPhoneForDisplay(c.phone) || '-';
-                    if (!whatsappLink) return '-';
-                    return `<a href="${whatsappLink}" target="_blank" style="color: var(--whatsapp);">${phoneLabel}</a>`;
-                })()}</td>
-                ${(() => {
-                    const parsedCustomFields = parseLeadCustomFields(c.custom_fields);
-                    return dynamicColumns
-                        .map((field) => {
-                            const value = resolveContactCustomFieldDisplayValue(c, field.key, parsedCustomFields);
-                            return `<td>${value ? escapeHtml(value) : '-'}</td>`;
-                        })
-                        .join('');
-                })()}
-                <td>${getStatusBadge(c.status)}</td>
-                <td>${renderContactTagChips(c)}</td>
-                <td>${c.last_message_at ? timeAgo(c.last_message_at) : '-'}</td>
-                <td>
-                    <div style="display: flex; gap: 5px;">
-                        <button class="btn btn-sm btn-whatsapp btn-icon" onclick="quickMessage(${c.id})" title="Mensagem"><span class="icon icon-message icon-sm"></span></button>
-                        <button class="btn btn-sm btn-outline btn-icon" onclick="editContact(${c.id})" title="Editar"><span class="icon icon-edit icon-sm"></span></button>
-                        <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteContact(${c.id})" title="Excluir"><span class="icon icon-delete icon-sm"></span></button>
-                    </div>
-                </td>
-            </tr>
-        `).join('');
+                    </td>
+                    <td data-label="WhatsApp">${whatsappMarkup}</td>
+                    ${dynamicCells}
+                    <td data-label="Status">${getStatusBadge(c.status)}</td>
+                    <td data-label="Tags">${renderContactTagChips(c)}</td>
+                    <td data-label="Ultima interacao">${c.last_message_at ? timeAgo(c.last_message_at) : '-'}</td>
+                    <td data-label="Acoes" class="contact-cell-actions">
+                        <div class="contacts-actions contacts-actions-desktop">
+                            <button class="btn btn-sm btn-whatsapp btn-icon" onclick="quickMessage(${c.id})" title="Mensagem"><span class="icon icon-message icon-sm"></span></button>
+                            <button class="btn btn-sm btn-outline btn-icon" onclick="editContact(${c.id})" title="Editar"><span class="icon icon-edit icon-sm"></span></button>
+                            <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteContact(${c.id})" title="Excluir"><span class="icon icon-delete icon-sm"></span></button>
+                        </div>
+                        <div class="contacts-actions contacts-actions-mobile">
+                            <button class="btn btn-sm btn-outline" onclick="viewContactInfo(${c.id})"><span class="icon icon-info icon-sm"></span> Informacoes</button>
+                            <button class="btn btn-sm btn-primary" onclick="editContact(${c.id})"><span class="icon icon-edit icon-sm"></span> Editar</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
     }
 
+    bindContactsSelectionControls();
+
     // Paginação
-    const total = filteredContacts.length;
-    const totalPages = Math.ceil(total / perPage);
+    const totalPages = getContactsTotalPages(total);
     const paginationInfo = document.getElementById('paginationInfo') as HTMLElement | null;
     const prevPage = document.getElementById('prevPage') as HTMLButtonElement | null;
     const nextPage = document.getElementById('nextPage') as HTMLButtonElement | null;
     if (paginationInfo) {
-        paginationInfo.textContent = `Mostrando ${start + 1}-${Math.min(end, total)} de ${total} contatos`;
+        if (total <= 0) {
+            paginationInfo.textContent = 'Mostrando 0 de 0 contatos';
+        } else {
+            paginationInfo.textContent = `Mostrando ${start + 1}-${Math.min(end, total)} de ${total} contatos`;
+        }
     }
-    if (prevPage) prevPage.disabled = currentPage === 1;
-    if (nextPage) nextPage.disabled = currentPage >= totalPages;
+    if (prevPage) prevPage.disabled = currentPage <= 1 || total <= 0;
+    if (nextPage) nextPage.disabled = currentPage >= totalPages || total <= 0;
 
     syncSelectionUi();
 }
 
 function changePage(delta: number) {
-    currentPage += delta;
+    const totalPages = getContactsTotalPages(filteredContacts.length);
+    const targetPage = clampContactsPage(currentPage + delta, filteredContacts.length);
+    if (targetPage === currentPage || targetPage < 1 || targetPage > totalPages) {
+        return;
+    }
+    currentPage = targetPage;
     renderContacts();
 }
 
@@ -953,14 +1528,23 @@ function clearSelection() {
 }
 
 async function saveContact() {
+    const contactTagsInput = document.getElementById('contactTags') as HTMLInputElement | null;
+    const contactTags = Array.from(new Set(
+        parseLeadTags(contactTagsInput?.value || '')
+            .map((tag) => String(tag || '').trim())
+            .filter(Boolean)
+    ));
     const data = {
         name: (document.getElementById('contactName') as HTMLInputElement | null)?.value.trim() || '',
         phone: (document.getElementById('contactPhone') as HTMLInputElement | null)?.value.replace(/\D/g, '') || '',
         email: (document.getElementById('contactEmail') as HTMLInputElement | null)?.value.trim() || '',
         status: parseInt((document.getElementById('contactStatus') as HTMLSelectElement | null)?.value || '1', 10) as LeadStatus,
-        source: (document.getElementById('contactSource') as HTMLSelectElement | null)?.value || ''
+        source: (document.getElementById('contactSource') as HTMLSelectElement | null)?.value || '',
+        tags: contactTags
     };
     const customFields = collectCustomFieldsValues('contact-custom-field');
+    const contactNotes = (document.getElementById('contactNotes') as HTMLTextAreaElement | null)?.value || '';
+    applyLeadNotesToCustomFields(customFields, contactNotes);
     if (Object.keys(customFields).length > 0) {
         (data as Record<string, any>).custom_fields = customFields;
     }
@@ -975,6 +1559,7 @@ async function saveContact() {
         await api.post('/api/leads', data);
         closeModal('addContactModal');
         (document.getElementById('addContactForm') as HTMLFormElement | null)?.reset();
+        renderCreateContactTagSuggestions();
         applyCustomFieldsValues('contact-custom-field', {});
         clearLeadViewCaches();
         await loadContacts({ forceRefresh: true, silent: true });
@@ -994,6 +1579,7 @@ function editContact(id: number) {
     const editContactPhone = document.getElementById('editContactPhone') as HTMLInputElement | null;
     const editContactEmail = document.getElementById('editContactEmail') as HTMLInputElement | null;
     const editContactStatus = document.getElementById('editContactStatus') as HTMLSelectElement | null;
+    const editContactTags = document.getElementById('editContactTags') as HTMLInputElement | null;
     const editContactNotes = document.getElementById('editContactNotes') as HTMLTextAreaElement | null;
 
     if (editContactId) editContactId.value = String(contact.id);
@@ -1001,14 +1587,24 @@ function editContact(id: number) {
     if (editContactPhone) editContactPhone.value = contact.phone || '';
     if (editContactEmail) editContactEmail.value = contact.email || '';
     if (editContactStatus) editContactStatus.value = String(contact.status || 1);
-    if (editContactNotes) editContactNotes.value = contact.notes || '';
+    if (editContactTags) editContactTags.value = parseLeadTags(contact.tags).join(', ');
+    renderEditContactTagSuggestions();
+    void loadTags();
     const currentCustomFields = parseLeadCustomFields(contact.custom_fields);
+    if (editContactNotes) {
+        editContactNotes.value = String(contact.notes || '').trim() || extractLeadNotesFromCustomFields(currentCustomFields);
+    }
     applyCustomFieldsValues('edit-contact-custom-field', currentCustomFields);
     if (!customContactFieldsCache.length) {
         loadContactFields().then(() => applyCustomFieldsValues('edit-contact-custom-field', currentCustomFields));
     }
 
     openModal('editContactModal');
+}
+
+function viewContactInfo(id: number) {
+    editContact(id);
+    switchTab('info');
 }
 
 async function updateContact() {
@@ -1028,12 +1624,30 @@ async function updateContact() {
             delete mergedCustomFields[key];
         }
     }
+    const editNotes = (document.getElementById('editContactNotes') as HTMLTextAreaElement | null)?.value || '';
+    applyLeadNotesToCustomFields(mergedCustomFields, editNotes);
+
+    const name = (document.getElementById('editContactName') as HTMLInputElement | null)?.value.trim() || '';
+    const phone = (document.getElementById('editContactPhone') as HTMLInputElement | null)?.value.replace(/\D/g, '') || '';
+    const editTagsInput = document.getElementById('editContactTags') as HTMLInputElement | null;
+    const nextTags = editTagsInput
+        ? Array.from(new Set(
+            parseLeadTags(editTagsInput.value || '')
+                .map((tag) => String(tag || '').trim())
+                .filter(Boolean)
+        ))
+        : parseLeadTags(existingContact?.tags);
+    if (!name || !phone) {
+        showToast('error', 'Erro', 'Nome e telefone são obrigatórios');
+        return;
+    }
 
     const data = {
-        name: (document.getElementById('editContactName') as HTMLInputElement | null)?.value.trim() || '',
-        phone: (document.getElementById('editContactPhone') as HTMLInputElement | null)?.value.replace(/\D/g, '') || '',
+        name,
+        phone,
         email: (document.getElementById('editContactEmail') as HTMLInputElement | null)?.value.trim() || '',
         status: parseInt((document.getElementById('editContactStatus') as HTMLSelectElement | null)?.value || '1', 10) as LeadStatus,
+        tags: nextTags,
         custom_fields: mergedCustomFields
     };
 
@@ -1041,6 +1655,7 @@ async function updateContact() {
         showLoading('Salvando...');
         await api.put(`/api/leads/${id}`, data);
         closeModal('editContactModal');
+        clearContactIdFromUrl();
         clearLeadViewCaches();
         await loadContacts({ forceRefresh: true, silent: true });
         showToast('success', 'Sucesso', 'Contato atualizado!');
@@ -1051,7 +1666,7 @@ async function updateContact() {
 }
 
 async function deleteContact(id: number) {
-    if (!confirm('Excluir este contato?')) return;
+    if (!await appConfirm('Excluir este contato?', 'Excluir contato')) return;
     try {
         showLoading('Excluindo...');
         await api.delete(`/api/leads/${id}`);
@@ -1067,6 +1682,12 @@ async function deleteContact(id: number) {
 function quickMessage(id: number) {
     const contact = allContacts.find(c => c.id === id);
     if (contact) {
+        const leadId = Number(contact.id || id);
+        if (Number.isFinite(leadId) && leadId > 0) {
+            window.location.href = `#/inbox?leadId=${Math.floor(leadId)}`;
+            return;
+        }
+
         const whatsappLink = buildWhatsappLinkFromPhone(contact.phone);
         if (whatsappLink) {
             window.open(whatsappLink, '_blank');
@@ -1141,7 +1762,7 @@ async function bulkDelete() {
         return;
     }
 
-    if (!confirm(`Excluir ${formatNumber(uniqueLeadIds.length)} contatos?`)) return;
+    if (!await appConfirm(`Excluir ${formatNumber(uniqueLeadIds.length)} contatos?`, 'Excluir contatos')) return;
 
     try {
         let deleted = 0;
@@ -1183,8 +1804,11 @@ async function bulkDelete() {
     }
 }
 
-function bulkChangeStatus() {
-    const status = prompt('Novo status (1=Novo, 2=Em Andamento, 3=Concluído, 4=Perdido):');
+async function bulkChangeStatus() {
+    const status = await appPrompt('Novo status (1=Novo, 2=Em Andamento, 3=Concluido, 4=Perdido):', {
+        title: 'Alterar status em lote',
+        placeholder: '1, 2, 3 ou 4'
+    });
     if (!status || ![1,2,3,4].includes(parseInt(status))) return;
     
     // Implementar mudança em lote
@@ -1193,6 +1817,308 @@ function bulkChangeStatus() {
 
 function bulkAddTag() {
     showToast('info', 'Info', 'Função em desenvolvimento');
+}
+
+function hasSelectedContactsForBulkAction() {
+    const uniqueLeadIds = Array.from(
+        new Set(
+            selectedContacts
+                .map((value) => parseInt(String(value), 10))
+                .filter((value) => Number.isInteger(value) && value > 0)
+        )
+    );
+
+    if (uniqueLeadIds.length === 0) {
+        showToast('warning', 'Atencao', 'Nenhum contato selecionado');
+        return false;
+    }
+
+    return true;
+}
+
+function setBulkRecipientsText(elementId: string) {
+    const target = document.getElementById(elementId) as HTMLElement | null;
+    if (target) target.textContent = String(selectedContacts.length);
+}
+
+function openBulkChangeStatusModal() {
+    if (!hasSelectedContactsForBulkAction()) return;
+    setBulkRecipientsText('bulkStatusRecipients');
+    const statusSelect = document.getElementById('bulkStatusValue') as HTMLSelectElement | null;
+    if (statusSelect && !statusSelect.value) {
+        statusSelect.value = '1';
+    }
+    openModal('bulkStatusModal');
+}
+
+function openBulkAddTagModal() {
+    if (!hasSelectedContactsForBulkAction()) return;
+    setBulkRecipientsText('bulkTagRecipients');
+    const input = document.getElementById('bulkTagInput') as HTMLInputElement | null;
+    if (input) {
+        input.value = '';
+        setTimeout(() => input.focus(), 0);
+    }
+    openModal('bulkTagModal');
+}
+
+function openBulkRemoveTagModal() {
+    if (!hasSelectedContactsForBulkAction()) return;
+    setBulkRecipientsText('bulkRemoveTagRecipients');
+    const select = document.getElementById('bulkRemoveTagSelect') as HTMLSelectElement | null;
+    bulkRemoveSelectedTags = [];
+    renderBulkRemoveTagSelectedChips();
+    if (select) {
+        select.value = '';
+        setTimeout(() => select.focus(), 0);
+    }
+    openModal('bulkRemoveTagModal');
+}
+
+async function submitBulkChangeStatus() {
+    const statusSelect = document.getElementById('bulkStatusValue') as HTMLSelectElement | null;
+    const parsed = parseInt(String(statusSelect?.value || '').trim(), 10);
+    if (![1, 2, 3, 4].includes(parsed)) {
+        showToast('warning', 'Atencao', 'Selecione um status valido');
+        return;
+    }
+
+    const success = await bulkChangeStatusSelection();
+    if (success !== false) {
+        closeModal('bulkStatusModal');
+    }
+}
+
+async function submitBulkAddTag() {
+    const input = document.getElementById('bulkTagInput') as HTMLInputElement | null;
+    const raw = String(input?.value || '').trim();
+    if (!raw) {
+        showToast('warning', 'Atencao', 'Informe pelo menos uma tag');
+        return;
+    }
+
+    const success = await bulkAddTagSelection();
+    if (success !== false) {
+        const nextInput = document.getElementById('bulkTagInput') as HTMLInputElement | null;
+        if (nextInput) nextInput.value = '';
+        closeModal('bulkTagModal');
+    }
+}
+
+async function submitBulkRemoveTag() {
+    if (!bulkRemoveSelectedTags.length) {
+        showToast('warning', 'Atencao', 'Informe pelo menos uma tag');
+        return;
+    }
+
+    const success = await bulkRemoveTagSelection();
+    if (success !== false) {
+        bulkRemoveSelectedTags = [];
+        renderBulkRemoveTagSelectedChips();
+        closeModal('bulkRemoveTagModal');
+    }
+}
+
+async function bulkChangeStatusSelection() {
+    const uniqueLeadIds = Array.from(
+        new Set(
+            selectedContacts
+                .map((value) => parseInt(String(value), 10))
+                .filter((value) => Number.isInteger(value) && value > 0)
+        )
+    );
+
+    if (uniqueLeadIds.length === 0) {
+        showToast('warning', 'Atencao', 'Nenhum contato selecionado');
+        return;
+    }
+
+    const modalStatusValue = (document.getElementById('bulkStatusValue') as HTMLSelectElement | null)?.value;
+    const statusInput = (modalStatusValue && String(modalStatusValue).trim())
+        ? modalStatusValue
+        : await appPrompt('Novo status (1=Novo, 2=Em Andamento, 3=Concluido, 4=Perdido):', {
+            title: 'Alterar status em lote',
+            placeholder: '1, 2, 3 ou 4'
+        });
+    if (statusInput === null) return;
+
+    const normalizedStatusInput = String(statusInput || '').trim().toLowerCase();
+    const statusMap: Record<string, LeadStatus> = {
+        '1': 1,
+        'novo': 1,
+        '2': 2,
+        'em andamento': 2,
+        'em_andamento': 2,
+        'andamento': 2,
+        '3': 3,
+        'concluido': 3,
+        'concluído': 3,
+        '4': 4,
+        'perdido': 4
+    };
+
+    const status = statusMap[normalizedStatusInput];
+    if (!status) {
+        showToast('warning', 'Atencao', 'Status invalido. Use 1, 2, 3 ou 4.');
+        return;
+    }
+
+    try {
+        showLoading(`Alterando status de ${uniqueLeadIds.length} contato(s)...`);
+
+        const response: BulkLeadsUpdateResponse = await api.post('/api/leads/bulk-update', {
+            leadIds: uniqueLeadIds,
+            status
+        });
+
+        clearSelection();
+        clearLeadViewCaches();
+        await loadContacts({ forceRefresh: true, silent: true });
+
+        const updated = Number(response?.updated || 0);
+        const skipped = Number(response?.skipped || 0);
+        const failed = Number(response?.failed || 0);
+        const changed = Number(response?.statusChanged || 0);
+        const summary = [`${updated} atualizados`];
+        if (changed > 0) summary.push(`${changed} com status alterado`);
+        if (skipped > 0) summary.push(`${skipped} ignorados`);
+        if (failed > 0) summary.push(`${failed} com erro`);
+
+        showToast(
+            failed > 0 ? 'warning' : 'success',
+            failed > 0 ? 'Concluido com alertas' : 'Sucesso',
+            `Atualizacao de status concluida: ${summary.join(', ')}`
+        );
+        return true;
+    } catch (error) {
+        hideLoading();
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Erro ao alterar status em lote');
+        return false;
+    }
+}
+
+async function bulkAddTagSelection() {
+    const uniqueLeadIds = Array.from(
+        new Set(
+            selectedContacts
+                .map((value) => parseInt(String(value), 10))
+                .filter((value) => Number.isInteger(value) && value > 0)
+        )
+    );
+
+    if (uniqueLeadIds.length === 0) {
+        showToast('warning', 'Atencao', 'Nenhum contato selecionado');
+        return;
+    }
+
+    const modalTagsValue = (document.getElementById('bulkTagInput') as HTMLInputElement | null)?.value;
+    const rawInput = (modalTagsValue && String(modalTagsValue).trim())
+        ? modalTagsValue
+        : await appPrompt('Digite a(s) tag(s) para adicionar (separadas por virgula):', {
+            title: 'Adicionar tags em lote',
+            placeholder: 'Ex.: VIP, retorno, urgente'
+        });
+    if (rawInput === null) return;
+
+    const tagsToAdd = Array.from(new Set(
+        String(rawInput || '')
+            .split(/[,;|]/)
+            .map((tag) => String(tag || '').trim())
+            .filter(Boolean)
+    ));
+
+    if (tagsToAdd.length === 0) {
+        showToast('warning', 'Atencao', 'Informe pelo menos uma tag');
+        return;
+    }
+
+    try {
+        showLoading(`Adicionando tag em ${uniqueLeadIds.length} contato(s)...`);
+
+        const response: BulkLeadsUpdateResponse = await api.post('/api/leads/bulk-update', {
+            leadIds: uniqueLeadIds,
+            addTags: tagsToAdd
+        });
+
+        clearSelection();
+        clearLeadViewCaches();
+        await loadContacts({ forceRefresh: true, silent: true });
+
+        const updated = Number(response?.updated || 0);
+        const skipped = Number(response?.skipped || 0);
+        const failed = Number(response?.failed || 0);
+        const tagsUpdated = Number(response?.tagsUpdated || 0);
+        const summary = [`${updated} atualizados`];
+        if (tagsUpdated > 0) summary.push(`${tagsUpdated} com tags adicionadas`);
+        if (skipped > 0) summary.push(`${skipped} ignorados`);
+        if (failed > 0) summary.push(`${failed} com erro`);
+
+        showToast(
+            failed > 0 ? 'warning' : 'success',
+            failed > 0 ? 'Concluido com alertas' : 'Sucesso',
+            `Adicao de tags concluida: ${summary.join(', ')}`
+        );
+        return true;
+    } catch (error) {
+        hideLoading();
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Erro ao adicionar tag em lote');
+        return false;
+    }
+}
+
+async function bulkRemoveTagSelection() {
+    const uniqueLeadIds = Array.from(
+        new Set(
+            selectedContacts
+                .map((value) => parseInt(String(value), 10))
+                .filter((value) => Number.isInteger(value) && value > 0)
+        )
+    );
+
+    if (uniqueLeadIds.length === 0) {
+        showToast('warning', 'Atencao', 'Nenhum contato selecionado');
+        return;
+    }
+
+    const tagsToRemove = normalizeUniqueTagArray(bulkRemoveSelectedTags);
+
+    if (tagsToRemove.length === 0) {
+        showToast('warning', 'Atencao', 'Informe pelo menos uma tag');
+        return;
+    }
+
+    try {
+        showLoading(`Removendo tag em ${uniqueLeadIds.length} contato(s)...`);
+
+        const response: BulkLeadsUpdateResponse = await api.post('/api/leads/bulk-update', {
+            leadIds: uniqueLeadIds,
+            removeTags: tagsToRemove
+        });
+
+        clearSelection();
+        clearLeadViewCaches();
+        await loadContacts({ forceRefresh: true, silent: true });
+
+        const updated = Number(response?.updated || 0);
+        const skipped = Number(response?.skipped || 0);
+        const failed = Number(response?.failed || 0);
+        const tagsRemoved = Number(response?.tagsRemoved || 0);
+        const summary = [`${updated} atualizados`];
+        if (tagsRemoved > 0) summary.push(`${tagsRemoved} com tags removidas`);
+        if (skipped > 0) summary.push(`${skipped} ignorados`);
+        if (failed > 0) summary.push(`${failed} com erro`);
+
+        showToast(
+            failed > 0 ? 'warning' : 'success',
+            failed > 0 ? 'Concluido com alertas' : 'Sucesso',
+            `Remocao de tags concluida: ${summary.join(', ')}`
+        );
+        return true;
+    } catch (error) {
+        hideLoading();
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Erro ao remover tag em lote');
+        return false;
+    }
 }
 
 async function importContacts() {
@@ -1204,6 +2130,7 @@ async function importContacts() {
     const textInput = (document.getElementById('importText') as HTMLTextAreaElement | null)?.value.trim() || '';
     const status = parseInt((document.getElementById('importStatus') as HTMLSelectElement | null)?.value || '1', 10) as LeadStatus;
     const importTagValue = (document.getElementById('importTag') as HTMLSelectElement | null)?.value.trim() || '';
+    const importTagColumnValue = String(getImportTagColumnSelect()?.value || IMPORT_TAG_COLUMN_AUTO_VALUE).trim();
     const importTags = importTagValue ? [importTagValue] : [];
 
     let data: Array<Record<string, string>> = [];
@@ -1219,13 +2146,22 @@ async function importContacts() {
         return;
     }
 
+    const dataHeaders = Object.keys(data[0] || {});
+    const selectedTagColumnKey = importTagColumnValue && importTagColumnValue !== IMPORT_TAG_COLUMN_AUTO_VALUE
+        ? normalizeImportHeader(importTagColumnValue)
+        : '';
+    const autoTagColumnKey = detectTagColumnFromHeaders(dataHeaders);
+    const resolvedTagColumnKey = selectedTagColumnKey || autoTagColumnKey;
+
     const leadsToImport: Array<Record<string, any>> = [];
     for (const row of data) {
         const normalizedRow = buildNormalizedImportRow(row);
         const phone = getImportValue(normalizedRow, ['telefone', 'phone', 'whatsapp', 'celular', 'fone', 'numero']).replace(/\D/g, '');
         if (!phone) continue;
 
-        const mergedTags = Array.from(new Set(importTags));
+        const rowTagsRaw = resolvedTagColumnKey ? String(normalizedRow[resolvedTagColumnKey] || '').trim() : '';
+        const rowTags = Array.from(new Set(parseLeadTags(rowTagsRaw)));
+        const mergedTags = Array.from(new Set([...importTags, ...rowTags]));
         const customFields: Record<string, string> = {};
 
         for (const field of customContactFieldsCache) {
@@ -1284,6 +2220,11 @@ async function importContacts() {
         closeModal('importModal');
         const importTag = document.getElementById('importTag') as HTMLSelectElement | null;
         if (importTag) importTag.value = '';
+        const importTagColumn = getImportTagColumnSelect();
+        if (importTagColumn) {
+            importTagColumn.value = IMPORT_TAG_COLUMN_AUTO_VALUE;
+            updateImportTagColumnOptions([]);
+        }
         clearLeadViewCaches();
         await loadContacts({ forceRefresh: true, silent: true });
 
@@ -1337,6 +2278,7 @@ const windowAny = window as Window & {
     clearSelection?: () => void;
     saveContact?: () => Promise<void>;
     editContact?: (id: number) => void;
+    viewContactInfo?: (id: number) => void;
     updateContact?: () => Promise<void>;
     deleteContact?: (id: number) => Promise<void>;
     quickMessage?: (id: number) => void;
@@ -1344,8 +2286,12 @@ const windowAny = window as Window & {
     bulkSendMessage?: () => void;
     sendBulkMessage?: () => Promise<void>;
     bulkDelete?: () => Promise<void>;
-    bulkChangeStatus?: () => void;
+    bulkChangeStatus?: () => Promise<void>;
     bulkAddTag?: () => void;
+    bulkRemoveTag?: () => void;
+    submitBulkChangeStatus?: () => Promise<void>;
+    submitBulkAddTag?: () => Promise<void>;
+    submitBulkRemoveTag?: () => Promise<void>;
     importContacts?: () => Promise<void>;
     exportContacts?: () => void;
     switchTab?: (tab: string) => void;
@@ -1361,6 +2307,7 @@ windowAny.updateSelection = updateSelection;
 windowAny.clearSelection = clearSelection;
 windowAny.saveContact = saveContact;
 windowAny.editContact = editContact;
+windowAny.viewContactInfo = viewContactInfo;
 windowAny.updateContact = updateContact;
 windowAny.deleteContact = deleteContact;
 windowAny.quickMessage = quickMessage;
@@ -1368,8 +2315,12 @@ windowAny.openWhatsApp = openWhatsApp;
 windowAny.bulkSendMessage = bulkSendMessage;
 windowAny.sendBulkMessage = sendBulkMessage;
 windowAny.bulkDelete = bulkDelete;
-windowAny.bulkChangeStatus = bulkChangeStatus;
-windowAny.bulkAddTag = bulkAddTag;
+windowAny.bulkChangeStatus = openBulkChangeStatusModal;
+windowAny.bulkAddTag = openBulkAddTagModal;
+windowAny.bulkRemoveTag = openBulkRemoveTagModal;
+windowAny.submitBulkChangeStatus = submitBulkChangeStatus;
+windowAny.submitBulkAddTag = submitBulkAddTag;
+windowAny.submitBulkRemoveTag = submitBulkRemoveTag;
 windowAny.importContacts = importContacts;
 windowAny.exportContacts = exportContacts;
 windowAny.switchTab = switchTab;

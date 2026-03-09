@@ -658,8 +658,25 @@ function toggleSidebar() {
     document.querySelector('.sidebar-overlay')?.classList.toggle('active');
 }
 
-function logout() {
+async function logout() {
+    const token = sessionStorage.getItem('selfDashboardToken');
+    if (token) {
+        try {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                keepalive: true,
+                body: '{}'
+            });
+        } catch (_) {
+            // best-effort
+        }
+    }
     localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('self_dashboard_auth_v1');
     sessionStorage.removeItem('selfDashboardToken');
     sessionStorage.removeItem('selfDashboardExpiry');
     sessionStorage.removeItem('selfDashboardUser');

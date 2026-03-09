@@ -12,6 +12,17 @@ const fs = require('fs');
 
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
+const DEPLOY_COMMIT_SHA = String(
+    process.env.RAILWAY_GIT_COMMIT_SHA
+    || process.env.GITHUB_SHA
+    || process.env.COMMIT_SHA
+    || ''
+).trim();
+const DEPLOY_ID = String(
+    process.env.RAILWAY_DEPLOYMENT_ID
+    || process.env.RAILWAY_DEPLOYMENT_TRIGGER_ID
+    || ''
+).trim();
 
 function normalizeDirValue(value) {
     const normalized = String(value || '').trim();
@@ -55,6 +66,7 @@ process.env.SESSIONS_DIR = sessionsDir;
 process.env.UPLOAD_DIR = uploadsDir;
 
 if (process.env.NODE_ENV === 'production') {
+    console.log(`[QueueDebugVersion] commit=${DEPLOY_COMMIT_SHA || 'unknown'} deploy=${DEPLOY_ID || 'unknown'} node=${process.version}`);
     if (volumeBase) {
         console.log(`[Bootstrap] Volume persistente detectado: ${volumeBase}`);
     } else if (explicitSessionsDir || explicitUploadDir) {

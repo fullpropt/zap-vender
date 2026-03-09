@@ -3,7 +3,15 @@
  * Funções CRUD para todas as entidades do sistema
  */
 
+const crypto = require('crypto');
 const { query, queryOne, run, transaction, generateUUID } = require('./connection');
+const {
+    normalizeTagLabel: sharedNormalizeTagLabel,
+    normalizeTagKey: sharedNormalizeTagKey,
+    parseTagList: sharedParseTagList,
+    uniqueTagLabels: sharedUniqueTagLabels
+} = require('../utils/tagUtils');
+const { normalizeLeadStatus } = require('../utils/leadStatus');
 
 function normalizeDigits(value) {
     return String(value || '').replace(/\D/g, '');
@@ -54,15 +62,23 @@ function parseLeadCustomFields(value) {
 
     if (typeof value !== 'string') return {};
 
-    try {
-        const parsed = JSON.parse(value);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    let current = value;
+    for (let depth = 0; depth < 3; depth += 1) {
+        if (typeof current !== 'string') break;
+        const trimmed = current.trim();
+        if (!trimmed) return {};
+        try {
+            current = JSON.parse(trimmed);
+        } catch (_) {
             return {};
         }
-        return parsed;
-    } catch (_) {
+    }
+
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
         return {};
     }
+
+    return { ...current };
 }
 
 function mergeLeadCustomFields(baseValue, overrideValue) {
@@ -84,17 +100,19 @@ function mergeLeadCustomFields(baseValue, overrideValue) {
     return merged;
 }
 
-function lockLeadNameAsManual(customFields) {
+function lockLeadNameAsManual(customFields, manualName = '') {
     const merged = mergeLeadCustomFields(customFields);
     const currentSystem = merged.__system && typeof merged.__system === 'object' && !Array.isArray(merged.__system)
         ? merged.__system
         : {};
+    const sanitizedManualName = sanitizeLeadName(manualName);
 
     merged.__system = {
         ...currentSystem,
         manual_name_locked: true,
         manual_name_source: 'manual',
-        manual_name_updated_at: new Date().toISOString()
+        manual_name_updated_at: new Date().toISOString(),
+        ...(sanitizedManualName ? { manual_name_value: sanitizedManualName } : {})
     };
 
     return merged;
@@ -107,6 +125,8 @@ function isLeadNameManuallyLocked(customFields) {
 
 function shouldReplaceLeadName(currentName, incomingName, phone, options = {}) {
     if (options.manualNameLocked) return false;
+    const source = String(options.source || '').trim().toLowerCase();
+    if (source && source !== 'whatsapp') return false;
 
     const next = sanitizeLeadName(incomingName);
     if (!next) return false;
@@ -152,11 +172,11 @@ function deriveUserName(name, email) {
 }
 
 function normalizeTagValue(value) {
-    return String(value || '').replace(/\s+/g, ' ').trim();
+    return sharedNormalizeTagLabel(value);
 }
 
 function normalizeTagKey(value) {
-    return normalizeTagValue(value).toLowerCase();
+    return sharedNormalizeTagKey(value);
 }
 
 function normalizeCustomEventName(value) {
@@ -174,6 +194,11 @@ function normalizeCustomEventKey(value) {
         .slice(0, 80);
 }
 
+function normalizeFlowSessionScope(value) {
+    const normalized = String(value ?? '').trim();
+    return normalized || null;
+}
+
 function buildCustomEventKey(name) {
     const fromName = normalizeCustomEventKey(name);
     if (fromName) return fromName;
@@ -181,46 +206,11 @@ function buildCustomEventKey(name) {
 }
 
 function parseTagList(rawValue) {
-    if (!rawValue) return [];
-
-    if (Array.isArray(rawValue)) {
-        return rawValue
-            .map(normalizeTagValue)
-            .filter(Boolean);
-    }
-
-    const raw = String(rawValue).trim();
-    if (!raw) return [];
-
-    try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-            return parsed
-                .map(normalizeTagValue)
-                .filter(Boolean);
-        }
-    } catch (_) {
-        // fallback para lista separada por delimitadores
-    }
-
-    return raw
-        .split(/[,;|]/)
-        .map(normalizeTagValue)
-        .filter(Boolean);
+    return sharedParseTagList(rawValue);
 }
 
 function uniqueTags(list) {
-    const seen = new Set();
-    const result = [];
-
-    for (const tag of list.map(normalizeTagValue).filter(Boolean)) {
-        const key = normalizeTagKey(tag);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        result.push(tag);
-    }
-
-    return result;
+    return sharedUniqueTagLabels(list);
 }
 
 function normalizeFlowKeywordText(value = '') {
@@ -309,6 +299,85 @@ function parsePositiveInteger(value, fallback = null) {
     return normalized > 0 ? normalized : fallback;
 }
 
+const INCOMING_WEBHOOK_SECRET_MIN_LENGTH = 16;
+const INCOMING_WEBHOOK_SECRET_PREFIX_LENGTH = 6;
+const INCOMING_WEBHOOK_SECRET_SUFFIX_LENGTH = 4;
+
+function normalizeIncomingWebhookSecret(value) {
+    return String(value || '').trim();
+}
+
+function hashIncomingWebhookSecret(secret) {
+    const normalized = normalizeIncomingWebhookSecret(secret);
+    if (!normalized) return '';
+    return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
+}
+
+function generateIncomingWebhookSecret() {
+    return `zv_in_${crypto.randomBytes(24).toString('base64url')}`;
+}
+
+function buildIncomingWebhookSecretPreview(secret) {
+    const normalized = normalizeIncomingWebhookSecret(secret);
+    const prefix = normalized.slice(0, INCOMING_WEBHOOK_SECRET_PREFIX_LENGTH);
+    const suffix = normalized.slice(-INCOMING_WEBHOOK_SECRET_SUFFIX_LENGTH);
+    return {
+        prefix,
+        suffix
+    };
+}
+
+function parseLeadOwnerScopeOption(options) {
+    if (typeof options === 'number') {
+        return parsePositiveInteger(options, null);
+    }
+    if (!options || typeof options !== 'object') return null;
+    return parsePositiveInteger(
+        options.owner_user_id !== undefined ? options.owner_user_id : options.ownerUserId,
+        null
+    );
+}
+
+async function resolveLeadOwnerUserIdInput(data = {}) {
+    const explicitOwnerUserId = parsePositiveInteger(data?.owner_user_id, null);
+    if (explicitOwnerUserId) return explicitOwnerUserId;
+
+    const assignedUserId = parsePositiveInteger(data?.assigned_to, null);
+    if (!assignedUserId) return null;
+
+    const assignedUser = await queryOne(
+        'SELECT id, owner_user_id FROM users WHERE id = ?',
+        [assignedUserId]
+    );
+    if (!assignedUser) return null;
+
+    return parsePositiveInteger(assignedUser.owner_user_id, null)
+        || parsePositiveInteger(assignedUser.id, null)
+        || null;
+}
+
+function appendLeadOwnerScopeFilter(sql, params, ownerUserId, tableAlias = 'leads') {
+    const normalizedOwnerUserId = parsePositiveInteger(ownerUserId, null);
+    if (!normalizedOwnerUserId) return sql;
+
+    sql += `
+        AND (
+            ${tableAlias}.owner_user_id = ?
+            OR (
+                ${tableAlias}.owner_user_id IS NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM users owner_scope
+                    WHERE owner_scope.id = ${tableAlias}.assigned_to
+                      AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                )
+            )
+        )
+    `;
+    params.push(normalizedOwnerUserId, normalizedOwnerUserId, normalizedOwnerUserId);
+    return sql;
+}
+
 function normalizeBooleanFlag(value, fallback = 1) {
     if (typeof value === 'boolean') return value ? 1 : 0;
     if (typeof value === 'number') return value > 0 ? 1 : 0;
@@ -348,12 +417,18 @@ const Lead = {
         const incomingName = sanitizedName || normalizedPhone;
         const initialCustomFields = parseLeadCustomFields(data.custom_fields);
         const customFields = normalizedSource !== 'whatsapp' && sanitizedName
-            ? lockLeadNameAsManual(initialCustomFields)
+            ? lockLeadNameAsManual(initialCustomFields, sanitizedName)
             : initialCustomFields;
+        const hasExplicitStatus = Object.prototype.hasOwnProperty.call(data || {}, 'status');
+        const normalizedStatus = normalizeLeadStatus(data.status, hasExplicitStatus ? null : 1);
+        if (normalizedStatus === null) {
+            throw new Error('Status invalido. Use 1, 2, 3 ou 4.');
+        }
+        const ownerUserId = await resolveLeadOwnerUserIdInput(data);
         
         const result = await run(`
-            INSERT INTO leads (uuid, phone, phone_formatted, jid, name, email, vehicle, plate, status, tags, custom_fields, source, assigned_to)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO leads (uuid, phone, phone_formatted, jid, name, email, vehicle, plate, status, tags, custom_fields, source, assigned_to, owner_user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             normalizedPhone,
@@ -363,11 +438,12 @@ const Lead = {
             data.email,
             data.vehicle,
             data.plate,
-            data.status || 1,
+            normalizedStatus,
             JSON.stringify(data.tags || []),
             JSON.stringify(customFields),
             source,
-            data.assigned_to
+            data.assigned_to,
+            ownerUserId
         ]);
         
         return { id: result.lastInsertRowid, uuid };
@@ -381,20 +457,26 @@ const Lead = {
         return await queryOne('SELECT * FROM leads WHERE uuid = ?', [uuid]);
     },
     
-    async findByPhone(phone) {
+    async findByPhone(phone, options = {}) {
         const cleaned = normalizeDigits(phone);
         if (!cleaned) return null;
+        const ownerUserId = parseLeadOwnerScopeOption(options);
 
         const suffixLength = Math.min(cleaned.length, 11);
         const suffix = cleaned.slice(-suffixLength);
 
-        return await queryOne(
-            `
+        let sql = `
             SELECT *
             FROM leads
-            WHERE phone = ?
-               OR phone LIKE ?
-               OR (? <> '' AND substr(phone, length(phone) - ${suffixLength} + 1) = ?)
+            WHERE (
+                phone = ?
+                OR phone LIKE ?
+                OR (? <> '' AND substr(phone, length(phone) - ${suffixLength} + 1) = ?)
+            )
+        `;
+        const params = [cleaned, `%${cleaned}`, suffix, suffix];
+        sql = appendLeadOwnerScopeFilter(sql, params, ownerUserId, 'leads');
+        sql += `
             ORDER BY
                 CASE
                     WHEN phone = ? THEN 0
@@ -406,29 +488,45 @@ const Lead = {
                 COALESCE(last_message_at, updated_at, created_at) DESC,
                 id DESC
             LIMIT 1
-            `,
-            [cleaned, `%${cleaned}`, suffix, suffix, cleaned, `%${cleaned}`, suffix, suffix]
-        );
+        `;
+        params.push(cleaned, `%${cleaned}`, suffix, suffix);
+
+        return await queryOne(sql, params);
     },
     
-    async findByJid(jid) {
-        return await queryOne('SELECT * FROM leads WHERE jid = ?', [jid]);
+    async findByJid(jid, options = {}) {
+        const normalizedJid = String(jid || '').trim();
+        if (!normalizedJid) return null;
+
+        const ownerUserId = parseLeadOwnerScopeOption(options);
+        let sql = 'SELECT * FROM leads WHERE jid = ?';
+        const params = [normalizedJid];
+        sql = appendLeadOwnerScopeFilter(sql, params, ownerUserId, 'leads');
+        sql += ' ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC, id DESC LIMIT 1';
+        return await queryOne(sql, params);
     },
     
-    async findOrCreate(data) {
+    async findOrCreate(data, options = {}) {
+        const ownerUserId = await resolveLeadOwnerUserIdInput({
+            ...data,
+            owner_user_id: data?.owner_user_id ?? options?.owner_user_id
+        });
         let lead = null;
         if (data.jid) {
-            lead = await this.findByJid(data.jid);
+            lead = await this.findByJid(data.jid, { owner_user_id: ownerUserId });
         }
         if (!lead) {
-            lead = await this.findByPhone(data.phone);
+            lead = await this.findByPhone(data.phone, { owner_user_id: ownerUserId });
         }
         
         if (lead) {
             // Atualizar dados se necessario
             const nextName = sanitizeLeadName(data.name);
             const manualNameLocked = isLeadNameManuallyLocked(lead.custom_fields);
-            if (shouldReplaceLeadName(lead.name, nextName, lead.phone || data.phone, { manualNameLocked })) {
+            if (shouldReplaceLeadName(lead.name, nextName, lead.phone || data.phone, {
+                manualNameLocked,
+                source: lead.source || data.source
+            })) {
                 await this.update(lead.id, { name: nextName });
                 lead.name = nextName;
             }
@@ -442,14 +540,27 @@ const Lead = {
                 await this.update(lead.id, { assigned_to: requestedAssignee });
                 lead.assigned_to = requestedAssignee;
             }
+            if (ownerUserId && !parsePositiveInteger(lead.owner_user_id, null)) {
+                await run(
+                    'UPDATE leads SET owner_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_user_id IS NULL',
+                    [ownerUserId, lead.id]
+                );
+                lead.owner_user_id = ownerUserId;
+            }
             return { lead, created: false };
         }
         
-        const result = await this.create(data);
+        const result = await this.create({
+            ...data,
+            owner_user_id: ownerUserId || data?.owner_user_id
+        });
         return { lead: await this.findById(result.id), created: true };
     },
     
     async update(id, data) {
+        const currentLead = await this.findById(id);
+        if (!currentLead) return null;
+
         const fields = [];
         const values = [];
         
@@ -457,6 +568,61 @@ const Lead = {
         
         for (const [key, value] of Object.entries(data)) {
             if (allowedFields.includes(key)) {
+                if (key === 'name') {
+                    const sanitizedName = sanitizeLeadName(value);
+                    if (!sanitizedName) continue;
+                    fields.push('name = ?');
+                    values.push(sanitizedName);
+                    continue;
+                }
+
+                if (key === 'status') {
+                    const normalizedStatus = normalizeLeadStatus(value, null);
+                    if (normalizedStatus === null) {
+                        throw new Error('Status invalido. Use 1, 2, 3 ou 4.');
+                    }
+                    fields.push('status = ?');
+                    values.push(normalizedStatus);
+                    continue;
+                }
+
+                if (key === 'custom_fields') {
+                    const incomingCustomFields = parseLeadCustomFields(value);
+                    const currentCustomFields = parseLeadCustomFields(currentLead.custom_fields);
+                    const currentSystem = currentCustomFields.__system
+                        && typeof currentCustomFields.__system === 'object'
+                        && !Array.isArray(currentCustomFields.__system)
+                        ? currentCustomFields.__system
+                        : {};
+                    const incomingSystem = incomingCustomFields.__system
+                        && typeof incomingCustomFields.__system === 'object'
+                        && !Array.isArray(incomingCustomFields.__system)
+                        ? incomingCustomFields.__system
+                        : {};
+
+                    if (currentSystem.manual_name_locked === true) {
+                        const preservedSystem = {
+                            ...incomingSystem,
+                            manual_name_locked: true,
+                            manual_name_source: incomingSystem.manual_name_source || currentSystem.manual_name_source || 'manual',
+                            manual_name_updated_at: incomingSystem.manual_name_updated_at || currentSystem.manual_name_updated_at || new Date().toISOString()
+                        };
+
+                        const preservedManualName = sanitizeLeadName(
+                            incomingSystem.manual_name_value || currentSystem.manual_name_value || currentLead.name || ''
+                        );
+                        if (preservedManualName) {
+                            preservedSystem.manual_name_value = preservedManualName;
+                        }
+
+                        incomingCustomFields.__system = preservedSystem;
+                    }
+
+                    fields.push('custom_fields = ?');
+                    values.push(JSON.stringify(incomingCustomFields));
+                    continue;
+                }
+
                 fields.push(`${key} = ?`);
                 values.push(typeof value === 'object' ? JSON.stringify(value) : value);
             }
@@ -477,7 +643,6 @@ const Lead = {
                 'DELETE FROM message_queue WHERE lead_id = $1',
                 'DELETE FROM flow_executions WHERE lead_id = $1',
                 'DELETE FROM messages WHERE lead_id = $1',
-                'DELETE FROM lead_tags WHERE lead_id = $1',
                 'DELETE FROM automation_lead_runs WHERE lead_id = $1',
                 'UPDATE custom_event_logs SET lead_id = NULL WHERE lead_id = $1',
                 'DELETE FROM conversations WHERE lead_id = $1'
@@ -516,7 +681,6 @@ const Lead = {
                 'DELETE FROM message_queue WHERE lead_id = ANY($1::int[])',
                 'DELETE FROM flow_executions WHERE lead_id = ANY($1::int[])',
                 'DELETE FROM messages WHERE lead_id = ANY($1::int[])',
-                'DELETE FROM lead_tags WHERE lead_id = ANY($1::int[])',
                 'DELETE FROM automation_lead_runs WHERE lead_id = ANY($1::int[])',
                 'UPDATE custom_event_logs SET lead_id = NULL WHERE lead_id = ANY($1::int[])',
                 'DELETE FROM conversations WHERE lead_id = ANY($1::int[])'
@@ -538,53 +702,37 @@ const Lead = {
         let sql = `
             SELECT
                 leads.*,
-                (
-                    SELECT c.session_id
-                    FROM conversations c
-                    WHERE c.lead_id = leads.id
-                    ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
-                    LIMIT 1
-                ) AS session_id,
-                (
-                    SELECT COALESCE(NULLIF(TRIM(ws.name), ''), NULLIF(TRIM(ws.phone), ''), c.session_id)
-                    FROM conversations c
-                    LEFT JOIN whatsapp_sessions ws ON ws.session_id = c.session_id
-                    WHERE c.lead_id = leads.id
-                    ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
-                    LIMIT 1
-                ) AS session_label
+                latest_conversation.session_id,
+                latest_conversation.session_label
             FROM leads
+            LEFT JOIN LATERAL (
+                SELECT
+                    c.session_id,
+                    COALESCE(NULLIF(TRIM(ws.name), ''), NULLIF(TRIM(ws.phone), ''), c.session_id) AS session_label
+                FROM conversations c
+                LEFT JOIN whatsapp_sessions ws ON ws.session_id = c.session_id
+                WHERE c.lead_id = leads.id
+                ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
+                LIMIT 1
+            ) latest_conversation ON TRUE
             WHERE 1=1
         `;
         const params = [];
         
         if (options.status) {
-            sql += ' AND status = ?';
+            sql += ' AND leads.status = ?';
             params.push(options.status);
         }
         
         if (options.assigned_to) {
-            sql += ' AND assigned_to = ?';
+            sql += ' AND leads.assigned_to = ?';
             params.push(options.assigned_to);
         }
 
-        if (options.owner_user_id) {
-            const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
-            if (ownerUserId) {
-                sql += `
-                    AND EXISTS (
-                        SELECT 1
-                        FROM users owner_scope
-                        WHERE owner_scope.id = leads.assigned_to
-                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
-                    )
-                `;
-                params.push(ownerUserId, ownerUserId);
-            }
-        }
+        sql = appendLeadOwnerScopeFilter(sql, params, parsePositiveInteger(options.owner_user_id, null), 'leads');
         
         if (options.search) {
-            sql += ' AND (name LIKE ? OR phone LIKE ?)';
+            sql += ' AND (leads.name LIKE ? OR leads.phone LIKE ?)';
             params.push(`%${options.search}%`, `%${options.search}%`);
         }
 
@@ -593,7 +741,7 @@ const Lead = {
             params.push(String(options.session_id).trim());
         }
         
-        sql += ' ORDER BY updated_at DESC';
+        sql += ' ORDER BY leads.updated_at DESC';
         
         if (options.limit) {
             sql += ' LIMIT ?';
@@ -622,20 +770,7 @@ const Lead = {
             params.push(options.assigned_to);
         }
 
-        if (options.owner_user_id) {
-            const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
-            if (ownerUserId) {
-                sql += `
-                    AND EXISTS (
-                        SELECT 1
-                        FROM users owner_scope
-                        WHERE owner_scope.id = leads.assigned_to
-                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
-                    )
-                `;
-                params.push(ownerUserId, ownerUserId);
-            }
-        }
+        sql = appendLeadOwnerScopeFilter(sql, params, parsePositiveInteger(options.owner_user_id, null), 'leads');
 
         if (options.session_id) {
             sql += ' AND EXISTS (SELECT 1 FROM conversations c WHERE c.lead_id = leads.id AND c.session_id = ?)';
@@ -660,20 +795,7 @@ const Lead = {
             params.push(options.assigned_to);
         }
 
-        if (options.owner_user_id) {
-            const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
-            if (ownerUserId) {
-                sql += `
-                    AND EXISTS (
-                        SELECT 1
-                        FROM users owner_scope
-                        WHERE owner_scope.id = leads.assigned_to
-                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
-                    )
-                `;
-                params.push(ownerUserId, ownerUserId);
-            }
-        }
+        sql = appendLeadOwnerScopeFilter(sql, params, parsePositiveInteger(options.owner_user_id, null), 'leads');
 
         if (options.session_id) {
             sql += ' AND EXISTS (SELECT 1 FROM conversations c WHERE c.lead_id = leads.id AND c.session_id = ?)';
@@ -840,14 +962,32 @@ const Conversation = {
             const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
             if (ownerUserId) {
                 sql += `
-                    AND EXISTS (
-                        SELECT 1
-                        FROM users owner_scope
-                        WHERE owner_scope.id = COALESCE(c.assigned_to, l.assigned_to)
-                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                    AND (
+                        l.owner_user_id = ?
+                        OR
+                        EXISTS (
+                            SELECT 1
+                            FROM users owner_scope
+                            WHERE owner_scope.id = COALESCE(c.assigned_to, l.assigned_to)
+                              AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM whatsapp_sessions ws
+                            WHERE ws.session_id = c.session_id
+                              AND (
+                                  ws.created_by = ?
+                                  OR EXISTS (
+                                      SELECT 1
+                                      FROM users ws_owner
+                                      WHERE ws_owner.id = ws.created_by
+                                        AND (ws_owner.owner_user_id = ? OR ws_owner.id = ?)
+                                  )
+                              )
+                        )
                     )
                 `;
-                params.push(ownerUserId, ownerUserId);
+                params.push(ownerUserId, ownerUserId, ownerUserId, ownerUserId, ownerUserId, ownerUserId);
             }
         }
         
@@ -931,33 +1071,72 @@ const Message = {
     },
     
     async listByConversation(conversationId, options = {}) {
+        const limit = Number(options.limit || 0);
+        const offset = Number(options.offset || 0);
+
+        if (Number.isFinite(limit) && limit > 0 && (!Number.isFinite(offset) || offset <= 0)) {
+            return await query(`
+                SELECT *
+                FROM (
+                    SELECT *
+                    FROM messages
+                    WHERE conversation_id = ?
+                    ORDER BY COALESCE(sent_at, created_at) DESC, id DESC
+                    LIMIT ?
+                ) recent_messages
+                ORDER BY COALESCE(sent_at, created_at) ASC, id ASC
+            `, [conversationId, Math.floor(limit)]);
+        }
+
         let sql = 'SELECT * FROM messages WHERE conversation_id = ?';
         const params = [conversationId];
         
         sql += " ORDER BY COALESCE(sent_at, created_at) ASC, id ASC";
         
-        if (options.limit) {
+        if (Number.isFinite(limit) && limit > 0) {
             sql += ' LIMIT ?';
-            params.push(options.limit);
+            params.push(Math.floor(limit));
         }
         
-        if (options.offset) {
+        if (Number.isFinite(offset) && offset > 0) {
             sql += ' OFFSET ?';
-            params.push(options.offset);
+            params.push(Math.floor(offset));
         }
         
         return await query(sql, params);
     },
     
     async listByLead(leadId, options = {}) {
+        const limit = Number(options.limit || 0);
+        const offset = Number(options.offset || 0);
+
+        if (Number.isFinite(limit) && limit > 0 && (!Number.isFinite(offset) || offset <= 0)) {
+            return await query(`
+                SELECT *
+                FROM (
+                    SELECT *
+                    FROM messages
+                    WHERE lead_id = ?
+                    ORDER BY COALESCE(sent_at, created_at) DESC, id DESC
+                    LIMIT ?
+                ) recent_messages
+                ORDER BY COALESCE(sent_at, created_at) ASC, id ASC
+            `, [leadId, Math.floor(limit)]);
+        }
+
         let sql = 'SELECT * FROM messages WHERE lead_id = ?';
         const params = [leadId];
         
         sql += " ORDER BY COALESCE(sent_at, created_at) ASC, id ASC";
         
-        if (options.limit) {
+        if (Number.isFinite(limit) && limit > 0) {
             sql += ' LIMIT ?';
-            params.push(options.limit);
+            params.push(Math.floor(limit));
+        }
+
+        if (Number.isFinite(offset) && offset > 0) {
+            sql += ' OFFSET ?';
+            params.push(Math.floor(offset));
         }
         
         return await query(sql, params);
@@ -969,6 +1148,26 @@ const Message = {
     
     async getLastMessage(conversationId) {
         return await queryOne("SELECT * FROM messages WHERE conversation_id = ? ORDER BY COALESCE(sent_at, created_at) DESC, id DESC LIMIT 1", [conversationId]);
+    },
+
+    async getLastMessagesByConversationIds(conversationIds = []) {
+        const ids = Array.from(
+            new Set(
+                (Array.isArray(conversationIds) ? conversationIds : [])
+                    .map((id) => Number(id))
+                    .filter((id) => Number.isInteger(id) && id > 0)
+            )
+        );
+
+        if (ids.length === 0) return [];
+
+        const placeholders = ids.map(() => '?').join(', ');
+        return await query(`
+            SELECT DISTINCT ON (conversation_id) *
+            FROM messages
+            WHERE conversation_id IN (${placeholders})
+            ORDER BY conversation_id, COALESCE(sent_at, created_at) DESC, id DESC
+        `, ids);
     },
 
     async hasCampaignDelivery(campaignId, leadId) {
@@ -1009,22 +1208,70 @@ const Template = {
         return { id: result.lastInsertRowid, uuid };
     },
     
-    async findById(id) {
-        return await queryOne('SELECT * FROM templates WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const createdBy = parsePositiveInteger(options.created_by, null);
+        const params = [id];
+        let filters = '';
+
+        if (ownerUserId) {
+            filters += `
+                AND (
+                    templates.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = templates.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        }
+
+        if (createdBy) {
+            filters += ' AND templates.created_by = ?';
+            params.push(createdBy);
+        }
+
+        return await queryOne(`
+            SELECT templates.*
+            FROM templates
+            WHERE templates.id = ?
+            ${filters}
+        `, params);
     },
     
     async list(options = {}) {
-        let sql = 'SELECT * FROM templates WHERE is_active = 1';
+        let sql = 'SELECT templates.* FROM templates WHERE templates.is_active = 1';
         const params = [];
         
         if (options.category) {
-            sql += ' AND category = ?';
+            sql += ' AND templates.category = ?';
             params.push(options.category);
         }
 
-        if (options.created_by) {
-            sql += ' AND created_by = ?';
-            params.push(options.created_by);
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const createdBy = parsePositiveInteger(options.created_by, null);
+
+        if (ownerUserId) {
+            sql += `
+                AND (
+                    templates.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = templates.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        }
+
+        if (createdBy) {
+            sql += ' AND templates.created_by = ?';
+            params.push(createdBy);
         }
         
         sql += ' ORDER BY usage_count DESC, name ASC';
@@ -1069,13 +1316,17 @@ const Template = {
 const Campaign = {
     async create(data) {
         const uuid = generateUUID();
+        const sendWindowEnabled = normalizeBooleanFlag(data.send_window_enabled, 0);
+        const sendWindowStart = String(data.send_window_start || '').trim() || null;
+        const sendWindowEnd = String(data.send_window_end || '').trim() || null;
 
         const result = await run(`
             INSERT INTO campaigns (
                 uuid, name, description, type, distribution_strategy, distribution_config,
-                status, segment, tag_filter, message, delay, delay_min, delay_max, start_at, created_by
+                status, segment, tag_filter, message, delay, delay_min, delay_max, start_at,
+                send_window_enabled, send_window_start, send_window_end, created_by
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             data.name,
@@ -1091,19 +1342,54 @@ const Campaign = {
             data.delay_min || data.delay || 0,
             data.delay_max || data.delay_min || data.delay || 0,
             data.start_at,
+            sendWindowEnabled,
+            sendWindowStart,
+            sendWindowEnd,
             data.created_by
         ]);
 
         return { id: result.lastInsertRowid, uuid };
     },
 
-    async findById(id) {
-        return await queryOne('SELECT * FROM campaigns WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const createdBy = parsePositiveInteger(options.created_by, null);
+        const params = [id];
+        let filters = '';
+
+        if (ownerUserId) {
+            filters += `
+                AND (
+                    campaigns.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = campaigns.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        }
+
+        if (createdBy) {
+            filters += ' AND campaigns.created_by = ?';
+            params.push(createdBy);
+        }
+
+        return await queryOne(`
+            SELECT campaigns.*
+            FROM campaigns
+            WHERE campaigns.id = ?
+            ${filters}
+        `, params);
     },
 
     async list(options = {}) {
-        let sql = 'SELECT * FROM campaigns WHERE 1=1';
+        let sql = 'SELECT campaigns.* FROM campaigns WHERE 1=1';
         const params = [];
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const createdBy = parsePositiveInteger(options.created_by, null);
 
         if (options.status) {
             sql += ' AND status = ?';
@@ -1115,17 +1401,32 @@ const Campaign = {
             params.push(options.type);
         }
 
-        if (options.created_by) {
-            sql += ' AND created_by = ?';
-            params.push(options.created_by);
+        if (ownerUserId) {
+            sql += `
+                AND (
+                    campaigns.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = campaigns.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        }
+
+        if (createdBy) {
+            sql += ' AND campaigns.created_by = ?';
+            params.push(createdBy);
         }
 
         if (options.search) {
-            sql += ' AND (name LIKE ? OR description LIKE ?)';
+            sql += ' AND (campaigns.name LIKE ? OR campaigns.description LIKE ?)';
             params.push(`%${options.search}%`, `%${options.search}%`);
         }
 
-        sql += ' ORDER BY created_at DESC';
+        sql += ' ORDER BY campaigns.created_at DESC';
 
         if (options.limit) {
             sql += ' LIMIT ?';
@@ -1147,7 +1448,8 @@ const Campaign = {
         const allowedFields = [
             'name', 'description', 'type', 'status', 'segment', 'tag_filter',
             'message', 'delay', 'delay_min', 'delay_max', 'start_at', 'sent', 'delivered', 'read', 'replied',
-            'distribution_strategy', 'distribution_config'
+            'distribution_strategy', 'distribution_config',
+            'send_window_enabled', 'send_window_start', 'send_window_end'
         ];
 
         for (const [key, value] of Object.entries(data)) {
@@ -1157,6 +1459,10 @@ const Campaign = {
                     values.push(String(value || '').trim() || 'single');
                 } else if (key === 'distribution_config') {
                     values.push(toJsonStringOrNull(value));
+                } else if (key === 'send_window_enabled') {
+                    values.push(normalizeBooleanFlag(value, 0));
+                } else if (key === 'send_window_start' || key === 'send_window_end') {
+                    values.push(String(value || '').trim() || null);
                 } else {
                     values.push(value);
                 }
@@ -1510,8 +1816,8 @@ const Automation = {
         const isActive = typeof data.is_active === 'boolean' ? (data.is_active ? 1 : 0) : (data.is_active ?? 1);
 
         const result = await run(`
-            INSERT INTO automations (uuid, name, description, trigger_type, trigger_value, action_type, action_value, delay, session_scope, is_active, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO automations (uuid, name, description, trigger_type, trigger_value, action_type, action_value, delay, session_scope, tag_filter, is_active, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             data.name,
@@ -1522,6 +1828,7 @@ const Automation = {
             data.action_value,
             data.delay || 0,
             data.session_scope || null,
+            data.tag_filter || null,
             isActive,
             data.created_by
         ]);
@@ -1622,7 +1929,7 @@ const Automation = {
 
         const allowedFields = [
             'name', 'description', 'trigger_type', 'trigger_value',
-            'action_type', 'action_value', 'delay', 'session_scope', 'is_active', 'executions', 'last_execution'
+            'action_type', 'action_value', 'delay', 'session_scope', 'tag_filter', 'is_active', 'executions', 'last_execution'
         ];
 
         for (const [key, value] of Object.entries(data)) {
@@ -1656,10 +1963,11 @@ const Automation = {
 const Flow = {
     async create(data) {
         const uuid = generateUUID();
+        const sessionScope = normalizeFlowSessionScope(data.session_id ?? data.sessionId);
         
         const result = await run(`
-            INSERT INTO flows (uuid, name, description, trigger_type, trigger_value, nodes, edges, is_active, priority, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO flows (uuid, name, description, trigger_type, trigger_value, nodes, edges, is_active, priority, created_by, session_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             data.name,
@@ -1670,7 +1978,8 @@ const Flow = {
             JSON.stringify(data.edges || []),
             data.is_active !== undefined ? data.is_active : 1,
             data.priority || 0,
-            data.created_by
+            data.created_by,
+            sessionScope
         ]);
         
         return { id: result.lastInsertRowid, uuid };
@@ -1721,6 +2030,12 @@ const Flow = {
             params.push(triggerValue);
         }
 
+        const scopedSessionId = normalizeFlowSessionScope(options.session_id || options.sessionId);
+        if (scopedSessionId) {
+            sql += " AND (flows.session_id IS NULL OR TRIM(flows.session_id) = '' OR flows.session_id = ?)";
+            params.push(scopedSessionId);
+        }
+
         const ownerUserId = parsePositiveInteger(options.owner_user_id);
         const createdBy = parsePositiveInteger(options.created_by);
 
@@ -1757,6 +2072,10 @@ const Flow = {
         const createdBy = parsePositiveInteger(options.created_by);
         const params = [];
         let ownerFilter = '';
+        const scopedSessionId = normalizeFlowSessionScope(options.session_id || options.sessionId);
+        if (scopedSessionId) {
+            params.push(scopedSessionId);
+        }
         if (ownerUserId) {
             ownerFilter = `
                 AND (
@@ -1778,6 +2097,7 @@ const Flow = {
         const rows = await query(`
             SELECT * FROM flows
             WHERE trigger_type = 'keyword' AND is_active = 1
+            ${scopedSessionId ? "AND (flows.session_id IS NULL OR TRIM(flows.session_id) = '' OR flows.session_id = ?)" : ''}
             ${ownerFilter}
             ORDER BY priority DESC, id ASC
         `, params);
@@ -1797,6 +2117,10 @@ const Flow = {
         const createdBy = parsePositiveInteger(options.created_by);
         const params = [];
         let ownerFilter = '';
+        const scopedSessionId = normalizeFlowSessionScope(options.session_id || options.sessionId);
+        if (scopedSessionId) {
+            params.push(scopedSessionId);
+        }
         if (ownerUserId) {
             ownerFilter = `
                 AND (
@@ -1818,6 +2142,7 @@ const Flow = {
         const flows = await query(`
             SELECT * FROM flows 
             WHERE trigger_type = 'keyword' AND is_active = 1
+            ${scopedSessionId ? "AND (flows.session_id IS NULL OR TRIM(flows.session_id) = '' OR flows.session_id = ?)" : ''}
             ${ownerFilter}
             ORDER BY priority DESC, id ASC
         `, params);
@@ -1867,6 +2192,12 @@ const Flow = {
             params.push(options.is_active);
         }
 
+        const scopedSessionId = normalizeFlowSessionScope(options.session_id || options.sessionId);
+        if (scopedSessionId) {
+            sql += " AND (flows.session_id IS NULL OR TRIM(flows.session_id) = '' OR flows.session_id = ?)";
+            params.push(scopedSessionId);
+        }
+
         const ownerUserId = parsePositiveInteger(options.owner_user_id);
         const createdBy = parsePositiveInteger(options.created_by);
 
@@ -1902,12 +2233,16 @@ const Flow = {
         const fields = [];
         const values = [];
         
-        const allowedFields = ['name', 'description', 'trigger_type', 'trigger_value', 'nodes', 'edges', 'is_active', 'priority'];
+        const allowedFields = ['name', 'description', 'trigger_type', 'trigger_value', 'nodes', 'edges', 'is_active', 'priority', 'session_id'];
         
         for (const [key, value] of Object.entries(data)) {
             if (allowedFields.includes(key)) {
                 fields.push(`${key} = ?`);
-                values.push(typeof value === 'object' ? JSON.stringify(value) : value);
+                if (key === 'session_id') {
+                    values.push(normalizeFlowSessionScope(value));
+                } else {
+                    values.push(typeof value === 'object' ? JSON.stringify(value) : value);
+                }
             }
         }
         
@@ -2251,6 +2586,32 @@ const CustomEvent = {
 // MESSAGE QUEUE
 // ============================================
 
+function appendMessageQueueOwnerScopeFilter(sql, params, ownerUserId, tableAlias = 'message_queue') {
+    const normalizedOwnerUserId = parsePositiveInteger(ownerUserId, null);
+    if (!normalizedOwnerUserId) return sql;
+    params.push(normalizedOwnerUserId, normalizedOwnerUserId, normalizedOwnerUserId);
+
+    return `${sql}
+        AND EXISTS (
+            SELECT 1
+            FROM leads queue_leads
+            WHERE queue_leads.id = ${tableAlias}.lead_id
+              AND (
+                  queue_leads.owner_user_id = ?
+                  OR (
+                      queue_leads.owner_user_id IS NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM users owner_scope
+                          WHERE owner_scope.id = queue_leads.assigned_to
+                            AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                      )
+                  )
+              )
+        )
+    `;
+}
+
 const MessageQueue = {
     async add(data) {
         const uuid = generateUUID();
@@ -2301,18 +2662,71 @@ const MessageQueue = {
     async markSent(id) {
         return await run(`
             UPDATE message_queue 
-            SET status = 'sent', processed_at = CURRENT_TIMESTAMP 
+            SET status = 'sent',
+                error_message = NULL,
+                processed_at = CURRENT_TIMESTAMP 
             WHERE id = ?
         `, [id]);
     },
     
-    async markFailed(id, errorMessage) {
+    async markFailed(id, errorMessage, options = {}) {
+        const nextScheduledAt = options?.next_scheduled_at || options?.nextScheduledAt || null;
+        const errorText = String(errorMessage || '');
+        const normalizedError = errorText
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase();
+        const isDisconnectedSessionError =
+            normalizedError.includes('not connected') ||
+            normalizedError.includes('nao esta conectado') ||
+            normalizedError.includes('não está conectado') ||
+            (
+                normalizedError.includes('conectad') &&
+                (normalizedError.includes('sess') || normalizedError.includes('whatsapp') || normalizedError.includes('conexao'))
+            );
+
+        if (!nextScheduledAt && isDisconnectedSessionError) {
+            const retryAt = new Date(Date.now() + 60 * 1000).toISOString();
+            console.log(`[QueueDebug][model] MODEL_MARKFAILED_FALLBACK_TO_REQUEUE messageId=${id} retryAt=${retryAt} error=${errorText}`);
+            return await this.requeueTransient(id, `[M_REQUEUE] ${errorMessage}`, retryAt);
+        }
+
+        if (nextScheduledAt) {
+            console.log(`[QueueDebug][model] MODEL_MARKFAILED_WITH_SCHEDULE messageId=${id} nextScheduledAt=${nextScheduledAt} error=${errorText}`);
+            return await run(`
+                UPDATE message_queue 
+                SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
+                    error_message = ?,
+                    scheduled_at = CASE
+                        WHEN attempts >= max_attempts THEN scheduled_at
+                        ELSE ?
+                    END
+                WHERE id = ?
+            `, [errorMessage, nextScheduledAt, id]);
+        }
+
+        console.log(`[QueueDebug][model] MODEL_MARKFAILED_DIRECT messageId=${id} error=${errorText}`);
         return await run(`
             UPDATE message_queue 
             SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
                 error_message = ?
             WHERE id = ?
-        `, [errorMessage, id]);
+        `, [`[M_FAIL_DIRECT] ${errorMessage}`, id]);
+    },
+
+    async requeueTransient(id, errorMessage, nextScheduledAt) {
+        const scheduledAt = nextScheduledAt || new Date(Date.now() + 60 * 1000).toISOString();
+        console.log(`[QueueDebug][model] MODEL_REQUEUE_TRANSIENT messageId=${id} scheduledAt=${scheduledAt} error=${String(errorMessage || '')}`);
+
+        return await run(`
+            UPDATE message_queue
+            SET status = 'pending',
+                error_message = ?,
+                scheduled_at = ?,
+                processed_at = NULL,
+                attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END
+            WHERE id = ?
+        `, [errorMessage, scheduledAt, id]);
     },
 
     async setAssignment(id, sessionId, assignmentMeta = null) {
@@ -2323,13 +2737,28 @@ const MessageQueue = {
         `, [sessionId || null, toJsonStringOrNull(assignmentMeta), id]);
     },
     
-    async cancel(id) {
-        return await run(`UPDATE message_queue SET status = 'cancelled' WHERE id = ?`, [id]);
+    async cancel(id, options = {}) {
+        const messageId = parsePositiveInteger(id, null);
+        if (!messageId) {
+            return { changes: 0, lastInsertRowid: null };
+        }
+
+        const ownerUserId = parsePositiveInteger(options?.owner_user_id, null);
+        const params = [messageId];
+        let sql = `UPDATE message_queue SET status = 'cancelled' WHERE id = ?`;
+
+        if (ownerUserId) {
+            sql = appendMessageQueueOwnerScopeFilter(sql, params, ownerUserId, 'message_queue');
+        }
+
+        return await run(sql, params);
     },
     
     async getPending(options = {}) {
         const params = [];
         const readyOnly = options?.ready_only === true || options?.readyOnly === true;
+        const onlyActiveCampaigns = options?.only_active_campaigns === true || options?.onlyActiveCampaigns === true;
+        const ownerUserId = parsePositiveInteger(options?.owner_user_id, null);
         const limit = Number(options?.limit || 0);
 
         let sql = `
@@ -2344,6 +2773,24 @@ const MessageQueue = {
             `;
         }
 
+        if (onlyActiveCampaigns) {
+            sql += `
+                AND (
+                    campaign_id IS NULL
+                    OR EXISTS (
+                        SELECT 1
+                        FROM campaigns
+                        WHERE campaigns.id = message_queue.campaign_id
+                          AND campaigns.status = 'active'
+                    )
+                )
+            `;
+        }
+
+        if (ownerUserId) {
+            sql = appendMessageQueueOwnerScopeFilter(sql, params, ownerUserId, 'message_queue');
+        }
+
         sql += ' ORDER BY priority DESC, created_at ASC';
 
         if (Number.isFinite(limit) && limit > 0) {
@@ -2352,6 +2799,39 @@ const MessageQueue = {
         }
 
         return await query(sql, params);
+    },
+
+    async listLeadIdsWithQueuedOrSentForCampaign(campaignId, leadIds = []) {
+        const normalizedCampaignId = Number(campaignId || 0);
+        if (!Number.isInteger(normalizedCampaignId) || normalizedCampaignId <= 0) {
+            return [];
+        }
+
+        const normalizedLeadIds = Array.from(
+            new Set(
+                (Array.isArray(leadIds) ? leadIds : [])
+                    .map((value) => Number(value))
+                    .filter((value) => Number.isInteger(value) && value > 0)
+            )
+        );
+
+        const params = [normalizedCampaignId];
+        let sql = `
+            SELECT DISTINCT lead_id
+            FROM message_queue
+            WHERE campaign_id = ?
+              AND status IN ('pending', 'processing', 'sent')
+        `;
+
+        if (normalizedLeadIds.length > 0) {
+            sql += ' AND lead_id = ANY(?::int[])';
+            params.push(normalizedLeadIds);
+        }
+
+        const rows = await query(sql, params);
+        return (rows || [])
+            .map((row) => Number(row?.lead_id || 0))
+            .filter((value) => Number.isInteger(value) && value > 0);
     },
 
     async hasQueuedOrSentForCampaignLead(campaignId, leadId) {
@@ -2364,6 +2844,29 @@ const MessageQueue = {
             LIMIT 1
         `, [campaignId, leadId]);
         return !!row;
+    },
+
+    async getCampaignProgress(campaignId) {
+        const row = await queryOne(`
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
+                SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled
+            FROM message_queue
+            WHERE campaign_id = ?
+        `, [campaignId]);
+
+        return {
+            total: Number(row?.total || 0),
+            pending: Number(row?.pending || 0),
+            processing: Number(row?.processing || 0),
+            sent: Number(row?.sent || 0),
+            failed: Number(row?.failed || 0),
+            cancelled: Number(row?.cancelled || 0)
+        };
     }
 };
 
@@ -2372,9 +2875,109 @@ const MessageQueue = {
 // ============================================
 
 const DEFAULT_TAG_COLOR = '#5a2a6b';
+let hasTagCreatedByColumnCache = null;
+
+async function tagsTableHasCreatedByColumn() {
+    if (hasTagCreatedByColumnCache !== null) {
+        return hasTagCreatedByColumnCache;
+    }
+
+    try {
+        await queryOne('SELECT created_by FROM tags LIMIT 1');
+        hasTagCreatedByColumnCache = true;
+        return true;
+    } catch (error) {
+        const message = String(error?.message || '').toLowerCase();
+        if (
+            message.includes('no such column') ||
+            message.includes('does not exist')
+        ) {
+            hasTagCreatedByColumnCache = false;
+            return false;
+        }
+        throw error;
+    }
+}
+
+function appendOwnerCreatedByFilters(filters, params, options = {}, config = {}) {
+    if (!Array.isArray(filters) || !Array.isArray(params)) {
+        return { ownerUserId: null, createdBy: null };
+    }
+
+    const ownerUserId = parsePositiveInteger(options?.owner_user_id, null);
+    const createdBy = parsePositiveInteger(options?.created_by, null);
+    const tableAlias = normalizeTagValue(config?.tableAlias || '');
+    const createdByColumn = normalizeTagValue(config?.createdByColumn || 'created_by') || 'created_by';
+    const columnRef = tableAlias ? `${tableAlias}.${createdByColumn}` : createdByColumn;
+
+    if (ownerUserId) {
+        filters.push(`(
+            ${columnRef} = ?
+            OR EXISTS (
+                SELECT 1
+                FROM users owner_scope
+                WHERE owner_scope.id = ${columnRef}
+                  AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+            )
+        )`);
+        params.push(ownerUserId, ownerUserId, ownerUserId);
+    }
+
+    if (createdBy) {
+        filters.push(`${columnRef} = ?`);
+        params.push(createdBy);
+    }
+
+    return { ownerUserId, createdBy };
+}
+
+function assertTagOwnerScopeReady(options = {}, hasCreatedByColumn = false) {
+    const ownerUserId = parsePositiveInteger(options?.owner_user_id, null);
+    if (ownerUserId && !hasCreatedByColumn) {
+        const error = new Error('Schema de tags desatualizado: coluna tags.created_by ausente para escopo multi-tenant');
+        error.code = 'TAGS_CREATED_BY_REQUIRED';
+        throw error;
+    }
+}
+
+async function ensureTagCreatedByColumnForScopedOps(options = {}, hasCreatedByColumn = false) {
+    if (hasCreatedByColumn) return true;
+
+    const scopedOwnerUserId = parsePositiveInteger(options?.owner_user_id ?? options?.created_by, null);
+    if (!scopedOwnerUserId) return hasCreatedByColumn;
+
+    try {
+        await run('ALTER TABLE tags ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id)');
+        hasTagCreatedByColumnCache = true;
+        return true;
+    } catch (_) {
+        return hasCreatedByColumn;
+    }
+}
 
 const Tag = {
-    async list() {
+    async list(options = {}) {
+        let hasCreatedByColumn = await tagsTableHasCreatedByColumn();
+        hasCreatedByColumn = await ensureTagCreatedByColumnForScopedOps(options, hasCreatedByColumn);
+        assertTagOwnerScopeReady(options, hasCreatedByColumn);
+
+        if (hasCreatedByColumn) {
+            const filters = [];
+            const params = [];
+            appendOwnerCreatedByFilters(filters, params, options, { tableAlias: 'tags' });
+
+            const whereClause = filters.length > 0
+                ? `WHERE ${filters.join(' AND ')}`
+                : '';
+
+            return await query(`
+                SELECT id, name, color, description, created_at, created_by
+                FROM tags
+                ${whereClause}
+                ORDER BY LOWER(name) ASC, id ASC
+            `, params);
+        }
+
         return await query(`
             SELECT id, name, color, description, created_at
             FROM tags
@@ -2382,33 +2985,92 @@ const Tag = {
         `);
     },
 
-    async findById(id) {
+    async findById(id, options = {}) {
+        let hasCreatedByColumn = await tagsTableHasCreatedByColumn();
+        hasCreatedByColumn = await ensureTagCreatedByColumnForScopedOps(options, hasCreatedByColumn);
+        assertTagOwnerScopeReady(options, hasCreatedByColumn);
+
+        if (hasCreatedByColumn) {
+            const filters = ['tags.id = ?'];
+            const params = [id];
+            appendOwnerCreatedByFilters(filters, params, options, { tableAlias: 'tags' });
+
+            return await queryOne(`
+                SELECT id, name, color, description, created_at, created_by
+                FROM tags
+                WHERE ${filters.join(' AND ')}
+            `, params);
+        }
+
         return await queryOne('SELECT id, name, color, description, created_at FROM tags WHERE id = ?', [id]);
     },
 
-    async findByName(name) {
+    async findByName(name, options = {}) {
+        let hasCreatedByColumn = await tagsTableHasCreatedByColumn();
+        hasCreatedByColumn = await ensureTagCreatedByColumnForScopedOps(options, hasCreatedByColumn);
+        const normalizedName = normalizeTagValue(name);
+        if (!normalizedName) return null;
+        assertTagOwnerScopeReady(options, hasCreatedByColumn);
+
+        if (hasCreatedByColumn) {
+            const filters = ['LOWER(TRIM(tags.name)) = LOWER(TRIM(?))'];
+            const params = [normalizedName];
+            appendOwnerCreatedByFilters(filters, params, options, { tableAlias: 'tags' });
+
+            return await queryOne(`
+                SELECT id, name, color, description, created_at, created_by
+                FROM tags
+                WHERE ${filters.join(' AND ')}
+            `, params);
+        }
+
         return await queryOne(
             'SELECT id, name, color, description, created_at FROM tags WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))',
-            [name]
+            [normalizedName]
         );
     },
 
-    async create(data) {
+    async create(data, options = {}) {
         const tagName = normalizeTagValue(data.name);
         const tagColor = normalizeTagValue(data.color) || DEFAULT_TAG_COLOR;
         const tagDescription = normalizeTagValue(data.description);
+        const createdBy = parsePositiveInteger(data?.created_by ?? options?.created_by, null);
+        let hasCreatedByColumn = await tagsTableHasCreatedByColumn();
+        hasCreatedByColumn = await ensureTagCreatedByColumnForScopedOps({
+            ...options,
+            created_by: createdBy || options?.created_by || null
+        }, hasCreatedByColumn);
+        assertTagOwnerScopeReady({
+            ...options,
+            owner_user_id: options?.owner_user_id || createdBy || null
+        }, hasCreatedByColumn);
 
-        const result = await run(`
-            INSERT INTO tags (name, color, description)
-            VALUES (?, ?, ?)
-        `, [tagName, tagColor, tagDescription || null]);
+        let result;
+        if (hasCreatedByColumn && createdBy) {
+            result = await run(`
+                INSERT INTO tags (name, color, description, created_by)
+                VALUES (?, ?, ?, ?)
+            `, [tagName, tagColor, tagDescription || null, createdBy]);
+        } else {
+            result = await run(`
+                INSERT INTO tags (name, color, description)
+                VALUES (?, ?, ?)
+            `, [tagName, tagColor, tagDescription || null]);
+        }
 
-        return await this.findById(result.lastInsertRowid);
+        return await this.findById(
+            result.lastInsertRowid,
+            hasCreatedByColumn ? options : {}
+        );
     },
 
-    async update(id, data) {
+    async update(id, data, options = {}) {
+        const existingTag = await this.findById(id, options);
+        if (!existingTag) return null;
+
         const fields = [];
         const values = [];
+        const hasCreatedByColumn = await tagsTableHasCreatedByColumn();
 
         if (Object.prototype.hasOwnProperty.call(data, 'name')) {
             fields.push('name = ?');
@@ -2424,23 +3086,48 @@ const Tag = {
             values.push(description || null);
         }
 
-        if (fields.length === 0) return await this.findById(id);
+        if (fields.length === 0) return existingTag;
 
         values.push(id);
         await run(`UPDATE tags SET ${fields.join(', ')} WHERE id = ?`, values);
 
-        return await this.findById(id);
+        return await this.findById(id, hasCreatedByColumn ? options : {});
     },
 
-    async delete(id) {
+    async delete(id, options = {}) {
+        const existingTag = await this.findById(id, options);
+        if (!existingTag) return null;
         return await run('DELETE FROM tags WHERE id = ?', [id]);
     },
 
-    async syncFromLeads() {
-        const rows = await query("SELECT tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
+    async syncFromLeads(options = {}) {
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const createdBy = parsePositiveInteger(options.created_by, null);
+        let hasCreatedByColumn = await tagsTableHasCreatedByColumn();
+        hasCreatedByColumn = await ensureTagCreatedByColumnForScopedOps({
+            ...options,
+            created_by: createdBy || options?.created_by || null
+        }, hasCreatedByColumn);
+        assertTagOwnerScopeReady({
+            ...options,
+            owner_user_id: ownerUserId || createdBy || null
+        }, hasCreatedByColumn);
+
+        let rows;
+        if (ownerUserId) {
+            rows = await query(`
+                SELECT tags
+                FROM leads
+                WHERE owner_user_id = ?
+                  AND tags IS NOT NULL
+                  AND tags <> ''
+            `, [ownerUserId]);
+        } else {
+            rows = await query("SELECT tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
+        }
         if (!rows || rows.length === 0) return;
 
-        const existingTags = await this.list();
+        const existingTags = await this.list(options);
         const existingKeys = new Set(existingTags.map((tag) => normalizeTagKey(tag.name)));
         const discoveredTags = new Set();
 
@@ -2454,22 +3141,229 @@ const Tag = {
             const key = normalizeTagKey(tagName);
             if (existingKeys.has(key)) continue;
 
-            await run(
-                `INSERT INTO tags (name, color, description)
-                 VALUES (?, ?, ?)
-                 ON CONFLICT(name) DO NOTHING`,
-                [tagName, DEFAULT_TAG_COLOR, null]
-            );
+            try {
+                if (hasCreatedByColumn && (createdBy || ownerUserId)) {
+                    await run(
+                        `INSERT INTO tags (name, color, description, created_by)
+                         VALUES (?, ?, ?, ?)`,
+                        [tagName, DEFAULT_TAG_COLOR, null, createdBy || ownerUserId]
+                    );
+                } else {
+                    await run(
+                        `INSERT INTO tags (name, color, description)
+                         VALUES (?, ?, ?)`,
+                        [tagName, DEFAULT_TAG_COLOR, null]
+                    );
+                }
+            } catch (error) {
+                const code = String(error?.code || '').trim();
+                const message = String(error?.message || '').toLowerCase();
+                const isUniqueViolation = code === '23505'
+                    || message.includes('unique')
+                    || message.includes('duplicate key');
+                if (!isUniqueViolation) {
+                    throw error;
+                }
+            }
             existingKeys.add(key);
         }
     },
 
-    async renameInLeads(previousName, nextName) {
+    async repairLegacyOwnership(options = {}) {
+        const hasCreatedByColumn = await tagsTableHasCreatedByColumn();
+        if (!hasCreatedByColumn) {
+            return {
+                scanned: 0,
+                updated: 0,
+                inserted: 0,
+                removed: 0,
+                unresolved: 0,
+                skipped: 'missing_created_by_column'
+            };
+        }
+
+        const maxRows = parsePositiveInteger(options.maxRows, 10000) || 10000;
+        const orphanTags = await query(`
+            SELECT id, name, color, description
+            FROM tags
+            WHERE created_by IS NULL
+            ORDER BY id ASC
+            LIMIT ?
+        `, [maxRows]);
+
+        if (!orphanTags.length) {
+            return {
+                scanned: 0,
+                updated: 0,
+                inserted: 0,
+                removed: 0,
+                unresolved: 0
+            };
+        }
+
+        const usageByTagKey = new Map();
+        const registerUsage = (tagName, ownerUserIdValue) => {
+            const owner = parsePositiveInteger(ownerUserIdValue, null);
+            if (!owner) return;
+            const key = normalizeTagKey(tagName);
+            if (!key) return;
+            if (!usageByTagKey.has(key)) {
+                usageByTagKey.set(key, new Set());
+            }
+            usageByTagKey.get(key).add(owner);
+        };
+
+        const leadRows = await query(`
+            SELECT owner_user_id, tags
+            FROM leads
+            WHERE owner_user_id IS NOT NULL
+              AND tags IS NOT NULL
+              AND tags <> ''
+        `);
+        for (const row of leadRows || []) {
+            for (const tagName of parseTagList(row?.tags)) {
+                registerUsage(tagName, row?.owner_user_id);
+            }
+        }
+
+        const campaignRows = await query(`
+            SELECT
+                c.tag_filter,
+                c.created_by,
+                COALESCE(NULLIF(u.owner_user_id, 0), u.id) AS owner_scope_user_id
+            FROM campaigns c
+            LEFT JOIN users u ON u.id = c.created_by
+            WHERE c.tag_filter IS NOT NULL
+              AND TRIM(c.tag_filter) <> ''
+        `);
+        for (const row of campaignRows || []) {
+            const ownerUserIdFromCampaign = parsePositiveInteger(row?.owner_scope_user_id || row?.created_by, null);
+            for (const tagName of parseTagList(row?.tag_filter)) {
+                registerUsage(tagName, ownerUserIdFromCampaign);
+            }
+        }
+
+        const existingScopeCache = new Map();
+        const hasScopedTag = async (tagName, ownerUserIdValue) => {
+            const ownerUserId = parsePositiveInteger(ownerUserIdValue, null);
+            if (!ownerUserId) return false;
+            const cacheKey = `${normalizeTagKey(tagName)}:${ownerUserId}`;
+            if (existingScopeCache.has(cacheKey)) {
+                return existingScopeCache.get(cacheKey);
+            }
+
+            const row = await queryOne(`
+                SELECT t.id
+                FROM tags t
+                LEFT JOIN users owner_scope ON owner_scope.id = t.created_by
+                WHERE LOWER(TRIM(t.name)) = LOWER(TRIM(?))
+                  AND (
+                      t.created_by = ?
+                      OR owner_scope.owner_user_id = ?
+                      OR owner_scope.id = ?
+                  )
+                ORDER BY
+                    CASE
+                        WHEN t.created_by = ? THEN 0
+                        WHEN owner_scope.owner_user_id = ? THEN 1
+                        WHEN owner_scope.id = ? THEN 2
+                        WHEN t.created_by IS NULL THEN 3
+                        ELSE 4
+                    END,
+                    t.id ASC
+                LIMIT 1
+            `, [tagName, ownerUserId, ownerUserId, ownerUserId, ownerUserId, ownerUserId, ownerUserId]);
+
+            const exists = Boolean(row?.id);
+            existingScopeCache.set(cacheKey, exists);
+            return exists;
+        };
+
+        let updated = 0;
+        let inserted = 0;
+        let removed = 0;
+        let unresolved = 0;
+
+        for (const orphanTag of orphanTags) {
+            const tagKey = normalizeTagKey(orphanTag?.name);
+            const ownersSet = usageByTagKey.get(tagKey);
+            const ownerCandidates = ownersSet
+                ? Array.from(ownersSet).map((value) => parsePositiveInteger(value, null)).filter(Boolean).sort((a, b) => a - b)
+                : [];
+
+            if (!ownerCandidates.length) {
+                unresolved += 1;
+                continue;
+            }
+
+            let assignedBaseTag = false;
+            for (const ownerUserId of ownerCandidates) {
+                const hasTagForOwner = await hasScopedTag(orphanTag.name, ownerUserId);
+                if (hasTagForOwner) continue;
+
+                if (!assignedBaseTag) {
+                    await run(
+                        'UPDATE tags SET created_by = ? WHERE id = ? AND created_by IS NULL',
+                        [ownerUserId, orphanTag.id]
+                    );
+                    updated += 1;
+                    assignedBaseTag = true;
+                } else {
+                    try {
+                        await run(
+                            `INSERT INTO tags (name, color, description, created_by)
+                             VALUES (?, ?, ?, ?)`,
+                            [
+                                normalizeTagValue(orphanTag.name),
+                                normalizeTagValue(orphanTag.color) || DEFAULT_TAG_COLOR,
+                                normalizeTagValue(orphanTag.description) || null,
+                                ownerUserId
+                            ]
+                        );
+                        inserted += 1;
+                    } catch (error) {
+                        const code = String(error?.code || '').trim();
+                        const message = String(error?.message || '').toLowerCase();
+                        const isUniqueViolation = code === '23505'
+                            || message.includes('unique')
+                            || message.includes('duplicate key');
+                        if (!isUniqueViolation) {
+                            throw error;
+                        }
+                    }
+                }
+            }
+
+            if (!assignedBaseTag) {
+                await run('DELETE FROM tags WHERE id = ? AND created_by IS NULL', [orphanTag.id]);
+                removed += 1;
+            }
+        }
+
+        return {
+            scanned: orphanTags.length,
+            updated,
+            inserted,
+            removed,
+            unresolved
+        };
+    },
+
+    async renameInLeads(previousName, nextName, options = {}) {
         const previousKey = normalizeTagKey(previousName);
         const sanitizedNext = normalizeTagValue(nextName);
         if (!previousKey || !sanitizedNext) return 0;
 
-        const leads = await query("SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const leads = ownerUserId
+            ? await query(`
+                SELECT id, tags
+                FROM leads
+                WHERE owner_user_id = ?
+                  AND tags IS NOT NULL
+                  AND tags <> ''
+            `, [ownerUserId])
+            : await query("SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
         let updatedLeads = 0;
 
         for (const lead of leads) {
@@ -2503,11 +3397,20 @@ const Tag = {
         return updatedLeads;
     },
 
-    async removeFromLeads(tagName) {
+    async removeFromLeads(tagName, options = {}) {
         const normalized = normalizeTagKey(tagName);
         if (!normalized) return 0;
 
-        const leads = await query("SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
+        const ownerUserId = parsePositiveInteger(options.owner_user_id, null);
+        const leads = ownerUserId
+            ? await query(`
+                SELECT id, tags
+                FROM leads
+                WHERE owner_user_id = ?
+                  AND tags IS NOT NULL
+                  AND tags <> ''
+            `, [ownerUserId])
+            : await query("SELECT id, tags FROM leads WHERE tags IS NOT NULL AND tags <> ''");
         let updatedLeads = 0;
 
         for (const lead of leads) {
@@ -2535,6 +3438,157 @@ const Tag = {
 // WEBHOOKS
 // ============================================
 
+const IncomingWebhookCredential = {
+    MIN_SECRET_LENGTH: INCOMING_WEBHOOK_SECRET_MIN_LENGTH,
+
+    normalizeSecret(value) {
+        return normalizeIncomingWebhookSecret(value);
+    },
+
+    isValidSecret(value, options = {}) {
+        const minLength = parsePositiveInteger(options?.minLength, INCOMING_WEBHOOK_SECRET_MIN_LENGTH)
+            || INCOMING_WEBHOOK_SECRET_MIN_LENGTH;
+        return normalizeIncomingWebhookSecret(value).length >= minLength;
+    },
+
+    generateSecret() {
+        return generateIncomingWebhookSecret();
+    },
+
+    async hasAny() {
+        const row = await queryOne('SELECT id FROM incoming_webhook_credentials LIMIT 1');
+        return !!row;
+    },
+
+    async findByOwnerUserId(ownerUserId) {
+        const normalizedOwnerUserId = parsePositiveInteger(ownerUserId, null);
+        if (!normalizedOwnerUserId) return null;
+
+        return await queryOne(`
+            SELECT
+                id,
+                owner_user_id,
+                secret_prefix,
+                secret_suffix,
+                created_by,
+                last_rotated_at,
+                last_used_at,
+                created_at,
+                updated_at
+            FROM incoming_webhook_credentials
+            WHERE owner_user_id = ?
+            LIMIT 1
+        `, [normalizedOwnerUserId]);
+    },
+
+    async findOwnerBySecret(secret) {
+        const normalizedSecret = normalizeIncomingWebhookSecret(secret);
+        if (!normalizedSecret) return null;
+
+        const secretHash = hashIncomingWebhookSecret(normalizedSecret);
+        if (!secretHash) return null;
+
+        const credential = await queryOne(`
+            SELECT
+                id,
+                owner_user_id,
+                secret_prefix,
+                secret_suffix,
+                created_by,
+                last_rotated_at,
+                last_used_at,
+                created_at,
+                updated_at
+            FROM incoming_webhook_credentials
+            WHERE secret_hash = ?
+            LIMIT 1
+        `, [secretHash]);
+
+        if (!credential) {
+            return null;
+        }
+
+        await run(`
+            UPDATE incoming_webhook_credentials
+            SET last_used_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `, [credential.id]);
+
+        return credential;
+    },
+
+    async upsertForOwner(ownerUserId, options = {}) {
+        const normalizedOwnerUserId = parsePositiveInteger(ownerUserId, null);
+        if (!normalizedOwnerUserId) {
+            throw new Error('owner_user_id invalido');
+        }
+
+        const providedSecret = normalizeIncomingWebhookSecret(options?.secret);
+        const secret = providedSecret || generateIncomingWebhookSecret();
+        if (!this.isValidSecret(secret)) {
+            throw new Error(`Secret invalido (minimo ${INCOMING_WEBHOOK_SECRET_MIN_LENGTH} caracteres)`);
+        }
+
+        const secretHash = hashIncomingWebhookSecret(secret);
+        if (!secretHash) {
+            throw new Error('Secret invalido');
+        }
+
+        const { prefix, suffix } = buildIncomingWebhookSecretPreview(secret);
+        const createdBy = parsePositiveInteger(options?.created_by ?? options?.createdBy, null);
+
+        let credential;
+        try {
+            credential = await queryOne(`
+                INSERT INTO incoming_webhook_credentials (
+                    owner_user_id,
+                    secret_hash,
+                    secret_prefix,
+                    secret_suffix,
+                    created_by,
+                    last_rotated_at
+                )
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (owner_user_id) DO UPDATE SET
+                    secret_hash = EXCLUDED.secret_hash,
+                    secret_prefix = EXCLUDED.secret_prefix,
+                    secret_suffix = EXCLUDED.secret_suffix,
+                    created_by = COALESCE(EXCLUDED.created_by, incoming_webhook_credentials.created_by),
+                    last_rotated_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING
+                    id,
+                    owner_user_id,
+                    secret_prefix,
+                    secret_suffix,
+                    created_by,
+                    last_rotated_at,
+                    last_used_at,
+                    created_at,
+                    updated_at
+            `, [
+                normalizedOwnerUserId,
+                secretHash,
+                prefix,
+                suffix,
+                createdBy
+            ]);
+        } catch (error) {
+            const message = String(error?.message || '').toLowerCase();
+            if (message.includes('secret_hash') && message.includes('duplicate')) {
+                throw new Error('Secret informado ja esta em uso');
+            }
+            throw error;
+        }
+
+        return {
+            secret,
+            credential
+        };
+    }
+};
+
 const Webhook = {
     async create(data) {
         const uuid = generateUUID();
@@ -2557,22 +3611,54 @@ const Webhook = {
         return { id: result.lastInsertRowid, uuid };
     },
     
-    async findById(id) {
-        return await queryOne('SELECT * FROM webhooks WHERE id = ?', [id]);
+    async findById(id, options = {}) {
+        const filters = ['webhooks.id = ?'];
+        const params = [id];
+        appendOwnerCreatedByFilters(filters, params, options, { tableAlias: 'webhooks' });
+
+        return await queryOne(`
+            SELECT webhooks.*
+            FROM webhooks
+            WHERE ${filters.join(' AND ')}
+        `, params);
     },
     
-    async findByEvent(event) {
+    async findByEvent(event, options = {}) {
+        const filters = [
+            'webhooks.is_active = 1',
+            'webhooks.events LIKE ?'
+        ];
+        const params = [`%"${event}"%`];
+        appendOwnerCreatedByFilters(filters, params, options, { tableAlias: 'webhooks' });
+
         return await query(`
-            SELECT * FROM webhooks 
-            WHERE is_active = 1 AND events LIKE ?
-        `, [`%"${event}"%`]);
+            SELECT webhooks.*
+            FROM webhooks
+            WHERE ${filters.join(' AND ')}
+        `, params);
     },
     
-    async list() {
-        return await query('SELECT * FROM webhooks ORDER BY name ASC');
+    async list(options = {}) {
+        const filters = [];
+        const params = [];
+        appendOwnerCreatedByFilters(filters, params, options, { tableAlias: 'webhooks' });
+
+        const whereClause = filters.length > 0
+            ? `WHERE ${filters.join(' AND ')}`
+            : '';
+
+        return await query(`
+            SELECT webhooks.*
+            FROM webhooks
+            ${whereClause}
+            ORDER BY webhooks.name ASC
+        `, params);
     },
     
-    async update(id, data) {
+    async update(id, data, options = {}) {
+        const existing = await this.findById(id, options);
+        if (!existing) return null;
+
         const fields = [];
         const values = [];
         
@@ -2585,12 +3671,13 @@ const Webhook = {
             }
         }
         
-        if (fields.length === 0) return null;
+        if (fields.length === 0) return existing;
         
         fields.push("updated_at = CURRENT_TIMESTAMP");
         values.push(id);
         
-        return await run(`UPDATE webhooks SET ${fields.join(', ')} WHERE id = ?`, values);
+        await run(`UPDATE webhooks SET ${fields.join(', ')} WHERE id = ?`, values);
+        return await this.findById(id, options);
     },
     
     async logTrigger(webhookId, event, payload, responseStatus, responseBody, durationMs) {
@@ -2600,8 +3687,346 @@ const Webhook = {
         `, [webhookId, event, JSON.stringify(payload), responseStatus, responseBody, durationMs]);
     },
     
-    async delete(id) {
+    async delete(id, options = {}) {
+        const existing = await this.findById(id, options);
+        if (!existing) return null;
         return await run('DELETE FROM webhooks WHERE id = ?', [id]);
+    }
+};
+
+const WebhookDeliveryQueue = {
+    async add(data) {
+        const webhookId = parsePositiveInteger(data?.webhook_id ?? data?.webhookId, null);
+        if (!webhookId) {
+            throw new Error('webhook_id invalido');
+        }
+
+        const event = String(data?.event || '').trim();
+        if (!event) {
+            throw new Error('event invalido');
+        }
+
+        const dedupeKey = String((data?.dedupe_key ?? data?.dedupeKey) || '').trim().slice(0, 255);
+        if (!dedupeKey) {
+            throw new Error('dedupe_key invalido');
+        }
+
+        const payload = toJsonStringOrNull(data?.payload);
+        if (!payload) {
+            throw new Error('payload invalido');
+        }
+
+        const maxAttempts = Math.max(
+            1,
+            Math.min(
+                20,
+                parsePositiveInteger(data?.max_attempts ?? data?.maxAttempts, 3) || 3
+            )
+        );
+        const nextAttemptAt = data?.next_attempt_at ?? data?.nextAttemptAt ?? null;
+        const uuid = generateUUID();
+
+        const inserted = await queryOne(`
+            INSERT INTO webhook_delivery_queue (
+                uuid, webhook_id, event, payload, dedupe_key, max_attempts, next_attempt_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (webhook_id, dedupe_key) DO NOTHING
+            RETURNING id, uuid, webhook_id, event, dedupe_key, status, attempts, max_attempts, next_attempt_at, created_at
+        `, [
+            uuid,
+            webhookId,
+            event,
+            payload,
+            dedupeKey,
+            maxAttempts,
+            nextAttemptAt
+        ]);
+
+        if (inserted) {
+            return {
+                ...inserted,
+                created: true,
+                duplicated: false
+            };
+        }
+
+        const existing = await queryOne(`
+            SELECT id, uuid, webhook_id, event, dedupe_key, status, attempts, max_attempts, next_attempt_at, created_at
+            FROM webhook_delivery_queue
+            WHERE webhook_id = ?
+              AND dedupe_key = ?
+            LIMIT 1
+        `, [webhookId, dedupeKey]);
+
+        return {
+            ...(existing || {}),
+            created: false,
+            duplicated: true
+        };
+    },
+
+    async findById(id) {
+        return await queryOne('SELECT * FROM webhook_delivery_queue WHERE id = ?', [id]);
+    },
+
+    async getPending(options = {}) {
+        const limit = parsePositiveInteger(options?.limit, 20) || 20;
+        return await query(`
+            SELECT *
+            FROM webhook_delivery_queue
+            WHERE status = 'pending'
+              AND attempts < max_attempts
+              AND (next_attempt_at IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP)
+            ORDER BY COALESCE(next_attempt_at, created_at) ASC, id ASC
+            LIMIT ?
+        `, [limit]);
+    },
+
+    async markProcessing(id) {
+        return await run(`
+            UPDATE webhook_delivery_queue
+            SET status = 'processing',
+                attempts = attempts + 1,
+                locked_at = CURRENT_TIMESTAMP,
+                processed_at = NULL
+            WHERE id = ?
+        `, [id]);
+    },
+
+    async markSent(id, options = {}) {
+        const responseStatus = parseNonNegativeInteger(options?.response_status ?? options?.responseStatus, null);
+        const responseBody = String((options?.response_body ?? options?.responseBody) || '').slice(0, 2000) || null;
+        const durationMs = parseNonNegativeInteger(options?.duration_ms ?? options?.durationMs, null);
+
+        return await run(`
+            UPDATE webhook_delivery_queue
+            SET status = 'sent',
+                next_attempt_at = NULL,
+                locked_at = NULL,
+                last_error = NULL,
+                response_status = ?,
+                response_body = ?,
+                duration_ms = ?,
+                processed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `, [responseStatus, responseBody, durationMs, id]);
+    },
+
+    async markFailed(id, errorMessage, options = {}) {
+        const nextAttemptAt = options?.next_attempt_at ?? options?.nextAttemptAt ?? null;
+        const responseStatus = parseNonNegativeInteger(options?.response_status ?? options?.responseStatus, null);
+        const responseBody = String((options?.response_body ?? options?.responseBody) || '').slice(0, 2000) || null;
+        const durationMs = parseNonNegativeInteger(options?.duration_ms ?? options?.durationMs, null);
+        const normalizedError = String(errorMessage || '').slice(0, 1000) || 'Falha desconhecida na entrega';
+
+        return await run(`
+            UPDATE webhook_delivery_queue
+            SET status = CASE
+                    WHEN attempts >= max_attempts THEN 'failed'
+                    ELSE 'pending'
+                END,
+                next_attempt_at = CASE
+                    WHEN attempts >= max_attempts THEN NULL
+                    ELSE ?
+                END,
+                locked_at = NULL,
+                last_error = ?,
+                response_status = ?,
+                response_body = ?,
+                duration_ms = ?,
+                processed_at = CASE
+                    WHEN attempts >= max_attempts THEN CURRENT_TIMESTAMP
+                    ELSE NULL
+                END
+            WHERE id = ?
+        `, [nextAttemptAt, normalizedError, responseStatus, responseBody, durationMs, id]);
+    },
+
+    async markCancelled(id, reason = 'Cancelado') {
+        return await run(`
+            UPDATE webhook_delivery_queue
+            SET status = 'cancelled',
+                next_attempt_at = NULL,
+                locked_at = NULL,
+                last_error = ?,
+                processed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `, [String(reason || 'Cancelado').slice(0, 500), id]);
+    },
+
+    async requeueStuck(staleAfterMs = 120000) {
+        const safeStaleMs = Math.max(5000, parseNonNegativeInteger(staleAfterMs, 120000));
+        const result = await run(`
+            UPDATE webhook_delivery_queue
+            SET status = 'pending',
+                next_attempt_at = CURRENT_TIMESTAMP,
+                locked_at = NULL,
+                processed_at = NULL,
+                last_error = COALESCE(last_error, '[WEBHOOK_RECOVERY] Reenfileirado apos processamento interrompido')
+            WHERE status = 'processing'
+              AND locked_at IS NOT NULL
+              AND locked_at <= (CURRENT_TIMESTAMP - (? * INTERVAL '1 millisecond'))
+        `, [safeStaleMs]);
+
+        return Number(result?.changes || 0);
+    },
+
+    async getStats() {
+        const row = await queryOne(`
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
+                SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled
+            FROM webhook_delivery_queue
+        `);
+
+        return {
+            total: Number(row?.total || 0),
+            pending: Number(row?.pending || 0),
+            processing: Number(row?.processing || 0),
+            sent: Number(row?.sent || 0),
+            failed: Number(row?.failed || 0),
+            cancelled: Number(row?.cancelled || 0)
+        };
+    }
+};
+
+const SupportInboxMessage = {
+    async upsert(data = {}) {
+        const externalMessageId = String((data?.external_message_id ?? data?.externalMessageId) || '').trim().slice(0, 255) || null;
+        const provider = String(data?.provider || 'unknown').trim().toLowerCase().slice(0, 40) || 'unknown';
+        const fromName = String((data?.from_name ?? data?.fromName) || '').trim().slice(0, 255) || null;
+        const fromEmail = String((data?.from_email ?? data?.fromEmail) || '').trim().toLowerCase().slice(0, 255);
+        const toEmail = String((data?.to_email ?? data?.toEmail) || 'support@zapvender.com').trim().toLowerCase().slice(0, 255) || 'support@zapvender.com';
+        const subject = String(data?.subject || '').trim().slice(0, 500) || '(Sem assunto)';
+        const bodyText = String((data?.body_text ?? data?.bodyText) || '').slice(0, 25000) || null;
+        const bodyHtml = String((data?.body_html ?? data?.bodyHtml) || '').slice(0, 150000) || null;
+        const rawPayload = toJsonStringOrNull(data?.raw_payload ?? data?.rawPayload);
+        const receivedAt = data?.received_at ?? data?.receivedAt ?? new Date().toISOString();
+
+        if (!fromEmail) {
+            throw new Error('from_email invalido');
+        }
+
+        if (externalMessageId) {
+            const existing = await queryOne(
+                'SELECT id FROM support_inbox_messages WHERE external_message_id = ? LIMIT 1',
+                [externalMessageId]
+            );
+
+            if (existing?.id) {
+                await run(`
+                    UPDATE support_inbox_messages
+                    SET provider = ?,
+                        from_name = ?,
+                        from_email = ?,
+                        to_email = ?,
+                        subject = ?,
+                        body_text = ?,
+                        body_html = ?,
+                        raw_payload = ?,
+                        received_at = ?,
+                        is_read = 0
+                    WHERE id = ?
+                `, [
+                    provider,
+                    fromName,
+                    fromEmail,
+                    toEmail,
+                    subject,
+                    bodyText,
+                    bodyHtml,
+                    rawPayload,
+                    receivedAt,
+                    existing.id
+                ]);
+
+                return { id: Number(existing.id), created: false };
+            }
+        }
+
+        const result = await run(`
+            INSERT INTO support_inbox_messages (
+                external_message_id, provider, from_name, from_email, to_email, subject,
+                body_text, body_html, raw_payload, received_at, is_read
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            externalMessageId,
+            provider,
+            fromName,
+            fromEmail,
+            toEmail,
+            subject,
+            bodyText,
+            bodyHtml,
+            rawPayload,
+            receivedAt,
+            0
+        ]);
+
+        return { id: result.lastInsertRowid, created: true };
+    },
+
+    async list(options = {}) {
+        const limit = Math.max(1, Math.min(100, parsePositiveInteger(options?.limit, 30) || 30));
+        const offset = Math.max(0, parseNonNegativeInteger(options?.offset, 0));
+        const unreadOnly = options?.unread_only === true || options?.unreadOnly === true;
+        const params = [];
+
+        let sql = `
+            SELECT *
+            FROM support_inbox_messages
+            WHERE 1 = 1
+        `;
+
+        if (unreadOnly) {
+            sql += ' AND COALESCE(is_read, 0) = 0';
+        }
+
+        sql += `
+            ORDER BY COALESCE(received_at, created_at) DESC, id DESC
+            LIMIT ?
+            OFFSET ?
+        `;
+        params.push(limit, offset);
+
+        return await query(sql, params);
+    },
+
+    async count(options = {}) {
+        const unreadOnly = options?.unread_only === true || options?.unreadOnly === true;
+        let sql = 'SELECT COUNT(*) AS total FROM support_inbox_messages WHERE 1 = 1';
+        const params = [];
+
+        if (unreadOnly) {
+            sql += ' AND COALESCE(is_read, 0) = 0';
+        }
+
+        const row = await queryOne(sql, params);
+        return Number(row?.total || 0);
+    },
+
+    async markRead(id, isRead = true) {
+        const normalizedId = parsePositiveInteger(id, null);
+        if (!normalizedId) {
+            throw new Error('id invalido');
+        }
+
+        return await run(
+            'UPDATE support_inbox_messages SET is_read = ? WHERE id = ?',
+            [isRead ? 1 : 0, normalizedId]
+        );
+    },
+
+    async findById(id) {
+        const normalizedId = parsePositiveInteger(id, null);
+        if (!normalizedId) return null;
+        return await queryOne('SELECT * FROM support_inbox_messages WHERE id = ? LIMIT 1', [normalizedId]);
     }
 };
 
@@ -2884,7 +4309,10 @@ module.exports = {
     CustomEvent,
     MessageQueue,
     Tag,
+    IncomingWebhookCredential,
     Webhook,
+    WebhookDeliveryQueue,
+    SupportInboxMessage,
     WhatsAppSession,
     Settings,
     User

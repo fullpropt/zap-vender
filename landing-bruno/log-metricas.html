@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log e Métricas · ZapVender</title>
+  <meta name="description" content="Logs, métricas e monitoramento da plataforma ZapVender. Transparência e conformidade com a LGPD.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;800&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg-base: #020202; --border-subtle: rgba(255,255,255,0.08); --primary: #00ffa3; --text-high: #fff; --text-med: #a1a1aa; --font-sans: 'Inter', sans-serif; --font-display: 'Outfit', sans-serif; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg-base); color: var(--text-med); font-family: var(--font-sans); line-height: 1.7; }
+    .nav { background: rgba(12,12,14,0.95); border-bottom: 1px solid var(--border-subtle); padding: 16px 24px; position: sticky; top: 0; z-index: 100; }
+    .nav-inner { max-width: 900px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; }
+    .nav a { color: var(--text-high); text-decoration: none; font-weight: 600; }
+    .nav a:hover { color: var(--primary); }
+    .doc { max-width: 900px; margin: 0 auto; padding: 48px 24px 80px; }
+    .doc h1 { font-family: var(--font-display); font-size: 2rem; color: var(--text-high); margin-bottom: 8px; }
+    .doc .updated { font-size: 0.9rem; opacity: 0.8; margin-bottom: 32px; }
+    .doc h2 { font-size: 1.25rem; color: var(--text-high); margin: 32px 0 12px; }
+    .doc p, .doc li { margin-bottom: 12px; font-size: 0.95rem; }
+    .doc ul { padding-left: 24px; margin-bottom: 16px; }
+    .disclaimer { background: rgba(255,193,7,0.08); border: 1px solid rgba(255,193,7,0.3); border-radius: 12px; padding: 20px; margin-bottom: 32px; font-size: 0.95rem; }
+    .disclaimer strong { color: #ffc107; }
+    .footer-links { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border-subtle); font-size: 0.9rem; }
+    .footer-links a { color: var(--primary); text-decoration: none; margin-right: 16px; }
+    .footer-links a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/"><img src="./logo.png" alt="ZapVender" style="height: 36px; width: auto;"></a>
+      <a href="/">Voltar ao site</a>
+    </div>
+  </nav>
+
+  <main class="doc">
+    <h1>Log e Métricas</h1>
+    <p class="updated">Última atualização: 9 de março de 2026.</p>
+
+    <div class="disclaimer">
+      <strong>FINALIDADE LÍCITA:</strong> Os logs e métricas da ZapVender são utilizados para operação, segurança, melhoria do serviço e cumprimento de obrigações legais. <strong>O usuário é responsável por utilizar os recursos de log e métricas da plataforma apenas para fins lícitos e em conformidade com a LGPD e com nossos Termos de Uso.</strong> Qualquer uso para monitoramento indevido, coleta não autorizada de dados ou atividades ilegais é de exclusiva responsabilidade do usuário.
+    </div>
+
+    <h2>O que registramos (visão geral)</h2>
+    <p>Para garantir a operação, a segurança e a qualidade do serviço, a ZapVender pode registrar e processar, entre outros:</p>
+    <ul>
+      <li><strong>Logs de acesso e uso:</strong> endereço IP, data/hora, identificador de sessão ou de conta, ações realizadas na plataforma (ex.: login, alteração de configuração, disparo de fluxos), tipo de navegador e dispositivo, quando necessário para operação ou segurança.</li>
+      <li><strong>Métricas de uso:</strong> volume de mensagens processadas, número de fluxos ativos, uso de integrações, desempenho de recursos (ex.: tempo de resposta, disponibilidade), de forma agregada ou por conta, para fins de capacidade, faturamento e melhoria do produto.</li>
+      <li><strong>Logs de sistema:</strong> eventos técnicos dos servidores e da aplicação (erros, alertas de segurança, alterações de configuração), para diagnóstico e resposta a incidentes.</li>
+    </ul>
+    <p>O tratamento desses dados obedece à nossa <a href="/privacidade.html" style="color: var(--primary);">Política de Privacidade</a> e às bases legais previstas na LGPD (execução de contrato, legítimo interesse, obrigação legal).</p>
+
+    <h2>O que o usuário pode ver</h2>
+    <p>Dentro da plataforma, o usuário pode ter acesso a dashboards, relatórios e logs relacionados à sua própria conta (ex.: métricas de envio, status de fluxos, histórico de ações na conta). Esses dados são fornecidos para gestão do negócio e uso lícito. O usuário não deve utilizar tais informações para fins ilícitos ou em violação à privacidade de terceiros.</p>
+
+    <h2>Retenção e segurança</h2>
+    <p>Os logs e métricas são mantidos pelo tempo necessário às finalidades descritas (operações, segurança, faturamento, obrigações legais). Adotamos medidas para proteger o acesso e o armazenamento desses dados. Após o período de retenção, os dados são excluídos ou anonimizados, salvo quando a lei exigir manutenção.</p>
+
+    <h2>Compartilhamento</h2>
+    <p>Logs e métricas podem ser compartilhados com prestadores que nos auxiliam na operação (hospedagem, monitoramento), sob contrato que exige confidencialidade e uso limitado. Podemos ainda fornecer informações às autoridades quando exigido por lei ou ordem judicial.</p>
+
+    <h2>Responsabilidade do usuário</h2>
+    <p><strong>O usuário:</strong> deve utilizar os recursos de log e métricas da plataforma apenas para fins lícitos; é responsável por tratar os dados a que tiver acesso (incluindo dados de seus clientes/contatos) em conformidade com a LGPD; e isenta a ZapVender de responsabilidade por uso indevido ou ilícito desses recursos pelo próprio usuário ou por terceiros que tenham obtido acesso em razão do usuário.</p>
+
+    <div class="footer-links">
+      <a href="/termos-de-uso.html">Termos de Uso</a>
+      <a href="/privacidade.html">Privacidade</a>
+      <a href="/motor-automacao.html">Motor de Automação</a>
+      <a href="/seguranca-api.html">Segurança API</a>
+      <a href="/">Página inicial</a>
+    </div>
+  </main>
+</body>
+</html>

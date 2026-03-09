@@ -5,7 +5,6 @@ import { brandLogoUrl, brandName } from '../lib/brand';
 type FunilGlobals = {
   initFunil?: () => void;
   loadFunnel?: (options?: { forceRefresh?: boolean; silent?: boolean }) => void;
-  toggleView?: () => void;
   filterByStage?: (stage: number | string) => void;
   openModal?: (id: string) => void;
   closeModal?: (id: string) => void;
@@ -83,6 +82,19 @@ export default function Funil() {
             border-color: rgba(var(--primary-rgb), 0.45);
             background: rgba(var(--primary-rgb), 0.08);
         }
+        .funnel-stage-visual.is-active {
+            border-color: rgba(var(--primary-rgb), 0.88);
+            box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.25);
+            background: rgba(var(--primary-rgb), 0.2);
+            transform: translateY(-1px);
+        }
+        .funnel-stage-visual.is-active .funnel-stage-name {
+            color: var(--dark);
+            font-weight: 700;
+        }
+        .funnel-stage-visual.is-active .funnel-stage-percent {
+            color: var(--gray-700);
+        }
         .funnel-stage-visual:nth-child(1) {
             width: 100%;
             border-radius: 10px 10px 4px 4px;
@@ -157,6 +169,22 @@ export default function Funil() {
             display: flex;
             flex-direction: column;
             transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+        }
+        .kanban-column.is-hidden {
+            display: none;
+        }
+        .kanban-empty-selection {
+            grid-column: 1 / -1;
+            border: 1px dashed rgba(var(--primary-rgb), 0.35);
+            border-radius: var(--border-radius-lg);
+            padding: 26px 18px;
+            text-align: center;
+            color: var(--gray-600);
+            background: rgba(15, 23, 42, 0.14);
+            font-weight: 600;
+        }
+        .kanban-empty-selection[hidden] {
+            display: none;
         }
         .kanban-column.drop-active {
             border-color: rgba(var(--primary-rgb), 0.7);
@@ -298,37 +326,34 @@ export default function Funil() {
                       <p>Visualize e gerencie seu pipeline de vendas</p>
                   </div>
                   <div className="page-actions">
-                      <button className="btn btn-outline" onClick={() => globals.loadFunnel?.({ forceRefresh: true })}><span className="icon icon-refresh icon-sm"></span> Atualizar</button>
-                      <button className="btn btn-outline" onClick={() => globals.toggleView?.()}>
-                          <span id="viewIcon"><span className="icon icon-chart-bar icon-sm"></span></span> <span id="viewText">Kanban</span>
-                      </button>
+                      <button className="btn btn-outline btn-refresh-outline" onClick={() => globals.loadFunnel?.({ forceRefresh: true })}><span className="icon icon-refresh icon-sm"></span> Atualizar</button>
                       <button className="btn btn-primary" onClick={() => globals.openModal?.('configModal')}><span className="icon icon-settings icon-sm"></span> Configurar Etapas</button>
                   </div>
               </div>
       
               <div className="funnel-visual" id="funnelVisual">
-                  <div className="funnel-stage-visual" onClick={() => globals.filterByStage?.(1)}>
+                  <div className="funnel-stage-visual" data-stage="1" onClick={() => globals.filterByStage?.(1)}>
                       <div className="funnel-stage-info">
                           <div className="funnel-stage-count" id="stage1Count">0</div>
                           <div className="funnel-stage-name" id="stage1Label">Novo</div>
                           <div className="funnel-stage-percent">100%</div>
                       </div>
                   </div>
-                  <div className="funnel-stage-visual" onClick={() => globals.filterByStage?.(2)}>
+                  <div className="funnel-stage-visual" data-stage="2" onClick={() => globals.filterByStage?.(2)}>
                       <div className="funnel-stage-info">
                           <div className="funnel-stage-count" id="stage2Count">0</div>
                           <div className="funnel-stage-name" id="stage2Label">Em Andamento</div>
                           <div className="funnel-stage-percent" id="stage2Percent">0%</div>
                       </div>
                   </div>
-                  <div className="funnel-stage-visual" onClick={() => globals.filterByStage?.(3)}>
+                  <div className="funnel-stage-visual" data-stage="3" onClick={() => globals.filterByStage?.(3)}>
                       <div className="funnel-stage-info">
                           <div className="funnel-stage-count" id="stage3Count">0</div>
                           <div className="funnel-stage-name" id="stage3Label">Concluído</div>
                           <div className="funnel-stage-percent" id="stage3Percent">0%</div>
                       </div>
                   </div>
-                  <div className="funnel-stage-visual" onClick={() => globals.filterByStage?.(4)}>
+                  <div className="funnel-stage-visual" data-stage="4" onClick={() => globals.filterByStage?.(4)}>
                       <div className="funnel-stage-info">
                           <div className="funnel-stage-count" id="stage4Count">0</div>
                           <div className="funnel-stage-name" id="stage4Label">Perdido</div>
@@ -338,6 +363,9 @@ export default function Funil() {
               </div>
       
               <div className="kanban-container" id="kanbanView">
+                  <div className="kanban-empty-selection" id="kanbanStageHint">
+                      Selecione uma etapa do funil para ver os leads dessa etapa.
+                  </div>
                   <div className="kanban-column" data-stage="1">
                       <div className="kanban-header stage-1">
                           <span className="kanban-title"><span className="icon icon-spark icon-sm"></span> <span id="kanbanStage1Label">Novo</span></span>
