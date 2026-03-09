@@ -43,7 +43,7 @@ export default function Funil() {
   return (
     <div className="funil-react">
       <style>{`
-.funnel-visual {
+        .funnel-visual {
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -53,7 +53,7 @@ export default function Funil() {
             background: linear-gradient(
                 180deg,
                 rgba(var(--primary-rgb), 0.08) 0%,
-                rgba(15, 23, 42, 0.14) 100%
+                rgba(12, 24, 40, 0.58) 100%
             );
             border: 1px solid var(--border-color);
             border-radius: var(--border-radius-lg);
@@ -75,7 +75,7 @@ export default function Funil() {
             transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
             position: relative;
             border: 1px solid rgba(var(--primary-rgb), 0.22);
-            background: rgba(15, 23, 42, 0.18);
+            background: rgba(12, 24, 40, 0.62);
         }
         .funnel-stage-visual:hover {
             transform: translateY(-1px);
@@ -180,7 +180,7 @@ export default function Funil() {
             padding: 26px 18px;
             text-align: center;
             color: var(--gray-600);
-            background: rgba(15, 23, 42, 0.14);
+            background: rgba(12, 24, 40, 0.58);
             font-weight: 600;
         }
         .kanban-empty-selection[hidden] {

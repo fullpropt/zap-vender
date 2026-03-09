@@ -89,7 +89,7 @@ export default function Automacao() {
             color: var(--gray-500);
             align-items: center;
             justify-content: center;
-            background: rgba(148, 163, 184, 0.12);
+            background: rgba(var(--primary-rgb), 0.14);
             transition: transform 0.2s ease;
             flex-shrink: 0;
         }

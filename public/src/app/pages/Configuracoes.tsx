@@ -190,7 +190,7 @@ export default function Configuracoes() {
         .variable-tag:hover { background: rgba(var(--primary-rgb), 0.2); }
         .connection-status-card { background: var(--surface-muted); border-radius: var(--border-radius); padding: 30px; border: 1px solid var(--border-color); }
         .connection-icon { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; margin-bottom: 20px; }
-        .connection-icon.success { background: #10b981; color: white; }
+        .connection-icon.success { background: var(--success); color: #052216; }
         .connection-icon.disconnected { background: var(--gray-200); color: var(--gray-800); }
         .connection-status-card h4 { margin: 0 0 12px; font-size: 20px; }
         .connection-status-card p { margin: 0 0 12px; color: var(--gray-800); line-height: 1.5; }
@@ -226,14 +226,14 @@ export default function Configuracoes() {
             white-space: nowrap;
         }
         .connection-status-pill.connected {
-            color: #166534;
-            background: rgba(16, 185, 129, 0.16);
-            border-color: rgba(16, 185, 129, 0.3);
+            color: var(--success-light);
+            background: rgba(var(--success-rgb), 0.16);
+            border-color: rgba(var(--success-rgb), 0.32);
         }
         .connection-status-pill.disconnected {
-            color: #7f1d1d;
-            background: rgba(239, 68, 68, 0.12);
-            border-color: rgba(239, 68, 68, 0.25);
+            color: var(--danger-light);
+            background: rgba(var(--danger-rgb), 0.12);
+            border-color: rgba(var(--danger-rgb), 0.28);
         }
         .connection-account-body {
             display: grid;
@@ -279,7 +279,7 @@ export default function Configuracoes() {
             padding: 10px 12px;
             border-radius: 10px;
             border: 1px solid var(--border-color);
-            background: rgba(15, 23, 42, 0.22);
+            background: rgba(12, 24, 40, 0.58);
             display: flex;
             flex-direction: column;
             gap: 2px;

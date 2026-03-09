@@ -90,7 +90,7 @@ export default function Campanhas() {
             color: var(--gray-500);
             align-items: center;
             justify-content: center;
-            background: rgba(148, 163, 184, 0.12);
+            background: rgba(var(--primary-rgb), 0.14);
             transition: transform 0.2s ease;
         }
         .campaign-card.is-expanded .campaign-expand-icon {
@@ -929,4 +929,3 @@ export default function Campanhas() {
     </div>
   );
 }
-

@@ -8,6 +8,7 @@ type ContatosGlobals = {
   changeContactsSessionFilter?: (sessionId: string) => void;
   exportContacts?: () => void;
   openModal?: (id: string) => void;
+  openAddContactModal?: () => void;
   closeModal?: (id: string) => void;
   saveContact?: () => void;
   updateContact?: () => void;
@@ -218,7 +219,7 @@ export default function Contatos() {
             <button className="btn btn-success btn-export-contacts" onClick={() => globals.exportContacts?.()}>
               <span className="icon icon-export icon-sm"></span> Exportar
             </button>
-            <button className="btn btn-primary" onClick={() => globals.openModal?.('addContactModal')}>
+            <button className="btn btn-primary" onClick={() => globals.openAddContactModal?.() || globals.openModal?.('addContactModal')}>
               <span className="icon icon-add icon-sm"></span> Novo Contato
             </button>
           </div>
@@ -371,19 +372,15 @@ export default function Contatos() {
               </div>
               <div className="form-group">
                 <label className="form-label">Tags</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  id="contactTags"
-                  list="contactTagsOptions"
-                  placeholder="Ex.: VIP, Renovacao"
-                />
-                <datalist id="contactTagsOptions"></datalist>
+                <select className="form-select" id="contactTagsSelect" defaultValue="">
+                  <option value="">Selecione uma tag...</option>
+                </select>
+                <input type="hidden" id="contactTags" />
                 <div
                   id="contactTagsSuggestions"
                   style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}
                 ></div>
-                <p className="form-help">Use as etiquetas cadastradas abaixo ou separe multiplas tags por virgula.</p>
+                <p className="form-help">Selecione uma ou mais tags na lista acima.</p>
               </div>
               <div className="form-row" id="contactCustomFields"></div>
               <div className="form-row">
