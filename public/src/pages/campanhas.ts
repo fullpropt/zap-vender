@@ -1516,6 +1516,7 @@ function openCampaignModal() {
     bindCampaignSendWindowToggle();
     const win = window as Window & { openModal?: (id: string) => void };
     win.openModal?.('newCampaignModal');
+    setTimeout(syncDelayInputUnits, 0);
 }
 
 function getCampaignId() {
@@ -1542,11 +1543,61 @@ function setSelectValue(select: HTMLSelectElement | null, value: string) {
     }
 }
 
+function positionDelayInputUnit(inputId: string, unitId: string) {
+    const input = document.getElementById(inputId) as HTMLInputElement | null;
+    const unit = document.getElementById(unitId) as HTMLSpanElement | null;
+    if (!input || !unit) return;
+
+    const computedStyle = window.getComputedStyle(input);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    const fontStyle = computedStyle.fontStyle || 'normal';
+    const fontVariant = computedStyle.fontVariant || 'normal';
+    const fontWeight = computedStyle.fontWeight || '400';
+    const fontSize = computedStyle.fontSize || '14px';
+    const fontFamily = computedStyle.fontFamily || 'sans-serif';
+    context.font = `${fontStyle} ${fontVariant} ${fontWeight} ${fontSize} ${fontFamily}`;
+
+    const rawValue = String(input.value || '').trim();
+    const numericText = rawValue.replace(/[^\d]/g, '') || '0';
+    const textWidth = context.measureText(numericText).width;
+    const paddingLeft = Number.parseFloat(computedStyle.paddingLeft || '16') || 16;
+    const desiredLeft = paddingLeft + textWidth + 6;
+    unit.style.left = `${desiredLeft}px`;
+}
+
+function syncDelayInputUnits() {
+    positionDelayInputUnit('campaignDelayMin', 'campaignDelayMinUnit');
+    positionDelayInputUnit('campaignDelayMax', 'campaignDelayMaxUnit');
+}
+
+function bindDelayInputUnits() {
+    const minInput = document.getElementById('campaignDelayMin') as HTMLInputElement | null;
+    const maxInput = document.getElementById('campaignDelayMax') as HTMLInputElement | null;
+
+    if (minInput && minInput.dataset.unitBound !== '1') {
+        minInput.addEventListener('input', syncDelayInputUnits);
+        minInput.addEventListener('change', syncDelayInputUnits);
+        minInput.dataset.unitBound = '1';
+    }
+
+    if (maxInput && maxInput.dataset.unitBound !== '1') {
+        maxInput.addEventListener('input', syncDelayInputUnits);
+        maxInput.addEventListener('change', syncDelayInputUnits);
+        maxInput.dataset.unitBound = '1';
+    }
+
+    syncDelayInputUnits();
+}
+
 function setDelayRangeInputs(minSeconds = DEFAULT_DELAY_MIN_SECONDS, maxSeconds = DEFAULT_DELAY_MAX_SECONDS) {
     const minInput = document.getElementById('campaignDelayMin') as HTMLInputElement | null;
     const maxInput = document.getElementById('campaignDelayMax') as HTMLInputElement | null;
     if (minInput) minInput.value = String(minSeconds);
     if (maxInput) maxInput.value = String(maxSeconds);
+    syncDelayInputUnits();
 }
 
 function normalizeWindowTimeInput(value: unknown, fallback: string) {
@@ -1634,6 +1685,7 @@ function openBroadcastModal() {
 async function initCampanhas() {
     pendingCampaignTagFilters = [];
     syncCampaignSegmentOptions();
+    bindDelayInputUnits();
     bindCampaignTagFilterDropdown();
     bindCampaignMessageVariablePicker();
     bindCampaignMessageVariationsUi();
@@ -2038,6 +2090,7 @@ function editCampaign(id: number) {
 
     const win = window as Window & { openModal?: (id: string) => void };
     win.openModal?.('newCampaignModal');
+    setTimeout(syncDelayInputUnits, 0);
 }
 
 async function startCampaign(id: number) {
@@ -2165,3 +2218,5 @@ windowAny.switchCampaignTab = switchCampaignTab;
 windowAny.toggleCampaignCardDetails = toggleCampaignCardDetails;
 
 export { initCampanhas };
+
+
