@@ -1,4 +1,4 @@
-﻿import { useEffect } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { brandLogoUrl, brandName } from '../lib/brand';
 
@@ -163,6 +163,34 @@ function DashboardStyles() {
           gap: 12px;
           margin-bottom: 16px;
         }
+        .onboarding-card-controls {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .onboarding-toggle-btn {
+          width: 30px;
+          height: 30px;
+          border: 1px solid rgba(var(--primary-rgb), 0.28);
+          border-radius: 999px;
+          background: rgba(6, 15, 30, 0.78);
+          color: #d8f4e6;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          font-size: 13px;
+          line-height: 1;
+          padding: 0;
+        }
+        .onboarding-toggle-btn:hover {
+          border-color: rgba(var(--primary-rgb), 0.5);
+          background: rgba(var(--primary-rgb), 0.2);
+        }
+        .onboarding-toggle-btn:focus-visible {
+          outline: 2px solid rgba(var(--primary-rgb), 0.48);
+          outline-offset: 2px;
+        }
         .onboarding-card-header h3 {
           margin: 0;
           font-size: 20px;
@@ -177,6 +205,12 @@ function DashboardStyles() {
           display: grid;
           grid-template-columns: minmax(280px, 1fr) minmax(300px, 1.2fr);
           gap: 16px;
+        }
+        .onboarding-content {
+          display: block;
+        }
+        .onboarding-card.is-collapsed .onboarding-content {
+          display: none;
         }
         .onboarding-video-wrap {
           min-height: 210px;
@@ -294,7 +328,7 @@ function DashboardStyles() {
           .stats-period-card, .stats-general-card, .events-personalized-card { padding: 12px; border-radius: 12px; }
           .stats-period-card h3, .stats-general-card h3, .events-personalized-card h3 { margin-bottom: 12px; font-size: 15px; }
           .onboarding-card { padding: 14px; border-radius: 12px; margin-bottom: 16px; }
-          .onboarding-card-header { flex-direction: column; margin-bottom: 12px; }
+          .onboarding-card-header { margin-bottom: 12px; }
           .onboarding-card-header h3 { font-size: 18px; }
           .onboarding-step { grid-template-columns: auto minmax(0, 1fr); }
           .onboarding-step .btn { grid-column: 2; justify-self: flex-start; }
@@ -578,95 +612,139 @@ const ONBOARDING_STEPS = [
   }
 ] as const;
 
+function buildOnboardingCollapseStorageKey() {
+  const userId = String(sessionStorage.getItem('selfDashboardUserId') || '').trim();
+  if (userId) return `zapvender_dashboard_onboarding_collapsed_v1:user:${userId}`;
+
+  const email = String(sessionStorage.getItem('selfDashboardUserEmail') || '').trim().toLowerCase();
+  if (email) return `zapvender_dashboard_onboarding_collapsed_v1:email:${email}`;
+
+  const token = String(sessionStorage.getItem('selfDashboardToken') || '').trim();
+  const suffix = token ? token.slice(-14) : 'anon';
+  return `zapvender_dashboard_onboarding_collapsed_v1:token:${suffix}`;
+}
+
 function OnboardingCard() {
   const globals = window as Window & DashboardGlobals;
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(buildOnboardingCollapseStorageKey());
+      setIsCollapsed(saved === '1');
+    } catch (_) {
+      setIsCollapsed(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(buildOnboardingCollapseStorageKey(), isCollapsed ? '1' : '0');
+    } catch (_) {
+      // ignore storage failures
+    }
+  }, [isCollapsed]);
 
   return (
-    <section className="onboarding-card" id="dashboardOnboardingCard">
+    <section className={`onboarding-card${isCollapsed ? ' is-collapsed' : ''}`} id="dashboardOnboardingCard">
       <div className="onboarding-card-header">
         <div>
           <h3>Primeiros passos no ZapVender</h3>
           <p>Use este checklist para configurar sua conta e acelerar a ativação.</p>
         </div>
-        <span className="badge badge-success" id="onboardingCompletedBadge" style={{ display: 'none' }}>
-          Checklist concluído
-        </span>
+        <div className="onboarding-card-controls">
+          <span className="badge badge-success" id="onboardingCompletedBadge" style={{ display: 'none' }}>
+            Checklist concluído
+          </span>
+          <button
+            type="button"
+            className="onboarding-toggle-btn"
+            onClick={() => setIsCollapsed((prev) => !prev)}
+            title={isCollapsed ? 'Exibir primeiros passos' : 'Ocultar primeiros passos'}
+            aria-label={isCollapsed ? 'Exibir primeiros passos' : 'Ocultar primeiros passos'}
+            aria-expanded={!isCollapsed}
+          >
+            <span aria-hidden="true">{isCollapsed ? '\u25B8' : '\u25BE'}</span>
+          </button>
+        </div>
       </div>
 
-      <div className="onboarding-grid">
-        <div>
-          <div className="onboarding-video-wrap">
-            <div className="onboarding-video-placeholder" id="onboardingVideoPlaceholder">
-              <strong>Vídeo inicial ainda não configurado</strong>
-              <span id="onboardingVideoHint">Defina `onboarding_video_url` em Configurações para exibir aqui.</span>
-            </div>
-            <iframe
-              id="onboardingVideoFrame"
-              className="onboarding-video-frame"
-              title="Guia de primeiros passos"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              style={{ display: 'none' }}
-            ></iframe>
-          </div>
-          <a
-            id="onboardingVideoOpenLink"
-            className="btn btn-outline btn-sm onboarding-video-open"
-            href="#/configuracoes"
-            target="_blank"
-            rel="noreferrer"
-            style={{ display: 'none' }}
-          >
-            Abrir vídeo em nova aba
-          </a>
-        </div>
-
-        <div>
-          <div className="onboarding-progress">
-            <div className="onboarding-progress-head">
-              <span className="onboarding-progress-text" id="onboardingProgressText">0/6 etapas concluídas</span>
-            </div>
-            <div className="onboarding-progress-track">
-              <div className="onboarding-progress-fill" id="onboardingProgressFill"></div>
-            </div>
-          </div>
-
-          <div className="onboarding-steps">
-            {ONBOARDING_STEPS.map((step) => (
-              <div className="onboarding-step" id={`onboarding-row-${step.id}`} key={step.id}>
-                <label className="checkbox-wrapper">
-                  <input
-                    type="checkbox"
-                    id={`onboarding-step-${step.id}`}
-                    onChange={(event) => globals.toggleOnboardingStep?.(step.id, event.currentTarget.checked)}
-                  />
-                  <span className="checkbox-custom"></span>
-                </label>
-
-                <div className="onboarding-step-info">
-                  <p className="onboarding-step-title">{step.title}</p>
-                  <p className="onboarding-step-description">{step.description}</p>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  onClick={() => globals.goToOnboardingStep?.(step.id)}
-                >
-                  {step.actionLabel}
-                </button>
+      <div className="onboarding-content">
+        <div className="onboarding-grid">
+          <div>
+            <div className="onboarding-video-wrap">
+              <div className="onboarding-video-placeholder" id="onboardingVideoPlaceholder">
+                <strong>Em implementação</strong>
+                <span id="onboardingVideoHint">Estamos finalizando o vídeo de primeiros passos. Em breve ele estará disponível aqui.</span>
               </div>
-            ))}
+              <iframe
+                id="onboardingVideoFrame"
+                className="onboarding-video-frame"
+                title="Guia de primeiros passos"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                style={{ display: 'none' }}
+              ></iframe>
+            </div>
+            <a
+              id="onboardingVideoOpenLink"
+              className="btn btn-outline btn-sm onboarding-video-open"
+              href="#/configuracoes"
+              target="_blank"
+              rel="noreferrer"
+              style={{ display: 'none' }}
+            >
+              Abrir vídeo em nova aba
+            </a>
           </div>
 
-          <div className="onboarding-actions">
-            <button
-              type="button"
-              className="btn btn-outline btn-sm"
-              onClick={() => globals.resetOnboardingChecklist?.()}
-            >
-              Reiniciar checklist
-            </button>
+          <div>
+            <div className="onboarding-progress">
+              <div className="onboarding-progress-head">
+                <span className="onboarding-progress-text" id="onboardingProgressText">0/6 etapas concluídas</span>
+              </div>
+              <div className="onboarding-progress-track">
+                <div className="onboarding-progress-fill" id="onboardingProgressFill"></div>
+              </div>
+            </div>
+
+            <div className="onboarding-steps">
+              {ONBOARDING_STEPS.map((step) => (
+                <div className="onboarding-step" id={`onboarding-row-${step.id}`} key={step.id}>
+                  <label className="checkbox-wrapper">
+                    <input
+                      type="checkbox"
+                      id={`onboarding-step-${step.id}`}
+                      onChange={(event) => globals.toggleOnboardingStep?.(step.id, event.currentTarget.checked)}
+                    />
+                    <span className="checkbox-custom"></span>
+                  </label>
+
+                  <div className="onboarding-step-info">
+                    <p className="onboarding-step-title">{step.title}</p>
+                    <p className="onboarding-step-description">{step.description}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => globals.goToOnboardingStep?.(step.id)}
+                  >
+                    {step.actionLabel}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="onboarding-actions">
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => globals.resetOnboardingChecklist?.()}
+              >
+                Reiniciar checklist
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -1030,11 +1030,11 @@ function escapeAttributeSelector(value: string) {
 }
 
 function getDistributionStrategyLabel(strategy?: string) {
-    const normalized = String(strategy || 'single').toLowerCase();
+    const normalized = String(strategy || 'round_robin').toLowerCase();
     if (normalized === 'round_robin') return 'Rotativo';
     if (normalized === 'weighted_round_robin') return 'Rotativo por peso';
     if (normalized === 'random') return 'Aleatório';
-    return 'Conta única';
+    return 'Conta fixa';
 }
 
 function normalizeCampaignSenderAccounts(raw: unknown): CampaignSenderAccount[] {
@@ -1257,7 +1257,7 @@ function renderCampaignOverviewContent(campaign: Campaign) {
         <p><strong>Descrição:</strong> ${campaign.description || 'Sem descrição'}</p>
         <p><strong>Tipo:</strong> ${getCampaignTypeLabel(campaign.type)}</p>
         <p><strong>Status:</strong> ${getCampaignStatusLabel(campaign.status)}</p>
-        <p><strong>Distribuição:</strong> ${escapeCampaignText(getDistributionStrategyLabel(campaign.distribution_strategy || 'single'))}</p>
+        <p><strong>Distribuição:</strong> ${escapeCampaignText(getDistributionStrategyLabel(campaign.distribution_strategy || 'round_robin'))}</p>
         <p><strong>Contas de envio:</strong> ${escapeCampaignText(renderCampaignSenderAccountsSummary(campaign))}</p>
         <p><strong>Horário de envio:</strong> ${escapeCampaignText(formatCampaignSendWindowLabel(campaign))}</p>
         <p><strong>Tags:</strong> ${escapeCampaignText(getCampaignTagFilterSummary(campaign))}</p>
@@ -1495,7 +1495,7 @@ function resetCampaignForm() {
     syncCampaignSegmentOptions();
     setCampaignTagFilterSelection([]);
     closeCampaignTagFilterMenu();
-    setSelectValue(document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null, 'single');
+    setSelectValue(document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null, 'round_robin');
     renderCampaignSenderAccountsSelector([]);
     setDelayRangeInputs(DEFAULT_DELAY_MIN_SECONDS, DEFAULT_DELAY_MAX_SECONDS);
     setCampaignSendWindowInputs(false, DEFAULT_SEND_WINDOW_START, DEFAULT_SEND_WINDOW_END);
@@ -1955,7 +1955,7 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         name: (document.getElementById('campaignName') as HTMLInputElement | null)?.value.trim() || '',
         description: (document.getElementById('campaignDescription') as HTMLInputElement | null)?.value.trim() || '',
         type: ((document.getElementById('campaignType') as HTMLSelectElement | null)?.value || 'broadcast') as CampaignType,
-        distribution_strategy: ((document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null)?.value || 'single') as Campaign['distribution_strategy'],
+        distribution_strategy: ((document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null)?.value || 'round_robin') as Campaign['distribution_strategy'],
         status,
         segment: (document.getElementById('campaignSegment') as HTMLSelectElement | null)?.value || '',
         tag_filters: getSelectedCampaignTagFilters(),
@@ -2061,7 +2061,7 @@ function editCampaign(id: number) {
     setSelectValue(document.getElementById('campaignType') as HTMLSelectElement | null, campaign.type || 'broadcast');
     setSelectValue(
         document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null,
-        String(campaign.distribution_strategy || 'single')
+        String(campaign.distribution_strategy || 'round_robin')
     );
     setSelectValue(document.getElementById('campaignSegment') as HTMLSelectElement | null, campaign.segment || 'all');
 
@@ -2218,4 +2218,3 @@ windowAny.switchCampaignTab = switchCampaignTab;
 windowAny.toggleCampaignCardDetails = toggleCampaignCardDetails;
 
 export { initCampanhas };
-

@@ -751,7 +751,6 @@ export default function Campanhas() {
                               <div className="form-group">
                                   <label className="form-label">Distribuição</label>
                                   <select className="form-select" id="campaignDistributionStrategy">
-                                      <option value="single">Conta única</option>
                                       <option value="round_robin">Rotativo</option>
                                       <option value="weighted_round_robin">Rotativo por peso</option>
                                       <option value="random">Aleatório</option>

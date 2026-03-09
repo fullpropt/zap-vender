@@ -401,7 +401,7 @@ function renderOnboardingVideo() {
             placeholder.style.display = 'flex';
         }
         if (hint) {
-            hint.textContent = 'Defina onboarding_video_url em Configuracoes para exibir aqui.';
+            hint.textContent = 'Estamos finalizando o video de primeiros passos. Em breve ele estara disponivel aqui.';
         }
         if (openLink) {
             openLink.style.display = 'none';
