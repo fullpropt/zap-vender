@@ -37,36 +37,66 @@ function DashboardStyles() {
         .stats-period-card h3, .stats-general-card h3, .events-personalized-card h3 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
         .stats-period-controls {
           display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 12px;
-          align-items: stretch;
+          grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) minmax(180px, 1fr) auto;
+          gap: 10px;
+          align-items: center;
           margin-bottom: 20px;
         }
         .stats-period-controls .form-input,
         .stats-period-controls .form-select {
           width: 100%;
           min-width: 0;
-          height: 38px;
+          height: 40px;
           padding: 0 12px;
           box-sizing: border-box;
         }
         .chart-type-toggle {
-          grid-column: 1 / -1;
-          width: 100%;
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 8px;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 4px;
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          background: var(--surface-muted);
+          justify-self: end;
         }
         .chart-type-toggle .chart-btn {
-          width: 100%;
-          padding: 8px 12px;
-          border: 1px solid var(--border-color);
-          background: var(--surface-muted);
+          min-width: 88px;
+          height: 32px;
+          padding: 0 10px;
+          border: 1px solid transparent;
+          background: transparent;
           border-radius: 8px;
           cursor: pointer;
-          color: var(--gray-700);
+          color: var(--gray-600);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 600;
         }
-        .chart-type-toggle .chart-btn.active { background: rgba(var(--primary-rgb), 0.16); border-color: var(--primary); color: #eafff4; }
+        .chart-type-toggle .chart-btn.active {
+          background: rgba(var(--primary-rgb), 0.22);
+          border-color: rgba(var(--primary-rgb), 0.5);
+          color: #eafff4;
+        }
+        .chart-type-toggle .chart-btn .icon {
+          width: 14px;
+          height: 14px;
+        }
+        .chart-type-toggle .chart-btn .chart-btn-label {
+          line-height: 1;
+        }
+        @media (max-width: 900px) {
+          .stats-period-controls {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+          .stats-period-controls .chart-type-toggle {
+            grid-column: 1 / -1;
+            justify-self: start;
+          }
+        }
         .stats-general-card { display: flex; flex-direction: column; gap: 0; }
         .stats-general-card h3 { text-align: left; margin-bottom: 10px; }
         .stats-general-item {
@@ -213,10 +243,18 @@ function DashboardStyles() {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
+            padding: 0;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+            justify-self: stretch;
           }
           .stats-period-controls .chart-type-toggle .chart-btn {
             width: 100%;
             min-height: 40px;
+            min-width: 0;
+            border: 1px solid var(--border-color);
+            background: var(--surface-muted);
           }
           .stats-period-chart canvas { max-height: 150px !important; }
           .stats-general-card {
@@ -288,9 +326,11 @@ function StatsPeriod() {
           <div className="chart-type-toggle">
             <button type="button" className="chart-btn active" data-chart-type="line" title="Gráfico de linhas">
               <span className="icon icon-chart-line icon-sm"></span>
+              <span className="chart-btn-label">Linha</span>
             </button>
             <button type="button" className="chart-btn" data-chart-type="bar" title="Gráfico de barras">
               <span className="icon icon-chart-bar icon-sm"></span>
+              <span className="chart-btn-label">Barras</span>
             </button>
           </div>
         </div>

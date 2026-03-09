@@ -507,9 +507,6 @@ export default function Contatos() {
           </div>
           <div className="modal-footer">
             <button className="btn btn-outline" onClick={() => globals.closeModal?.('editContactModal')}>Cancelar</button>
-            <button className="btn btn-whatsapp" onClick={() => globals.openWhatsApp?.()}>
-              <span className="icon icon-whatsapp icon-sm"></span> WhatsApp
-            </button>
             <button className="btn btn-primary" onClick={() => globals.updateContact?.()}>Salvar Alterações</button>
           </div>
         </div>
