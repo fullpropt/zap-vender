@@ -14,6 +14,7 @@ type BusinessHoursSessionSettings = {
     enabled: boolean;
     start: string;
     end: string;
+    autoReplyMessage: string;
 };
 
 type AiSettingsConfig = {
@@ -144,6 +145,7 @@ const DEFAULT_BUSINESS_HOURS_SETTINGS = {
     start: '08:00',
     end: '18:00'
 };
+const DEFAULT_OUTSIDE_HOURS_AUTO_REPLY_MESSAGE = 'Olá! Nosso atendimento está fora do horário de funcionamento no momento. Retornaremos assim que estivermos online.';
 
 const DEFAULT_NOTIFICATION_SETTINGS = {
     notifyNewLead: true,
@@ -370,6 +372,12 @@ function parseBooleanSetting(value: unknown, fallback = false) {
     return fallback;
 }
 
+function normalizeBusinessHoursAutoReplyMessage(value: unknown, fallback = DEFAULT_OUTSIDE_HOURS_AUTO_REPLY_MESSAGE) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return fallback;
+    return normalized.slice(0, 1200);
+}
+
 function clearBusinessHoursMessageField() {
     const messageInput = document.getElementById('outsideHoursAutoReplyMessage') as HTMLTextAreaElement | null;
     if (!messageInput) return;
@@ -434,7 +442,8 @@ function normalizeBusinessHoursBySession(value: unknown) {
         normalized[sessionId] = {
             enabled: parseBooleanSetting(valueObject.enabled, DEFAULT_BUSINESS_HOURS_SETTINGS.enabled),
             start: normalizeBusinessHoursTime(valueObject.start, DEFAULT_BUSINESS_HOURS_SETTINGS.start),
-            end: normalizeBusinessHoursTime(valueObject.end, DEFAULT_BUSINESS_HOURS_SETTINGS.end)
+            end: normalizeBusinessHoursTime(valueObject.end, DEFAULT_BUSINESS_HOURS_SETTINGS.end),
+            autoReplyMessage: normalizeBusinessHoursAutoReplyMessage(valueObject.autoReplyMessage, DEFAULT_OUTSIDE_HOURS_AUTO_REPLY_MESSAGE)
         };
     }
 
@@ -446,7 +455,8 @@ function getBusinessHoursSessionSettings(sessionId: string): BusinessHoursSessio
     const fallback: BusinessHoursSessionSettings = {
         enabled: DEFAULT_BUSINESS_HOURS_SETTINGS.enabled,
         start: DEFAULT_BUSINESS_HOURS_SETTINGS.start,
-        end: DEFAULT_BUSINESS_HOURS_SETTINGS.end
+        end: DEFAULT_BUSINESS_HOURS_SETTINGS.end,
+        autoReplyMessage: DEFAULT_OUTSIDE_HOURS_AUTO_REPLY_MESSAGE
     };
     if (!normalizedSessionId) return fallback;
 
@@ -456,7 +466,8 @@ function getBusinessHoursSessionSettings(sessionId: string): BusinessHoursSessio
     return {
         enabled: parseBooleanSetting(cached.enabled, fallback.enabled),
         start: normalizeBusinessHoursTime(cached.start, fallback.start),
-        end: normalizeBusinessHoursTime(cached.end, fallback.end)
+        end: normalizeBusinessHoursTime(cached.end, fallback.end),
+        autoReplyMessage: normalizeBusinessHoursAutoReplyMessage(cached.autoReplyMessage, fallback.autoReplyMessage)
     };
 }
 
@@ -470,7 +481,8 @@ function upsertBusinessHoursSessionSettings(sessionId: string, partial: Partial<
         [normalizedSessionId]: {
             enabled: parseBooleanSetting(partial.enabled, current.enabled),
             start: normalizeBusinessHoursTime(partial.start, current.start),
-            end: normalizeBusinessHoursTime(partial.end, current.end)
+            end: normalizeBusinessHoursTime(partial.end, current.end),
+            autoReplyMessage: normalizeBusinessHoursAutoReplyMessage(partial.autoReplyMessage, current.autoReplyMessage)
         }
     };
 }
@@ -514,8 +526,7 @@ function renderBusinessHoursAccountsManager() {
         const businessHours = getBusinessHoursSessionSettings(sessionId);
         const businessStatusClass = businessHours.enabled ? 'connected' : 'disconnected';
         const businessStatusLabel = businessHours.enabled ? 'Horário comercial ativo' : 'Horário comercial inativo';
-        const toggleButtonClass = businessHours.enabled ? 'btn btn-outline-danger' : 'btn btn-outline';
-        const toggleButtonLabel = businessHours.enabled ? 'Desativar horário comercial' : 'Ativar horário comercial';
+        const toggleChecked = businessHours.enabled ? 'checked' : '';
 
         return `
             <div class="connection-account-item">
@@ -526,7 +537,28 @@ function renderBusinessHoursAccountsManager() {
                     </div>
                     <span class="connection-status-pill ${businessStatusClass}">${businessStatusLabel}</span>
                 </div>
-                <div class="business-hours-account-body">
+                <div class="business-hours-account-controls">
+                    <label class="connection-campaign-toggle">
+                        <input
+                            type="checkbox"
+                            class="business-hours-session-enabled-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            ${toggleChecked}
+                            onchange="toggleBusinessHoursSession('${sessionToken}', this.checked)"
+                        />
+                        Ativar horário comercial
+                    </label>
+                </div>
+                ${businessHours.enabled ? `<div class="business-hours-account-body">
+                    <div class="form-group business-hours-account-message">
+                        <label class="form-label">Mensagem automática fora do horário</label>
+                        <textarea
+                            class="form-textarea business-hours-session-message-input"
+                            data-session-id="${escapeHtml(sessionId)}"
+                            rows="2"
+                            placeholder="Digite a mensagem enviada fora do horário"
+                        >${escapeHtml(businessHours.autoReplyMessage)}</textarea>
+                    </div>
                     <div class="form-group">
                         <label class="form-label">Início do expediente</label>
                         <input
@@ -546,8 +578,8 @@ function renderBusinessHoursAccountsManager() {
                         />
                     </div>
                     <button class="btn btn-outline" onclick="saveBusinessHoursSession('${sessionToken}')">Salvar horários</button>
-                    <button class="${toggleButtonClass}" onclick="toggleBusinessHoursSession('${sessionToken}')">${toggleButtonLabel}</button>
                 </div>
+                ` : ''}
             </div>
         `;
     }).join('');
@@ -567,12 +599,14 @@ async function saveBusinessHoursSession(sessionToken: string) {
     const selectorSessionId = escapeAttributeSelector(sessionId);
     const startInput = document.querySelector<HTMLInputElement>(`.business-hours-session-start-input[data-session-id="${selectorSessionId}"]`);
     const endInput = document.querySelector<HTMLInputElement>(`.business-hours-session-end-input[data-session-id="${selectorSessionId}"]`);
+    const messageInput = document.querySelector<HTMLTextAreaElement>(`.business-hours-session-message-input[data-session-id="${selectorSessionId}"]`);
     const current = getBusinessHoursSessionSettings(sessionId);
 
     upsertBusinessHoursSessionSettings(sessionId, {
         enabled: current.enabled,
         start: normalizeBusinessHoursTime(startInput?.value, current.start),
-        end: normalizeBusinessHoursTime(endInput?.value, current.end)
+        end: normalizeBusinessHoursTime(endInput?.value, current.end),
+        autoReplyMessage: normalizeBusinessHoursAutoReplyMessage(messageInput?.value, current.autoReplyMessage)
     });
 
     try {
@@ -584,16 +618,17 @@ async function saveBusinessHoursSession(sessionToken: string) {
     }
 }
 
-async function toggleBusinessHoursSession(sessionToken: string) {
+async function toggleBusinessHoursSession(sessionToken: string, explicitEnabled?: boolean) {
     const sessionId = sanitizeSessionId(decodeSessionToken(sessionToken));
     if (!sessionId) return;
 
     const current = getBusinessHoursSessionSettings(sessionId);
-    const nextEnabled = !current.enabled;
+    const nextEnabled = typeof explicitEnabled === 'boolean' ? explicitEnabled : !current.enabled;
     upsertBusinessHoursSessionSettings(sessionId, {
         enabled: nextEnabled,
         start: current.start,
-        end: current.end
+        end: current.end,
+        autoReplyMessage: current.autoReplyMessage
     });
 
     try {
@@ -2400,7 +2435,7 @@ const windowAny = window as Window & {
     saveBusinessHoursSettings?: () => Promise<void>;
     refreshBusinessHoursAccounts?: () => Promise<void>;
     saveBusinessHoursSession?: (sessionToken: string) => Promise<void>;
-    toggleBusinessHoursSession?: (sessionToken: string) => Promise<void>;
+    toggleBusinessHoursSession?: (sessionToken: string, explicitEnabled?: boolean) => Promise<void>;
     saveNotificationSettings?: () => Promise<void>;
     createContactField?: () => Promise<void>;
     updateContactField?: (key: string) => Promise<void>;

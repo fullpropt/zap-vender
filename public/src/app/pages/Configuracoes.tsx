@@ -274,6 +274,18 @@ export default function Configuracoes() {
         .business-hours-account-body .form-group {
             margin-bottom: 0;
         }
+        .business-hours-account-controls {
+            margin-bottom: 12px;
+        }
+        .business-hours-account-controls .connection-campaign-toggle {
+            padding-bottom: 0;
+        }
+        .business-hours-account-message {
+            grid-column: 1 / -1;
+        }
+        .business-hours-account-message .form-textarea {
+            min-height: 84px;
+        }
         .business-hours-account-body .btn {
             width: auto;
             white-space: nowrap;
