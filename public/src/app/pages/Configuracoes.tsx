@@ -284,7 +284,7 @@ export default function Configuracoes() {
             flex-direction: column;
             gap: 2px;
         }
-        .business-hours-toggle {
+        .business-hours-checkbox-toggle {
             display: inline-flex;
             align-items: center;
             gap: 10px;
@@ -295,51 +295,14 @@ export default function Configuracoes() {
             line-height: 1.2;
         }
         .business-hours-session-enabled-input {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            margin: -1px;
-            padding: 0;
-            border: 0;
-            clip: rect(0 0 0 0);
-            overflow: hidden;
-        }
-        .business-hours-toggle-switch {
-            position: relative;
-            width: 44px;
-            height: 24px;
-            border-radius: 999px;
-            border: 1px solid rgba(148, 163, 184, 0.42);
-            background: rgba(148, 163, 184, 0.22);
-            flex-shrink: 0;
-            transition: background 0.2s ease, border-color 0.2s ease;
-        }
-        .business-hours-toggle-switch::after {
-            content: '';
-            position: absolute;
-            top: 3px;
-            left: 3px;
+            position: static;
             width: 16px;
             height: 16px;
-            border-radius: 50%;
-            background: #f8fafc;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.45);
-            transition: transform 0.2s ease, background 0.2s ease;
-        }
-        .business-hours-session-enabled-input:checked + .business-hours-toggle-switch {
-            border-color: rgba(16, 185, 129, 0.6);
-            background: rgba(16, 185, 129, 0.25);
-        }
-        .business-hours-session-enabled-input:checked + .business-hours-toggle-switch::after {
-            transform: translateX(20px);
-            background: #10b981;
-        }
-        .business-hours-session-enabled-input:focus-visible + .business-hours-toggle-switch {
-            outline: 2px solid rgba(var(--primary-rgb), 0.55);
-            outline-offset: 2px;
+            margin: 0;
+            flex-shrink: 0;
         }
         .business-hours-toggle-hint {
-            margin: 6px 0 0 54px;
+            margin: 6px 0 0 26px;
             font-size: 11px;
             color: var(--gray-500);
         }

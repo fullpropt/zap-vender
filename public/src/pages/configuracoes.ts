@@ -145,7 +145,7 @@ const DEFAULT_BUSINESS_HOURS_SETTINGS = {
     start: '08:00',
     end: '18:00'
 };
-const DEFAULT_OUTSIDE_HOURS_AUTO_REPLY_MESSAGE = 'OlÃ¡! Nosso atendimento estÃ¡ fora do horÃ¡rio de funcionamento no momento. Retornaremos assim que estivermos online.';
+const DEFAULT_OUTSIDE_HOURS_AUTO_REPLY_MESSAGE = 'Olá! Nosso atendimento está fora do horário de funcionamento no momento. Retornaremos assim que estivermos online.';
 
 const DEFAULT_NOTIFICATION_SETTINGS = {
     notifyNewLead: true,
@@ -525,7 +525,7 @@ function renderBusinessHoursAccountsManager() {
 
         const businessHours = getBusinessHoursSessionSettings(sessionId);
         const businessStatusClass = businessHours.enabled ? 'connected' : 'disconnected';
-        const businessStatusLabel = businessHours.enabled ? 'HorÃ¡rio comercial ativo' : 'HorÃ¡rio comercial inativo';
+        const businessStatusLabel = businessHours.enabled ? 'Horário comercial ativo' : 'Horário comercial inativo';
         const toggleChecked = businessHours.enabled ? 'checked' : '';
 
         return `
@@ -538,7 +538,7 @@ function renderBusinessHoursAccountsManager() {
                     <span class="connection-status-pill ${businessStatusClass}">${businessStatusLabel}</span>
                 </div>
                 <div class="business-hours-account-controls">
-                    <label class="business-hours-toggle">
+                    <label class="connection-campaign-toggle business-hours-checkbox-toggle">
                         <input
                             type="checkbox"
                             class="business-hours-session-enabled-input"
@@ -546,24 +546,23 @@ function renderBusinessHoursAccountsManager() {
                             ${toggleChecked}
                             onchange="toggleBusinessHoursSession('${sessionToken}', this.checked)"
                         />
-                        <span class="business-hours-toggle-switch" aria-hidden="true"></span>
-                        <span>Ativar horÃ¡rio comercial</span>
+                        <span>Ativar horário comercial</span>
                     </label>
-                    <div class="business-hours-toggle-hint">Ative para exibir e configurar mensagem e horÃ¡rio desta conta.</div>
+                    <div class="business-hours-toggle-hint">Ative para exibir e configurar mensagem e horário desta conta.</div>
                 </div>
                 ${businessHours.enabled ? `<div class="business-hours-account-body">
                     <div class="form-group business-hours-account-message">
-                        <label class="form-label">Mensagem automÃ¡tica fora do horÃ¡rio</label>
+                        <label class="form-label">Mensagem automática fora do horário</label>
                         <textarea
                             class="form-textarea business-hours-session-message-input"
                             data-session-id="${escapeHtml(sessionId)}"
                             rows="2"
-                            placeholder="Digite a mensagem enviada fora do horÃ¡rio"
+                            placeholder="Digite a mensagem enviada fora do horário"
                             onchange="saveBusinessHoursSession('${sessionToken}')"
                         >${escapeHtml(businessHours.autoReplyMessage)}</textarea>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">InÃ­cio do expediente</label>
+                        <label class="form-label">Início do expediente</label>
                         <input
                             type="time"
                             class="form-input business-hours-session-start-input"
@@ -616,9 +615,9 @@ async function saveBusinessHoursSession(sessionToken: string) {
     try {
         await persistBusinessHoursBySessionToServer();
         renderBusinessHoursAccountsManager();
-        showToast('success', 'Sucesso', 'HorÃ¡rios da conta atualizados.');
+        showToast('success', 'Sucesso', 'Horários da conta atualizados.');
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas nÃ£o foi possÃ­vel sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
     }
 }
 
@@ -638,9 +637,9 @@ async function toggleBusinessHoursSession(sessionToken: string, explicitEnabled?
     try {
         await persistBusinessHoursBySessionToServer();
         renderBusinessHoursAccountsManager();
-        showToast('success', 'Sucesso', `HorÃ¡rio comercial ${nextEnabled ? 'ativado' : 'desativado'} para a conta.`);
+        showToast('success', 'Sucesso', `Horário comercial ${nextEnabled ? 'ativado' : 'desativado'} para a conta.`);
     } catch (error) {
-        showToast('warning', 'Aviso', 'Salvo localmente, mas nÃ£o foi possÃ­vel sincronizar no servidor');
+        showToast('warning', 'Aviso', 'Salvo localmente, mas não foi possível sincronizar no servidor');
     }
 }
 
