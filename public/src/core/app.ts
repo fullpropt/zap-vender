@@ -1008,7 +1008,11 @@ function formatNumber(value: number) {
 }
 
 function formatPercent(value: number, decimals = 1) {
-    return `${(value || 0).toFixed(decimals)}%`;
+    const fixed = (value || 0).toFixed(decimals);
+    const normalized = fixed
+        .replace(/\.0+$/, '')
+        .replace(/(\.\d*?[1-9])0+$/, '$1');
+    return `${normalized}%`;
 }
 
 function timeAgo(date: Date | string | number) {

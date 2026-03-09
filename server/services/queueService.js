@@ -221,6 +221,11 @@ class QueueService extends EventEmitter {
         return Number.isInteger(ownerUserId) && ownerUserId > 0 ? ownerUserId : 0;
     }
 
+    sanitizeSessionId(value) {
+        const sessionId = String(value || '').trim();
+        return sessionId;
+    }
+
     buildScopedSettingsKey(baseKey, ownerUserId = null) {
         const normalizedKey = String(baseKey || '').trim();
         if (!normalizedKey) return normalizedKey;
@@ -234,6 +239,12 @@ class QueueService extends EventEmitter {
     buildOwnerCacheKey(ownerUserId = null) {
         const normalizedOwnerUserId = this.normalizeOwnerUserId(ownerUserId);
         return normalizedOwnerUserId ? `owner:${normalizedOwnerUserId}` : 'owner:0';
+    }
+
+    buildBusinessHoursCacheKey(ownerUserId = null, sessionId = '') {
+        const ownerKey = this.buildOwnerCacheKey(ownerUserId);
+        const normalizedSessionId = this.sanitizeSessionId(sessionId);
+        return normalizedSessionId ? `${ownerKey}:session:${normalizedSessionId}` : ownerKey;
     }
 
     parsePositiveNumber(value, fallback, min = 1) {
@@ -419,6 +430,39 @@ class QueueService extends EventEmitter {
         };
     }
 
+    parseBusinessHoursBySession(raw = {}) {
+        let parsed = raw;
+        if (typeof parsed === 'string') {
+            const rawValue = parsed.trim();
+            if (!rawValue) return {};
+            try {
+                parsed = JSON.parse(rawValue);
+            } catch {
+                return {};
+            }
+        }
+
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return {};
+        }
+
+        const result = {};
+        for (const [rawSessionId, rawSettings] of Object.entries(parsed)) {
+            const sessionId = this.sanitizeSessionId(rawSessionId);
+            if (!sessionId || !rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings)) {
+                continue;
+            }
+            const normalized = this.normalizeBusinessHoursSettings(rawSettings);
+            result[sessionId] = {
+                enabled: normalized.enabled,
+                start: normalized.start,
+                end: normalized.end
+            };
+        }
+
+        return result;
+    }
+
     async getQueueSettings(ownerUserId = null, forceRefresh = false) {
         const normalizedOwnerUserId = this.normalizeOwnerUserId(ownerUserId);
         const cacheKey = this.buildOwnerCacheKey(normalizedOwnerUserId);
@@ -456,28 +500,34 @@ class QueueService extends EventEmitter {
         return value;
     }
 
-    async getBusinessHoursSettings(ownerUserId = null, forceRefresh = false) {
+    async getBusinessHoursSettings(ownerUserId = null, forceRefresh = false, sessionId = '') {
         const normalizedOwnerUserId = this.normalizeOwnerUserId(ownerUserId);
-        const cacheKey = this.buildOwnerCacheKey(normalizedOwnerUserId);
+        const normalizedSessionId = this.sanitizeSessionId(sessionId);
+        const cacheKey = this.buildBusinessHoursCacheKey(normalizedOwnerUserId, normalizedSessionId);
         const now = Date.now();
         const cached = this.businessHoursCacheByOwner.get(cacheKey);
         if (!forceRefresh && cached && (now - Number(cached.cachedAt || 0)) < this.businessHoursCacheTtlMs) {
             return cached.value;
         }
 
-        const [scopedEnabledValue, scopedStartValue, scopedEndValue, legacyEnabledValue, legacyStartValue, legacyEndValue] = await Promise.all([
+        const [scopedEnabledValue, scopedStartValue, scopedEndValue, scopedBySessionValue, legacyEnabledValue, legacyStartValue, legacyEndValue, legacyBySessionValue] = await Promise.all([
             Settings.get(this.buildScopedSettingsKey('business_hours_enabled', normalizedOwnerUserId || null)),
             Settings.get(this.buildScopedSettingsKey('business_hours_start', normalizedOwnerUserId || null)),
             Settings.get(this.buildScopedSettingsKey('business_hours_end', normalizedOwnerUserId || null)),
+            Settings.get(this.buildScopedSettingsKey('business_hours_by_session', normalizedOwnerUserId || null)),
             normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_enabled'),
             normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_start'),
-            normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_end')
+            normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_end'),
+            normalizedOwnerUserId ? Promise.resolve(null) : Settings.get('business_hours_by_session')
         ]);
 
+        const bySession = this.parseBusinessHoursBySession(scopedBySessionValue ?? legacyBySessionValue ?? {});
+        const sessionOverride = normalizedSessionId ? bySession[normalizedSessionId] : null;
+
         const normalized = this.normalizeBusinessHoursSettings({
-            enabled: scopedEnabledValue ?? legacyEnabledValue,
-            start: scopedStartValue ?? legacyStartValue,
-            end: scopedEndValue ?? legacyEndValue
+            enabled: sessionOverride?.enabled ?? scopedEnabledValue ?? legacyEnabledValue,
+            start: sessionOverride?.start ?? scopedStartValue ?? legacyStartValue,
+            end: sessionOverride?.end ?? scopedEndValue ?? legacyEndValue
         });
 
         this.businessHoursCacheByOwner.set(cacheKey, {
@@ -505,9 +555,9 @@ class QueueService extends EventEmitter {
         return nowMinutes >= start || nowMinutes < end;
     }
 
-    async canProcessQueueNow(ownerUserId = null) {
+    async canProcessQueueNow(ownerUserId = null, sessionId = '') {
         try {
-            const settings = await this.getBusinessHoursSettings(ownerUserId || null);
+            const settings = await this.getBusinessHoursSettings(ownerUserId || null, false, sessionId);
             return this.isWithinBusinessHours(settings);
         } catch (error) {
             console.error('Erro ao validar horario de funcionamento da fila:', error.message);
@@ -518,7 +568,12 @@ class QueueService extends EventEmitter {
     invalidateBusinessHoursCache(ownerUserId = null) {
         const normalizedOwnerUserId = this.normalizeOwnerUserId(ownerUserId);
         if (normalizedOwnerUserId) {
-            this.businessHoursCacheByOwner.delete(this.buildOwnerCacheKey(normalizedOwnerUserId));
+            const ownerKeyPrefix = this.buildOwnerCacheKey(normalizedOwnerUserId);
+            for (const cacheKey of this.businessHoursCacheByOwner.keys()) {
+                if (cacheKey === ownerKeyPrefix || cacheKey.startsWith(`${ownerKeyPrefix}:session:`)) {
+                    this.businessHoursCacheByOwner.delete(cacheKey);
+                }
+            }
             return;
         }
         this.businessHoursCacheByOwner.clear();
@@ -595,11 +650,6 @@ class QueueService extends EventEmitter {
                 const queueSettings = await this.getQueueSettings(ownerUserId || null);
 
                 if (!this.canSendForOwner(ownerUserId || null, queueSettings.maxPerMinute)) {
-                    continue;
-                }
-
-                const canProcessNow = await this.canProcessQueueNow(ownerUserId || null);
-                if (!canProcessNow) {
                     continue;
                 }
 
@@ -724,6 +774,11 @@ class QueueService extends EventEmitter {
                         });
                         continue;
                     }
+                }
+
+                const canProcessNow = await this.canProcessQueueNow(ownerUserId || null, assignedSessionId);
+                if (!canProcessNow) {
+                    continue;
                 }
 
                 selected = {

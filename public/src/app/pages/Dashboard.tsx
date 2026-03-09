@@ -35,10 +35,37 @@ function DashboardStyles() {
         @media (max-width: 900px) { .dashboard-botconversa { grid-template-columns: 1fr; } }
         .stats-period-card, .stats-general-card, .events-personalized-card { background: var(--surface); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-md); padding: 24px; border: 1px solid var(--border-color); }
         .stats-period-card h3, .stats-general-card h3, .events-personalized-card h3 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
-        .stats-period-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; }
-        .stats-period-controls .form-input, .stats-period-controls .form-select { height: 38px; padding: 0 12px; }
-        .chart-type-toggle { display: flex; gap: 4px; }
-        .chart-type-toggle .chart-btn { padding: 8px 12px; border: 1px solid var(--border-color); background: var(--surface-muted); border-radius: 8px; cursor: pointer; color: var(--gray-700); }
+        .stats-period-controls {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 12px;
+          align-items: stretch;
+          margin-bottom: 20px;
+        }
+        .stats-period-controls .form-input,
+        .stats-period-controls .form-select {
+          width: 100%;
+          min-width: 0;
+          height: 38px;
+          padding: 0 12px;
+          box-sizing: border-box;
+        }
+        .chart-type-toggle {
+          grid-column: 1 / -1;
+          width: 100%;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .chart-type-toggle .chart-btn {
+          width: 100%;
+          padding: 8px 12px;
+          border: 1px solid var(--border-color);
+          background: var(--surface-muted);
+          border-radius: 8px;
+          cursor: pointer;
+          color: var(--gray-700);
+        }
         .chart-type-toggle .chart-btn.active { background: rgba(var(--primary-rgb), 0.16); border-color: var(--primary); color: #eafff4; }
         .stats-general-card { display: flex; flex-direction: column; gap: 0; }
         .stats-general-card h3 { text-align: left; margin-bottom: 10px; }
