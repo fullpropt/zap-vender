@@ -14065,14 +14065,20 @@ async function resolveCampaignLeadIds(options = {}) {
 
     if (ownerUserId) {
         sql += `
-            AND EXISTS (
-                SELECT 1
-                FROM users owner_scope
-                WHERE owner_scope.id = leads.assigned_to
-                  AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+            AND (
+                leads.owner_user_id = ?
+                OR (
+                    leads.owner_user_id IS NULL
+                    AND EXISTS (
+                        SELECT 1
+                        FROM users owner_scope
+                        WHERE owner_scope.id = leads.assigned_to
+                          AND (owner_scope.owner_user_id = ? OR owner_scope.id = ?)
+                    )
+                )
             )
         `;
-        params.push(ownerUserId, ownerUserId);
+        params.push(ownerUserId, ownerUserId, ownerUserId);
     }
 
 
@@ -14111,6 +14117,73 @@ async function attachCampaignSenderAccountsList(campaigns = []) {
     return await Promise.all(
         (campaigns || []).map((campaign) => attachCampaignSenderAccounts(campaign))
     );
+}
+
+async function attachCampaignQueueStateList(campaigns = []) {
+    const normalizedCampaigns = Array.isArray(campaigns) ? campaigns : [];
+    const campaignIds = Array.from(
+        new Set(
+            normalizedCampaigns
+                .map((campaign) => Number(campaign?.id || 0))
+                .filter((campaignId) => Number.isInteger(campaignId) && campaignId > 0)
+        )
+    );
+
+    if (!campaignIds.length) {
+        return normalizedCampaigns.map((campaign) => ({
+            ...campaign,
+            queue_total: 0,
+            queue_pending: 0,
+            queue_processing: 0,
+            queue_finalized: false
+        }));
+    }
+
+    const rows = await query(`
+        SELECT
+            campaign_id,
+            COUNT(*) AS total,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+            SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing
+        FROM message_queue
+        WHERE campaign_id = ANY(?::int[])
+        GROUP BY campaign_id
+    `, [campaignIds]);
+
+    const summaryByCampaignId = new Map(
+        (rows || []).map((row) => [
+            Number(row?.campaign_id || 0),
+            {
+                total: Number(row?.total || 0),
+                pending: Number(row?.pending || 0),
+                processing: Number(row?.processing || 0)
+            }
+        ])
+    );
+
+    return normalizedCampaigns.map((campaign) => {
+        const campaignId = Number(campaign?.id || 0);
+        const summary = summaryByCampaignId.get(campaignId) || {
+            total: 0,
+            pending: 0,
+            processing: 0
+        };
+        const queueFinalized = summary.total > 0 && summary.pending === 0 && summary.processing === 0;
+
+        return {
+            ...campaign,
+            queue_total: summary.total,
+            queue_pending: summary.pending,
+            queue_processing: summary.processing,
+            queue_finalized: queueFinalized
+        };
+    });
+}
+
+async function attachCampaignQueueState(campaign) {
+    if (!campaign) return campaign;
+    const list = await attachCampaignQueueStateList([campaign]);
+    return list[0] || campaign;
 }
 
 async function migrateLegacyTriggerCampaignsToAutomations() {
@@ -14248,6 +14321,7 @@ async function migrateLegacyTriggerCampaignsToAutomations() {
 }
 
 async function queueCampaignMessages(campaign, options = {}) {
+    const forceRequeueAll = options.forceRequeueAll === true || options.force_requeue_all === true;
     const campaignType = String(campaign?.type || '').trim().toLowerCase();
     if (campaignType === 'trigger') {
         throw new Error('Campanhas do tipo gatilho foram descontinuadas. Use Automacao para gatilhos.');
@@ -14282,7 +14356,7 @@ async function queueCampaignMessages(campaign, options = {}) {
     let queueCandidateLeadIds = [...leadIds];
     let skippedAlreadyQueuedOrSent = 0;
 
-    if (campaignType === 'broadcast') {
+    if (campaignType === 'broadcast' && !forceRequeueAll) {
         const existingLeadIds = new Set(
             await MessageQueue.listLeadIdsWithQueuedOrSentForCampaign(campaign.id, leadIds)
         );
@@ -14463,6 +14537,7 @@ async function queueCampaignMessages(campaign, options = {}) {
         recipients: totalRecipients,
         eligible_recipients: queueCandidateLeadIds.length,
         skipped_already_queued_or_sent: skippedAlreadyQueuedOrSent,
+        restarted: forceRequeueAll,
         steps: steps.length,
         distribution: {
             strategy: distributionPlan.strategyUsed || distributionStrategy,
@@ -14470,6 +14545,23 @@ async function queueCampaignMessages(campaign, options = {}) {
         }
     };
 
+}
+
+async function rollbackFailedCampaignCreation(campaignId) {
+    const normalizedCampaignId = Number(campaignId || 0);
+    if (!Number.isInteger(normalizedCampaignId) || normalizedCampaignId <= 0) return;
+
+    try {
+        await run('DELETE FROM message_queue WHERE campaign_id = ?', [normalizedCampaignId]);
+    } catch (error) {
+        console.error(`Falha ao remover fila da campanha #${normalizedCampaignId} durante rollback:`, error.message);
+    }
+
+    try {
+        await Campaign.delete(normalizedCampaignId);
+    } catch (error) {
+        console.error(`Falha ao remover campanha #${normalizedCampaignId} durante rollback:`, error.message);
+    }
 }
 
 
@@ -14498,7 +14590,10 @@ app.get('/api/campaigns', authenticate, async (req, res) => {
 
 
 
-    res.json({ success: true, campaigns: await attachCampaignSenderAccountsList(campaigns) });
+    const campaignsWithSenders = await attachCampaignSenderAccountsList(campaigns);
+    const campaignsWithQueueState = await attachCampaignQueueStateList(campaignsWithSenders);
+
+    res.json({ success: true, campaigns: campaignsWithQueueState });
 
 });
 
@@ -14523,7 +14618,10 @@ app.get('/api/campaigns/:id', authenticate, async (req, res) => {
         return res.status(404).json({ error: 'Campanha nÃ£o encontrada' });
     }
 
-    res.json({ success: true, campaign: await attachCampaignSenderAccounts(campaign) });
+    const campaignWithSenders = await attachCampaignSenderAccounts(campaign);
+    const campaignWithQueueState = await attachCampaignQueueState(campaignWithSenders);
+
+    res.json({ success: true, campaign: campaignWithQueueState });
 
 });
 
@@ -14645,6 +14743,7 @@ app.get('/api/campaigns/:id/recipients', authenticate, async (req, res) => {
 
 app.post('/api/campaigns', authenticate, async (req, res) => {
 
+    let createdCampaignId = null;
     try {
         const scopedUserId = getScopedUserId(req);
         const ownerScopeUserId = await resolveRequesterOwnerUserId(req);
@@ -14668,12 +14767,14 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
         }
 
         const result = await Campaign.create(createPayload);
+        createdCampaignId = Number(result?.id || 0) || null;
         await CampaignSenderAccount.replaceForCampaign(result.id, senderAccountsPayload);
 
         let campaign = await attachCampaignSenderAccounts(await Campaign.findById(result.id, {
             created_by: scopedUserId || undefined,
             owner_user_id: ownerScopeUserId || undefined
         }));
+        campaign = await attachCampaignQueueState(campaign);
         let queueResult = { queued: 0, recipients: 0 };
 
         if (requestedStatus === 'active' && campaign) {
@@ -14685,11 +14786,15 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
                 created_by: scopedUserId || undefined,
                 owner_user_id: ownerScopeUserId || undefined
             }));
+            campaign = await attachCampaignQueueState(campaign);
         }
 
         res.json({ success: true, campaign, queue: queueResult });
 
     } catch (error) {
+        if (createdCampaignId) {
+            await rollbackFailedCampaignCreation(createdCampaignId);
+        }
 
         res.status(400).json({ error: error.message });
 
@@ -14723,17 +14828,26 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
         const senderAccountsProvided =
             Object.prototype.hasOwnProperty.call(req.body || {}, 'sender_accounts') ||
             Object.prototype.hasOwnProperty.call(req.body || {}, 'senderAccounts');
+        const restartRequested = parseBooleanInput(
+            req.body?.restart ?? req.body?.restart_campaign ?? req.body?.force_requeue,
+            false
+        );
         const senderAccountsPayload = senderAccountsProvided
             ? normalizeSenderAccountsPayload(req.body?.sender_accounts ?? req.body?.senderAccounts)
             : null;
         const payload = sanitizeCampaignPayload(req.body, { applyDefaultType: false });
         const requestedStatus = String(payload?.status || '').trim().toLowerCase();
-        const shouldActivate = campaign.status !== 'active' && requestedStatus === 'active';
+        const shouldActivate = requestedStatus === 'active' && (campaign.status !== 'active' || restartRequested);
         let shouldQueue = false;
         if (shouldActivate) {
             const progress = await MessageQueue.getCampaignProgress(campaign.id);
             const hasPendingOrProcessing = Number(progress?.pending || 0) > 0 || Number(progress?.processing || 0) > 0;
-            shouldQueue = !hasPendingOrProcessing;
+            if (restartRequested && hasPendingOrProcessing) {
+                return res.status(409).json({
+                    error: 'Nao e possivel reiniciar enquanto ainda existem mensagens pendentes/processando nesta campanha'
+                });
+            }
+            shouldQueue = restartRequested ? true : !hasPendingOrProcessing;
         }
         const payloadBeforeQueue = { ...payload };
         if (shouldQueue) {
@@ -14750,17 +14864,20 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
             created_by: scopedUserId || undefined,
             owner_user_id: ownerScopeUserId || undefined
         }));
-        let queueResult = { queued: 0, recipients: 0 };
+        updatedCampaign = await attachCampaignQueueState(updatedCampaign);
+        let queueResult = { queued: 0, recipients: 0, restarted: restartRequested };
 
         if (shouldQueue && updatedCampaign) {
             queueResult = await queueCampaignMessages(updatedCampaign, {
                 assignedTo: scopedUserId || undefined,
-                ownerUserId: ownerScopeUserId || undefined
+                ownerUserId: ownerScopeUserId || undefined,
+                forceRequeueAll: restartRequested
             });
             updatedCampaign = await attachCampaignSenderAccounts(await Campaign.findById(req.params.id, {
                 created_by: scopedUserId || undefined,
                 owner_user_id: ownerScopeUserId || undefined
             }));
+            updatedCampaign = await attachCampaignQueueState(updatedCampaign);
         }
 
         res.json({ success: true, campaign: updatedCampaign, queue: queueResult });

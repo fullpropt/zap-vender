@@ -29,6 +29,14 @@ type Campaign = {
     send_window_enabled?: number | boolean;
     send_window_start?: string;
     send_window_end?: string;
+    queue_total?: number;
+    queue_pending?: number;
+    queue_processing?: number;
+    queue_finalized?: number | boolean;
+};
+
+type StartCampaignOptions = {
+    restart?: boolean;
 };
 
 type CampaignSenderAccount = {
@@ -115,6 +123,7 @@ let campaignMessageVariableGlobalEventsBound = false;
 let campaignsRealtimeBindingsBound = false;
 let campaignsRealtimeIntervalId: number | null = null;
 let campaignsRealtimeRefreshInFlight = false;
+let campaignsPageActive = false;
 let activeCampaignDetailsId: number | null = null;
 let activeCampaignDetailsTab: 'overview' | 'messages' | 'recipients' = 'overview';
 let campaignRecipientsRefreshInFlight = false;
@@ -183,6 +192,21 @@ function getCampaignStatusLabel(status: CampaignStatus) {
     if (status === 'paused') return 'Pausada';
     if (status === 'completed') return 'Concluída';
     return 'Rascunho';
+}
+
+function isCampaignFinalized(campaign: Partial<Campaign> | undefined) {
+    if (!campaign) return false;
+    if (campaign.status === 'completed') return true;
+
+    const queueFinalizedFlag = campaign.queue_finalized;
+    if (queueFinalizedFlag === true || Number(queueFinalizedFlag || 0) > 0) {
+        return true;
+    }
+
+    const queueTotal = Number(campaign.queue_total || 0);
+    const queuePending = Number(campaign.queue_pending || 0);
+    const queueProcessing = Number(campaign.queue_processing || 0);
+    return queueTotal > 0 && queuePending === 0 && queueProcessing === 0;
 }
 
 function getCampaignTypeLabel(type: CampaignType | string) {
@@ -1280,6 +1304,15 @@ function updateCampaignDetailsActionButton(campaign: Campaign) {
         return;
     }
 
+    if (isCampaignFinalized(campaign)) {
+        actionBtn.disabled = false;
+        actionBtn.innerHTML = '<span class="icon icon-refresh icon-sm"></span> Reiniciar campanha';
+        actionBtn.classList.remove('btn-warning');
+        actionBtn.classList.add('btn-success');
+        actionBtn.onclick = () => { void restartCampaign(campaign.id); };
+        return;
+    }
+
     if (campaign.status === 'paused' || campaign.status === 'draft' || campaign.status === 'completed') {
         actionBtn.disabled = false;
         actionBtn.innerHTML = '<span class="icon icon-play icon-sm"></span> Iniciar';
@@ -1351,6 +1384,7 @@ function shouldRefreshCampaignRecipientsInRealtime(campaign: Campaign | undefine
 
 function scheduleCampaignsRealtimeRefresh(delayMs = 0) {
     const run = async () => {
+        if (!campaignsPageActive) return;
         if (campaignsRealtimeRefreshInFlight) return;
         if (document.visibilityState === 'hidden') return;
         campaignsRealtimeRefreshInFlight = true;
@@ -1369,16 +1403,24 @@ function scheduleCampaignsRealtimeRefresh(delayMs = 0) {
 }
 
 function bindCampaignsRealtimeUpdates() {
-    if (campaignsRealtimeBindingsBound) return;
-    campaignsRealtimeBindingsBound = true;
+    if (!campaignsRealtimeBindingsBound) {
+        campaignsRealtimeBindingsBound = true;
 
-    const win = window as Window & { APP?: { socket?: { on?: (event: string, cb: (...args: any[]) => void) => void } } };
-    const socket = win.APP?.socket;
-    if (socket && typeof socket.on === 'function') {
-        const triggerRefresh = () => scheduleCampaignsRealtimeRefresh(250);
-        socket.on('message-sent', triggerRefresh);
-        socket.on('message-status', triggerRefresh);
-        socket.on('new-message', triggerRefresh);
+        const win = window as Window & { APP?: { socket?: { on?: (event: string, cb: (...args: any[]) => void) => void } } };
+        const socket = win.APP?.socket;
+        if (socket && typeof socket.on === 'function') {
+            const triggerRefresh = () => scheduleCampaignsRealtimeRefresh(250);
+            socket.on('message-sent', triggerRefresh);
+            socket.on('message-status', triggerRefresh);
+            socket.on('new-message', triggerRefresh);
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (!campaignsPageActive) return;
+            if (document.visibilityState === 'visible') {
+                scheduleCampaignsRealtimeRefresh(200);
+            }
+        });
     }
 
     if (campaignsRealtimeIntervalId == null) {
@@ -1386,12 +1428,6 @@ function bindCampaignsRealtimeUpdates() {
             scheduleCampaignsRealtimeRefresh();
         }, CAMPAIGNS_LIVE_REFRESH_MS);
     }
-
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            scheduleCampaignsRealtimeRefresh(200);
-        }
-    });
 }
 
 async function loadCampaignRecipients(campaign: Campaign, options: { preserveContent?: boolean } = {}) {
@@ -1531,6 +1567,23 @@ function formatInputDateTime(value?: string) {
     if (Number.isNaN(date.getTime())) return '';
     const pad = (num: number) => String(num).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function toIsoFromLocalDateTimeInput(value: string) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+    if (!match) return '';
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hour = Number(match[4]);
+    const minute = Number(match[5]);
+    const localDate = new Date(year, month - 1, day, hour, minute, 0, 0);
+    if (Number.isNaN(localDate.getTime())) return '';
+    return localDate.toISOString();
 }
 
 function setSelectValue(select: HTMLSelectElement | null, value: string) {
@@ -1683,6 +1736,7 @@ function openBroadcastModal() {
 }
 
 async function initCampanhas() {
+    campaignsPageActive = true;
     pendingCampaignTagFilters = [];
     syncCampaignSegmentOptions();
     bindDelayInputUnits();
@@ -1698,9 +1752,14 @@ async function initCampanhas() {
     ]);
 }
 
-onReady(() => {
-    void initCampanhas();
-});
+function disposeCampanhas() {
+    campaignsPageActive = false;
+    campaignRecipientsRequestToken += 1;
+    if (campaignsRealtimeIntervalId !== null) {
+        window.clearInterval(campaignsRealtimeIntervalId);
+        campaignsRealtimeIntervalId = null;
+    }
+}
 
 function shouldUseLocalCampaignFallback(error: unknown) {
     const message = String((error as Error)?.message || '').toLowerCase();
@@ -1760,48 +1819,19 @@ async function loadCampaigns(options: { silent?: boolean; skipLoading?: boolean;
             }
             return;
         }
-        // Se não houver endpoint, mostrar campanhas de exemplo
-        campaigns = [
-            {
-                id: 1,
-                name: 'Boas-vindas',
-                description: 'Mensagem de boas-vindas para novos leads',
-                type: 'broadcast',
-                status: 'active',
-                segment: 'new',
-                message: 'Olá {{nome}}! Seja bem-vindo à ZapVender.',
-                delay: 5000,
-                delay_min: 5000,
-                delay_max: 5000,
-                start_at: new Date().toISOString(),
-                sent: 156,
-                delivered: 150,
-                read: 120,
-                replied: 45,
-                created_at: new Date().toISOString()
-            },
-            {
-                id: 2,
-                name: 'Promoção Janeiro',
-                description: 'Campanha promocional de janeiro',
-                type: 'broadcast',
-                status: 'completed',
-                segment: 'all',
-                message: 'Promoção especial para você!',
-                delay: 5000,
-                delay_min: 5000,
-                delay_max: 5000,
-                start_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-                sent: 500,
-                delivered: 485,
-                read: 320,
-                replied: 89,
-                created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-            }
-        ];
+        const isNetworkFailure = shouldUseLocalCampaignFallback(error);
+        if (!options.silent) {
+            showToast(
+                isNetworkFailure ? 'warning' : 'error',
+                isNetworkFailure ? 'Aviso' : 'Erro',
+                isNetworkFailure
+                    ? 'Falha de rede ao carregar campanhas. Verifique a conexão.'
+                    : ((error as Error)?.message || 'Não foi possível carregar campanhas')
+            );
+        }
+        campaigns = [];
         updateStats();
         renderCampaigns();
-        writeCampaignsCache(campaigns);
     }
 }
 
@@ -1859,6 +1889,13 @@ function renderCampaigns() {
         const readRate = c.delivered > 0 ? (c.read / c.delivered * 100) : 0;
         const replyRate = c.read > 0 ? (c.replied / c.read * 100) : 0;
         const isExpanded = !collapseDetails || expandedCampaignId === c.id;
+        const actionButtonHtml = c.status === 'active'
+            ? `<button class="btn btn-sm btn-warning" onclick="pauseCampaign(${c.id})"><span class="icon icon-pause icon-sm"></span> Pausar</button>`
+            : isCampaignFinalized(c)
+                ? `<button class="btn btn-sm btn-success" onclick="restartCampaign(${c.id})"><span class="icon icon-refresh icon-sm"></span> Reiniciar campanha</button>`
+                : c.status === 'paused' || c.status === 'draft' || c.status === 'completed'
+                    ? `<button class="btn btn-sm btn-success" onclick="startCampaign(${c.id})"><span class="icon icon-play icon-sm"></span> Iniciar</button>`
+                    : '';
 
         return `
             <div class="campaign-card${isExpanded ? ' is-expanded' : ''}">
@@ -1914,11 +1951,7 @@ function renderCampaigns() {
                         <div class="campaign-actions">
                             <button class="btn btn-sm btn-outline" onclick="viewCampaign(${c.id})"><span class="icon icon-eye icon-sm"></span> Ver</button>
                             <button class="btn btn-sm btn-outline" onclick="editCampaign(${c.id})"><span class="icon icon-edit icon-sm"></span> Editar</button>
-                            ${c.status === 'active' ? 
-                                `<button class="btn btn-sm btn-warning" onclick="pauseCampaign(${c.id})"><span class="icon icon-pause icon-sm"></span> Pausar</button>` :
-                                c.status === 'paused' || c.status === 'draft' || c.status === 'completed' ?
-                                `<button class="btn btn-sm btn-success" onclick="startCampaign(${c.id})"><span class="icon icon-play icon-sm"></span> Iniciar</button>` : ''
-                            }
+                            ${actionButtonHtml}
                             <button class="btn btn-sm btn-outline-danger" onclick="deleteCampaign(${c.id})"><span class="icon icon-delete icon-sm"></span></button>
                         </div>
                     </div>
@@ -1964,7 +1997,7 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         delay: delayMinMs,
         delay_min: delayMinMs,
         delay_max: delayMaxMs,
-        start_at: (document.getElementById('campaignStart') as HTMLInputElement | null)?.value || '',
+        start_at: toIsoFromLocalDateTimeInput((document.getElementById('campaignStart') as HTMLInputElement | null)?.value || ''),
         send_window_enabled: sendWindowEnabled,
         send_window_start: sendWindowStart,
         send_window_end: sendWindowEnd,
@@ -2093,18 +2126,48 @@ function editCampaign(id: number) {
     setTimeout(syncDelayInputUnits, 0);
 }
 
-async function startCampaign(id: number) {
-    if (!await appConfirm('Iniciar esta campanha?', 'Iniciar campanha')) return;
+async function startCampaign(id: number, options: StartCampaignOptions = {}) {
+    const restart = options.restart === true;
+    const confirmationAccepted = restart
+        ? await appConfirm(
+            'Reiniciar esta campanha? Isso reenviará para os mesmos contatos já finalizados.',
+            'Reiniciar campanha'
+        )
+        : await appConfirm('Iniciar esta campanha?', 'Iniciar campanha');
+    if (!confirmationAccepted) return;
+
+    let response: { campaign?: Campaign; queue?: { queued?: number } } | null = null;
     try {
-        await api.put(`/api/campaigns/${id}`, { status: 'active' });
+        response = await api.put(`/api/campaigns/${id}`, restart
+            ? { status: 'active', restart: true }
+            : { status: 'active' }
+        );
     } catch (error) {
         if (!shouldUseLocalCampaignFallback(error)) {
-            showToast('error', 'Erro', (error as Error)?.message || 'Não foi possível iniciar a campanha');
+            showToast(
+                'error',
+                'Erro',
+                (error as Error)?.message || (restart
+                    ? 'Não foi possível reiniciar a campanha'
+                    : 'Não foi possível iniciar a campanha')
+            );
+            return;
+        }
+
+        if (restart) {
+            showToast('warning', 'Aviso', 'Falha de rede ao reiniciar. Valide o status da campanha após atualizar a tela.');
+            scheduleCampaignsRealtimeRefresh(300);
             return;
         }
     }
+
     const campaign = campaigns.find(c => c.id === id);
-    if (campaign) campaign.status = 'active';
+    if (campaign && response?.campaign) {
+        Object.assign(campaign, response.campaign);
+    } else if (campaign) {
+        campaign.status = 'active';
+    }
+
     renderCampaigns();
     updateStats();
     const activeViewedCampaign = activeCampaignDetailsId != null ? campaigns.find(c => c.id === activeCampaignDetailsId) : undefined;
@@ -2112,7 +2175,22 @@ async function startCampaign(id: number) {
         syncCampaignDetailsModal(activeViewedCampaign, { refreshRecipients: shouldRefreshCampaignRecipientsInRealtime(activeViewedCampaign) });
     }
     scheduleCampaignsRealtimeRefresh(300);
+
+    const queuedCount = Number(response?.queue?.queued || 0);
+    if (restart) {
+        if (queuedCount > 0) {
+            showToast('success', 'Sucesso', `Campanha reiniciada! ${formatNumber(queuedCount)} envios reenfileirados.`);
+        } else {
+            showToast('warning', 'Aviso', 'Campanha reiniciada, mas nenhum envio foi reenfileirado.');
+        }
+        return;
+    }
+
     showToast('success', 'Sucesso', 'Campanha iniciada!');
+}
+
+async function restartCampaign(id: number) {
+    await startCampaign(id, { restart: true });
 }
 
 async function pauseCampaign(id: number) {
@@ -2199,10 +2277,12 @@ const windowAny = window as Window & {
     viewCampaign?: (id: number) => void;
     editCampaign?: (id: number) => void;
     startCampaign?: (id: number) => Promise<void>;
+    restartCampaign?: (id: number) => Promise<void>;
     pauseCampaign?: (id: number) => Promise<void>;
     deleteCampaign?: (id: number) => Promise<void>;
     switchCampaignTab?: (tab: string) => void;
     toggleCampaignCardDetails?: (id: number) => void;
+    disposeCampanhas?: () => void;
 };
 windowAny.initCampanhas = initCampanhas;
 windowAny.loadCampaigns = loadCampaigns;
@@ -2212,11 +2292,11 @@ windowAny.saveCampaign = saveCampaign;
 windowAny.viewCampaign = viewCampaign;
 windowAny.editCampaign = editCampaign;
 windowAny.startCampaign = startCampaign;
+windowAny.restartCampaign = restartCampaign;
 windowAny.pauseCampaign = pauseCampaign;
 windowAny.deleteCampaign = deleteCampaign;
 windowAny.switchCampaignTab = switchCampaignTab;
 windowAny.toggleCampaignCardDetails = toggleCampaignCardDetails;
+windowAny.disposeCampanhas = disposeCampanhas;
 
 export { initCampanhas };
-
-

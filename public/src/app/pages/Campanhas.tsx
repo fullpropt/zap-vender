@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { brandLogoUrl, brandName } from '../lib/brand';
 type CampanhasGlobals = {
   initCampanhas?: () => void;
+  disposeCampanhas?: () => void;
   loadCampaigns?: () => void;
   openModal?: (id: string) => void;
   openCampaignModal?: () => void;
@@ -21,7 +22,10 @@ export default function Campanhas() {
       await import('../../core/app');
       const mod = await import('../../pages/campanhas');
 
-      if (cancelled) return;
+      if (cancelled) {
+        (mod as { disposeCampanhas?: () => void }).disposeCampanhas?.();
+        return;
+      }
 
       const win = window as Window & CampanhasGlobals;
       if (typeof win.initCampanhas === 'function') {
@@ -35,6 +39,8 @@ export default function Campanhas() {
 
     return () => {
       cancelled = true;
+      const win = window as Window & CampanhasGlobals;
+      win.disposeCampanhas?.();
     };
   }, []);
 
@@ -929,4 +935,3 @@ export default function Campanhas() {
     </div>
   );
 }
-
