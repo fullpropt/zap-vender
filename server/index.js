@@ -5154,6 +5154,90 @@ async function resolveAutomationConversation(lead, baseConversation = null, sess
     return result?.conversation || null;
 }
 
+async function resolveAutomationDispatchSession(automation, context = {}) {
+    const normalizedContext = normalizeAutomationContext(context);
+    const leadId = Number(normalizedContext?.lead?.id || 0);
+    const ownerScopeUserId = await resolveAutomationOwnerScopeUserId(normalizedContext);
+    const scopedSessionIds = parseAutomationSessionScope(automation?.session_scope);
+    const scopedSessionIdSet = scopedSessionIds.length ? new Set(scopedSessionIds) : null;
+    const candidateSessionIds = [];
+
+    const pushCandidateSessionId = (value) => {
+        const normalizedSessionId = sanitizeSessionId(value);
+        if (!normalizedSessionId) return;
+        if (scopedSessionIdSet && !scopedSessionIdSet.has(normalizedSessionId)) return;
+        if (candidateSessionIds.includes(normalizedSessionId)) return;
+        candidateSessionIds.push(normalizedSessionId);
+    };
+
+    pushCandidateSessionId(normalizedContext.sessionId);
+    pushCandidateSessionId(normalizedContext?.conversation?.session_id);
+
+    if (leadId > 0) {
+        const latestConversation = await Conversation.findByLeadId(leadId, null);
+        pushCandidateSessionId(latestConversation?.session_id);
+    }
+
+    for (const scopedSessionId of scopedSessionIds) {
+        pushCandidateSessionId(scopedSessionId);
+    }
+
+    if (ownerScopeUserId) {
+        const ownerSessions = await WhatsAppSession.list({
+            owner_user_id: ownerScopeUserId,
+            includeDisabled: true
+        });
+        for (const ownerSession of ownerSessions || []) {
+            pushCandidateSessionId(ownerSession?.session_id);
+        }
+    }
+
+    if (!candidateSessionIds.length) {
+        pushCandidateSessionId(resolveFirstConnectedSessionId(normalizedContext.sessionId));
+        pushCandidateSessionId(resolveDefaultSessionId(normalizedContext.sessionId));
+    }
+
+    const ownerValidationCache = new Map();
+    let firstCandidateSessionId = '';
+
+    for (const candidateSessionId of candidateSessionIds) {
+        if (ownerScopeUserId) {
+            let sessionOwnerScopeUserId = ownerValidationCache.get(candidateSessionId);
+            if (sessionOwnerScopeUserId === undefined) {
+                sessionOwnerScopeUserId = await resolveSessionOwnerUserId(candidateSessionId);
+                ownerValidationCache.set(candidateSessionId, sessionOwnerScopeUserId ?? null);
+            }
+            if (sessionOwnerScopeUserId && Number(sessionOwnerScopeUserId) !== Number(ownerScopeUserId)) {
+                continue;
+            }
+        }
+
+        if (!firstCandidateSessionId) {
+            firstCandidateSessionId = candidateSessionId;
+        }
+
+        const dispatchState = getSessionDispatchState(candidateSessionId);
+        if (dispatchState.available) {
+            return {
+                sessionId: candidateSessionId,
+                dispatchState
+            };
+        }
+    }
+
+    if (firstCandidateSessionId) {
+        return {
+            sessionId: firstCandidateSessionId,
+            dispatchState: getSessionDispatchState(firstCandidateSessionId)
+        };
+    }
+
+    return {
+        sessionId: '',
+        dispatchState: getSessionDispatchState('')
+    };
+}
+
 function runAutomationWithDelay(automation, context) {
     const normalizedContext = normalizeAutomationContext(context);
     if (!shouldAutomationRunForLeadTags(automation, normalizedContext.lead)) return;
@@ -5579,7 +5663,28 @@ async function executeAutomationAction(automation, context) {
             }
 
             try {
-                await sendMessage(sessionId, lead.phone, content, 'text');
+                const dispatchTarget = await resolveAutomationDispatchSession(automation, normalizedContext);
+                const dispatchSessionId = sanitizeSessionId(dispatchTarget?.sessionId);
+                const dispatchState = dispatchTarget?.dispatchState || getSessionDispatchState(dispatchSessionId || '');
+                if (!dispatchSessionId || !dispatchState.available) {
+                    throw buildSessionUnavailableError(
+                        dispatchState,
+                        dispatchSessionId
+                            ? `Sessao ${dispatchSessionId} indisponivel para envio de automacao`
+                            : 'Nenhuma sessao disponivel para envio de automacao'
+                    );
+                }
+
+                const sendOptions = {};
+                const conversationId = Number(conversation?.id || 0);
+                if (
+                    conversationId > 0
+                    && sanitizeSessionId(conversation?.session_id) === dispatchSessionId
+                ) {
+                    sendOptions.conversationId = conversationId;
+                }
+
+                await sendMessage(dispatchSessionId, lead.phone, content, 'text', sendOptions);
             } catch (error) {
                 if (shouldTrackOnce && reservationCreated) {
                     await releaseAutomationLeadRun(automationId, leadId);
