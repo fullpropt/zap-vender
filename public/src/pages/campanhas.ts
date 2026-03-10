@@ -1907,6 +1907,9 @@ function renderCampaigns() {
         const displayStatus = getCampaignDisplayStatus(c);
         const queueTotal = Math.max(Number(c.queue_total || 0), Number(c.sent || 0));
         const sentRate = queueTotal > 0 ? (Number(c.sent || 0) / queueTotal * 100) : 0;
+        const sentRateClamped = Math.max(0, Math.min(100, sentRate));
+        const sentRateLabel = `${formatPercent(sentRate)} enviadas`;
+        const sentRateLabelClass = sentRateClamped >= 35 ? 'on-fill' : 'on-track';
         const deliveryRate = c.sent > 0 ? (c.delivered / c.sent * 100) : 0;
         const readRate = c.delivered > 0 ? (c.read / c.delivered * 100) : 0;
         const replyRate = c.read > 0 ? (c.replied / c.read * 100) : 0;
@@ -1967,8 +1970,16 @@ function renderCampaigns() {
                             </div>
                         </div>
                         <div class="campaign-progress">
-                            <div class="progress" style="height: 8px;">
-                                <div class="progress-bar" style="width: ${Math.max(0, Math.min(100, sentRate))}%; background: var(--success);"></div>
+                            <div
+                                class="campaign-progress-track"
+                                role="progressbar"
+                                aria-label="Percentual de mensagens enviadas"
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                                aria-valuenow="${Math.round(sentRateClamped)}"
+                            >
+                                <div class="campaign-progress-fill" style="width: ${sentRateClamped}%;"></div>
+                                <span class="campaign-progress-label ${sentRateLabelClass}">${sentRateLabel}</span>
                             </div>
                         </div>
                     </div>

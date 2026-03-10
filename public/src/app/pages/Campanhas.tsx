@@ -160,6 +160,39 @@ export default function Campanhas() {
         .campaign-progress {
             margin-top: 15px;
         }
+        .campaign-progress-track {
+            position: relative;
+            height: 20px;
+            border-radius: 999px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            background: color-mix(in srgb, var(--gray-100) 88%, transparent);
+        }
+        .campaign-progress-fill {
+            position: absolute;
+            inset: 0 auto 0 0;
+            border-radius: inherit;
+            background: var(--success);
+            transition: width 220ms ease;
+        }
+        .campaign-progress-label {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            pointer-events: none;
+        }
+        .campaign-progress-label.on-fill {
+            color: #fff;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+        }
+        .campaign-progress-label.on-track {
+            color: var(--gray-700);
+        }
         .campaign-footer {
             padding: 15px 20px;
             background: var(--gray-50);
