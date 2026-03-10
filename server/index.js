@@ -15311,6 +15311,8 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
             : null;
         const payload = sanitizeCampaignPayload(req.body, { applyDefaultType: false });
         const requestedStatus = String(payload?.status || '').trim().toLowerCase();
+        const currentCampaignStatus = String(campaign.status || '').trim().toLowerCase();
+        const nextCampaignStatus = requestedStatus || currentCampaignStatus;
         const startAtProvided = Object.prototype.hasOwnProperty.call(payload, 'start_at');
         const previousStartAtMs = parseCampaignStartAt(campaign?.start_at);
         const nextStartAtMs = startAtProvided
@@ -15332,8 +15334,7 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
         const shouldReschedulePendingStartAt = startAtChanged
             && !shouldQueue
             && !restartRequested
-            && (!requestedStatus || requestedStatus === 'active')
-            && String(campaign.status || '').trim().toLowerCase() === 'active';
+            && nextCampaignStatus === 'active';
         const payloadBeforeQueue = { ...payload };
         if (shouldQueue) {
             // Evita deixar campanha "ativa" quando o enfileiramento falha.
@@ -15368,27 +15369,17 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
             && updatedCampaign
             && String(updatedCampaign.status || '').trim().toLowerCase() === 'active'
         ) {
-            const progress = await MessageQueue.getCampaignProgress(updatedCampaign.id);
-            if (Number(progress?.processing || 0) > 0) {
-                queueResult = {
-                    ...queueResult,
-                    rescheduled: false,
-                    reschedule_reason: 'queue_processing',
-                    queue_progress: progress
-                };
-            } else {
-                const rescheduleResult = await reschedulePendingCampaignQueueByStartAt(
-                    updatedCampaign,
-                    campaign.start_at
-                );
-                queueResult = {
-                    ...queueResult,
-                    rescheduled: Number(rescheduleResult?.updated || 0) > 0,
-                    rescheduled_pending: Number(rescheduleResult?.updated || 0),
-                    reschedule_reason: rescheduleResult?.reason || null,
-                    reschedule_delta_ms: Number(rescheduleResult?.delta_ms || 0) || 0
-                };
-            }
+            const rescheduleResult = await reschedulePendingCampaignQueueByStartAt(
+                updatedCampaign,
+                campaign.start_at
+            );
+            queueResult = {
+                ...queueResult,
+                rescheduled: Number(rescheduleResult?.updated || 0) > 0,
+                rescheduled_pending: Number(rescheduleResult?.updated || 0),
+                reschedule_reason: rescheduleResult?.reason || null,
+                reschedule_delta_ms: Number(rescheduleResult?.delta_ms || 0) || 0
+            };
 
             updatedCampaign = await attachCampaignSenderAccounts(await Campaign.findById(req.params.id, {
                 created_by: scopedUserId || undefined,
