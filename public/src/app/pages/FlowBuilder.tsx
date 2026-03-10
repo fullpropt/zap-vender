@@ -2584,6 +2584,30 @@ export default function FlowBuilder() {
             color: #ecfff4;
         }
 
+        .flow-list-scope-confirm {
+            min-width: 90px;
+        }
+
+        .flow-list-scope-confirm.is-pending {
+            border-color: rgba(45, 212, 191, 0.55);
+            background: rgba(16, 185, 129, 0.18);
+            color: #ecfff4;
+        }
+
+        .flow-list-scope-confirm:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            border-color: rgba(100, 116, 139, 0.28);
+            background: rgba(15, 23, 42, 0.42);
+            color: #94a3b8;
+        }
+
+        .flow-list-scope-confirm:disabled:hover {
+            border-color: rgba(100, 116, 139, 0.28);
+            background: rgba(15, 23, 42, 0.42);
+            color: #94a3b8;
+        }
+
         .flow-list-delete {
             color: #fecaca;
             border-color: rgba(239, 68, 68, 0.5);

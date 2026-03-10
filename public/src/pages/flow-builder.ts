@@ -156,6 +156,7 @@ let pendingNodeDraft: Partial<NodeData> | null = null;
 let pendingNodeDraftId: string | null = null;
 let intentPropertySectionExpandedState: Record<string, boolean> = {};
 let flowsCache: FlowSummary[] = [];
+let pendingFlowListSessionScopes: Record<number, string> = {};
 let renamingFlowId: number | null = null;
 let renamingFlowDraft = '';
 let zoom = 1;
@@ -4504,11 +4505,44 @@ function renderFlowsError(message: string) {
     container.innerHTML = `<p style="text-align: center; color: var(--danger);">${message}</p>`;
 }
 
+function normalizePendingFlowListSessionScopes() {
+    const nextPending: Record<number, string> = {};
+    flowsCache.forEach((flow) => {
+        const flowId = Number(flow.id);
+        if (!Number.isFinite(flowId)) return;
+
+        const pendingSessionId = normalizeFlowSessionId(pendingFlowListSessionScopes[flowId]);
+        const currentSessionId = normalizeFlowSessionId(flow.session_id);
+        if (pendingSessionId !== currentSessionId) {
+            nextPending[flowId] = pendingSessionId;
+        }
+    });
+    pendingFlowListSessionScopes = nextPending;
+}
+
+function getFlowListSessionScopeValue(flow: FlowSummary) {
+    const flowId = Number(flow.id);
+    if (!Number.isFinite(flowId)) {
+        return normalizeFlowSessionId(flow.session_id);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(pendingFlowListSessionScopes, flowId)) {
+        return normalizeFlowSessionId(pendingFlowListSessionScopes[flowId]);
+    }
+
+    return normalizeFlowSessionId(flow.session_id);
+}
+
+function hasPendingFlowListSessionScopeChange(flow: FlowSummary) {
+    return getFlowListSessionScopeValue(flow) !== normalizeFlowSessionId(flow.session_id);
+}
+
 // Renderizar lista de fluxos
 function renderFlowsList(flows: FlowSummary[]) {
     const container = document.getElementById('flowsList') as HTMLElement | null;
     if (!container) return;
     flowsCache = Array.isArray(flows) ? [...flows] : [];
+    normalizePendingFlowListSessionScopes();
     const mobileListMode = isFlowMobileListMode();
 
     if (renamingFlowId !== null && !flowsCache.some((flow) => Number(flow.id) === Number(renamingFlowId))) {
@@ -4543,7 +4577,9 @@ function renderFlowsList(flows: FlowSummary[]) {
         const escapedFlowName = escapeHtml(flowName);
         const encodedName = encodeURIComponent(flowName);
         const inputValue = escapeHtml(renamingFlowDraft);
-        const sessionOptions = buildFlowSessionScopeOptionsMarkup(flow.session_id);
+        const selectedSessionId = getFlowListSessionScopeValue(flow);
+        const hasPendingSessionScopeChange = hasPendingFlowListSessionScopeChange(flow);
+        const sessionOptions = buildFlowSessionScopeOptionsMarkup(selectedSessionId);
         const itemClasses = [
             'flow-list-item',
             isCurrent ? 'is-current' : '',
@@ -4597,6 +4633,14 @@ function renderFlowsList(flows: FlowSummary[]) {
                 >
                     ${sessionOptions}
                 </select>
+                <button
+                    class="flow-list-btn flow-list-scope-confirm${hasPendingSessionScopeChange ? ' is-pending' : ''}"
+                    title="Confirmar conta selecionada"
+                    onclick="confirmFlowListSessionScope(${flow.id}, event)"
+                    ${hasPendingSessionScopeChange ? '' : 'disabled'}
+                >
+                    Confirmar
+                </button>
                 <button class="flow-list-btn flow-list-toggle ${isActive ? 'is-active' : 'is-inactive'}" title="${isActive ? 'Desativar fluxo' : 'Ativar fluxo'}" onclick="toggleFlowActivation(${flow.id}, event)">
                     ${isActive ? 'Desativar' : 'Ativar'}
                 </button>
@@ -4848,7 +4892,7 @@ async function toggleFlowActivation(id: number, event?: Event) {
     }
 }
 
-async function updateFlowListSessionScope(id: number, value: string, event?: Event) {
+function updateFlowListSessionScope(id: number, value: string, event?: Event) {
     event?.preventDefault();
     event?.stopPropagation();
 
@@ -4859,7 +4903,31 @@ async function updateFlowListSessionScope(id: number, value: string, event?: Eve
     const targetFlow = flowsCache.find((flow) => Number(flow.id) === flowId);
     const currentSessionId = normalizeFlowSessionId(targetFlow?.session_id);
 
-    if (currentSessionId === nextSessionId) return;
+    if (currentSessionId === nextSessionId) {
+        delete pendingFlowListSessionScopes[flowId];
+    } else {
+        pendingFlowListSessionScopes[flowId] = nextSessionId;
+    }
+
+    renderFlowsList(flowsCache);
+}
+
+async function confirmFlowListSessionScope(id: number, event?: Event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    const flowId = Number(id);
+    if (!Number.isFinite(flowId)) return;
+
+    const targetFlow = flowsCache.find((flow) => Number(flow.id) === flowId);
+    const currentSessionId = normalizeFlowSessionId(targetFlow?.session_id);
+    const nextSessionId = normalizeFlowSessionId(pendingFlowListSessionScopes[flowId]);
+
+    if (currentSessionId === nextSessionId) {
+        delete pendingFlowListSessionScopes[flowId];
+        renderFlowsList(flowsCache);
+        return;
+    }
 
     try {
         const response = await fetch(buildFlowApiUrl(`/api/flows/${flowId}`), {
@@ -4875,6 +4943,7 @@ async function updateFlowListSessionScope(id: number, value: string, event?: Eve
             return;
         }
 
+        delete pendingFlowListSessionScopes[flowId];
         if (Number(currentFlowId) === flowId) {
             setCurrentFlowSessionScope(nextSessionId);
         }
@@ -5229,7 +5298,8 @@ const windowAny = window as Window & {
     saveFlowRenameInline?: (id: number, event?: Event) => Promise<void>;
     editFlowFromList?: (id: number, currentName?: string, event?: Event) => Promise<void>;
     toggleFlowActivation?: (id: number, event?: Event) => Promise<void>;
-    updateFlowListSessionScope?: (id: number, value: string, event?: Event) => Promise<void>;
+    updateFlowListSessionScope?: (id: number, value: string, event?: Event) => void;
+    confirmFlowListSessionScope?: (id: number, event?: Event) => Promise<void>;
     duplicateFlow?: (id: number, event?: Event) => Promise<void>;
     discardFlow?: (id: number, event?: Event) => Promise<void>;
     closeFlowsModal?: () => void;
@@ -5289,6 +5359,7 @@ windowAny.saveFlowRenameInline = saveFlowRenameInline;
 windowAny.editFlowFromList = editFlowFromList;
 windowAny.toggleFlowActivation = toggleFlowActivation;
 windowAny.updateFlowListSessionScope = updateFlowListSessionScope;
+windowAny.confirmFlowListSessionScope = confirmFlowListSessionScope;
 windowAny.duplicateFlow = duplicateFlow;
 windowAny.discardFlow = discardFlow;
 windowAny.closeFlowsModal = closeFlowsModal;
