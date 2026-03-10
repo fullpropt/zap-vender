@@ -197,15 +197,15 @@ export default function Contatos() {
         }
         .contatos-react .edit-contact-tags-toggle {
           position: absolute;
-          right: 10px;
+          right: 12px;
           top: 50%;
           transform: translateY(-50%);
           border: 0;
           background: transparent;
           color: var(--gray-500);
-          width: 24px;
-          height: 24px;
-          border-radius: 999px;
+          width: 12px;
+          height: 12px;
+          padding: 0;
           font-size: 12px;
           cursor: pointer;
           display: inline-flex;
@@ -214,8 +214,7 @@ export default function Contatos() {
           transition: transform 0.2s ease;
         }
         .contatos-react .edit-contact-tags-toggle:hover {
-          background: rgba(var(--primary-rgb), 0.08);
-          color: var(--primary);
+          color: var(--gray-500);
         }
         .contatos-react .edit-contact-tags-toggle.is-open {
           transform: translateY(-50%) rotate(180deg);
@@ -623,12 +622,11 @@ export default function Contatos() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Tags</label>
-                  <div className="edit-contact-tags-input-wrap">
+                  <div className="edit-contact-tags-input-wrap" id="editContactTagsTrigger">
                     <input
                       type="text"
                       className="form-input"
                       id="editContactTags"
-                      list="editContactTagsOptions"
                       placeholder="Ex.: VIP, Renovacao"
                     />
                     <button
@@ -646,7 +644,6 @@ export default function Contatos() {
                       hidden
                     ></div>
                   </div>
-                  <datalist id="editContactTagsOptions"></datalist>
                   <p className="form-help">Use as etiquetas cadastradas abaixo ou separe multiplas tags por virgula.</p>
                 </div>
                 <div className="form-row" id="editContactCustomFields"></div>

@@ -1138,15 +1138,8 @@ function renderCreateContactTagSuggestions() {
 
 function renderEditContactTagSuggestions() {
     const tagNames = getUniqueTagNames();
-    const datalist = document.getElementById('editContactTagsOptions') as HTMLDataListElement | null;
     const suggestions = document.getElementById('editContactTagsSuggestions') as HTMLElement | null;
     const editTagsInput = document.getElementById('editContactTags') as HTMLInputElement | null;
-
-    if (datalist) {
-        datalist.innerHTML = tagNames
-            .map((name) => `<option value="${escapeHtml(name)}"></option>`)
-            .join('');
-    }
 
     if (!suggestions) return;
 
@@ -1196,6 +1189,19 @@ function bindEditContactTagsSuggestions() {
     const editTagsInput = document.getElementById('editContactTags') as HTMLInputElement | null;
     const suggestions = document.getElementById('editContactTagsSuggestions') as HTMLElement | null;
     const toggleButton = document.getElementById('editContactTagsToggle') as HTMLButtonElement | null;
+    const triggerArea = document.getElementById('editContactTagsTrigger') as HTMLElement | null;
+
+    if (triggerArea && triggerArea.dataset.tagSuggestionsBound !== '1') {
+        triggerArea.dataset.tagSuggestionsBound = '1';
+        triggerArea.addEventListener('click', (event) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.closest('#editContactTagsToggle')) {
+                return;
+            }
+            event.stopPropagation();
+            setEditContactTagSuggestionsOpen(true);
+        });
+    }
 
     if (toggleButton && toggleButton.dataset.tagSuggestionsBound !== '1') {
         toggleButton.dataset.tagSuggestionsBound = '1';
@@ -1208,8 +1214,16 @@ function bindEditContactTagsSuggestions() {
 
     if (editTagsInput && editTagsInput.dataset.tagSuggestionsBound !== '1') {
         editTagsInput.dataset.tagSuggestionsBound = '1';
+        editTagsInput.addEventListener('focus', () => {
+            setEditContactTagSuggestionsOpen(true);
+        });
+        editTagsInput.addEventListener('click', (event) => {
+            event.stopPropagation();
+            setEditContactTagSuggestionsOpen(true);
+        });
         editTagsInput.addEventListener('input', () => {
             renderEditContactTagSuggestions();
+            setEditContactTagSuggestionsOpen(true);
         });
     }
 
@@ -1244,7 +1258,12 @@ function bindEditContactTagsSuggestions() {
         document.addEventListener('click', (event) => {
             const target = event.target;
             if (target instanceof Element) {
-                if (target.closest('#editContactTagsToggle') || target.closest('#editContactTagsSuggestions')) {
+                if (
+                    target.closest('#editContactTagsToggle')
+                    || target.closest('#editContactTagsSuggestions')
+                    || target.closest('#editContactTags')
+                    || target.closest('#editContactTagsTrigger')
+                ) {
                     return;
                 }
             }
