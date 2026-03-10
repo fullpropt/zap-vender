@@ -1523,17 +1523,18 @@ function buildFlowSessionScopeOptionsMarkup(selectedSessionId?: string | null) {
         .sort((a, b) => getFlowWhatsappSessionDisplayName(a).localeCompare(getFlowWhatsappSessionDisplayName(b), 'pt-BR'));
     const knownIds = new Set(options.map((item) => normalizeFlowSessionId(item.session_id)));
     const normalizedSelectedSessionId = normalizeFlowSessionId(selectedSessionId);
+    const isAllSessionsSelected = !normalizedSelectedSessionId;
 
     const entries = [
-        `<option value="${FLOW_ALL_SESSIONS_VALUE}">Todas as contas WhatsApp</option>`,
+        `<option value="${FLOW_ALL_SESSIONS_VALUE}"${isAllSessionsSelected ? ' selected' : ''}>Todas as contas WhatsApp</option>`,
         ...options.map((item) => {
             const sessionId = normalizeFlowSessionId(item.session_id);
-            return `<option value="${escapeHtml(sessionId)}">${escapeHtml(getFlowSessionScopeOptionLabel(item))}</option>`;
+            return `<option value="${escapeHtml(sessionId)}"${sessionId === normalizedSelectedSessionId ? ' selected' : ''}>${escapeHtml(getFlowSessionScopeOptionLabel(item))}</option>`;
         })
     ];
 
     if (normalizedSelectedSessionId && !knownIds.has(normalizedSelectedSessionId)) {
-        entries.push(`<option value="${escapeHtml(normalizedSelectedSessionId)}">Conta indisponível (${escapeHtml(normalizedSelectedSessionId)})</option>`);
+        entries.push(`<option value="${escapeHtml(normalizedSelectedSessionId)}" selected>Conta indisponível (${escapeHtml(normalizedSelectedSessionId)})</option>`);
     }
 
     return entries.join('');
@@ -4945,14 +4946,15 @@ function renderFlowsList(flows: FlowSummary[]) {
                 >
                     ${sessionOptions}
                 </select>
-                <button
-                    class="flow-list-btn flow-list-scope-confirm${hasPendingSessionScopeChange ? ' is-pending' : ''}"
-                    title="Confirmar conta selecionada"
-                    onclick="confirmFlowListSessionScope(${flow.id}, event)"
-                    ${hasPendingSessionScopeChange ? '' : 'disabled'}
-                >
-                    Confirmar
-                </button>
+                ${hasPendingSessionScopeChange ? `
+                    <button
+                        class="flow-list-btn flow-list-scope-confirm is-pending"
+                        title="Confirmar conta selecionada"
+                        onclick="confirmFlowListSessionScope(${flow.id}, event)"
+                    >
+                        Confirmar
+                    </button>
+                ` : ''}
                 <button class="flow-list-btn flow-list-toggle ${isActive ? 'is-active' : 'is-inactive'}" title="${isActive ? 'Desativar fluxo' : 'Ativar fluxo'}" onclick="toggleFlowActivation(${flow.id}, event)">
                     ${isActive ? 'Desativar' : 'Ativar'}
                 </button>
