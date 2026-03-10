@@ -1728,19 +1728,47 @@ function buildFlowNodeId(prefix = 'node') {
     return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 }
 
-function getIntentNodeInsertPosition() {
-    if (nodes.length > 0) {
-        const reference = nodes.reduce((acc, node) => (node.position.x > acc.position.x ? node : acc), nodes[0]);
-        const preferred = selectedNode && selectedNode.position.x >= reference.position.x
-            ? selectedNode
-            : reference;
-        return {
-            x: Math.max(20, preferred.position.x + 280),
-            y: Math.max(20, preferred.position.y)
-        };
+function getIntentNodeVisualSize() {
+    const flowCanvas = document.getElementById('flowCanvas') as HTMLElement | null;
+    if (!flowCanvas) {
+        return { width: 220, height: 160 };
     }
 
-    return { x: 180, y: 180 };
+    const referenceNode = (
+        flowCanvas.querySelector('.flow-node.intent') as HTMLElement | null
+    ) || (
+        flowCanvas.querySelector('.flow-node') as HTMLElement | null
+    );
+
+    if (!referenceNode) {
+        return { width: 220, height: 160 };
+    }
+
+    const rect = referenceNode.getBoundingClientRect();
+    const width = Number.isFinite(rect.width) && rect.width > 0
+        ? rect.width / Math.max(0.01, zoom)
+        : 220;
+    const height = Number.isFinite(rect.height) && rect.height > 0
+        ? rect.height / Math.max(0.01, zoom)
+        : 160;
+
+    return { width, height };
+}
+
+function getIntentNodeInsertPosition() {
+    const flowCanvas = document.getElementById('flowCanvas') as HTMLElement | null;
+    if (!flowCanvas) return { x: 180, y: 180 };
+
+    const rect = flowCanvas.getBoundingClientRect();
+    const centerClientX = rect.left + (rect.width / 2);
+    const centerClientY = rect.top + (rect.height / 2);
+    const centerFlow = clientToFlowCoords(centerClientX, centerClientY);
+    const nodeSize = getIntentNodeVisualSize();
+
+    return {
+        x: Math.max(20, Math.round(centerFlow.x - (nodeSize.width / 2))),
+        y: Math.max(20, Math.round(centerFlow.y - (nodeSize.height / 2)))
+    };
 }
 
 function addIntentBlock() {
