@@ -1176,9 +1176,11 @@ function applyCampaignTypeMode(typeValue: CampaignType | string = getCampaignTyp
 
     if (broadcastVariationsSection) {
         broadcastVariationsSection.hidden = selectedType !== 'broadcast';
+        broadcastVariationsSection.style.display = selectedType === 'broadcast' ? '' : 'none';
     }
     if (section) {
         section.hidden = selectedType !== 'drip';
+        section.style.display = selectedType === 'drip' ? '' : 'none';
     }
     if (messageLabel) {
         messageLabel.textContent = selectedType === 'drip' ? 'Mensagem da Etapa 1' : 'Mensagem';
