@@ -614,6 +614,78 @@ export default function Campanhas() {
             border-color: rgba(var(--danger-rgb, 220, 38, 38), 0.35);
             color: var(--danger);
         }
+        .campaign-drip-steps-panel {
+            margin-top: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--surface) 88%, var(--gray-50) 12%);
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .campaign-drip-steps-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .campaign-drip-steps-title {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--dark);
+        }
+        .campaign-drip-steps-help {
+            margin: 0;
+            color: var(--gray-500);
+            font-size: 12px;
+            line-height: 1.45;
+        }
+        .campaign-drip-steps-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .campaign-drip-step-item {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px;
+            background: var(--surface);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .campaign-drip-step-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .campaign-drip-step-label {
+            margin: 0;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--dark);
+        }
+        .campaign-drip-step-remove {
+            border: 1px solid var(--border-color);
+            background: var(--gray-50);
+            color: var(--gray-700);
+            border-radius: 7px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .campaign-drip-step-remove:hover {
+            border-color: rgba(var(--danger-rgb, 220, 38, 38), 0.35);
+            color: var(--danger);
+        }
+        .campaign-drip-step-input {
+            min-height: 96px;
+            resize: vertical;
+        }
         .campaign-variation-card-preview {
             margin: 0;
             color: var(--gray-700);
@@ -770,6 +842,13 @@ export default function Campanhas() {
                       <form id="campaignForm">
                           <input type="hidden" id="campaignId" />
                           <div className="form-group">
+                              <label className="form-label required">Tipo</label>
+                              <select className="form-select" id="campaignType">
+                                  <option value="broadcast">Transmissão Única</option>
+                                  <option value="drip">Sequência (Drip)</option>
+                              </select>
+                          </div>
+                          <div className="form-group">
                               <label className="form-label required">Nome da Campanha</label>
                               <input type="text" className="form-input" id="campaignName" required placeholder="Ex: Promoção Janeiro" />
                           </div>
@@ -779,22 +858,13 @@ export default function Campanhas() {
                               <textarea className="form-textarea" id="campaignDescription" rows="2" placeholder="Descreva o objetivo da campanha"></textarea>
                           </div>
       
-                          <div className="form-row">
-                              <div className="form-group">
-                                  <label className="form-label">Tipo</label>
-                                  <select className="form-select" id="campaignType">
-                                      <option value="broadcast">Transmissão Única</option>
-                                      <option value="drip">Sequência (Drip)</option>
-                                  </select>
-                              </div>
-                              <div className="form-group">
-                                  <label className="form-label">Distribuição</label>
-                                  <select className="form-select" id="campaignDistributionStrategy">
-                                      <option value="round_robin">Rotativo</option>
-                                      <option value="weighted_round_robin">Rotativo por peso</option>
-                                      <option value="random">Aleatório</option>
-                                  </select>
-                              </div>
+                          <div className="form-group">
+                              <label className="form-label">Distribuição</label>
+                              <select className="form-select" id="campaignDistributionStrategy">
+                                  <option value="round_robin">Rotativo</option>
+                                  <option value="weighted_round_robin">Rotativo por peso</option>
+                                  <option value="random">Aleatório</option>
+                              </select>
                           </div>
       
                           <div className="form-group">
@@ -845,7 +915,7 @@ export default function Campanhas() {
       
 
                           <div className="form-group">
-                              <label className="form-label required">Mensagem</label>
+                              <label className="form-label required" id="campaignMessageLabel">Mensagem</label>
                               <div className="campaign-message-editor">
                                   <textarea className="form-textarea" id="campaignMessage" rows="5" placeholder="Digite a mensagem da campanha..."></textarea>
                                   <div className="campaign-message-tools">
@@ -872,7 +942,7 @@ export default function Campanhas() {
                                       </div>
                                   </div>
                               </div>
-                              <div className="campaign-variations-panel">
+                              <div className="campaign-variations-panel" id="campaignBroadcastVariationsSection">
                                   <div className="campaign-variations-header">
                                       <div>
                                           <p className="campaign-variations-title">Variações</p>
@@ -896,6 +966,16 @@ export default function Campanhas() {
                                   </div>
 
                                   <button type="button" className="btn btn-outline campaign-variation-create-btn" id="campaignCreateVariationBtn"><span className="icon icon-add icon-sm"></span> Criar variação</button>
+                              </div>
+                              <div className="campaign-drip-steps-panel" id="campaignDripSequenceSection" hidden>
+                                  <div className="campaign-drip-steps-header">
+                                      <p className="campaign-drip-steps-title">Etapas da sequência</p>
+                                      <button type="button" className="btn btn-outline" id="campaignAddDripStepBtn"><span className="icon icon-add icon-sm"></span> Adicionar etapa</button>
+                                  </div>
+                                  <p className="campaign-drip-steps-help">
+                                      A mensagem principal acima será a <strong>Etapa 1</strong>. Use o botão <strong>Adicionar etapa</strong> para criar as próximas mensagens da sequência.
+                                  </p>
+                                  <div className="campaign-drip-steps-list" id="campaignDripStepsList"></div>
                               </div>
                           </div>
       

@@ -14640,32 +14640,30 @@ async function queueCampaignMessages(campaign, options = {}) {
     let queuedCount = 0;
 
     if (campaignType === 'drip') {
+        const nextStepAtByLead = new Map();
+        for (const leadId of queueCandidateLeadIds) {
+            const leadKey = String(leadId);
+            const precomputedScheduledAt = String(scheduledAtByLead[leadKey] || '').trim();
+            const parsedScheduledAt = Date.parse(precomputedScheduledAt);
+            const initialStepAt = Number.isFinite(parsedScheduledAt)
+                ? parsedScheduledAt
+                : alignCampaignScheduleToSendWindow(baseStartMs, sendWindowConfig);
+            nextStepAtByLead.set(leadKey, initialStepAt);
+        }
 
         for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
-
             const content = steps[stepIndex];
-            const stepBaseMs = alignCampaignScheduleToSendWindow(
-                baseStartMs + (stepIndex * delayMaxMs),
-                sendWindowConfig
-            );
-            const nextLeadAtMsByDayOffset = new Map();
 
             for (let leadIndex = 0; leadIndex < queueCandidateLeadIds.length; leadIndex++) {
-
                 const leadId = queueCandidateLeadIds[leadIndex];
-                const assignmentMeta = assignmentMetaByLead[String(leadId)] || null;
-                const leadDayOffsetRaw = Number(assignmentMeta?.day_offset);
-                const leadDayOffset = Number.isFinite(leadDayOffsetRaw) && leadDayOffsetRaw > 0
-                    ? Math.floor(leadDayOffsetRaw)
-                    : 0;
-                const defaultNextLeadAtMs = alignCampaignScheduleToSendWindow(
-                    stepBaseMs + (leadDayOffset * 24 * 60 * 60 * 1000),
-                    sendWindowConfig
-                );
-                const nextLeadAtMs = nextLeadAtMsByDayOffset.has(leadDayOffset)
-                    ? Number(nextLeadAtMsByDayOffset.get(leadDayOffset))
-                    : defaultNextLeadAtMs;
-                const scheduledAt = new Date(nextLeadAtMs).toISOString();
+                const leadKey = String(leadId);
+                const assignmentMeta = assignmentMetaByLead[leadKey] || null;
+                const rawStepAt = Number(nextStepAtByLead.get(leadKey));
+                const safeStepAt = Number.isFinite(rawStepAt)
+                    ? rawStepAt
+                    : alignCampaignScheduleToSendWindow(baseStartMs, sendWindowConfig);
+                const currentStepAt = alignCampaignScheduleToSendWindow(safeStepAt, sendWindowConfig);
+                const scheduledAt = new Date(currentStepAt).toISOString();
 
                 await queueService.add({
 
@@ -14673,7 +14671,7 @@ async function queueCampaignMessages(campaign, options = {}) {
 
                     campaignId: campaign.id,
 
-                    sessionId: sessionAssignments[String(leadId)] || null,
+                    sessionId: sessionAssignments[leadKey] || null,
 
                     isFirstContact: stepIndex === 0,
 
@@ -14691,10 +14689,10 @@ async function queueCampaignMessages(campaign, options = {}) {
 
                 queuedCount += 1;
 
-                nextLeadAtMsByDayOffset.set(
-                    leadDayOffset,
+                nextStepAtByLead.set(
+                    leadKey,
                     addCampaignDelayRespectingSendWindow(
-                        nextLeadAtMs,
+                        currentStepAt,
                         randomIntBetween(delayMinMs, delayMaxMs),
                         sendWindowConfig
                     )

@@ -131,6 +131,8 @@ let campaignRecipientsRequestToken = 0;
 let campaignMessageVariationsDrafts: string[] = [];
 let campaignMessageVariationEditingIndex: number | null = null;
 let campaignMessageVariationsUiBound = false;
+let campaignDripStepsDrafts: string[] = [];
+let campaignDripStepsUiBound = false;
 let expandedCampaignId: number | null = null;
 
 function appConfirm(message: string, title = 'Confirmacao') {
@@ -652,9 +654,16 @@ function insertCampaignMessageVariable(variableKey: string) {
     const activeTextarea = activeElement instanceof HTMLTextAreaElement
         ? activeElement
         : null;
+    const isSupportedCampaignTextarea = (textarea: HTMLTextAreaElement | null) => {
+        if (!textarea) return false;
+        if (textarea.id === 'campaignMessage' || textarea.id === 'campaignMessageVariationDraft') {
+            return true;
+        }
+        return textarea.classList.contains('campaign-drip-step-input');
+    };
     const textarea = (
         activeTextarea &&
-        (activeTextarea.id === 'campaignMessage' || activeTextarea.id === 'campaignMessageVariationDraft')
+        isSupportedCampaignTextarea(activeTextarea)
             ? activeTextarea
             : (document.getElementById('campaignMessage') as HTMLTextAreaElement | null)
     );
@@ -1036,6 +1045,171 @@ function bindCampaignMessageVariationsUi() {
     renderCampaignMessageVariations();
 }
 
+function getCampaignTypeValue(): CampaignType {
+    const typeSelect = document.getElementById('campaignType') as HTMLSelectElement | null;
+    return String(typeSelect?.value || 'broadcast').trim().toLowerCase() === 'drip'
+        ? 'drip'
+        : 'broadcast';
+}
+
+function parseDripMessageSteps(rawMessage: unknown): string[] {
+    const raw = String(rawMessage || '').replace(/\r\n/g, '\n').trim();
+    if (!raw) return [];
+    return raw
+        .split(/\n\s*---+\s*\n/g)
+        .map((step) => step.trim())
+        .filter(Boolean);
+}
+
+function normalizeCampaignDripStepsList(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((item) => String(item || '').replace(/\r\n/g, '\n').trim())
+        .filter(Boolean);
+}
+
+function getCampaignDripStepsUiElements() {
+    return {
+        section: document.getElementById('campaignDripSequenceSection') as HTMLElement | null,
+        list: document.getElementById('campaignDripStepsList') as HTMLElement | null,
+        addButton: document.getElementById('campaignAddDripStepBtn') as HTMLButtonElement | null,
+        messageLabel: document.getElementById('campaignMessageLabel') as HTMLElement | null,
+        messageInput: document.getElementById('campaignMessage') as HTMLTextAreaElement | null,
+        broadcastVariationsSection: document.getElementById('campaignBroadcastVariationsSection') as HTMLElement | null
+    };
+}
+
+function renderCampaignDripSteps() {
+    const { list } = getCampaignDripStepsUiElements();
+    if (!list) return;
+
+    if (!campaignDripStepsDrafts.length) {
+        list.innerHTML = '<p class="campaign-variations-empty">Nenhuma etapa adicional. Use "Adicionar etapa".</p>';
+        return;
+    }
+
+    list.innerHTML = campaignDripStepsDrafts.map((step, index) => `
+        <div class="campaign-drip-step-item">
+            <div class="campaign-drip-step-top">
+                <p class="campaign-drip-step-label">Etapa ${index + 2}</p>
+                <button type="button" class="campaign-drip-step-remove" data-drip-remove-index="${index}">Remover</button>
+            </div>
+            <textarea
+                class="form-textarea campaign-drip-step-input"
+                data-drip-step-index="${index}"
+                rows="4"
+                placeholder="Digite a mensagem da etapa ${index + 2}..."
+            >${escapeCampaignText(step)}</textarea>
+        </div>
+    `).join('');
+}
+
+function resetCampaignDripStepsState(values: string[] = []) {
+    campaignDripStepsDrafts = normalizeCampaignDripStepsList(values);
+    renderCampaignDripSteps();
+}
+
+function collectCampaignDripStepsFromForm() {
+    const { messageInput } = getCampaignDripStepsUiElements();
+    const firstStep = String(messageInput?.value || '').replace(/\r\n/g, '\n').trim();
+    const extraSteps = normalizeCampaignDripStepsList(campaignDripStepsDrafts);
+    const allSteps = [firstStep, ...extraSteps].filter(Boolean);
+    return allSteps;
+}
+
+function bindCampaignDripStepsUi() {
+    if (campaignDripStepsUiBound) return;
+
+    const { list, addButton } = getCampaignDripStepsUiElements();
+    if (!list || !addButton) return;
+
+    campaignDripStepsUiBound = true;
+
+    addButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        campaignDripStepsDrafts.push('');
+        renderCampaignDripSteps();
+        const { list: refreshedList } = getCampaignDripStepsUiElements();
+        const lastIndex = Math.max(0, campaignDripStepsDrafts.length - 1);
+        const input = refreshedList?.querySelector<HTMLTextAreaElement>(`textarea[data-drip-step-index="${lastIndex}"]`);
+        input?.focus();
+    });
+
+    list.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const removeButton = target.closest<HTMLButtonElement>('[data-drip-remove-index]');
+        if (!removeButton) return;
+
+        event.preventDefault();
+        const index = Number(removeButton.dataset.dripRemoveIndex);
+        if (!Number.isInteger(index) || index < 0 || index >= campaignDripStepsDrafts.length) return;
+
+        campaignDripStepsDrafts.splice(index, 1);
+        renderCampaignDripSteps();
+    });
+
+    list.addEventListener('input', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLTextAreaElement)) return;
+
+        const index = Number(target.dataset.dripStepIndex);
+        if (!Number.isInteger(index) || index < 0 || index >= campaignDripStepsDrafts.length) return;
+
+        campaignDripStepsDrafts[index] = target.value;
+    });
+
+    renderCampaignDripSteps();
+}
+
+function applyCampaignTypeMode(typeValue: CampaignType | string = getCampaignTypeValue()) {
+    const selectedType: CampaignType = String(typeValue || '').trim().toLowerCase() === 'drip'
+        ? 'drip'
+        : 'broadcast';
+    const {
+        section,
+        messageLabel,
+        messageInput,
+        broadcastVariationsSection
+    } = getCampaignDripStepsUiElements();
+
+    if (broadcastVariationsSection) {
+        broadcastVariationsSection.hidden = selectedType !== 'broadcast';
+    }
+    if (section) {
+        section.hidden = selectedType !== 'drip';
+    }
+    if (messageLabel) {
+        messageLabel.textContent = selectedType === 'drip' ? 'Mensagem da Etapa 1' : 'Mensagem';
+    }
+    if (messageInput) {
+        messageInput.placeholder = selectedType === 'drip'
+            ? 'Digite a mensagem da etapa 1...'
+            : 'Digite a mensagem da campanha...';
+    }
+
+    if (selectedType === 'drip') {
+        closeCampaignMessageVariationEditor();
+    }
+
+    renderCampaignDripSteps();
+}
+
+function bindCampaignTypeSelector() {
+    const typeSelect = document.getElementById('campaignType') as HTMLSelectElement | null;
+    if (!typeSelect) return;
+
+    if (typeSelect.dataset.bound !== '1') {
+        typeSelect.dataset.bound = '1';
+        typeSelect.addEventListener('change', () => {
+            applyCampaignTypeMode(typeSelect.value);
+        });
+    }
+
+    applyCampaignTypeMode(typeSelect.value);
+}
+
 function getSessionDispatchWeight(session: WhatsappSenderSession) {
     const parsed = Number(session?.dispatch_weight);
     return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
@@ -1050,10 +1224,7 @@ function splitCampaignMessageSteps(campaign: Campaign) {
     const rawMessage = String(campaign.message || '').trim();
     if (!rawMessage) return [];
     if (campaign.type !== 'drip') return [rawMessage];
-    return rawMessage
-        .split(/\n\s*---+\s*\n/g)
-        .map(step => step.trim())
-        .filter(Boolean);
+    return parseDripMessageSteps(rawMessage);
 }
 
 function escapeCampaignText(value: unknown) {
@@ -1547,6 +1718,7 @@ function resetCampaignForm() {
     form?.reset();
     const idInput = document.getElementById('campaignId') as HTMLInputElement | null;
     if (idInput) idInput.value = '';
+    setSelectValue(document.getElementById('campaignType') as HTMLSelectElement | null, 'broadcast');
     syncCampaignSegmentOptions();
     setCampaignTagFilterSelection([]);
     closeCampaignTagFilterMenu();
@@ -1558,6 +1730,10 @@ function resetCampaignForm() {
     closeCampaignMessageVariableMenu();
     bindCampaignMessageVariablePicker();
     resetCampaignMessageVariationsState([]);
+    resetCampaignDripStepsState([]);
+    bindCampaignDripStepsUi();
+    bindCampaignTypeSelector();
+    applyCampaignTypeMode('broadcast');
     setCampaignModalTitle('new');
 }
 
@@ -1568,6 +1744,8 @@ function openCampaignModal() {
     void loadSenderSessions();
     bindCampaignMessageVariablePicker();
     bindCampaignMessageVariationsUi();
+    bindCampaignDripStepsUi();
+    bindCampaignTypeSelector();
     bindCampaignSendWindowToggle();
     const win = window as Window & { openModal?: (id: string) => void };
     win.openModal?.('newCampaignModal');
@@ -1752,6 +1930,7 @@ function openBroadcastModal() {
     setSelectValue(document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null, 'round_robin');
     setSelectValue(document.getElementById('campaignSegment') as HTMLSelectElement | null, 'all');
     setDelayRangeInputs(DEFAULT_DELAY_MIN_SECONDS, DEFAULT_DELAY_MAX_SECONDS);
+    applyCampaignTypeMode('broadcast');
 }
 
 async function initCampanhas() {
@@ -1762,6 +1941,8 @@ async function initCampanhas() {
     bindCampaignTagFilterDropdown();
     bindCampaignMessageVariablePicker();
     bindCampaignMessageVariationsUi();
+    bindCampaignDripStepsUi();
+    bindCampaignTypeSelector();
     bindCampaignsRealtimeUpdates();
     await Promise.all([
         loadCampaigns(),
@@ -2016,17 +2197,25 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         (document.getElementById('campaignSendWindowEnd') as HTMLInputElement | null)?.value,
         DEFAULT_SEND_WINDOW_END
     );
+    const selectedType = getCampaignTypeValue();
+    const broadcastMessage = (document.getElementById('campaignMessage') as HTMLTextAreaElement | null)?.value.trim() || '';
+    const dripSteps = selectedType === 'drip'
+        ? collectCampaignDripStepsFromForm()
+        : [];
+    const normalizedMessage = selectedType === 'drip'
+        ? dripSteps.join('\n---\n')
+        : broadcastMessage;
 
     const data = {
         name: (document.getElementById('campaignName') as HTMLInputElement | null)?.value.trim() || '',
         description: (document.getElementById('campaignDescription') as HTMLInputElement | null)?.value.trim() || '',
-        type: ((document.getElementById('campaignType') as HTMLSelectElement | null)?.value || 'broadcast') as CampaignType,
+        type: selectedType,
         distribution_strategy: ((document.getElementById('campaignDistributionStrategy') as HTMLSelectElement | null)?.value || 'round_robin') as Campaign['distribution_strategy'],
         status,
         segment: (document.getElementById('campaignSegment') as HTMLSelectElement | null)?.value || '',
         tag_filters: getSelectedCampaignTagFilters(),
-        message: (document.getElementById('campaignMessage') as HTMLTextAreaElement | null)?.value.trim() || '',
-        message_variations: [...campaignMessageVariationsDrafts],
+        message: normalizedMessage,
+        message_variations: selectedType === 'broadcast' ? [...campaignMessageVariationsDrafts] : [],
         delay: delayMinMs,
         delay_min: delayMinMs,
         delay_max: delayMaxMs,
@@ -2131,12 +2320,26 @@ function editCampaign(id: number) {
     );
     setSelectValue(document.getElementById('campaignSegment') as HTMLSelectElement | null, campaign.segment || 'all');
 
+    const selectedType: CampaignType = String(campaign.type || '').trim().toLowerCase() === 'drip'
+        ? 'drip'
+        : 'broadcast';
     const messageInput = document.getElementById('campaignMessage') as HTMLTextAreaElement | null;
-    if (messageInput) messageInput.value = campaign.message || '';
-    resetCampaignMessageVariationsState(getCampaignMessageVariationsFromCampaign(campaign));
+    if (selectedType === 'drip') {
+        const dripSteps = parseDripMessageSteps(campaign.message || '');
+        if (messageInput) messageInput.value = dripSteps[0] || '';
+        resetCampaignDripStepsState(dripSteps.slice(1));
+        resetCampaignMessageVariationsState([]);
+    } else {
+        if (messageInput) messageInput.value = campaign.message || '';
+        resetCampaignDripStepsState([]);
+        resetCampaignMessageVariationsState(getCampaignMessageVariationsFromCampaign(campaign));
+    }
+    applyCampaignTypeMode(selectedType);
     closeCampaignMessageVariableMenu();
     bindCampaignMessageVariablePicker();
     bindCampaignMessageVariationsUi();
+    bindCampaignDripStepsUi();
+    bindCampaignTypeSelector();
 
     const { minMs, maxMs } = resolveCampaignDelayRangeMs(campaign);
     setDelayRangeInputs(Math.round(minMs / 1000), Math.round(maxMs / 1000));
