@@ -540,6 +540,9 @@ export default function Campanhas() {
             flex-direction: column;
             gap: 10px;
         }
+        .campaign-variations-panel[hidden] {
+            display: none !important;
+        }
         .campaign-variations-header {
             display: flex;
             align-items: center;
@@ -623,6 +626,9 @@ export default function Campanhas() {
             display: flex;
             flex-direction: column;
             gap: 10px;
+        }
+        .campaign-drip-steps-panel[hidden] {
+            display: none !important;
         }
         .campaign-drip-steps-header {
             display: flex;
