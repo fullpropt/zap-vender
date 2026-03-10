@@ -128,7 +128,7 @@ export default function Campanhas() {
         }
         .campaign-stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 12px;
             margin-bottom: 20px;
             width: 100%;
@@ -313,7 +313,7 @@ export default function Campanhas() {
         }
         @media (max-width: 420px) {
             .campaign-stats {
-                grid-template-columns: 1fr;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 8px;
             }
         }
