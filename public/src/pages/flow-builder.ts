@@ -808,6 +808,16 @@ function isProtectedFlowBoundaryNode(node?: FlowNode | null) {
     return node.type === 'trigger' || node.type === 'end';
 }
 
+function clearOutputEntryLabelsForNode(node?: FlowNode | null) {
+    if (!node) return;
+    node.data.outputEntryLabels = {};
+    edges.forEach((edge) => {
+        if (edge.source === node.id) {
+            delete edge.inputLabel;
+        }
+    });
+}
+
 function applyFlowBuilderModeToIntentNode(node: FlowNode | null | undefined, mode: FlowBuilderMode = currentFlowBuilderMode) {
     if (!node || !isIntentTrigger(node)) return;
 
@@ -826,6 +836,10 @@ function applyFlowBuilderModeToIntentNode(node: FlowNode | null | undefined, mod
         node.data.triggerWelcomeDelaySeconds = 0;
         node.data.triggerWelcomeRepeatMode = 'always';
         node.data.triggerWelcomeRepeatValue = 1;
+    }
+
+    if (normalizedMode === 'menu') {
+        clearOutputEntryLabelsForNode(node);
     }
 }
 
@@ -1903,7 +1917,7 @@ function initializeDefaultIntentFlowSkeleton(options: { selectTrigger?: boolean;
 function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
     const defaults = {
         trigger: {
-            label: subtype === 'keyword' || subtype === 'intent' ? 'Intenção' : 'Novo Contato',
+            label: subtype === 'keyword' || subtype === 'intent' ? 'Início' : 'Novo Contato',
             collapsed: false,
             keyword: '',
             intentRoutes: [],
@@ -2079,6 +2093,7 @@ function renderNode(node: FlowNode) {
     const previewText = String(getNodePreview(node) || '').trim();
     const hasPreview = previewText.length > 0;
     const canDuplicateOrDelete = !isProtectedFlowBoundaryNode(node);
+    const showNodeKind = !isIntentTrigger(node);
     const eventDisplayName = node.type === 'event'
         ? String(node.data.eventName || node.data.eventKey || '').trim()
         : '';
@@ -2108,7 +2123,7 @@ function renderNode(node: FlowNode) {
         <div class="flow-node-header ${node.type}">
             <span class="icon ${icons[node.type] || 'icon-empty'}"></span>
             <div class="title-group">
-                <span class="node-kind">${escapeHtml(getNodeTypeLabel(node))}</span>
+                ${showNodeKind ? `<span class="node-kind">${escapeHtml(getNodeTypeLabel(node))}</span>` : ''}
                 <span class="title">${escapeHtml(String(node.data.label || '').trim() || getNodeTypeLabel(node))}</span>
                 ${eventDisplayName ? `<span class="node-subtitle" title="${escapeHtml(eventDisplayName)}">${escapeHtml(truncateLabel(eventDisplayName, 22))}</span>` : ''}
             </div>
@@ -2710,15 +2725,18 @@ function renderProperties() {
         const outputLabel = String(selectedOutputActionContext.label || '').trim();
         const outputActions = getSelectedOutputActions();
         const outputEntryLabel = getSelectedOutputEntryLabel();
+        const showNextBlockTitleField = !isMenuInteractiveIntentNode(selectedNode);
 
         html += `
             <div class="property-type-summary">
                 <h4 class="property-type-summary-value">Saída ${escapeHtml(outputLabel || selectedHandle)}</h4>
             </div>
-            <div class="property-group">
-                <label>Título no bloco seguinte</label>
-                <input type="text" value="${escapeHtml(outputEntryLabel)}" placeholder="Opcional" onchange="updateSelectedOutputEntryLabel(this.value)">
-            </div>
+            ${showNextBlockTitleField ? `
+                <div class="property-group">
+                    <label>Título no bloco seguinte</label>
+                    <input type="text" value="${escapeHtml(outputEntryLabel)}" placeholder="Opcional" onchange="updateSelectedOutputEntryLabel(this.value)">
+                </div>
+            ` : ''}
             <div class="property-group">
                 <div class="output-action-toolbar">
                     <button class="add-condition-btn output-action-add-btn" onclick="toggleOutputActionTypeMenu(event)">+ Adicionar ação</button>
@@ -4313,8 +4331,11 @@ function normalizeLoadedFlowData() {
         if (isIntentTrigger(node)) {
             if (node.type === 'trigger') {
                 node.subtype = 'keyword';
-            }
-            if (!node.data.label || node.data.label.toLowerCase() === 'palavra-chave') {
+                const normalizedTriggerLabel = String(node.data?.label || '').trim().toLowerCase();
+                if (!normalizedTriggerLabel || normalizedTriggerLabel === 'palavra-chave' || normalizedTriggerLabel === 'keyword' || normalizedTriggerLabel === 'intenção' || normalizedTriggerLabel === 'intencao') {
+                    node.data.label = 'Início';
+                }
+            } else if (!node.data.label || node.data.label.toLowerCase() === 'palavra-chave') {
                 node.data.label = 'Intenção';
             }
             node.data.flowBuilderMode = currentFlowBuilderMode;
