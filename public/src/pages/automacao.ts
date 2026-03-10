@@ -1,7 +1,11 @@
 ﻿// Automacao page logic migrated to module
 
-type TriggerType = 'new_lead' | 'status_change' | 'message_received' | 'keyword' | 'schedule' | 'inactivity';
-type ActionType = 'send_message' | 'change_status' | 'add_tag' | 'start_flow' | 'notify';
+type SupportedTriggerType = 'status_change' | 'message_received' | 'keyword' | 'inactivity';
+type LegacyTriggerType = 'new_lead' | 'schedule';
+type TriggerType = SupportedTriggerType | LegacyTriggerType;
+type SupportedActionType = 'send_message' | 'change_status' | 'add_tag';
+type LegacyActionType = 'start_flow' | 'notify';
+type ActionType = SupportedActionType | LegacyActionType;
 
 type Automation = {
     id: number;
@@ -44,13 +48,16 @@ let automationTags: TagItem[] = [];
 let pendingAutomationTagFilters: string[] | null = null;
 let automationTagFilterGlobalEventsBound = false;
 let expandedAutomationId: number | null = null;
-const RUNTIME_SUPPORTED_TRIGGER_TYPES: TriggerType[] = [
-    'new_lead',
+const RUNTIME_SUPPORTED_TRIGGER_TYPES: SupportedTriggerType[] = [
     'status_change',
     'message_received',
     'keyword',
-    'schedule',
     'inactivity'
+];
+const RUNTIME_SUPPORTED_ACTION_TYPES: SupportedActionType[] = [
+    'send_message',
+    'change_status',
+    'add_tag'
 ];
 
 function appConfirm(message: string, title = 'Confirmacao') {
@@ -61,8 +68,12 @@ function appConfirm(message: string, title = 'Confirmacao') {
     return Promise.resolve(window.confirm(message));
 }
 
-function isRuntimeSupportedTriggerType(type: string): type is TriggerType {
-    return RUNTIME_SUPPORTED_TRIGGER_TYPES.includes(type as TriggerType);
+function isRuntimeSupportedTriggerType(type: string): type is SupportedTriggerType {
+    return RUNTIME_SUPPORTED_TRIGGER_TYPES.includes(type as SupportedTriggerType);
+}
+
+function isRuntimeSupportedActionType(type: string): type is SupportedActionType {
+    return RUNTIME_SUPPORTED_ACTION_TYPES.includes(type as SupportedActionType);
 }
 
 function escapeAutomationText(value: unknown) {
@@ -216,7 +227,7 @@ function getAutomationId() {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
-function getTriggerValue(type: TriggerType): string {
+function getTriggerValue(type: SupportedTriggerType): string {
     switch (type) {
         case 'status_change': {
             const fromStatus = (document.getElementById('triggerFromStatus') as HTMLSelectElement | null)?.value || '';
@@ -226,14 +237,6 @@ function getTriggerValue(type: TriggerType): string {
         }
         case 'keyword':
             return (document.getElementById('triggerKeywords') as HTMLInputElement | null)?.value.trim() || '';
-        case 'schedule': {
-            const time = (document.getElementById('triggerTime') as HTMLInputElement | null)?.value || '';
-            const days = Array.from(document.querySelectorAll('#triggerOptionsContainer input[type=\"checkbox\"]:checked'))
-                .map(input => Number((input as HTMLInputElement).value))
-                .filter(day => Number.isInteger(day) && day >= 0 && day <= 6);
-            if (!time && days.length === 0) return '';
-            return JSON.stringify({ time, days });
-        }
         case 'inactivity':
             return (document.getElementById('triggerInactivity') as HTMLSelectElement | null)?.value || '';
         default:
@@ -241,7 +244,7 @@ function getTriggerValue(type: TriggerType): string {
     }
 }
 
-function applyTriggerValue(type: TriggerType, value?: string | null) {
+function applyTriggerValue(type: SupportedTriggerType, value?: string | null) {
     if (!value) return;
     try {
         if (type === 'status_change') {
@@ -250,19 +253,6 @@ function applyTriggerValue(type: TriggerType, value?: string | null) {
             const toStatus = (document.getElementById('triggerToStatus') as HTMLSelectElement | null);
             if (fromStatus && parsed?.from !== undefined) fromStatus.value = String(parsed.from);
             if (toStatus && parsed?.to !== undefined) toStatus.value = String(parsed.to);
-            return;
-        }
-        if (type === 'schedule') {
-            const parsed = JSON.parse(value);
-            const timeInput = document.getElementById('triggerTime') as HTMLInputElement | null;
-            if (timeInput && parsed?.time) timeInput.value = parsed.time;
-            if (Array.isArray(parsed?.days)) {
-                const selectedDays = new Set(parsed.days.map((day: unknown) => String(day)));
-                document.querySelectorAll('#triggerOptionsContainer input[type=\"checkbox\"]').forEach(input => {
-                    const checkbox = input as HTMLInputElement;
-                    checkbox.checked = selectedDays.has(checkbox.value);
-                });
-            }
             return;
         }
     } catch (error) {
@@ -279,7 +269,7 @@ function applyTriggerValue(type: TriggerType, value?: string | null) {
     }
 }
 
-function getActionValue(type: ActionType): string {
+function getActionValue(type: SupportedActionType): string {
     switch (type) {
         case 'send_message':
             return (document.getElementById('actionMessage') as HTMLTextAreaElement | null)?.value.trim() || '';
@@ -287,16 +277,12 @@ function getActionValue(type: ActionType): string {
             return (document.getElementById('actionStatus') as HTMLSelectElement | null)?.value || '';
         case 'add_tag':
             return (document.getElementById('actionTag') as HTMLInputElement | null)?.value.trim() || '';
-        case 'start_flow':
-            return (document.getElementById('actionFlow') as HTMLSelectElement | null)?.value || '';
-        case 'notify':
-            return (document.getElementById('actionNotification') as HTMLTextAreaElement | null)?.value.trim() || '';
         default:
             return '';
     }
 }
 
-function applyActionValue(type: ActionType, value?: string | null) {
+function applyActionValue(type: SupportedActionType, value?: string | null) {
     if (value === undefined || value === null) return;
     if (type === 'send_message') {
         const messageInput = document.getElementById('actionMessage') as HTMLTextAreaElement | null;
@@ -311,16 +297,6 @@ function applyActionValue(type: ActionType, value?: string | null) {
     if (type === 'add_tag') {
         const tagInput = document.getElementById('actionTag') as HTMLInputElement | null;
         if (tagInput) tagInput.value = value;
-        return;
-    }
-    if (type === 'start_flow') {
-        const flowSelect = document.getElementById('actionFlow') as HTMLSelectElement | null;
-        if (flowSelect) flowSelect.value = value;
-        return;
-    }
-    if (type === 'notify') {
-        const notifyInput = document.getElementById('actionNotification') as HTMLTextAreaElement | null;
-        if (notifyInput) notifyInput.value = value;
     }
 }
 
@@ -678,7 +654,7 @@ async function loadAutomations() {
                 id: 1,
                 name: 'Boas-vindas',
                 description: 'Envia mensagem de boas-vindas para novos leads',
-                trigger_type: 'new_lead',
+                trigger_type: 'message_received',
                 trigger_value: '',
                 action_type: 'send_message',
                 action_value: 'Olá {{nome}}! Seja bem-vindo à ZapVender.',
@@ -706,8 +682,8 @@ async function loadAutomations() {
                 description: 'Notifica equipe quando lead demonstra interesse',
                 trigger_type: 'keyword',
                 trigger_value: 'interesse, preço',
-                action_type: 'notify',
-                action_value: 'Lead interessado: {{nome}}',
+                action_type: 'add_tag',
+                action_value: 'interessado',
                 delay: 0,
                 is_active: false,
                 executions: 45,
@@ -847,9 +823,7 @@ function getActionLabel(type: ActionType | string) {
     const labels = {
         'send_message': 'Enviar mensagem',
         'change_status': 'Alterar status',
-        'add_tag': 'Adicionar tag',
-        'start_flow': 'Iniciar fluxo',
-        'notify': 'Notificar equipe'
+        'add_tag': 'Adicionar tag'
     };
     return labels[type] || type;
 }
@@ -909,22 +883,6 @@ function updateTriggerOptions() {
                 <input type="text" class="form-input" id="triggerKeywords" placeholder="interesse, preço, quanto custa">
             `;
             break;
-        case 'schedule':
-            html = `
-                <label class="form-label">Horário de execução</label>
-                <input type="time" class="form-input" id="triggerTime">
-                <label class="form-label mt-3">Dias da semana</label>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <label class="checkbox-wrapper"><input type="checkbox" value="1"><span class="checkbox-custom"></span>Seg</label>
-                    <label class="checkbox-wrapper"><input type="checkbox" value="2"><span class="checkbox-custom"></span>Ter</label>
-                    <label class="checkbox-wrapper"><input type="checkbox" value="3"><span class="checkbox-custom"></span>Qua</label>
-                    <label class="checkbox-wrapper"><input type="checkbox" value="4"><span class="checkbox-custom"></span>Qui</label>
-                    <label class="checkbox-wrapper"><input type="checkbox" value="5"><span class="checkbox-custom"></span>Sex</label>
-                    <label class="checkbox-wrapper"><input type="checkbox" value="6"><span class="checkbox-custom"></span>Sáb</label>
-                    <label class="checkbox-wrapper"><input type="checkbox" value="0"><span class="checkbox-custom"></span>Dom</label>
-                </div>
-            `;
-            break;
         case 'inactivity':
             html = `
                 <label class="form-label">Tempo de inatividade</label>
@@ -978,20 +936,6 @@ Variáveis: {{nome}}"></textarea>
                 <input type="text" class="form-input" id="actionTag" placeholder="Nome da tag">
             `;
             break;
-        case 'start_flow':
-            html = `
-                <label class="form-label">Fluxo</label>
-                <select class="form-select" id="actionFlow">
-                    <option value="">Selecione um fluxo...</option>
-                </select>
-            `;
-            break;
-        case 'notify':
-            html = `
-                <label class="form-label">Mensagem de notificação</label>
-                <textarea class="form-textarea" id="actionNotification" rows="2" placeholder="Novo lead interessado: {{nome}}"></textarea>
-            `;
-            break;
     }
     
     container.innerHTML = html;
@@ -1016,15 +960,15 @@ async function saveAutomation() {
     const automationId = getAutomationId();
     const name = (document.getElementById('automationName') as HTMLInputElement | null)?.value.trim() || '';
     const description = (document.getElementById('automationDescription') as HTMLInputElement | null)?.value.trim() || '';
-    const triggerType = ((document.getElementById('triggerType') as HTMLSelectElement | null)?.value || '') as TriggerType;
-    const actionType = ((document.getElementById('actionType') as HTMLSelectElement | null)?.value || '') as ActionType;
+    const triggerTypeRaw = (document.getElementById('triggerType') as HTMLSelectElement | null)?.value || '';
+    const actionTypeRaw = (document.getElementById('actionType') as HTMLSelectElement | null)?.value || '';
     const delay = parseInt((document.getElementById('actionDelay') as HTMLInputElement | null)?.value || '0', 10);
 
     if (!name) {
         showToast('error', 'Erro', 'Nome ? obrigat?rio');
         return;
     }
-    if (!isRuntimeSupportedTriggerType(triggerType)) {
+    if (!isRuntimeSupportedTriggerType(triggerTypeRaw)) {
         showToast(
             'error',
             'Erro',
@@ -1032,7 +976,17 @@ async function saveAutomation() {
         );
         return;
     }
+    if (!isRuntimeSupportedActionType(actionTypeRaw)) {
+        showToast(
+            'error',
+            'Erro',
+            'Ação invalida.'
+        );
+        return;
+    }
 
+    const actionType: SupportedActionType = actionTypeRaw;
+    const triggerType: SupportedTriggerType = triggerTypeRaw;
     const triggerValue = getTriggerValue(triggerType);
     const actionValue = getActionValue(actionType);
     const existing = automationId ? automations.find(a => a.id === automationId) : null;
@@ -1105,14 +1059,20 @@ function editAutomation(id: number) {
     if (descriptionInput) descriptionInput.value = automation.description || '';
 
     const triggerSelect = document.getElementById('triggerType') as HTMLSelectElement | null;
-    if (triggerSelect) triggerSelect.value = automation.trigger_type;
+    const normalizedTriggerType: SupportedTriggerType = isRuntimeSupportedTriggerType(automation.trigger_type)
+        ? automation.trigger_type
+        : 'message_received';
+    if (triggerSelect) triggerSelect.value = normalizedTriggerType;
     updateTriggerOptions();
-    applyTriggerValue(automation.trigger_type, automation.trigger_value);
+    applyTriggerValue(normalizedTriggerType, automation.trigger_value);
 
     const actionSelect = document.getElementById('actionType') as HTMLSelectElement | null;
-    if (actionSelect) actionSelect.value = automation.action_type;
+    const normalizedActionType: SupportedActionType = isRuntimeSupportedActionType(automation.action_type)
+        ? automation.action_type
+        : 'send_message';
+    if (actionSelect) actionSelect.value = normalizedActionType;
     updateActionOptions();
-    applyActionValue(automation.action_type, automation.action_value);
+    applyActionValue(normalizedActionType, automation.action_value);
 
     const delaySelect = document.getElementById('actionDelay') as HTMLSelectElement | null;
     if (delaySelect) delaySelect.value = String(automation.delay || 0);
