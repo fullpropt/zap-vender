@@ -2583,6 +2583,7 @@ class FlowService extends EventEmitter {
     resolveTriggerIntentRoutes(node) {
         const nodeType = String(node?.type || '').trim().toLowerCase();
         const subtype = String(node?.subtype || '').trim().toLowerCase();
+        const allowPhraseLessRoutes = this.isIntentMenuEnabled(node);
         if (nodeType === 'trigger' && subtype !== 'keyword' && subtype !== 'intent') {
             return [];
         }
@@ -2604,7 +2605,8 @@ class FlowService extends EventEmitter {
                     );
                     const followupResponse = followupResponses[0] || '';
                     const normalizedPhrases = parseIntentPhrases(phrases);
-                    if (!id || normalizedPhrases.length === 0) return null;
+                    if (!id) return null;
+                    if (!allowPhraseLessRoutes && normalizedPhrases.length === 0) return null;
                     return { id, label, phrases, response, followupResponse, followupResponses, normalizedPhrases };
                 })
                 .filter(Boolean);
@@ -2811,6 +2813,7 @@ class FlowService extends EventEmitter {
 
     async maybeSendTriggerWelcomeMessage(execution, node = null) {
         if (!this.isIntentTriggerNode(node)) return false;
+        if (this.isIntentMenuEnabled(node)) return false;
         if (!this.sendFunction) return false;
 
         const config = this.resolveTriggerWelcomeConfig(node);

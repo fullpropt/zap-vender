@@ -166,8 +166,8 @@ describe('FlowService intent routing compatibility', () => {
                 menuButtonText: 'Abrir Menu',
                 menuSectionTitle: 'Intencoes',
                 intentRoutes: [
-                    { id: 'route-store', label: 'Loja Fisica', phrases: 'loja fisica' },
-                    { id: 'route-models', label: 'Modelos', phrases: 'modelos' }
+                    { id: 'route-store', label: 'Loja Fisica', phrases: '' },
+                    { id: 'route-models', label: 'Modelos', phrases: '' }
                 ],
                 outputEntryLabels: {
                     'route-store': 'Quero loja física'
@@ -207,8 +207,8 @@ describe('FlowService intent routing compatibility', () => {
             data: {
                 responseMode: 'menu',
                 intentRoutes: [
-                    { id: 'route-store', label: 'Loja Fisica', phrases: 'loja fisica' },
-                    { id: 'route-models', label: 'Modelos', phrases: 'modelos' }
+                    { id: 'route-store', label: 'Loja Fisica', phrases: '' },
+                    { id: 'route-models', label: 'Modelos', phrases: '' }
                 ]
             }
         };
@@ -260,8 +260,8 @@ describe('FlowService intent routing compatibility', () => {
                 menuButtonText: 'Ver Categorias',
                 menuSectionTitle: 'Categorias',
                 intentRoutes: [
-                    { id: 'route-store', label: 'Loja Fisica', phrases: 'loja fisica' },
-                    { id: 'route-models', label: 'Modelos', phrases: 'modelos' }
+                    { id: 'route-store', label: 'Loja Fisica', phrases: '' },
+                    { id: 'route-models', label: 'Modelos', phrases: '' }
                 ]
             }
         };
@@ -288,6 +288,33 @@ describe('FlowService intent routing compatibility', () => {
             mediaType: 'list',
             content: 'Qual categoria voce procura?'
         }));
+    });
+
+    test('maybeSendTriggerWelcomeMessage ignora boas-vindas ocultas em trigger modo menu', async () => {
+        const service = new FlowService();
+        const sendMock = jest.fn().mockResolvedValue();
+        service.init(sendMock);
+
+        const triggerNode = {
+            id: 'trigger-intent-menu',
+            type: 'trigger',
+            subtype: 'intent',
+            data: {
+                responseMode: 'menu',
+                triggerWelcomeEnabled: true,
+                triggerWelcomeContent: 'Boas-vindas antiga'
+            }
+        };
+
+        const sent = await service.maybeSendTriggerWelcomeMessage({
+            flow: { id: 88 },
+            conversation: { id: 100, session_id: 'session-1' },
+            lead: { id: 10, phone: '5511999999999', jid: '5511999999999@s.whatsapp.net' },
+            variables: {}
+        }, triggerNode);
+
+        expect(sent).toBe(false);
+        expect(sendMock).not.toHaveBeenCalled();
     });
 
     test('continueFlow treats trigger keyword node as intent routing node', async () => {

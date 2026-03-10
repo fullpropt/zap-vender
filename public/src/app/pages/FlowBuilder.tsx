@@ -1898,6 +1898,45 @@ export default function FlowBuilder() {
             min-width: 0;
         }
 
+        .intent-menu-option-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border: 1px solid rgba(var(--primary-rgb), 0.18);
+            border-radius: 10px;
+            background: #f8fafc;
+        }
+
+        .intent-menu-option-row + .intent-menu-option-row {
+            margin-top: 8px;
+        }
+
+        .intent-menu-option-row .intent-route-name-input {
+            flex: 1 1 auto;
+        }
+
+        .intent-menu-option-remove-btn {
+            flex: 0 0 auto;
+            width: 28px;
+            height: 28px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: white;
+            color: var(--gray);
+            border-radius: 6px;
+            cursor: pointer;
+            line-height: 1;
+            font-size: 16px;
+            padding: 0;
+            transition: all 0.2s;
+        }
+
+        .intent-menu-option-remove-btn:hover {
+            border-color: rgba(239, 68, 68, 0.4);
+            background: rgba(239, 68, 68, 0.08);
+            color: var(--danger);
+        }
+
         .intent-route-response-input {
             min-width: 0;
             min-height: 72px;

@@ -2,6 +2,7 @@
 
 // Estado do construtor
 type NodeType = 'trigger' | 'intent' | 'message' | 'message_once' | 'wait' | 'condition' | 'delay' | 'transfer' | 'tag' | 'status' | 'webhook' | 'event' | 'end';
+type FlowBuilderMode = 'humanized' | 'menu';
 type OutputActionType = 'event' | 'status' | 'tag' | 'webhook';
 type OutputActionItem = {
     id: string;
@@ -41,6 +42,7 @@ type NodeData = {
     onceRepeatMode?: string;
     onceRepeatValue?: number;
     timeout?: number;
+    flowBuilderMode?: FlowBuilderMode;
     responseMode?: 'text' | 'menu';
     menuPrompt?: string;
     menuButtonText?: string;
@@ -148,6 +150,7 @@ let currentFlowId: number | null = null;
 let currentFlowName = '';
 let currentFlowIsActive = true;
 let currentFlowSessionId = '';
+let currentFlowBuilderMode: FlowBuilderMode = 'humanized';
 let flowHasUnsavedChanges = false;
 let pendingNodeDraft: Partial<NodeData> | null = null;
 let pendingNodeDraftId: string | null = null;
@@ -770,6 +773,67 @@ function isIntentTrigger(node?: FlowNode | null) {
     return node.type === 'trigger' && (node.subtype === 'keyword' || node.subtype === 'intent');
 }
 
+function normalizeFlowBuilderMode(value: unknown): FlowBuilderMode {
+    return String(value || '').trim().toLowerCase() === 'menu' ? 'menu' : 'humanized';
+}
+
+function inferFlowBuilderModeFromNodes(nodeList: FlowNode[] = nodes) {
+    const triggerNode = nodeList.find((node) => node.type === 'trigger');
+    const storedMode = triggerNode?.data?.flowBuilderMode;
+    if (storedMode) {
+        return normalizeFlowBuilderMode(storedMode);
+    }
+
+    const hasMenuIntentNode = nodeList.some((node) => (
+        isIntentTrigger(node)
+        && String(node?.data?.responseMode || '').trim().toLowerCase() === 'menu'
+    ));
+    return hasMenuIntentNode ? 'menu' : 'humanized';
+}
+
+function getCurrentFlowBuilderMode() {
+    return normalizeFlowBuilderMode(currentFlowBuilderMode);
+}
+
+function isMenuInteractiveFlowMode(value: unknown = currentFlowBuilderMode) {
+    return normalizeFlowBuilderMode(value) === 'menu';
+}
+
+function isMenuInteractiveIntentNode(node?: FlowNode | null) {
+    return isIntentTrigger(node) && isMenuInteractiveFlowMode(node?.data?.flowBuilderMode || currentFlowBuilderMode);
+}
+
+function isProtectedFlowBoundaryNode(node?: FlowNode | null) {
+    if (!node) return false;
+    return node.type === 'trigger' || node.type === 'end';
+}
+
+function applyFlowBuilderModeToIntentNode(node: FlowNode | null | undefined, mode: FlowBuilderMode = currentFlowBuilderMode) {
+    if (!node || !isIntentTrigger(node)) return;
+
+    const normalizedMode = normalizeFlowBuilderMode(mode);
+    node.data.flowBuilderMode = normalizedMode;
+    node.data.responseMode = normalizedMode === 'menu' ? 'menu' : 'text';
+    node.data.menuPrompt = String(node.data.menuPrompt || '').trim() || 'Escolha uma opção no menu abaixo:';
+    node.data.menuButtonText = String(node.data.menuButtonText || '').trim() || 'Ver Menu';
+    node.data.menuSectionTitle = String(node.data.menuSectionTitle || '').trim() || 'Opções';
+    node.data.menuTitle = String(node.data.menuTitle || '').trim();
+    node.data.menuFooter = String(node.data.menuFooter || '').trim();
+
+    if (normalizedMode === 'menu' && node.type === 'trigger') {
+        node.data.triggerWelcomeEnabled = false;
+        node.data.triggerWelcomeContent = '';
+        node.data.triggerWelcomeDelaySeconds = 0;
+        node.data.triggerWelcomeRepeatMode = 'always';
+        node.data.triggerWelcomeRepeatValue = 1;
+    }
+}
+
+function syncFlowBuilderModeAcrossIntentNodes(mode: FlowBuilderMode = currentFlowBuilderMode) {
+    currentFlowBuilderMode = normalizeFlowBuilderMode(mode);
+    nodes.forEach((node) => applyFlowBuilderModeToIntentNode(node, currentFlowBuilderMode));
+}
+
 function normalizeRouteId(value: string) {
     return String(value || '')
         .trim()
@@ -983,8 +1047,12 @@ function getOutputHandles(node: FlowNode) {
     const routes = getIntentRoutes(node);
     const routeHandles = routes.map((route) => ({
         handle: route.id || normalizeRouteId(route.label || route.phrases || ''),
-        label: route.label || route.phrases || 'Intenção'
+        label: route.label || route.phrases || (isMenuInteractiveIntentNode(node) ? 'Opção' : 'Intenção')
     }));
+
+    if (isMenuInteractiveIntentNode(node)) {
+        return routeHandles;
+    }
 
     return [...routeHandles, { handle: DEFAULT_HANDLE, label: 'Outra resposta' }];
 }
@@ -1717,6 +1785,10 @@ function addNode(type: NodeType, subtype: string, x: number, y: number) {
         position: { x, y },
         data: getDefaultNodeData(type, subtype)
     };
+
+    if (isIntentTrigger(node)) {
+        applyFlowBuilderModeToIntentNode(node, getCurrentFlowBuilderMode());
+    }
     
     nodes.push(node);
     renderNode(node);
@@ -1777,9 +1849,10 @@ function addIntentBlock() {
     addNode('intent', '', nextPosition.x, nextPosition.y);
 }
 
-function initializeDefaultIntentFlowSkeleton(options: { selectTrigger?: boolean; markDirty?: boolean } = {}) {
+function initializeDefaultIntentFlowSkeleton(options: { selectTrigger?: boolean; markDirty?: boolean; flowBuilderMode?: FlowBuilderMode } = {}) {
     const selectTrigger = options.selectTrigger !== false;
     const markDirty = options.markDirty !== false;
+    currentFlowBuilderMode = normalizeFlowBuilderMode(options.flowBuilderMode || currentFlowBuilderMode);
     const triggerNodeId = buildFlowNodeId('trigger');
     const endNodeId = buildFlowNodeId('end');
 
@@ -1790,6 +1863,7 @@ function initializeDefaultIntentFlowSkeleton(options: { selectTrigger?: boolean;
         position: { x: 170, y: 180 },
         data: getDefaultNodeData('trigger', 'keyword')
     };
+    applyFlowBuilderModeToIntentNode(triggerNode, currentFlowBuilderMode);
 
     const endNode: FlowNode = {
         id: endNodeId,
@@ -1800,12 +1874,14 @@ function initializeDefaultIntentFlowSkeleton(options: { selectTrigger?: boolean;
     };
 
     nodes = [triggerNode, endNode];
-    edges = [{
-        source: triggerNodeId,
-        target: endNodeId,
-        sourceHandle: DEFAULT_HANDLE,
-        targetHandle: DEFAULT_HANDLE
-    }];
+    edges = isMenuInteractiveFlowMode(currentFlowBuilderMode)
+        ? []
+        : [{
+            source: triggerNodeId,
+            target: endNodeId,
+            sourceHandle: DEFAULT_HANDLE,
+            targetHandle: DEFAULT_HANDLE
+        }];
 
     const canvasContainer = document.getElementById('canvasContainer') as HTMLElement | null;
     const connectionsSvg = document.getElementById('connectionsSvg') as HTMLElement | null;
@@ -1832,10 +1908,11 @@ function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
             keyword: '',
             intentRoutes: [],
             intentResponseDelaySeconds: 0,
-            responseMode: 'text',
-            menuPrompt: 'Escolha uma intenção no menu abaixo:',
+            flowBuilderMode: getCurrentFlowBuilderMode(),
+            responseMode: isMenuInteractiveFlowMode() ? 'menu' : 'text',
+            menuPrompt: 'Escolha uma opção no menu abaixo:',
             menuButtonText: 'Ver Menu',
-            menuSectionTitle: 'Intenções',
+            menuSectionTitle: 'Opções',
             menuTitle: '',
             menuFooter: '',
             intentDefaultResponse: '',
@@ -1855,10 +1932,11 @@ function getDefaultNodeData(type: NodeType, subtype?: string): NodeData {
             keyword: '',
             intentRoutes: [],
             intentResponseDelaySeconds: 0,
-            responseMode: 'text',
-            menuPrompt: 'Escolha uma intenção no menu abaixo:',
+            flowBuilderMode: getCurrentFlowBuilderMode(),
+            responseMode: isMenuInteractiveFlowMode() ? 'menu' : 'text',
+            menuPrompt: 'Escolha uma opção no menu abaixo:',
             menuButtonText: 'Ver Menu',
-            menuSectionTitle: 'Intenções',
+            menuSectionTitle: 'Opções',
             menuTitle: '',
             menuFooter: '',
             intentDefaultResponse: '',
@@ -2000,6 +2078,7 @@ function renderNode(node: FlowNode) {
     const isEventCircle = node.type === 'event';
     const previewText = String(getNodePreview(node) || '').trim();
     const hasPreview = previewText.length > 0;
+    const canDuplicateOrDelete = !isProtectedFlowBoundaryNode(node);
     const eventDisplayName = node.type === 'event'
         ? String(node.data.eventName || node.data.eventKey || '').trim()
         : '';
@@ -2034,12 +2113,14 @@ function renderNode(node: FlowNode) {
                 ${eventDisplayName ? `<span class="node-subtitle" title="${escapeHtml(eventDisplayName)}">${escapeHtml(truncateLabel(eventDisplayName, 22))}</span>` : ''}
             </div>
             <div class="node-header-actions">
-                <button class="node-header-btn duplicate-btn" title="Duplicar bloco" aria-label="Duplicar bloco" onclick="duplicateNode('${node.id}', event)">
-                    <span class="icon icon-templates icon-sm"></span>
-                </button>
-                <button class="node-header-btn delete-btn" title="Excluir bloco" aria-label="Excluir bloco" onclick="deleteNode('${node.id}')">
-                    <span class="icon icon-delete icon-sm"></span>
-                </button>
+                ${canDuplicateOrDelete ? `
+                    <button class="node-header-btn duplicate-btn" title="Duplicar bloco" aria-label="Duplicar bloco" onclick="duplicateNode('${node.id}', event)">
+                        <span class="icon icon-templates icon-sm"></span>
+                    </button>
+                    <button class="node-header-btn delete-btn" title="Excluir bloco" aria-label="Excluir bloco" onclick="deleteNode('${node.id}')">
+                        <span class="icon icon-delete icon-sm"></span>
+                    </button>
+                ` : ''}
             </div>
         </div>
         ${hasPreview ? `
@@ -2521,6 +2602,8 @@ function deselectNode() {
 // Deletar no
 function deleteNode(id: string) {
     if (isFlowReadOnlyMode()) return;
+    const node = nodes.find((item) => item.id === id);
+    if (isProtectedFlowBoundaryNode(node)) return;
     if (connectionStart?.nodeId === id) {
         cancelConnection();
     }
@@ -2552,6 +2635,7 @@ function duplicateNode(id: string, event?: Event) {
 
     const sourceNode = nodes.find((node) => node.id === id);
     if (!sourceNode) return;
+    if (isProtectedFlowBoundaryNode(sourceNode)) return;
 
     const duplicate: FlowNode = {
         id: `node_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
@@ -2759,16 +2843,12 @@ function renderProperties() {
                 const routes = Array.isArray(draftRoutes) && draftRoutes.length > 0
                     ? draftRoutes
                     : getIntentRoutes(selectedNode);
+                const isMenuIntentNode = isMenuInteractiveIntentNode(selectedNode);
                 const intentResponseDelaySeconds = Number.isFinite(Number(getNodePropValue('intentResponseDelaySeconds', selectedNode.data.intentResponseDelaySeconds)))
                     ? Math.max(0, Number(getNodePropValue('intentResponseDelaySeconds', selectedNode.data.intentResponseDelaySeconds)))
                     : 0;
-                const intentResponseModeRaw = String(getNodePropValue('responseMode', selectedNode.data.responseMode || 'text')).trim().toLowerCase();
-                const intentResponseMode = intentResponseModeRaw === 'menu' ? 'menu' : 'text';
-                const intentMenuPrompt = String(getNodePropValue('menuPrompt', selectedNode.data.menuPrompt || 'Escolha uma intenção no menu abaixo:'));
+                const intentMenuPrompt = String(getNodePropValue('menuPrompt', selectedNode.data.menuPrompt || 'Escolha uma opção no menu abaixo:'));
                 const intentMenuButtonText = String(getNodePropValue('menuButtonText', selectedNode.data.menuButtonText || 'Ver Menu'));
-                const intentMenuSectionTitle = String(getNodePropValue('menuSectionTitle', selectedNode.data.menuSectionTitle || 'Intenções'));
-                const intentMenuTitle = String(getNodePropValue('menuTitle', selectedNode.data.menuTitle || ''));
-                const intentMenuFooter = String(getNodePropValue('menuFooter', selectedNode.data.menuFooter || ''));
                 const intentDefaultResponse = String(getNodePropValue('intentDefaultResponse', selectedNode.data.intentDefaultResponse || ''));
                 const intentDefaultFollowupResponse = String(getNodePropValue('intentDefaultFollowupResponse', selectedNode.data.intentDefaultFollowupResponse || ''));
                 const intentDefaultFollowupResponses = coerceIntentMessageListForEditor(
@@ -2799,28 +2879,12 @@ function renderProperties() {
                     ? isIntentPropertySectionExpanded('welcome', false)
                     : false;
 
-                html += `
-                    <div class="property-inline-row">
-                        <div class="property-group property-group-compact">
+                if (isMenuIntentNode) {
+                    html += `
+                        <div class="property-group">
                             <label>Nome do Bloco</label>
                             <input type="text" value="${escapeHtml(nodeLabelValue)}" onchange="updateNodeProperty('label', this.value)">
                         </div>
-                        <div class="property-group property-group-compact">
-                            <label>Delay</label>
-                            <div class="property-input-with-unit">
-                                <input type="number" min="0" step="1" value="${intentResponseDelaySeconds}" onchange="updateNodeProperty('intentResponseDelaySeconds', Math.max(0, parseInt(this.value || '0', 10) || 0))">
-                                <span class="property-unit">s</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="property-group">
-                        <label>Modo de Resposta</label>
-                        <select onchange="updateNodeProperty('responseMode', this.value)">
-                            <option value="text" ${intentResponseMode === 'text' ? 'selected' : ''}>Texto livre (atual)</option>
-                            <option value="menu" ${intentResponseMode === 'menu' ? 'selected' : ''}>Menu interativo</option>
-                        </select>
-                    </div>
-                    ${intentResponseMode === 'menu' ? `
                         <div class="property-group">
                             <label>Mensagem do Menu</label>
                             <textarea onchange="updateNodeProperty('menuPrompt', this.value)">${escapeHtml(intentMenuPrompt)}</textarea>
@@ -2830,18 +2894,40 @@ function renderProperties() {
                             <input type="text" value="${escapeHtml(intentMenuButtonText)}" onchange="updateNodeProperty('menuButtonText', this.value)" placeholder="Ver Menu">
                         </div>
                         <div class="property-group">
-                            <label>Título da Seção</label>
-                            <input type="text" value="${escapeHtml(intentMenuSectionTitle)}" onchange="updateNodeProperty('menuSectionTitle', this.value)" placeholder="Intenções">
+                            <label>Opções</label>
+                            <div class="intent-routes-editor">
+                                ${routes.map((route, index) => `
+                                    <div class="intent-menu-option-row">
+                                        <input
+                                            class="intent-route-name-input"
+                                            type="text"
+                                            value="${escapeHtml(String(route.label || ''))}"
+                                            title="${escapeHtml(String(route.label || '').trim() || ('Opção ' + (index + 1)))}"
+                                            placeholder="Ex.: Ver modelos"
+                                            onchange="updateIntentRoute(${index}, 'label', this.value)"
+                                        >
+                                        <button class="remove-btn intent-menu-option-remove-btn" type="button" title="Remover opção" onclick="removeIntentRoute(${index})">×</button>
+                                    </div>
+                                `).join('')}
+                                <button class="add-condition-btn intent-add-route-btn" type="button" onclick="addIntentRoute()">+ Adicionar opção</button>
+                            </div>
                         </div>
-                        <div class="property-group">
-                            <label>Título (opcional)</label>
-                            <input type="text" value="${escapeHtml(intentMenuTitle)}" onchange="updateNodeProperty('menuTitle', this.value)">
+                    `;
+                } else {
+                    html += `
+                        <div class="property-inline-row">
+                            <div class="property-group property-group-compact">
+                                <label>Nome do Bloco</label>
+                                <input type="text" value="${escapeHtml(nodeLabelValue)}" onchange="updateNodeProperty('label', this.value)">
+                            </div>
+                            <div class="property-group property-group-compact">
+                                <label>Delay</label>
+                                <div class="property-input-with-unit">
+                                    <input type="number" min="0" step="1" value="${intentResponseDelaySeconds}" onchange="updateNodeProperty('intentResponseDelaySeconds', Math.max(0, parseInt(this.value || '0', 10) || 0))">
+                                    <span class="property-unit">s</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="property-group">
-                            <label>Rodapé (opcional)</label>
-                            <input type="text" value="${escapeHtml(intentMenuFooter)}" onchange="updateNodeProperty('menuFooter', this.value)">
-                        </div>
-                    ` : ''}
                     <div class="property-group">
                         <label>Intenções</label>
                         <div class="intent-routes-editor">
@@ -2983,6 +3069,7 @@ function renderProperties() {
                         </div>
                     </div>
                 `;
+                }
             }
             break;
             
@@ -3393,6 +3480,10 @@ function confirmNodePropertyChanges() {
         }
     }
 
+    if (isIntentTrigger(selectedNode)) {
+        applyFlowBuilderModeToIntentNode(selectedNode, getCurrentFlowBuilderMode());
+    }
+
     resetPendingNodeDraft();
     rerenderNode(selectedNode.id);
     targetNodeIdsToRerender.forEach((targetNodeId) => {
@@ -3566,6 +3657,10 @@ function cleanupInvalidEdgesForNode(nodeId: string) {
     });
 }
 
+function cleanupInvalidEdgesForAllNodes() {
+    nodes.forEach((node) => cleanupInvalidEdgesForNode(node.id));
+}
+
 function getEditableIntentRoutesDraft() {
     if (!selectedNode || !isIntentTrigger(selectedNode)) return [];
     const existingDraft = getNodePropValue('intentRoutes', null as any);
@@ -3633,9 +3728,10 @@ function addIntentRoute() {
     const routes = getEditableIntentRoutesDraft();
 
     const nextIndex = routes.length + 1;
+    const nextLabelPrefix = isMenuInteractiveIntentNode(selectedNode) ? 'Opção' : 'Intenção';
     const nextRoute = {
         id: normalizeRouteId(`intent-${Date.now()}-${nextIndex}`),
-        label: `Intenção ${nextIndex}`,
+        label: `${nextLabelPrefix} ${nextIndex}`,
         phrases: '',
         response: '',
         followupResponse: '',
@@ -4082,8 +4178,13 @@ function applyZoom() {
 // Limpar canvas
 async function clearCanvas() {
     if (!await showFlowConfirmDialog('Limpar todo o fluxo?', 'Limpar fluxo')) return;
+    const preservedFlowBuilderMode = getCurrentFlowBuilderMode();
     resetEditorState();
-    initializeDefaultIntentFlowSkeleton({ selectTrigger: true, markDirty: true });
+    initializeDefaultIntentFlowSkeleton({
+        selectTrigger: true,
+        markDirty: true,
+        flowBuilderMode: preservedFlowBuilderMode
+    });
 }
 
 function resetEditorState() {
@@ -4097,6 +4198,7 @@ function resetEditorState() {
     currentFlowName = '';
     currentFlowIsActive = true;
     currentFlowSessionId = '';
+    currentFlowBuilderMode = 'humanized';
     zoom = 1;
     pan = { x: 0, y: 0 };
 
@@ -4144,6 +4246,8 @@ function buildTriggerPayload(trigger?: FlowNode) {
 }
 
 function normalizeLoadedFlowData() {
+    currentFlowBuilderMode = inferFlowBuilderModeFromNodes(nodes);
+
     nodes = nodes.map((node) => {
         node.data.collapsed = false;
         node.data.outputActions = sanitizeOutputActionsMap(
@@ -4213,15 +4317,15 @@ function normalizeLoadedFlowData() {
             if (!node.data.label || node.data.label.toLowerCase() === 'palavra-chave') {
                 node.data.label = 'Intenção';
             }
+            node.data.flowBuilderMode = currentFlowBuilderMode;
             const rawIntentDelay = Number(node.data?.intentResponseDelaySeconds);
             node.data.intentResponseDelaySeconds = Number.isFinite(rawIntentDelay)
                 ? Math.max(0, Math.trunc(rawIntentDelay))
                 : 0;
-            const rawIntentResponseMode = String((node.data as any)?.responseMode || '').trim().toLowerCase();
-            node.data.responseMode = rawIntentResponseMode === 'menu' ? 'menu' : 'text';
-            node.data.menuPrompt = String((node.data as any)?.menuPrompt || '').trim() || 'Escolha uma intenção no menu abaixo:';
+            node.data.responseMode = currentFlowBuilderMode === 'menu' ? 'menu' : 'text';
+            node.data.menuPrompt = String((node.data as any)?.menuPrompt || '').trim() || 'Escolha uma opção no menu abaixo:';
             node.data.menuButtonText = String((node.data as any)?.menuButtonText || '').trim() || 'Ver Menu';
-            node.data.menuSectionTitle = String((node.data as any)?.menuSectionTitle || '').trim() || 'Intenções';
+            node.data.menuSectionTitle = String((node.data as any)?.menuSectionTitle || '').trim() || 'Opções';
             node.data.menuTitle = String((node.data as any)?.menuTitle || '').trim();
             node.data.menuFooter = String((node.data as any)?.menuFooter || '').trim();
             node.data.intentDefaultResponse = String(node.data?.intentDefaultResponse || '').trim();
@@ -4248,6 +4352,7 @@ function normalizeLoadedFlowData() {
                     ? Math.max(1, Math.trunc(rawWelcomeValue))
                     : 1;
             }
+            applyFlowBuilderModeToIntentNode(node, currentFlowBuilderMode);
             syncIntentRoutesFromNode(node);
         }
         return node;
@@ -4265,6 +4370,7 @@ function normalizeLoadedFlowData() {
             inputLabel: String((edge as any)?.inputLabel || '').trim() || undefined
         };
     });
+    cleanupInvalidEdgesForAllNodes();
 }
 
 // Salvar fluxo
@@ -4299,6 +4405,9 @@ async function saveFlow() {
         await showFlowAlertDialog('Sessão expirada. Faça login novamente.', 'Sessao');
         return;
     }
+
+    syncFlowBuilderModeAcrossIntentNodes(getCurrentFlowBuilderMode());
+    cleanupInvalidEdgesForAllNodes();
 
     const trigger = nodes.find(n => n.type === 'trigger');
     const triggerPayload = buildTriggerPayload(trigger);
@@ -4888,15 +4997,21 @@ async function loadFlow(id: number, options: LoadFlowOptions = {}): Promise<bool
 
 // Criar novo fluxo
 async function createNewFlow() {
-    const typedName = await showFlowPromptDialog('Escolha um nome para o novo fluxo:', {
+    const draft = await showFlowPromptSelectDialog('Escolha um nome e o formato do novo fluxo:', {
         title: 'Novo fluxo',
+        defaultSelectValue: 'humanized',
         placeholder: 'Ex.: Captacao de leads - Plano Premium',
-        confirmLabel: 'Criar fluxo'
+        confirmLabel: 'Criar fluxo',
+        selectOptions: [
+            { value: 'humanized', label: 'Humanizado' },
+            { value: 'menu', label: 'Menu interativo' }
+        ]
     });
 
-    if (typedName === null) return;
+    if (draft === null) return;
 
-    const nextName = String(typedName || '').trim();
+    const nextName = String(draft.inputValue || '').trim();
+    const nextFlowBuilderMode = normalizeFlowBuilderMode(draft.selectValue || 'humanized');
     if (!nextName) {
         await showFlowAlertDialog('Informe um nome para criar o novo fluxo.', 'Novo fluxo');
         return;
@@ -4906,8 +5021,13 @@ async function createNewFlow() {
     closeFlowsModal({ force: true });
     persistLastOpenFlowId(null);
     currentFlowName = nextName;
+    currentFlowBuilderMode = nextFlowBuilderMode;
     renderCurrentFlowName();
-    initializeDefaultIntentFlowSkeleton({ selectTrigger: true, markDirty: true });
+    initializeDefaultIntentFlowSkeleton({
+        selectTrigger: true,
+        markDirty: true,
+        flowBuilderMode: nextFlowBuilderMode
+    });
 }
 
 function applyAiDraftToEditor(draft: AiGeneratedFlowDraft) {
