@@ -1381,6 +1381,23 @@ const io = new Server(server, {
 
 });
 
+io.engine.on('connection_error', (error) => {
+    const request = error?.req || {};
+    const clientIp = String(
+        request?.headers?.['x-forwarded-for']
+        || request?.socket?.remoteAddress
+        || ''
+    ).split(',')[0].trim();
+    const origin = String(request?.headers?.origin || '').trim();
+    const code = String(error?.code || '').trim();
+    const context = String(error?.context || '').trim();
+    const message = String(error?.message || '').trim();
+    console.warn(
+        `[socket.io] connection_error code=${code || 'n/a'} message=${message || 'n/a'} ` +
+        `origin=${origin || 'n/a'} ip=${clientIp || 'n/a'} context=${context || 'n/a'}`
+    );
+});
+
 
 
 // AutenticaÃ§Ã£o via JWT no handshake do Socket.IO
@@ -1435,6 +1452,15 @@ function buildSocketRequestLike(socket) {
     return { user: socket?.user || null };
 }
 
+function getSocketClientIp(socket) {
+    return String(
+        socket?.handshake?.headers?.['x-forwarded-for']
+        || socket?.request?.socket?.remoteAddress
+        || socket?.conn?.remoteAddress
+        || ''
+    ).split(',')[0].trim();
+}
+
 io.use((socket, next) => {
 
     try {
@@ -1444,15 +1470,18 @@ io.use((socket, next) => {
         const token = socket.handshake.auth?.token || (headerToken ? headerToken.replace(/Bearer\s+/i, '') : null);
 
         if (!token) {
-
+            console.warn(
+                `[socket.io] unauthorized_handshake reason=missing_token origin=${String(socket?.handshake?.headers?.origin || '').trim() || 'n/a'} ip=${getSocketClientIp(socket) || 'n/a'}`
+            );
             return next(new Error('unauthorized'));
-
         }
 
         const decoded = verifyToken(token);
 
         if (!decoded) {
-
+            console.warn(
+                `[socket.io] unauthorized_handshake reason=invalid_token origin=${String(socket?.handshake?.headers?.origin || '').trim() || 'n/a'} ip=${getSocketClientIp(socket) || 'n/a'}`
+            );
             return next(new Error('unauthorized'));
 
         }
@@ -1462,7 +1491,9 @@ io.use((socket, next) => {
         return next();
 
     } catch (error) {
-
+        console.warn(
+            `[socket.io] unauthorized_handshake reason=exception origin=${String(socket?.handshake?.headers?.origin || '').trim() || 'n/a'} ip=${getSocketClientIp(socket) || 'n/a'} message=${String(error?.message || '').trim() || 'n/a'}`
+        );
         return next(new Error('unauthorized'));
 
     }
@@ -9611,7 +9642,10 @@ async function ensureSocketActiveWhatsAppPlan(socket, sessionId = null) {
 
 io.on('connection', (socket) => {
 
-    console.log('?? Cliente conectado:', socket.id);
+    const transportName = String(socket?.conn?.transport?.name || '').trim() || 'unknown';
+    const clientIp = getSocketClientIp(socket) || 'n/a';
+    const origin = String(socket?.handshake?.headers?.origin || '').trim() || 'n/a';
+    console.log(`[socket.io] client_connected id=${socket.id} transport=${transportName} origin=${origin} ip=${clientIp}`);
     ensureSocketOwnerScopeRoom(socket).catch((error) => {
         console.warn(`[socket:${socket.id}] Falha ao resolver escopo inicial:`, error.message);
     });
@@ -10349,10 +10383,15 @@ io.on('connection', (socket) => {
 
     
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+        const transportName = String(socket?.conn?.transport?.name || '').trim() || 'unknown';
+        console.log(`[socket.io] client_disconnected id=${socket.id} reason=${String(reason || 'unknown')} transport=${transportName}`);
+    });
 
-        console.log('?? Cliente desconectado:', socket.id);
-
+    socket.on('error', (error) => {
+        console.warn(
+            `[socket.io] client_error id=${socket.id} message=${String(error?.message || error || '').trim() || 'n/a'}`
+        );
     });
 
 });

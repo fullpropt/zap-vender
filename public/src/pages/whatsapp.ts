@@ -5,6 +5,9 @@ declare const io:
     | ((url: string, options?: Record<string, unknown>) => {
           on: (event: string, handler: (data?: any) => void) => void;
           emit: (event: string, payload?: any) => void;
+          connect?: () => void;
+          connected?: boolean;
+          io?: { opts?: { transports?: unknown } };
       });
 declare const api:
     | undefined
@@ -31,7 +34,13 @@ const LEGACY_DEFAULT_SESSION_ID = 'self_whatsapp_session';
 const QR_IDLE_PLACEHOLDER_TEXT = 'Clique no bot&atilde;o abaixo para gerar QR Code de acesso';
 
 // Estado
-let socket: null | { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void } = null;
+let socket: null | {
+    on: (event: string, handler: (data?: any) => void) => void;
+    emit: (event: string, payload?: any) => void;
+    connect?: () => void;
+    connected?: boolean;
+    io?: { opts?: { transports?: unknown } };
+} = null;
 let socketBound = false;
 let currentSessionId = CONFIG.DEFAULT_SESSION_ID;
 let preferredDefaultSessionId = CONFIG.DEFAULT_SESSION_ID;
@@ -70,6 +79,16 @@ function clearQrGenerationWatchdog() {
     if (qrGenerationWatchdog) {
         clearTimeout(qrGenerationWatchdog);
         qrGenerationWatchdog = null;
+    }
+}
+
+function resetPendingConnection(message: string) {
+    isConnecting = false;
+    clearQrGenerationWatchdog();
+    updateConnectButton(false);
+    updatePairingButton(false);
+    if (!pairingCodeVisible) {
+        showQRLoading(message);
     }
 }
 
@@ -523,6 +542,9 @@ function initSocket() {
     socket.on('connect_error', function(error) {
         console.error('❌ Erro de conexão:', error);
         showToast('error', 'Erro ao conectar com servidor');
+        if (isConnecting) {
+            resetPendingConnection('Falha ao conectar com servidor. Tente novamente.');
+        }
     });
     
     // Eventos do WhatsApp
@@ -634,6 +656,17 @@ function initSocket() {
 function startConnection() {
     if (isConnecting) return;
     const sessionId = syncCurrentSessionFromSelect();
+    if (!socket) {
+        initSocket();
+    }
+    const runtimeSocket = socket;
+    if (!runtimeSocket) {
+        showToast('error', 'Conexao com servidor indisponivel. Recarregue a pagina.');
+        return;
+    }
+    if (runtimeSocket.connected !== true && typeof runtimeSocket.connect === 'function') {
+        runtimeSocket.connect();
+    }
     
     isConnecting = true;
     updateConnectButton(true);
@@ -642,12 +675,15 @@ function startConnection() {
     showQRLoading('Gerando QR Code...');
     
     console.log('🚀 Iniciando conexão...');
-    socket?.emit('start-session', { sessionId, forceNewQr: true });
+    runtimeSocket.emit('start-session', { sessionId, forceNewQr: true });
     clearQrGenerationWatchdog();
     qrGenerationWatchdog = window.setTimeout(() => {
         if (!isConnected && isConnecting) {
             showQRLoading('Demorou para gerar QR. Tentando novamente...');
-            socket?.emit('refresh-qr', { sessionId, forceNewQr: true });
+            if (runtimeSocket.connected !== true && typeof runtimeSocket.connect === 'function') {
+                runtimeSocket.connect();
+            }
+            runtimeSocket.emit('refresh-qr', { sessionId, forceNewQr: true });
         }
     }, 25000);
 }
@@ -655,6 +691,17 @@ function startConnection() {
 function requestPairingCode() {
     if (isConnecting) return;
     const sessionId = syncCurrentSessionFromSelect();
+    if (!socket) {
+        initSocket();
+    }
+    const runtimeSocket = socket;
+    if (!runtimeSocket) {
+        showToast('error', 'Conexao com servidor indisponivel. Recarregue a pagina.');
+        return;
+    }
+    if (runtimeSocket.connected !== true && typeof runtimeSocket.connect === 'function') {
+        runtimeSocket.connect();
+    }
 
     const phoneInput = document.getElementById('pairing-phone') as HTMLInputElement | null;
     const normalizedPhone = normalizePairingPhoneInput(phoneInput?.value || '');
@@ -673,7 +720,7 @@ function requestPairingCode() {
     updatePairingButton(true);
     showPairingCodeLoading('Gerando codigo de pareamento...');
 
-    socket?.emit('request-pairing-code', {
+    runtimeSocket.emit('request-pairing-code', {
         sessionId,
         phoneNumber: normalizedPhone
     });
