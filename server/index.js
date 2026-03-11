@@ -1937,7 +1937,8 @@ async function resetSessionRuntimeAndAuth(sessionId, options = {}) {
     const ownerUserId = Number.isInteger(requestedOwnerUserId) && requestedOwnerUserId > 0
         ? requestedOwnerUserId
         : null;
-    persistWhatsappSession(normalizedSessionId, 'disconnected', {
+    await persistWhatsappSession(normalizedSessionId, 'disconnected', {
+        eventTimestamp: new Date().toISOString(),
         ownerUserId
     });
 }
@@ -3796,10 +3797,38 @@ async function persistWhatsappSession(sessionId, status, options = {}) {
     if (isServerShuttingDown) return;
 
     try {
+        const normalizedSessionId = sanitizeSessionId(sessionId);
+        if (!normalizedSessionId) return;
 
-        const qr_code = options.qr_code || null;
+        const normalizedStatus = String(status || '').trim().toLowerCase();
+        if (!['disconnected', 'connecting', 'connected', 'qr_pending'].includes(normalizedStatus)) {
+            return;
+        }
 
-        const last_connected_at = options.last_connected_at || null;
+        const runtimeSession = sessions.get(normalizedSessionId);
+        if (runtimeSession?.isConnected && normalizedStatus !== 'connected') {
+            console.log(
+                `[${normalizedSessionId}] Ignorando persistencia de status "${normalizedStatus}" porque o runtime esta conectado`
+            );
+            return;
+        }
+
+        const eventTimestampRaw = options.eventTimestamp || options.eventAt || options.occurredAt;
+        const parsedEventTimestamp = Date.parse(String(eventTimestampRaw || ''));
+        const eventTimestamp = Number.isFinite(parsedEventTimestamp)
+            ? new Date(parsedEventTimestamp).toISOString()
+            : new Date().toISOString();
+
+        const hasExplicitQr = Object.prototype.hasOwnProperty.call(options, 'qr_code');
+        const qr_code = hasExplicitQr ? (options.qr_code || null) : null;
+
+        const hasExplicitLastConnectedAt = Object.prototype.hasOwnProperty.call(options, 'last_connected_at');
+        const resolvedLastConnectedAt = hasExplicitLastConnectedAt
+            ? (options.last_connected_at || null)
+            : null;
+        const last_connected_at = normalizedStatus === 'connected'
+            ? (resolvedLastConnectedAt || eventTimestamp)
+            : resolvedLastConnectedAt;
         const requestedOwnerUserId = Number(options.ownerUserId);
         const ownerUserId = Number.isInteger(requestedOwnerUserId) && requestedOwnerUserId > 0
             ? requestedOwnerUserId
@@ -3809,21 +3838,33 @@ async function persistWhatsappSession(sessionId, status, options = {}) {
 
             INSERT INTO whatsapp_sessions (session_id, status, qr_code, last_connected_at, created_by, updated_at)
 
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?)
 
             ON CONFLICT(session_id) DO UPDATE SET
 
-                status = excluded.status,
+                status = CASE
+                    WHEN EXCLUDED.updated_at >= COALESCE(whatsapp_sessions.updated_at, to_timestamp(0))
+                        THEN EXCLUDED.status
+                    ELSE whatsapp_sessions.status
+                END,
 
-                qr_code = excluded.qr_code,
+                qr_code = CASE
+                    WHEN EXCLUDED.updated_at >= COALESCE(whatsapp_sessions.updated_at, to_timestamp(0))
+                        THEN EXCLUDED.qr_code
+                    ELSE whatsapp_sessions.qr_code
+                END,
 
-                last_connected_at = excluded.last_connected_at,
+                last_connected_at = CASE
+                    WHEN EXCLUDED.updated_at >= COALESCE(whatsapp_sessions.updated_at, to_timestamp(0))
+                        THEN COALESCE(EXCLUDED.last_connected_at, whatsapp_sessions.last_connected_at)
+                    ELSE whatsapp_sessions.last_connected_at
+                END,
 
                 created_by = COALESCE(whatsapp_sessions.created_by, excluded.created_by),
 
-                updated_at = CURRENT_TIMESTAMP
+                updated_at = GREATEST(COALESCE(whatsapp_sessions.updated_at, to_timestamp(0)), EXCLUDED.updated_at)
 
-        `, [sessionId, status, qr_code, last_connected_at, ownerUserId]);
+        `, [normalizedSessionId, normalizedStatus, qr_code, last_connected_at, ownerUserId, eventTimestamp]);
 
     } catch (error) {
 
@@ -4297,7 +4338,10 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
         console.log(`[${sessionId}] Criando sessÃ£o... (Tentativa ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
 
-        persistWhatsappSession(sessionId, 'connecting', { ownerUserId });
+        await persistWhatsappSession(sessionId, 'connecting', {
+            eventTimestamp: new Date().toISOString(),
+            ownerUserId
+        });
 
         
 
@@ -4451,6 +4495,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
             if (!session || session.socket !== sock) {
                 return;
             }
+            const eventTimestamp = new Date().toISOString();
             const activeClientSocket = session.clientSocket || clientSocket;
 
             
@@ -4489,7 +4534,8 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                         ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || undefined
                     });
 
-                    persistWhatsappSession(sessionId, 'qr_pending', {
+                    await persistWhatsappSession(sessionId, 'qr_pending', {
+                        eventTimestamp,
                         qr_code: qrDataUrl,
                         ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || null
                     });
@@ -4569,7 +4615,8 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
                 console.log(`[${sessionId}] ConexÃ£o fechada. Status: ${statusCode}`);
 
-                persistWhatsappSession(sessionId, 'disconnected', {
+                await persistWhatsappSession(sessionId, 'disconnected', {
+                    eventTimestamp,
                     ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || null
                 });
 
@@ -4663,7 +4710,8 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                         sessions.delete(sessionId);
                         reconnectAttempts.delete(sessionId);
                         activeClientSocket.emit('disconnected', { sessionId, reason: 'logged_out' });
-                        persistWhatsappSession(sessionId, 'disconnected', {
+                        await persistWhatsappSession(sessionId, 'disconnected', {
+                            eventTimestamp,
                             ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || null
                         });
 
@@ -4751,8 +4799,9 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                         ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || null
                     });
 
-                    persistWhatsappSession(sessionId, 'connected', {
-                        last_connected_at: new Date().toISOString(),
+                    await persistWhatsappSession(sessionId, 'connected', {
+                        eventTimestamp,
+                        last_connected_at: eventTimestamp,
                         ownerUserId: Number(session?.ownerUserId || ownerUserId || 0) || null
                     });
                     clearSessionStartupError(sessionId);
