@@ -251,6 +251,7 @@ const WHATSAPP_AUTH_STATE_DRIVER = String(process.env.WHATSAPP_AUTH_STATE_DRIVER
 const WHATSAPP_AUTH_STATE_DB_FALLBACK_MULTI_FILE = parseBooleanEnv(process.env.WHATSAPP_AUTH_STATE_DB_FALLBACK_MULTI_FILE, true);
 let cachedBaileysSocketVersion = null;
 let cachedBaileysSocketVersionSource = null;
+let forceLatestBaileysVersionByRuntime = false;
 
 function normalizeUploadExtension(fileName = '') {
     const ext = path.extname(String(fileName || '').trim()).toLowerCase();
@@ -461,7 +462,8 @@ async function resolveBaileysSocketVersion(fetchLatestBaileysVersion, sessionId 
         return [...cachedBaileysSocketVersion];
     }
 
-    if (!WHATSAPP_USE_LATEST_BAILEYS_VERSION) {
+    const shouldUseLatestBaileysVersion = WHATSAPP_USE_LATEST_BAILEYS_VERSION || forceLatestBaileysVersionByRuntime;
+    if (!shouldUseLatestBaileysVersion) {
         cachedBaileysSocketVersion = null;
         cachedBaileysSocketVersionSource = 'library-default';
         return null;
@@ -4145,6 +4147,14 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
                 
 
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
+                if (Number(statusCode) === 405) {
+                    if (!forceLatestBaileysVersionByRuntime) {
+                        console.warn(`[${sessionId}] Detectado status 405 na conexao WhatsApp. Ativando fallback para versao latest do Baileys.`);
+                    }
+                    forceLatestBaileysVersionByRuntime = true;
+                    cachedBaileysSocketVersion = null;
+                    cachedBaileysSocketVersionSource = null;
+                }
 
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 session.isConnected = false;
