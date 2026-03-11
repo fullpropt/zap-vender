@@ -603,7 +603,7 @@ function startConnection() {
     qrGenerationWatchdog = window.setTimeout(() => {
         if (!isConnected && isConnecting) {
             showQRLoading('Demorou para gerar QR. Tentando novamente...');
-            socket?.emit('refresh-qr', { sessionId });
+            socket?.emit('refresh-qr', { sessionId, forceNewQr: true });
         }
     }, 25000);
 }

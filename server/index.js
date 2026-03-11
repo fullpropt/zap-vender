@@ -1486,6 +1486,65 @@ function clearRuntimeSessionReconnectTimer(session) {
     session.reconnectScheduleTimer = null;
 }
 
+async function resetSessionRuntimeAndAuth(sessionId, options = {}) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId) return;
+
+    const runtimeSession = sessions.get(normalizedSessionId);
+    clearSessionReconnectCatchupTimer(normalizedSessionId);
+    if (qrTimeouts.has(normalizedSessionId)) {
+        clearTimeout(qrTimeouts.get(normalizedSessionId));
+        qrTimeouts.delete(normalizedSessionId);
+    }
+
+    if (runtimeSession) {
+        clearRuntimeSessionReconnectTimer(runtimeSession);
+        stopSessionHealthMonitor(runtimeSession);
+        try {
+            if (typeof runtimeSession.socket?.ev?.removeAllListeners === 'function') {
+                runtimeSession.socket.ev.removeAllListeners();
+            }
+        } catch (_) {
+            // ignore listener cleanup failure
+        }
+        try {
+            if (typeof runtimeSession.socket?.end === 'function') {
+                await runtimeSession.socket.end(new Error('force_fresh_qr'));
+            }
+        } catch (_) {
+            // ignore socket shutdown failure
+        }
+    }
+
+    sessions.delete(normalizedSessionId);
+    reconnectAttempts.delete(normalizedSessionId);
+    reconnectInFlight.delete(normalizedSessionId);
+    sessionInitLocks.delete(normalizedSessionId);
+
+    const sessionPath = path.join(SESSIONS_DIR, normalizedSessionId);
+    if (fs.existsSync(sessionPath)) {
+        try {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+        } catch (error) {
+            console.warn(`[${normalizedSessionId}] Falha ao limpar pasta da sessao para QR novo:`, error.message);
+        }
+    }
+
+    try {
+        await clearPersistedBaileysAuthState(normalizedSessionId);
+    } catch (error) {
+        console.warn(`[${normalizedSessionId}] Falha ao limpar auth state persistido para QR novo:`, error.message);
+    }
+
+    const requestedOwnerUserId = Number(options?.ownerUserId || runtimeSession?.ownerUserId || 0);
+    const ownerUserId = Number.isInteger(requestedOwnerUserId) && requestedOwnerUserId > 0
+        ? requestedOwnerUserId
+        : null;
+    persistWhatsappSession(normalizedSessionId, 'disconnected', {
+        ownerUserId
+    });
+}
+
 function getSessionDispatchState(sessionId) {
     const normalizedSessionId = sanitizeSessionId(sessionId);
     const session = sessions.get(normalizedSessionId);
@@ -9306,6 +9365,7 @@ io.on('connection', (socket) => {
             const sessionId = sanitizeSessionId(payload.sessionId);
             const pairingPhone = normalizePairingPhoneNumber(payload.phoneNumber);
             const shouldRequestPairingCode = Boolean(payload.requestPairingCode && pairingPhone);
+            const forceFreshQrRequested = parseBooleanInput(payload.forceNewQr, false);
             if (!sessionId) {
                 socket.emit('error', { message: 'sessionId e obrigatorio', code: 'SESSION_ID_REQUIRED' });
                 return;
@@ -9326,6 +9386,12 @@ io.on('connection', (socket) => {
             }
             const storedOwnerUserId = Number(storedSession?.created_by || 0);
             const resolvedOwnerUserId = ownerScopeUserId || (storedOwnerUserId > 0 ? storedOwnerUserId : null);
+
+            if (forceFreshQrRequested) {
+                await resetSessionRuntimeAndAuth(sessionId, {
+                    ownerUserId: resolvedOwnerUserId || undefined
+                });
+            }
 
             const existingSession = sessions.get(sessionId);
 
@@ -9430,6 +9496,7 @@ io.on('connection', (socket) => {
     socket.on('refresh-qr', async (payload = {}) => {
         try {
             const sessionId = sanitizeSessionId(payload.sessionId);
+            const forceFreshQrRequested = parseBooleanInput(payload.forceNewQr, false);
             if (!sessionId) {
                 socket.emit('error', { message: 'sessionId e obrigatorio', code: 'SESSION_ID_REQUIRED' });
                 return;
@@ -9452,6 +9519,13 @@ io.on('connection', (socket) => {
 
             const storedOwnerUserId = Number(storedSession?.created_by || 0);
             const resolvedOwnerUserId = ownerScopeUserId || (storedOwnerUserId > 0 ? storedOwnerUserId : null);
+
+            if (forceFreshQrRequested) {
+                await resetSessionRuntimeAndAuth(sessionId, {
+                    ownerUserId: resolvedOwnerUserId || undefined
+                });
+            }
+
             const existingSession = sessions.get(sessionId);
 
             if (existingSession?.isConnected) {
