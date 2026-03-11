@@ -1034,6 +1034,7 @@ app.use(express.static(STATIC_DIR, {
         if (filePath.endsWith('app.html')) {
 
             res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('Clear-Site-Data', '"cache"');
 
         }
 
@@ -18079,6 +18080,7 @@ app.get('/confirm-email', (req, res) => {
 app.get('/', (req, res) => {
 
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Clear-Site-Data', '"cache"');
 
     res.sendFile(path.join(STATIC_DIR, 'app.html'));
 
@@ -18100,6 +18102,7 @@ app.get('*', (req, res, next) => {
     } else {
 
         res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Clear-Site-Data', '"cache"');
 
         res.sendFile(path.join(STATIC_DIR, 'app.html'));
 
