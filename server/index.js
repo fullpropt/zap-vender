@@ -1366,6 +1366,7 @@ const io = new Server(server, {
             if (isOriginAllowed(origin)) {
                 return callback(null, true);
             }
+            console.warn(`[socket.io] cors_reject origin=${String(origin || '').trim() || 'n/a'}`);
             return callback(new Error('NÃ£o permitido por CORS'));
         },
 
