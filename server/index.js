@@ -1491,6 +1491,7 @@ const typingStatus = new Map();
 
 const jidAliasMap = new Map();
 const sessionInitLocks = new Set();
+const sessionInitLockTimestamps = new Map();
 const pendingCiphertextRecoveries = new Map();
 const pendingLidResolutionRecoveries = new Map();
 const recoveredFlowMessageIds = new Map();
@@ -1806,6 +1807,7 @@ async function resetSessionRuntimeAndAuth(sessionId, options = {}) {
     reconnectAttempts.delete(normalizedSessionId);
     reconnectInFlight.delete(normalizedSessionId);
     sessionInitLocks.delete(normalizedSessionId);
+    sessionInitLockTimestamps.delete(normalizedSessionId);
 
     const sessionPath = path.join(SESSIONS_DIR, normalizedSessionId);
     if (fs.existsSync(sessionPath)) {
@@ -4101,6 +4103,16 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
         : null;
 
     if (sessionInitLocks.has(sessionId)) {
+        const lockStartedAt = Number(sessionInitLockTimestamps.get(sessionId) || 0);
+        const lockAgeMs = lockStartedAt > 0 ? (Date.now() - lockStartedAt) : 0;
+        if (lockAgeMs > 120000) {
+            console.warn(`[${sessionId}] Detectado lock de inicializacao stale (${lockAgeMs}ms). Limpando lock...`);
+            sessionInitLocks.delete(sessionId);
+            sessionInitLockTimestamps.delete(sessionId);
+        }
+    }
+
+    if (sessionInitLocks.has(sessionId)) {
         const existingSession = sessions.get(sessionId);
         if (existingSession && socket) {
             existingSession.clientSocket = socket;
@@ -4121,10 +4133,12 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
     }
 
     sessionInitLocks.add(sessionId);
+    sessionInitLockTimestamps.set(sessionId, Date.now());
     let lockReleased = false;
     const releaseSessionLock = () => {
         if (!lockReleased) {
             sessionInitLocks.delete(sessionId);
+            sessionInitLockTimestamps.delete(sessionId);
             lockReleased = true;
         }
     };
@@ -4160,28 +4174,17 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
     }
 
-    
-
-    const baileys = await baileysLoader.getBaileys();
-
-        const {
-
-            default: makeWASocket,
-
-            DisconnectReason,
-
-            fetchLatestBaileysVersion,
-
-            makeCacheableSignalKeyStore,
-
-            delay
-
-        } = baileys;
-
-    
-
     try {
         clearSessionStartupError(sessionId);
+
+        const baileys = await baileysLoader.getBaileys();
+        const {
+            default: makeWASocket,
+            DisconnectReason,
+            fetchLatestBaileysVersion,
+            makeCacheableSignalKeyStore,
+            delay
+        } = baileys;
 
         console.log(`[${sessionId}] Criando sessÃ£o... (Tentativa ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
 
@@ -5039,7 +5042,7 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
 
             reconnectAttempts.set(sessionId, currentAttempt + 1);
 
-            await baileys.delay(RECONNECT_DELAY);
+            await new Promise((resolve) => setTimeout(resolve, RECONNECT_DELAY));
             releaseSessionLock();
             return await createSession(sessionId, clientSocket, currentAttempt + 1, options);
 
@@ -10585,6 +10588,10 @@ app.get('/api/whatsapp/status', authenticate, async (req, res) => {
 
     const session = sessions.get(sessionId);
     const lastStartupError = sessionStartupErrors.get(sessionId) || null;
+    const initLockStartedAt = Number(sessionInitLockTimestamps.get(sessionId) || 0);
+    const initLockAgeMs = sessionInitLocks.has(sessionId) && initLockStartedAt > 0
+        ? Math.max(0, Date.now() - initLockStartedAt)
+        : null;
 
     const connected = !!(session && session.isConnected);
     const dispatchState = getSessionDispatchState(sessionId);
@@ -10609,7 +10616,11 @@ app.get('/api/whatsapp/status', authenticate, async (req, res) => {
             ? new Date(Number(session.dispatchBlockedUntilMs)).toISOString()
             : null,
         lastDisconnectReason: session?.lastDisconnectReason || null,
-        lastStartupError
+        lastStartupError,
+        initLock: {
+            active: sessionInitLocks.has(sessionId),
+            ageMs: initLockAgeMs
+        }
     });
 
 });
