@@ -508,8 +508,38 @@ function buildWhatsAppBrowserName(companyName) {
     return combined.slice(0, WHATSAPP_BROWSER_NAME_MAX_LENGTH);
 }
 
-async function resolveWhatsAppBrowserName() {
+async function resolveWhatsAppBrowserName(options = {}) {
+    const payload = (options && typeof options === 'object') ? options : {};
+    const normalizedSessionId = sanitizeSessionId(payload.sessionId || '');
+    const requestedOwnerUserId = normalizeOwnerUserId(payload.ownerUserId);
+    let resolvedOwnerUserId = requestedOwnerUserId;
+
     try {
+        if (normalizedSessionId) {
+            const storedSession = requestedOwnerUserId
+                ? await WhatsAppSession.findBySessionId(normalizedSessionId, {
+                    owner_user_id: requestedOwnerUserId
+                })
+                : await WhatsAppSession.findBySessionId(normalizedSessionId);
+
+            const sessionName = String(storedSession?.name || '').trim();
+            if (sessionName) {
+                return buildWhatsAppBrowserName(sessionName);
+            }
+
+            if (!resolvedOwnerUserId) {
+                const createdBy = normalizeOwnerUserId(storedSession?.created_by);
+                resolvedOwnerUserId = createdBy || normalizeOwnerUserId(await resolveSessionOwnerUserId(normalizedSessionId));
+            }
+        }
+
+        if (resolvedOwnerUserId) {
+            const scopedCompanyName = await Settings.get(buildScopedSettingsKey('company_name', resolvedOwnerUserId));
+            if (String(scopedCompanyName || '').trim()) {
+                return buildWhatsAppBrowserName(scopedCompanyName);
+            }
+        }
+
         const configuredCompanyName = await Settings.get('company_name');
         return buildWhatsAppBrowserName(configuredCompanyName);
     } catch (error) {
@@ -4380,7 +4410,10 @@ async function createSession(sessionId, socket, attempt = 0, options = {}) {
         }
 
         const syncFullHistory = WHATSAPP_SYNC_FULL_HISTORY;
-        const browserName = await resolveWhatsAppBrowserName();
+        const browserName = await resolveWhatsAppBrowserName({
+            sessionId,
+            ownerUserId
+        });
 
         const store = createRuntimeStore();
 
