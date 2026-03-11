@@ -463,54 +463,34 @@ async function resolveBaileysSocketVersion(fetchLatestBaileysVersion, sessionId 
         return [...cachedBaileysSocketVersion];
     }
 
-    const shouldUseLatestBaileysVersion = WHATSAPP_USE_LATEST_BAILEYS_VERSION || forceLatestBaileysVersionByRuntime;
-    if (!shouldUseLatestBaileysVersion) {
-        cachedBaileysSocketVersion = null;
-        cachedBaileysSocketVersionSource = 'library-default';
-        return null;
-    }
-
     if (cachedBaileysSocketVersion && Array.isArray(cachedBaileysSocketVersion)) {
         return [...cachedBaileysSocketVersion];
     }
 
+    const shouldUseLatestBaileysVersion = WHATSAPP_USE_LATEST_BAILEYS_VERSION || forceLatestBaileysVersionByRuntime;
     if (typeof fetchLatestBaileysVersion !== 'function') {
-        if (forceLatestBaileysVersionByRuntime) {
-            cachedBaileysSocketVersion = [...WHATSAPP_RUNTIME_FALLBACK_BAILEYS_VERSION];
-            cachedBaileysSocketVersionSource = 'runtime-fallback-pin';
-            return [...cachedBaileysSocketVersion];
-        }
-        cachedBaileysSocketVersion = null;
-        cachedBaileysSocketVersionSource = 'library-default';
-        return null;
-    }
-
-    try {
-        const latest = await fetchLatestBaileysVersion();
-        const version = Array.isArray(latest?.version) ? latest.version : null;
-        if (version && version.length >= 3) {
-            cachedBaileysSocketVersion = version.slice(0, 3);
-            cachedBaileysSocketVersionSource = 'latest';
-            return [...cachedBaileysSocketVersion];
-        }
-    } catch (error) {
-        console.warn(`[${sessionId || 'whatsapp'}] Falha ao resolver versao latest do Baileys, usando versao interna:`, error.message);
-        if (forceLatestBaileysVersionByRuntime) {
-            cachedBaileysSocketVersion = [...WHATSAPP_RUNTIME_FALLBACK_BAILEYS_VERSION];
-            cachedBaileysSocketVersionSource = 'runtime-fallback-pin';
-            return [...cachedBaileysSocketVersion];
-        }
-    }
-
-    if (forceLatestBaileysVersionByRuntime) {
         cachedBaileysSocketVersion = [...WHATSAPP_RUNTIME_FALLBACK_BAILEYS_VERSION];
-        cachedBaileysSocketVersionSource = 'runtime-fallback-pin';
+        cachedBaileysSocketVersionSource = shouldUseLatestBaileysVersion ? 'runtime-fallback-pin' : 'default-pin';
         return [...cachedBaileysSocketVersion];
     }
 
-    cachedBaileysSocketVersion = null;
-    cachedBaileysSocketVersionSource = 'library-default';
-    return null;
+    if (shouldUseLatestBaileysVersion) {
+        try {
+            const latest = await fetchLatestBaileysVersion();
+            const version = Array.isArray(latest?.version) ? latest.version : null;
+            if (version && version.length >= 3) {
+                cachedBaileysSocketVersion = version.slice(0, 3);
+                cachedBaileysSocketVersionSource = 'latest';
+                return [...cachedBaileysSocketVersion];
+            }
+        } catch (error) {
+            console.warn(`[${sessionId || 'whatsapp'}] Falha ao resolver versao latest do Baileys, usando versao fixa:`, error.message);
+        }
+    }
+
+    cachedBaileysSocketVersion = [...WHATSAPP_RUNTIME_FALLBACK_BAILEYS_VERSION];
+    cachedBaileysSocketVersionSource = shouldUseLatestBaileysVersion ? 'runtime-fallback-pin' : 'default-pin';
+    return [...cachedBaileysSocketVersion];
 }
 
 function buildWhatsAppBrowserName(companyName) {
