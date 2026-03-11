@@ -278,6 +278,12 @@ export default function Whatsapp() {
             gap: 8px;
             margin-bottom: 4px;
         }
+        .whatsapp-react .whatsapp-session-list-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
         .whatsapp-react .whatsapp-session-list-name {
             font-size: 14px;
             font-weight: 700;
@@ -304,6 +310,26 @@ export default function Whatsapp() {
             color: #fca5a5;
             background: rgba(239, 68, 68, 0.14);
             border-color: rgba(239, 68, 68, 0.38);
+        }
+        .whatsapp-react .whatsapp-session-list-arrow {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border-radius: 999px;
+            border: 1px solid rgba(120, 142, 166, 0.45);
+            color: var(--gray);
+            font-size: 12px;
+            line-height: 1;
+            background: rgba(10, 22, 38, 0.5);
+            transition: transform 0.2s ease, border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+        }
+        .whatsapp-react .whatsapp-session-list-arrow.is-expanded {
+            transform: rotate(180deg);
+            border-color: rgba(var(--primary-rgb), 0.6);
+            color: var(--primary);
+            background: rgba(var(--primary-rgb), 0.16);
         }
         .whatsapp-react .whatsapp-session-list-detail {
             display: block;
@@ -907,8 +933,8 @@ export default function Whatsapp() {
                       
                       <div className="card-body">
                           <div id="connection-idle-state" className="connection-idle-state">
-                              <h3>Selecione uma conta para reconectar</h3>
-                              <p>Clique em uma conta na lista acima ou em <strong>+ Nova Conta</strong> para abrir o painel de conexao.</p>
+                              <h3>Detalhes de conexao ocultos</h3>
+                              <p>Clique na <strong>seta</strong> de uma conta na lista acima ou em <strong>+ Nova Conta</strong> para abrir o painel.</p>
                           </div>
 
                           <div id="disconnected-state" style={{ display: 'none' }}>

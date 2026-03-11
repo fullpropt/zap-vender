@@ -220,6 +220,12 @@ function markReconnectUiRequested(sessionId: string) {
     reconnectUiRequestedSessionIds.add(normalizedSessionId);
 }
 
+function unmarkReconnectUiRequested(sessionId: string) {
+    const normalizedSessionId = sanitizeSessionId(sessionId);
+    if (!normalizedSessionId) return;
+    reconnectUiRequestedSessionIds.delete(normalizedSessionId);
+}
+
 function shouldShowReconnectUiForSession(sessionId: string) {
     const normalizedSessionId = sanitizeSessionId(sessionId);
     if (!normalizedSessionId) return false;
@@ -230,6 +236,14 @@ function syncConnectionSectionVisibility() {
     const disconnected = document.getElementById('disconnected-state') as HTMLElement | null;
     const connected = document.getElementById('connected-state') as HTMLElement | null;
     const idleState = getConnectionIdleStateElement();
+    const showDetailsForCurrentSession = shouldShowReconnectUiForSession(getCurrentSessionId());
+
+    if (!showDetailsForCurrentSession) {
+        if (connected) connected.style.display = 'none';
+        if (disconnected) disconnected.style.display = 'none';
+        if (idleState) idleState.style.display = 'block';
+        return;
+    }
 
     if (isConnected) {
         if (connected) connected.style.display = 'block';
@@ -238,10 +252,9 @@ function syncConnectionSectionVisibility() {
         return;
     }
 
-    const showReconnectUi = shouldShowReconnectUiForSession(getCurrentSessionId());
     if (connected) connected.style.display = 'none';
-    if (disconnected) disconnected.style.display = showReconnectUi ? 'block' : 'none';
-    if (idleState) idleState.style.display = showReconnectUi ? 'none' : 'block';
+    if (disconnected) disconnected.style.display = 'block';
+    if (idleState) idleState.style.display = 'none';
 }
 
 function syncCurrentSessionFromSelect() {
@@ -323,6 +336,7 @@ function renderSessionList(sessions: WhatsappSessionItem[], currentId: string) {
         const statusLabel = getSessionStatusLabel(session);
         const statusClass = isConnectedSession(session) ? 'connected' : 'disconnected';
         const isActive = sessionId === currentId;
+        const isExpanded = shouldShowReconnectUiForSession(sessionId);
         const detail = displayName === sessionId ? statusLabel : sessionId;
 
         return `
@@ -330,11 +344,15 @@ function renderSessionList(sessions: WhatsappSessionItem[], currentId: string) {
                 type="button"
                 class="whatsapp-session-list-item${isActive ? ' is-active' : ''}"
                 data-session-id="${escapeHtml(sessionId)}"
-                title="Selecionar conta ${escapeHtml(displayName)}"
+                title="Mostrar ou ocultar detalhes da conta ${escapeHtml(displayName)}"
+                aria-expanded="${isExpanded ? 'true' : 'false'}"
             >
                 <span class="whatsapp-session-list-main">
                     <span class="whatsapp-session-list-name">${escapeHtml(displayName)}</span>
-                    <span class="whatsapp-session-list-status ${statusClass}">${escapeHtml(statusLabel)}</span>
+                    <span class="whatsapp-session-list-meta">
+                        <span class="whatsapp-session-list-status ${statusClass}">${escapeHtml(statusLabel)}</span>
+                        <span class="whatsapp-session-list-arrow${isExpanded ? ' is-expanded' : ''}" aria-hidden="true">▾</span>
+                    </span>
                 </span>
                 <span class="whatsapp-session-list-detail">${escapeHtml(detail)}</span>
             </button>
@@ -347,13 +365,20 @@ function renderSessionList(sessions: WhatsappSessionItem[], currentId: string) {
             const nextSessionId = sanitizeSessionId(button.dataset.sessionId);
             if (!nextSessionId) return;
             if (nextSessionId === getCurrentSessionId()) {
-                markReconnectUiRequested(nextSessionId);
-                if (!isConnected) {
-                    resetConnectionUi();
-                } else {
+                const isExpanded = shouldShowReconnectUiForSession(nextSessionId);
+                if (isExpanded) {
+                    unmarkReconnectUiRequested(nextSessionId);
                     syncConnectionSectionVisibility();
+                } else {
+                    markReconnectUiRequested(nextSessionId);
+                    if (!isConnected) {
+                        resetConnectionUi();
+                    } else {
+                        syncConnectionSectionVisibility();
+                    }
+                    socket?.emit('check-session', { sessionId: nextSessionId });
                 }
-                socket?.emit('check-session', { sessionId: nextSessionId });
+                renderSessionOptions();
                 return;
             }
             changeSession(nextSessionId, { revealReconnectUi: true });
