@@ -374,12 +374,19 @@ function initSocket() {
         reconnection: boolean;
         reconnectionAttempts: number;
         reconnectionDelay: number;
+        timeout?: number;
+        tryAllTransports?: boolean;
+        upgrade?: boolean;
         auth?: { token: string };
     } = {
-        transports: ['websocket', 'polling'],
+        // Polling primeiro para manter conexão mesmo quando WSS está bloqueado no proxy.
+        transports: ['polling', 'websocket'],
+        tryAllTransports: true,
+        upgrade: true,
         reconnection: true,
         reconnectionAttempts: 10,
-        reconnectionDelay: 2000
+        reconnectionDelay: 2000,
+        timeout: 20000
     };
 
     if (token) {

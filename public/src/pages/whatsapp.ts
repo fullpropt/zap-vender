@@ -449,12 +449,22 @@ function checkAuth() {
 function initSocket() {
     const win = window as Window & {
         APP?: {
-            socket?: { on: (event: string, handler: (data?: any) => void) => void; emit: (event: string, payload?: any) => void };
+            socket?: {
+                on: (event: string, handler: (data?: any) => void) => void;
+                emit: (event: string, payload?: any) => void;
+                io?: { opts?: { transports?: unknown } };
+            };
         };
     };
 
-    if (win.APP?.socket) {
-        socket = win.APP.socket;
+    const sharedSocket = win.APP?.socket;
+    const sharedTransports = Array.isArray(sharedSocket?.io?.opts?.transports)
+        ? (sharedSocket?.io?.opts?.transports as string[])
+        : [];
+    const sharedSupportsPolling = sharedTransports.includes('polling');
+
+    if (sharedSocket && sharedSupportsPolling) {
+        socket = sharedSocket;
     }
     console.log('🔌 Conectando ao servidor:', CONFIG.SOCKET_URL);
 
@@ -488,6 +498,9 @@ function initSocket() {
             return;
         }
         socket = io(CONFIG.SOCKET_URL, socketOptions);
+        if (win.APP) {
+            win.APP.socket = socket;
+        }
     }
 
     if (socketBound) return;

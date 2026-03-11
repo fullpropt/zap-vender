@@ -186,6 +186,7 @@ const LEAD_AVATAR_CUSTOM_FIELD_KEY = 'avatar_url';
 const WHATSAPP_SYNC_FULL_HISTORY = parseBooleanEnv(process.env.WHATSAPP_SYNC_FULL_HISTORY, false);
 const WHATSAPP_USE_LATEST_BAILEYS_VERSION = parseBooleanEnv(process.env.WHATSAPP_USE_LATEST_BAILEYS_VERSION, false);
 const WHATSAPP_BAILEYS_VERSION_PIN = parseBaileysVersionFromEnv(process.env.WHATSAPP_BAILEYS_VERSION);
+const WHATSAPP_RUNTIME_FALLBACK_BAILEYS_VERSION = Object.freeze([2, 3000, 1033846690]);
 const WHATSAPP_KEEPALIVE_INTERVAL_MS = parsePositiveIntEnv(process.env.WHATSAPP_KEEPALIVE_INTERVAL_MS, 15000);
 const WHATSAPP_CONNECT_TIMEOUT_MS = parsePositiveIntEnv(process.env.WHATSAPP_CONNECT_TIMEOUT_MS, 60000);
 const WHATSAPP_DEFAULT_QUERY_TIMEOUT_MS = parsePositiveIntEnv(process.env.WHATSAPP_DEFAULT_QUERY_TIMEOUT_MS, 60000);
@@ -474,6 +475,11 @@ async function resolveBaileysSocketVersion(fetchLatestBaileysVersion, sessionId 
     }
 
     if (typeof fetchLatestBaileysVersion !== 'function') {
+        if (forceLatestBaileysVersionByRuntime) {
+            cachedBaileysSocketVersion = [...WHATSAPP_RUNTIME_FALLBACK_BAILEYS_VERSION];
+            cachedBaileysSocketVersionSource = 'runtime-fallback-pin';
+            return [...cachedBaileysSocketVersion];
+        }
         cachedBaileysSocketVersion = null;
         cachedBaileysSocketVersionSource = 'library-default';
         return null;
@@ -489,6 +495,17 @@ async function resolveBaileysSocketVersion(fetchLatestBaileysVersion, sessionId 
         }
     } catch (error) {
         console.warn(`[${sessionId || 'whatsapp'}] Falha ao resolver versao latest do Baileys, usando versao interna:`, error.message);
+        if (forceLatestBaileysVersionByRuntime) {
+            cachedBaileysSocketVersion = [...WHATSAPP_RUNTIME_FALLBACK_BAILEYS_VERSION];
+            cachedBaileysSocketVersionSource = 'runtime-fallback-pin';
+            return [...cachedBaileysSocketVersion];
+        }
+    }
+
+    if (forceLatestBaileysVersionByRuntime) {
+        cachedBaileysSocketVersion = [...WHATSAPP_RUNTIME_FALLBACK_BAILEYS_VERSION];
+        cachedBaileysSocketVersionSource = 'runtime-fallback-pin';
+        return [...cachedBaileysSocketVersion];
     }
 
     cachedBaileysSocketVersion = null;
