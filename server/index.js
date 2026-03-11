@@ -37,7 +37,7 @@ const qrcode = require('qrcode');
 
 // Database
 
-const { getDatabase, close: closeDatabase, query, run, generateUUID, USE_POSTGRES } = require('./database/connection');
+const { getDatabase, close: closeDatabase, query, queryOne, run, generateUUID, USE_POSTGRES } = require('./database/connection');
 
 const { migrate } = require('./database/migrate');
 
