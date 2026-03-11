@@ -1362,16 +1362,32 @@ const io = new Server(server, {
 
     cors: {
 
-        origin: (origin, callback) => {
-            if (isOriginAllowed(origin)) {
-                return callback(null, true);
-            }
-            console.warn(`[socket.io] cors_reject origin=${String(origin || '').trim() || 'n/a'}`);
-            return callback(new Error('NÃ£o permitido por CORS'));
-        },
+        origin: true,
 
         methods: ['GET', 'POST']
 
+    },
+
+    allowRequest: (req, callback) => {
+        try {
+            const origin = String(req?.headers?.origin || '').trim();
+            const forwardedHost = String(req?.headers?.['x-forwarded-host'] || '').split(',')[0].trim();
+            const hostHeader = String(req?.headers?.host || '').split(',')[0].trim();
+            const requestHost = (forwardedHost || hostHeader).split(':')[0].toLowerCase();
+            const isAllowed = isOriginAllowed(origin, requestHost);
+
+            if (!isAllowed) {
+                console.warn(
+                    `[socket.io] cors_reject origin=${origin || 'n/a'} host=${requestHost || 'n/a'} ` +
+                    `url=${String(req?.url || '').trim() || 'n/a'}`
+                );
+                return callback('NÃ£o permitido por CORS', false);
+            }
+
+            return callback(null, true);
+        } catch (error) {
+            return callback('NÃ£o permitido por CORS', false);
+        }
     },
 
     pingTimeout: 60000,
