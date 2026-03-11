@@ -649,19 +649,25 @@ function toggleFlow(id: number) {
         (async () => {
             try {
                 await api.put(`/api/flows/${id}`, { is_active: nextActive ? 1 : 0 });
+                flow.is_active = nextActive;
+                renderFlows();
+                updateStats();
+                showToast('success', 'Sucesso', `Fluxo ${flow.is_active ? 'ativado' : 'desativado'}!`);
             } catch (error) {
-                // fallback local
+                showToast('error', 'Erro', (error as Error)?.message || `Nao foi possivel ${nextActive ? 'ativar' : 'desativar'} o fluxo`);
             }
-            flow.is_active = nextActive;
-            renderFlows();
-            updateStats();
-            showToast('success', 'Sucesso', `Fluxo ${flow.is_active ? 'ativado' : 'desativado'}!`);
         })();
     }
 }
 
 async function deleteFlow(id: number) {
     if (!await appConfirm('Excluir este fluxo?', 'Excluir fluxo')) return;
+    try {
+        await api.delete(`/api/flows/${id}`);
+    } catch (error) {
+        showToast('error', 'Erro', (error as Error)?.message || 'Nao foi possivel excluir o fluxo');
+        return;
+    }
     flows = flows.filter(f => f.id !== id);
     renderFlows();
     updateStats();
@@ -690,4 +696,3 @@ windowAny.toggleFlow = toggleFlow;
 windowAny.deleteFlow = deleteFlow;
 
 export { initFluxos };
-

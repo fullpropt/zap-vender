@@ -942,17 +942,21 @@ Variáveis: {{nome}}"></textarea>
 }
 
 async function toggleAutomation(id: number, active: boolean) {
+    const automation = automations.find(a => a.id === id);
+    if (!automation) return;
+    const previousActive = automation.is_active;
+    automation.is_active = active;
+    updateStats();
+    renderAutomations();
+
     try {
         await api.put(`/api/automations/${id}`, { is_active: active });
-        const automation = automations.find(a => a.id === id);
-        if (automation) automation.is_active = active;
-        updateStats();
         showToast('success', 'Sucesso', `Automação ${active ? 'ativada' : 'desativada'}!`);
     } catch (error) {
-        const automation = automations.find(a => a.id === id);
-        if (automation) automation.is_active = active;
+        automation.is_active = previousActive;
         updateStats();
-        showToast('success', 'Sucesso', `Automação ${active ? 'ativada' : 'desativada'}!`);
+        renderAutomations();
+        showToast('error', 'Erro', (error as Error)?.message || `Não foi possível ${active ? 'ativar' : 'desativar'} a automação`);
     }
 }
 
@@ -1018,30 +1022,9 @@ async function saveAutomation() {
         await loadAutomations();
         showToast('success', 'Sucesso', automationId ? 'Automação atualizada!' : 'Automação criada!');
     } catch (error) {
+        showToast('error', 'Erro', (error as Error)?.message || 'Não foi possível salvar a automação');
+    } finally {
         hideLoading();
-        if (automationId) {
-            const index = automations.findIndex(a => a.id === automationId);
-            if (index >= 0) {
-                automations[index] = {
-                    ...automations[index],
-                    ...data
-                };
-            }
-            showToast('success', 'Sucesso', 'Automação atualizada!');
-        } else {
-            // Simular sucesso
-            automations.push({
-                id: automations.length + 1,
-                ...data,
-                executions: 0,
-                last_execution: null
-            });
-            showToast('success', 'Sucesso', 'Automação criada!');
-        }
-        closeModal('newAutomationModal');
-        resetAutomationForm();
-        renderAutomations();
-        updateStats();
     }
 }
 
@@ -1092,7 +1075,8 @@ async function deleteAutomation(id: number) {
     try {
         await api.delete(`/api/automations/${id}`);
     } catch (error) {
-        // fallback local
+        showToast('error', 'Erro', (error as Error)?.message || 'Não foi possível excluir a automação');
+        return;
     }
 
     automations = automations.filter(a => a.id !== id);

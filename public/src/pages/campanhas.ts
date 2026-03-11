@@ -1470,7 +1470,7 @@ function renderCampaignOverviewContent(campaign: Campaign) {
                 </div>
             </div>
         </div>
-        <p><strong>Descrição:</strong> ${campaign.description || 'Sem descrição'}</p>
+        <p><strong>Descrição:</strong> ${escapeCampaignText(campaign.description || 'Sem descrição')}</p>
         <p><strong>Tipo:</strong> ${getCampaignTypeLabel(campaign.type)}</p>
         <p><strong>Status:</strong> ${getCampaignStatusLabel(displayStatus)}</p>
         <p><strong>Distribuição:</strong> ${escapeCampaignText(getDistributionStrategyLabel(campaign.distribution_strategy || 'round_robin'))}</p>
@@ -2129,7 +2129,7 @@ function renderCampaigns() {
                 </div>
                 <div class="campaign-details" id="campaign-details-${c.id}">
                     <div class="campaign-body">
-                        <p class="campaign-description">${c.description || 'Sem descrição'}</p>
+                        <p class="campaign-description">${escapeCampaignText(c.description || 'Sem descrição')}</p>
                         <div class="campaign-stats">
                             <div class="campaign-stat">
                                 <div class="campaign-stat-value">${formatNumber(c.sent || 0)}</div>
@@ -2245,37 +2245,8 @@ async function saveCampaign(statusOverride?: CampaignStatus) {
         await loadCampaigns();
         showToast('success', 'Sucesso', campaignId ? 'Campanha atualizada com sucesso!' : 'Campanha criada com sucesso!');
     } catch (error) {
-        if (!shouldUseLocalCampaignFallback(error)) {
-            showToast('error', 'Erro', (error as Error)?.message || 'Não foi possível salvar a campanha');
-            return;
-        }
-        if (campaignId) {
-            const index = campaigns.findIndex(c => c.id === campaignId);
-            if (index >= 0) {
-                campaigns[index] = {
-                    ...campaigns[index],
-                    ...data,
-                    status
-                };
-            }
-            showToast('success', 'Sucesso', 'Campanha atualizada com sucesso!');
-        } else {
-            // Simular sucesso para demonstra??o
-            campaigns.push({
-                id: campaigns.length + 1,
-                ...data,
-                sent: 0,
-                delivered: 0,
-                read: 0,
-                replied: 0,
-                created_at: new Date().toISOString()
-            });
-            showToast('success', 'Sucesso', 'Campanha criada com sucesso!');
-        }
-        closeModal('newCampaignModal');
-        resetCampaignForm();
-        renderCampaigns();
-        updateStats();
+        showToast('error', 'Erro', (error as Error)?.message || 'Não foi possível salvar a campanha');
+        return;
     } finally {
         hideLoading();
     }
@@ -2381,22 +2352,14 @@ async function startCampaign(id: number, options: StartCampaignOptions = {}) {
             : { status: 'active' }
         );
     } catch (error) {
-        if (!shouldUseLocalCampaignFallback(error)) {
-            showToast(
-                'error',
-                'Erro',
-                (error as Error)?.message || (restart
-                    ? 'Não foi possível reiniciar a campanha'
-                    : 'Não foi possível iniciar a campanha')
-            );
-            return;
-        }
-
-        if (restart) {
-            showToast('warning', 'Aviso', 'Falha de rede ao reiniciar. Valide o status da campanha após atualizar a tela.');
-            scheduleCampaignsRealtimeRefresh(300);
-            return;
-        }
+        showToast(
+            'error',
+            'Erro',
+            (error as Error)?.message || (restart
+                ? 'Não foi possível reiniciar a campanha'
+                : 'Não foi possível iniciar a campanha')
+        );
+        return;
     }
 
     const campaign = campaigns.find(c => c.id === id);
@@ -2436,10 +2399,8 @@ async function pauseCampaign(id: number) {
     try {
         await api.put(`/api/campaigns/${id}`, { status: 'paused' });
     } catch (error) {
-        if (!shouldUseLocalCampaignFallback(error)) {
-            showToast('error', 'Erro', (error as Error)?.message || 'Não foi possível pausar a campanha');
-            return;
-        }
+        showToast('error', 'Erro', (error as Error)?.message || 'Não foi possível pausar a campanha');
+        return;
     }
     const campaign = campaigns.find(c => c.id === id);
     if (campaign) campaign.status = 'paused';
@@ -2458,10 +2419,8 @@ async function deleteCampaign(id: number) {
     try {
         await api.delete(`/api/campaigns/${id}`);
     } catch (error) {
-        if (!shouldUseLocalCampaignFallback(error)) {
-            showToast('error', 'Erro', (error as Error)?.message || 'Não foi possível excluir a campanha');
-            return;
-        }
+        showToast('error', 'Erro', (error as Error)?.message || 'Não foi possível excluir a campanha');
+        return;
     }
     campaigns = campaigns.filter(c => c.id !== id);
     if (activeCampaignDetailsId === id) {

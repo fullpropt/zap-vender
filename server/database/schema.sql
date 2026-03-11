@@ -266,6 +266,7 @@ CREATE TABLE IF NOT EXISTS message_queue (
     status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'sent', 'failed', 'cancelled')),
     error_message TEXT,
     created_at TEXT DEFAULT (CURRENT_TIMESTAMP),
+    updated_at TEXT DEFAULT (CURRENT_TIMESTAMP),
     processed_at TEXT
 );
 
@@ -430,6 +431,7 @@ DROP TABLE IF EXISTS lead_tags;
 ALTER TABLE messages ADD COLUMN campaign_id INTEGER;
 ALTER TABLE message_queue ADD COLUMN campaign_id INTEGER;
 ALTER TABLE message_queue ADD COLUMN session_id TEXT;
+ALTER TABLE message_queue ADD COLUMN updated_at TEXT DEFAULT (CURRENT_TIMESTAMP);
 ALTER TABLE flows ADD COLUMN session_id TEXT;
 ALTER TABLE message_queue ADD COLUMN is_first_contact INTEGER DEFAULT 1;
 ALTER TABLE message_queue ADD COLUMN assignment_meta TEXT;
@@ -572,5 +574,4 @@ INSERT OR IGNORE INTO settings (key, value, type, description) VALUES
     ('working_hours_end', '18:00', 'string', 'Fim do horário de atendimento'),
     ('away_message', 'Olá! No momento estamos fora do horário de atendimento. Retornaremos em breve!', 'string', 'Mensagem de ausência'),
     ('welcome_message', 'Olá! Bem-vindo à SELF Proteção Veicular! Como posso ajudar?', 'string', 'Mensagem de boas-vindas');
-
 

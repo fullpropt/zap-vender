@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS message_queue (
     status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'sent', 'failed', 'cancelled')),
     error_message TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     processed_at TIMESTAMPTZ
 );
 
@@ -424,6 +425,7 @@ DROP TABLE IF EXISTS lead_tags;
 ALTER TABLE messages ADD COLUMN campaign_id INTEGER;
 ALTER TABLE message_queue ADD COLUMN campaign_id INTEGER;
 ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS session_id TEXT;
+ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
 ALTER TABLE flows ADD COLUMN IF NOT EXISTS session_id TEXT;
 ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS is_first_contact INTEGER DEFAULT 1;
 ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS assignment_meta TEXT;

@@ -201,10 +201,90 @@ const WHATSAPP_SESSION_RATE_LIMIT_MAX_PER_MINUTE = parsePositiveIntInRange(
 );
 const METRICS_ENABLED = parseBooleanEnv(process.env.METRICS_ENABLED, false);
 const METRICS_BEARER_TOKEN = String(process.env.METRICS_BEARER_TOKEN || '').trim();
+const DANGEROUS_UPLOAD_EXTENSIONS = new Set([
+    '.html', '.htm', '.svg', '.xml', '.xhtml', '.js', '.mjs', '.css'
+]);
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+    '.jpg', '.jpeg', '.png', '.webp', '.gif',
+    '.mp4', '.webm', '.mov', '.ogg',
+    '.mp3', '.wav', '.aac', '.m4a', '.amr', '.opus', '.oga',
+    '.pdf', '.txt', '.zip', '.csv',
+    '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
+]);
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+    'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+    'video/mp4', 'video/webm', 'video/quicktime', 'video/ogg',
+    'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/aac', 'audio/mp4',
+    'audio/ogg', 'audio/amr', 'audio/3gpp', 'audio/webm',
+    'application/pdf', 'text/plain', 'application/zip', 'text/csv',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+]);
+const UPLOAD_MIME_EXTENSION_MAP = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'video/mp4': '.mp4',
+    'video/webm': '.webm',
+    'video/quicktime': '.mov',
+    'video/ogg': '.ogg',
+    'audio/mpeg': '.mp3',
+    'audio/wav': '.wav',
+    'audio/x-wav': '.wav',
+    'audio/aac': '.aac',
+    'audio/mp4': '.m4a',
+    'audio/ogg': '.ogg',
+    'audio/amr': '.amr',
+    'audio/3gpp': '.amr',
+    'audio/webm': '.webm',
+    'application/pdf': '.pdf',
+    'text/plain': '.txt',
+    'application/zip': '.zip',
+    'text/csv': '.csv'
+};
 const WHATSAPP_AUTH_STATE_DRIVER = String(process.env.WHATSAPP_AUTH_STATE_DRIVER || 'multi_file').trim().toLowerCase();
 const WHATSAPP_AUTH_STATE_DB_FALLBACK_MULTI_FILE = parseBooleanEnv(process.env.WHATSAPP_AUTH_STATE_DB_FALLBACK_MULTI_FILE, true);
 let cachedBaileysSocketVersion = null;
 let cachedBaileysSocketVersionSource = null;
+
+function normalizeUploadExtension(fileName = '') {
+    const ext = path.extname(String(fileName || '').trim()).toLowerCase();
+    return ext.replace(/[^a-z0-9.]/g, '');
+}
+
+function sanitizeUploadBaseName(fileName = '') {
+    const rawBaseName = path.basename(String(fileName || '').trim(), path.extname(String(fileName || '').trim()));
+    const normalized = rawBaseName
+        .replace(/[^a-zA-Z0-9._-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^\.+/, '')
+        .slice(0, 80);
+    return normalized || 'file';
+}
+
+function resolveUploadExtension(file = {}) {
+    const extFromName = normalizeUploadExtension(file.originalname || '');
+    if (ALLOWED_UPLOAD_EXTENSIONS.has(extFromName)) {
+        return extFromName;
+    }
+
+    const mime = String(file.mimetype || '').trim().toLowerCase();
+    return UPLOAD_MIME_EXTENSION_MAP[mime] || '';
+}
+
+function isAllowedUploadFile(file = {}) {
+    const ext = normalizeUploadExtension(file.originalname || '');
+    const mime = String(file.mimetype || '').trim().toLowerCase();
+    const hasAllowedExt = ALLOWED_UPLOAD_EXTENSIONS.has(ext);
+    const hasAllowedMime = ALLOWED_UPLOAD_MIME_TYPES.has(mime);
+    const isDangerousExt = DANGEROUS_UPLOAD_EXTENSIONS.has(ext);
+    return (hasAllowedExt || hasAllowedMime) && !isDangerousExt;
+}
 
 function parseBooleanEnv(value, fallback = false) {
     if (value === undefined || value === null || value === '') return fallback;
@@ -779,26 +859,30 @@ const getRequestHost = (req) => {
     return host.split(':')[0].toLowerCase();
 };
 
-const corsOptionsDelegate = (req, callback) => {
-    const origin = req.header('Origin');
+const isOriginAllowed = (origin, requestHost = '') => {
     const normalizedOrigin = sanitizeOriginEntry(origin);
     const originHost = parseOriginHost(normalizedOrigin);
-    const requestHost = getRequestHost(req);
-
     const isSameOrigin = Boolean(
-        origin &&
+        normalizedOrigin &&
         originHost &&
         requestHost &&
         originHost === requestHost
     );
 
-    const isAllowed =
-        !origin ||
+    return (
+        !normalizedOrigin ||
         allowedOriginSet.has('*') ||
         allowedOriginEntries.length === 0 ||
         isSameOrigin ||
         allowedOriginSet.has(normalizedOrigin) ||
-        allowedHostSet.has(originHost);
+        allowedHostSet.has(originHost)
+    );
+};
+
+const corsOptionsDelegate = (req, callback) => {
+    const origin = req.header('Origin');
+    const requestHost = getRequestHost(req);
+    const isAllowed = isOriginAllowed(origin, requestHost);
 
     if (!isAllowed) {
         return callback(new Error('NÃ£o permitido por CORS'));
@@ -819,6 +903,10 @@ app.use(cors(corsOptionsDelegate));
 app.get('/metrics', async (req, res) => {
     if (!METRICS_ENABLED) {
         return res.status(404).send('Not found');
+    }
+
+    if (process.env.NODE_ENV === 'production' && !METRICS_BEARER_TOKEN) {
+        return res.status(503).send('Metrics token not configured');
     }
 
     if (METRICS_BEARER_TOKEN) {
@@ -958,7 +1046,17 @@ if (fs.existsSync(LANDING_BRUNO_DIR)) {
     app.use('/landing-bruno', express.static(LANDING_BRUNO_DIR));
 }
 
-app.use('/uploads', express.static(UPLOADS_DIR));
+app.use('/uploads', express.static(UPLOADS_DIR, {
+    setHeaders: (res, filePath) => {
+        const ext = normalizeUploadExtension(filePath);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+
+        if (DANGEROUS_UPLOAD_EXTENSIONS.has(ext)) {
+            res.setHeader('Content-Disposition', 'attachment');
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        }
+    }
+}));
 
 
 
@@ -971,8 +1069,9 @@ const storage = multer.diskStorage({
     filename: (req, file, cb) => {
 
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-
-        cb(null, uniqueSuffix + '-' + file.originalname);
+        const safeBaseName = sanitizeUploadBaseName(file.originalname || '');
+        const safeExtension = resolveUploadExtension(file);
+        cb(null, `${uniqueSuffix}-${safeBaseName}${safeExtension}`);
 
     }
 
@@ -981,6 +1080,16 @@ const storage = multer.diskStorage({
 const upload = multer({ 
 
     storage,
+    fileFilter: (req, file, cb) => {
+        if (!isAllowedUploadFile(file)) {
+            const uploadTypeError = new Error('Tipo de arquivo nao permitido');
+            uploadTypeError.status = 400;
+            uploadTypeError.statusCode = 400;
+            return cb(uploadTypeError);
+        }
+
+        return cb(null, true);
+    },
 
     limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 
@@ -1002,7 +1111,12 @@ const io = new Server(server, {
 
     cors: {
 
-        origin: '*',
+        origin: (origin, callback) => {
+            if (isOriginAllowed(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error('NÃ£o permitido por CORS'));
+        },
 
         methods: ['GET', 'POST']
 
@@ -15038,6 +15152,26 @@ async function rollbackFailedCampaignCreation(campaignId) {
     }
 }
 
+function getSafeCampaignApiErrorMessage(error, fallbackMessage) {
+    const rawMessage = String(error?.message || '').trim();
+    if (!rawMessage) return fallbackMessage;
+
+    const unsafeMessagePatterns = [
+        /column\s+.*\s+does not exist/i,
+        /relation\s+.*\s+does not exist/i,
+        /syntax error at or near/i,
+        /SQLSTATE/i,
+        /password authentication failed/i,
+        /database/i
+    ];
+
+    if (unsafeMessagePatterns.some((pattern) => pattern.test(rawMessage))) {
+        return fallbackMessage;
+    }
+
+    return rawMessage;
+}
+
 
 app.get('/api/campaigns', authenticate, async (req, res) => {
 
@@ -15270,7 +15404,9 @@ app.post('/api/campaigns', authenticate, async (req, res) => {
             await rollbackFailedCampaignCreation(createdCampaignId);
         }
 
-        res.status(400).json({ error: error.message });
+        console.error('[campaign:create] Falha ao criar campanha:', error?.message || error);
+        const message = getSafeCampaignApiErrorMessage(error, 'Nao foi possivel criar a campanha');
+        res.status(400).json({ error: message });
 
     }
 
@@ -15392,7 +15528,9 @@ app.put('/api/campaigns/:id', authenticate, async (req, res) => {
 
     } catch (error) {
 
-        res.status(400).json({ error: error.message });
+        console.error('[campaign:update] Falha ao atualizar campanha:', error?.message || error);
+        const message = getSafeCampaignApiErrorMessage(error, 'Nao foi possivel atualizar a campanha');
+        res.status(400).json({ error: message });
 
     }
 
@@ -17740,7 +17878,7 @@ app.post('/api/upload', authenticate, upload.single('file'), (req, res) => {
 
             filename: req.file.filename,
 
-            originalname: req.file.originalname,
+            originalname: `${sanitizeUploadBaseName(req.file.originalname || '')}${normalizeUploadExtension(req.file.originalname || '')}`,
 
             mimetype: req.file.mimetype,
 
