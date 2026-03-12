@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS flows (
     trigger_type TEXT NOT NULL CHECK(trigger_type IN ('keyword', 'new_contact', 'webhook', 'schedule', 'manual')),
     trigger_value TEXT,
     session_id TEXT,
+    flow_builder_mode TEXT DEFAULT 'humanized' CHECK(flow_builder_mode IN ('humanized', 'menu')),
     nodes TEXT NOT NULL,
     edges TEXT,
     is_active INTEGER DEFAULT 1,
@@ -487,6 +488,7 @@ ALTER TABLE message_queue ADD COLUMN campaign_id INTEGER;
 ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS session_id TEXT;
 ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
 ALTER TABLE flows ADD COLUMN IF NOT EXISTS session_id TEXT;
+ALTER TABLE flows ADD COLUMN IF NOT EXISTS flow_builder_mode TEXT DEFAULT 'humanized';
 ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS is_first_contact INTEGER DEFAULT 1;
 ALTER TABLE message_queue ADD COLUMN IF NOT EXISTS assignment_meta TEXT;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS delay_min INTEGER;

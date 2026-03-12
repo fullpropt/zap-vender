@@ -803,6 +803,15 @@ function getFlowBuilderModeLabel(mode: unknown) {
     return normalizeFlowBuilderMode(mode) === 'menu' ? 'Menu interativo' : 'Humanizado';
 }
 
+function buildExclusiveMenuFlowNotice(deactivatedCount: number) {
+    const total = Number.isFinite(deactivatedCount) ? Math.max(0, Math.trunc(deactivatedCount)) : 0;
+    if (total <= 0) return '';
+    if (total === 1) {
+        return 'Outro fluxo de menu interativo da mesma conta foi desativado automaticamente.';
+    }
+    return `${total} outros fluxos de menu interativo da mesma conta foram desativados automaticamente.`;
+}
+
 function resolveFlowSummaryBuilderMode(flow?: FlowSummary | null): FlowBuilderMode {
     if (flow && typeof flow === 'object') {
         const rawExplicitMode = String(flow.flow_builder_mode || flow.flowBuilderMode || '').trim();
@@ -4753,8 +4762,10 @@ function buildTriggerPayload(trigger?: FlowNode) {
     };
 }
 
-function normalizeLoadedFlowData() {
-    currentFlowBuilderMode = inferFlowBuilderModeFromNodes(nodes);
+function normalizeLoadedFlowData(options: { flowBuilderMode?: FlowBuilderMode } = {}) {
+    currentFlowBuilderMode = options.flowBuilderMode
+        ? normalizeFlowBuilderMode(options.flowBuilderMode)
+        : inferFlowBuilderModeFromNodes(nodes);
 
     nodes = nodes.map((node) => {
         node.data.collapsed = false;
@@ -4937,6 +4948,7 @@ async function saveFlow() {
         description: '',
         trigger_type: triggerPayload.triggerType,
         trigger_value: triggerPayload.triggerValue,
+        flow_builder_mode: getCurrentFlowBuilderMode(),
         session_id: currentFlowSessionId || null,
         nodes,
         edges,
@@ -4966,6 +4978,12 @@ async function saveFlow() {
             renderCurrentFlowName();
             setFlowDirtyState(false);
             notify('success', 'Sucesso', 'Fluxo salvo com sucesso!');
+            const exclusiveNotice = buildExclusiveMenuFlowNotice(
+                Array.isArray(result.meta?.deactivated_flow_ids) ? result.meta.deactivated_flow_ids.length : 0
+            );
+            if (exclusiveNotice) {
+                notify('info', 'Menu interativo exclusivo', exclusiveNotice);
+            }
         } else {
             await showFlowAlertDialog('Erro ao salvar: ' + result.error, 'Salvar fluxo');
         }
@@ -5396,6 +5414,13 @@ async function toggleFlowActivation(id: number, event?: Event) {
             return;
         }
 
+        const exclusiveNotice = buildExclusiveMenuFlowNotice(
+            Array.isArray(result.meta?.deactivated_flow_ids) ? result.meta.deactivated_flow_ids.length : 0
+        );
+        if (exclusiveNotice) {
+            notify('info', 'Menu interativo exclusivo', exclusiveNotice);
+        }
+
         if (currentFlowId === id) {
             setCurrentFlowActive(nextActive);
         }
@@ -5537,7 +5562,7 @@ async function duplicateFlow(id: number, event?: Event) {
         const flow = result.flow || {};
         nodes = flow.nodes || [];
         edges = flow.edges || [];
-        normalizeLoadedFlowData();
+        normalizeLoadedFlowData({ flowBuilderMode: resolveFlowSummaryBuilderMode(flow) });
         currentFlowId = null;
         currentFlowName = `${flow.name || 'Fluxo'} (copia)`;
         setCurrentFlowSessionScope(flow?.session_id || '');
@@ -5614,7 +5639,7 @@ async function loadFlow(id: number, options: LoadFlowOptions = {}): Promise<bool
             persistLastOpenFlowId(currentFlowId);
             nodes = result.flow.nodes || [];
             edges = result.flow.edges || [];
-            normalizeLoadedFlowData();
+            normalizeLoadedFlowData({ flowBuilderMode: resolveFlowSummaryBuilderMode(result.flow) });
             await loadCustomEventsCatalog({ silent: true });
             setCurrentFlowActive(result.flow?.is_active);
             renderCurrentFlowName();

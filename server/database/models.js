@@ -203,6 +203,72 @@ function normalizeFlowSessionScope(value) {
     return normalized || null;
 }
 
+function normalizeFlowBuilderMode(value) {
+    return String(value || '').trim().toLowerCase() === 'menu' ? 'menu' : 'humanized';
+}
+
+function parseFlowGraphList(value) {
+    if (Array.isArray(value)) return [...value];
+
+    if (typeof value === 'string') {
+        const rawValue = value.trim();
+        if (!rawValue) return [];
+        try {
+            const parsed = JSON.parse(rawValue);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    return [];
+}
+
+function isIntentRoutingFlowNode(node) {
+    const nodeType = String(node?.type || '').trim().toLowerCase();
+    if (nodeType === 'intent') return true;
+    if (nodeType !== 'trigger') return false;
+
+    const subtype = String(node?.subtype || '').trim().toLowerCase();
+    return subtype === 'keyword' || subtype === 'intent';
+}
+
+function inferFlowBuilderModeFromNodes(nodeList = []) {
+    const nodes = parseFlowGraphList(nodeList);
+    const hasMenuIntentNode = nodes.some((node) => {
+        if (!isIntentRoutingFlowNode(node)) return false;
+        return String(node?.data?.responseMode || '').trim().toLowerCase() === 'menu';
+    });
+
+    return hasMenuIntentNode ? 'menu' : 'humanized';
+}
+
+function resolvePersistedFlowBuilderMode(value, nodeList = []) {
+    const rawValue = String(value || '').trim();
+    if (rawValue) {
+        return normalizeFlowBuilderMode(rawValue);
+    }
+
+    return inferFlowBuilderModeFromNodes(nodeList);
+}
+
+function hydrateFlowRecord(flow) {
+    if (!flow) return null;
+
+    const nodes = parseFlowGraphList(flow.nodes);
+    const edges = parseFlowGraphList(flow.edges);
+
+    return {
+        ...flow,
+        nodes,
+        edges,
+        flow_builder_mode: resolvePersistedFlowBuilderMode(
+            flow.flow_builder_mode || flow.flowBuilderMode,
+            nodes
+        )
+    };
+}
+
 function normalizeSessionScopeList(value) {
     let parsed = value;
 
@@ -2115,10 +2181,14 @@ const Flow = {
     async create(data) {
         const uuid = generateUUID();
         const sessionScope = normalizeFlowSessionScope(data.session_id ?? data.sessionId);
+        const flowBuilderMode = resolvePersistedFlowBuilderMode(
+            data.flow_builder_mode ?? data.flowBuilderMode,
+            data.nodes
+        );
         
         const result = await run(`
-            INSERT INTO flows (uuid, name, description, trigger_type, trigger_value, nodes, edges, is_active, priority, created_by, session_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO flows (uuid, name, description, trigger_type, trigger_value, nodes, edges, is_active, priority, flow_builder_mode, created_by, session_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             uuid,
             data.name,
@@ -2129,11 +2199,77 @@ const Flow = {
             JSON.stringify(data.edges || []),
             data.is_active !== undefined ? data.is_active : 1,
             data.priority || 0,
+            flowBuilderMode,
             data.created_by,
             sessionScope
         ]);
+
+        const deactivatedFlowIds = Number(data.is_active !== undefined ? data.is_active : 1) > 0 && flowBuilderMode === 'menu'
+            ? await this.deactivateOtherActiveMenuFlows({
+                exclude_id: result.lastInsertRowid,
+                session_id: sessionScope,
+                owner_user_id: data.owner_user_id,
+                created_by: data.created_by
+            })
+            : [];
         
-        return { id: result.lastInsertRowid, uuid };
+        return {
+            id: result.lastInsertRowid,
+            uuid,
+            deactivated_flow_ids: deactivatedFlowIds
+        };
+    },
+
+    async deactivateOtherActiveMenuFlows(options = {}) {
+        const excludeId = parsePositiveInteger(options.exclude_id ?? options.excludeId);
+        const scopedSessionId = normalizeFlowSessionScope(options.session_id ?? options.sessionId);
+        const ownerUserId = parsePositiveInteger(options.owner_user_id);
+        const createdBy = parsePositiveInteger(options.created_by);
+        const params = [];
+        let sql = 'SELECT * FROM flows WHERE is_active = 1';
+
+        if (excludeId) {
+            sql += ' AND id <> ?';
+            params.push(excludeId);
+        }
+
+        if (scopedSessionId) {
+            sql += ' AND session_id = ?';
+            params.push(scopedSessionId);
+        } else {
+            sql += " AND (session_id IS NULL OR TRIM(session_id) = '')";
+        }
+
+        if (ownerUserId) {
+            sql += `
+                AND (
+                    flows.created_by = ?
+                    OR EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = flows.created_by
+                          AND (u.owner_user_id = ? OR u.id = ?)
+                    )
+                )
+            `;
+            params.push(ownerUserId, ownerUserId, ownerUserId);
+        } else if (createdBy) {
+            sql += ' AND flows.created_by = ?';
+            params.push(createdBy);
+        }
+
+        const rows = await query(sql, params);
+        const deactivatedFlowIds = [];
+
+        for (const row of rows) {
+            const hydrated = hydrateFlowRecord(row);
+            if (!hydrated || hydrated.flow_builder_mode !== 'menu') continue;
+
+            await run('UPDATE flows SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [hydrated.id]);
+            deactivatedFlowIds.push(Number(hydrated.id));
+        }
+
+        return deactivatedFlowIds;
     },
     
     async findById(id, options = {}) {
@@ -2165,11 +2301,7 @@ const Flow = {
             WHERE flows.id = ?
             ${ownerFilter}
         `, params);
-        if (flow) {
-            flow.nodes = JSON.parse(flow.nodes || '[]');
-            flow.edges = JSON.parse(flow.edges || '[]');
-        }
-        return flow;
+        return hydrateFlowRecord(flow);
     },
     
     async findByTrigger(triggerType, triggerValue = null, options = {}) {
@@ -2211,11 +2343,7 @@ const Flow = {
         sql += ' ORDER BY priority DESC LIMIT 1';
         
         const flow = await queryOne(sql, params);
-        if (flow) {
-            flow.nodes = JSON.parse(flow.nodes || '[]');
-            flow.edges = JSON.parse(flow.edges || '[]');
-        }
-        return flow;
+        return hydrateFlowRecord(flow);
     },
 
     async findActiveKeywordFlows(options = {}) {
@@ -2253,11 +2381,7 @@ const Flow = {
             ORDER BY priority DESC, id ASC
         `, params);
 
-        return rows.map((flow) => ({
-            ...flow,
-            nodes: JSON.parse(flow.nodes || '[]'),
-            edges: JSON.parse(flow.edges || '[]')
-        }));
+        return rows.map((flow) => hydrateFlowRecord(flow)).filter(Boolean);
     },
     
     async findKeywordMatches(messageText, options = {}) {
@@ -2300,7 +2424,10 @@ const Flow = {
 
         const matches = [];
 
-        for (const flow of flows) {
+        for (const rawFlow of flows) {
+            const flow = hydrateFlowRecord(rawFlow);
+            if (!flow) continue;
+
             const keywords = extractFlowKeywords(flow.trigger_value || '');
             if (keywords.length === 0) continue;
 
@@ -2319,8 +2446,6 @@ const Flow = {
 
         return matches.map(({ flow, score, matchedKeywords }) => ({
             ...flow,
-            nodes: JSON.parse(flow.nodes || '[]'),
-            edges: JSON.parse(flow.edges || '[]'),
             _keywordMatch: {
                 ...score,
                 matchedKeywords
@@ -2373,24 +2498,35 @@ const Flow = {
         sql += ' ORDER BY priority DESC, name ASC';
         
         const rows = await query(sql, params);
-        return rows.map(flow => ({
-            ...flow,
-            nodes: JSON.parse(flow.nodes || '[]'),
-            edges: JSON.parse(flow.edges || '[]')
-        }));
+        return rows.map((flow) => hydrateFlowRecord(flow)).filter(Boolean);
     },
     
     async update(id, data) {
         const fields = [];
         const values = [];
+        const payload = {
+            ...data
+        };
+
+        if (Object.prototype.hasOwnProperty.call(payload, 'flowBuilderMode')
+            && !Object.prototype.hasOwnProperty.call(payload, 'flow_builder_mode')) {
+            payload.flow_builder_mode = payload.flowBuilderMode;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(payload, 'nodes')
+            && !Object.prototype.hasOwnProperty.call(payload, 'flow_builder_mode')) {
+            payload.flow_builder_mode = resolvePersistedFlowBuilderMode('', payload.nodes);
+        }
         
-        const allowedFields = ['name', 'description', 'trigger_type', 'trigger_value', 'nodes', 'edges', 'is_active', 'priority', 'session_id'];
+        const allowedFields = ['name', 'description', 'trigger_type', 'trigger_value', 'nodes', 'edges', 'is_active', 'priority', 'session_id', 'flow_builder_mode'];
         
-        for (const [key, value] of Object.entries(data)) {
+        for (const [key, value] of Object.entries(payload)) {
             if (allowedFields.includes(key)) {
                 fields.push(`${key} = ?`);
                 if (key === 'session_id') {
                     values.push(normalizeFlowSessionScope(value));
+                } else if (key === 'flow_builder_mode') {
+                    values.push(resolvePersistedFlowBuilderMode(value, payload.nodes));
                 } else {
                     values.push(typeof value === 'object' ? JSON.stringify(value) : value);
                 }
@@ -2402,7 +2538,27 @@ const Flow = {
         fields.push("updated_at = CURRENT_TIMESTAMP");
         values.push(id);
         
-        return await run(`UPDATE flows SET ${fields.join(', ')} WHERE id = ?`, values);
+        const result = await run(`UPDATE flows SET ${fields.join(', ')} WHERE id = ?`, values);
+        const finalFlow = await this.findById(id, {
+            owner_user_id: data.owner_user_id,
+            created_by: data.created_by
+        });
+
+        const deactivatedFlowIds = finalFlow
+            && Number(finalFlow.is_active) > 0
+            && resolvePersistedFlowBuilderMode(finalFlow.flow_builder_mode, finalFlow.nodes) === 'menu'
+            ? await this.deactivateOtherActiveMenuFlows({
+                exclude_id: id,
+                session_id: finalFlow.session_id,
+                owner_user_id: data.owner_user_id,
+                created_by: data.created_by || finalFlow.created_by
+            })
+            : [];
+
+        return {
+            result,
+            deactivated_flow_ids: deactivatedFlowIds
+        };
     },
     
     async delete(id) {

@@ -17518,6 +17518,7 @@ app.post('/api/flows', authenticate, async (req, res) => {
     const payload = {
         ...req.body,
         created_by: req.user?.id,
+        owner_user_id: ownerScopeUserId || undefined,
         session_id: flowSessionScope.provided ? flowSessionScope.sessionId : null
     };
     delete payload.sessionId;
@@ -17533,7 +17534,13 @@ app.post('/api/flows', authenticate, async (req, res) => {
         owner_user_id: ownerScopeUserId || undefined
     });
 
-    res.json({ success: true, flow });
+    res.json({
+        success: true,
+        flow,
+        meta: {
+            deactivated_flow_ids: Array.isArray(result?.deactivated_flow_ids) ? result.deactivated_flow_ids : []
+        }
+    });
 
 });
 
@@ -17559,6 +17566,7 @@ app.put('/api/flows/:id', authenticate, async (req, res) => {
     const payload = {
         ...req.body
     };
+    payload.owner_user_id = ownerScopeUserId || undefined;
     if (flowSessionScope.provided) {
         payload.session_id = flowSessionScope.sessionId;
     }
@@ -17572,13 +17580,19 @@ app.put('/api/flows/:id', authenticate, async (req, res) => {
         }
     }
 
-    await Flow.update(req.params.id, payload);
+    const updateResult = await Flow.update(req.params.id, payload);
 
     const flow = await Flow.findById(req.params.id, {
         owner_user_id: ownerScopeUserId || undefined
     });
 
-    res.json({ success: true, flow });
+    res.json({
+        success: true,
+        flow,
+        meta: {
+            deactivated_flow_ids: Array.isArray(updateResult?.deactivated_flow_ids) ? updateResult.deactivated_flow_ids : []
+        }
+    });
 
 });
 
