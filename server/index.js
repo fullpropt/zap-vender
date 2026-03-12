@@ -1093,6 +1093,8 @@ app.use('/api/', limiter);
 const sanitizeOriginEntry = (value = '') =>
     String(value).trim().replace(/^['"]|['"]$/g, '').replace(/\/$/, '');
 
+const isProductionEnv = process.env.NODE_ENV === 'production';
+
 const parseOriginHost = (value) => {
     if (!value) return '';
     try {
@@ -1103,7 +1105,7 @@ const parseOriginHost = (value) => {
 };
 const allowedOriginEntries = (process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',').map(sanitizeOriginEntry).filter(Boolean)
-    : (process.env.NODE_ENV === 'production'
+    : (isProductionEnv
         ? []
         : ['http://localhost:3000', 'http://localhost:3001']))
     .map(sanitizeOriginEntry);
@@ -1120,6 +1122,11 @@ const allowedOriginSet = new Set(allowedOriginEntries.map((entry) => {
 }));
 
 const allowedHostSet = new Set(allowedOriginEntries.map(parseOriginHost).filter(Boolean));
+const allowOpenCorsFallback = !isProductionEnv && allowedOriginEntries.length === 0;
+
+if (isProductionEnv && allowedOriginEntries.length === 0) {
+    console.warn('[CORS] CORS_ORIGINS nao configurado em producao. Apenas same-origin sera aceito.');
+}
 
 const getRequestHost = (req) => {
     const forwardedHost = req.header('X-Forwarded-Host');
@@ -1140,7 +1147,7 @@ const isOriginAllowed = (origin, requestHost = '') => {
     return (
         !normalizedOrigin ||
         allowedOriginSet.has('*') ||
-        allowedOriginEntries.length === 0 ||
+        allowOpenCorsFallback ||
         isSameOrigin ||
         allowedOriginSet.has(normalizedOrigin) ||
         allowedHostSet.has(originHost)

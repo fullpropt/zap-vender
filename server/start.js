@@ -102,6 +102,16 @@ app.get('/health', (req, res) => {
         });
     }
 
+    if (bootstrapState !== 'ready') {
+        return res.status(503).json({
+            status: 'starting',
+            phase: bootstrapState,
+            version: APP_VERSION,
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString()
+        });
+    }
+
     return res.status(200).json({
         status: 'healthy',
         phase: bootstrapState,
