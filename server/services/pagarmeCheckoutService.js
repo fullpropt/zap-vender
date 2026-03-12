@@ -363,7 +363,8 @@ async function createCheckoutSession({ plan, customer = {}, metadata = {} }) {
         cart_settings: {
             recurrences: [
                 {
-                    plan_id: resolvedPlan.priceId
+                    plan_id: resolvedPlan.priceId,
+                    start_in: Math.max(0, Number(resolvedPlan.trialDays || 0))
                 }
             ]
         }
