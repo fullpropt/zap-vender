@@ -8,6 +8,7 @@ const PLAN_CATALOG = {
         code: 'starter',
         name: 'Starter',
         priceId: String(process.env.PAGARME_PLAN_STARTER || '').trim(),
+        amountCents: 9700,
         trialDays: 0
     },
     premium: {
@@ -15,6 +16,7 @@ const PLAN_CATALOG = {
         code: 'premium',
         name: 'Premium',
         priceId: String(process.env.PAGARME_PLAN_PREMIUM || '').trim(),
+        amountCents: 19700,
         trialDays: 7
     },
     advanced: {
@@ -22,6 +24,7 @@ const PLAN_CATALOG = {
         code: 'advanced',
         name: 'Avancado',
         priceId: String(process.env.PAGARME_PLAN_ADVANCED || process.env.PAGARME_PLAN_AVANCADO || '').trim(),
+        amountCents: 39700,
         trialDays: 0
     }
 };
@@ -77,6 +80,10 @@ function inferPlanByPriceId(priceId) {
 
 function getSupportEmail() {
     return String(process.env.SALES_SUPPORT_EMAIL || DEFAULT_SUPPORT_EMAIL).trim() || DEFAULT_SUPPORT_EMAIL;
+}
+
+function getPagarmePublicKey() {
+    return String(process.env.PAGARME_PUBLIC_KEY || '').trim();
 }
 
 function normalizePlanStatus(value) {
@@ -147,6 +154,24 @@ function normalizeCustomerEmail(value) {
     return normalized;
 }
 
+function normalizeDocumentType(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'cnpj') return 'cnpj';
+    return 'cpf';
+}
+
+function normalizeDocumentDigits(value, documentType = 'cpf') {
+    const digits = String(value || '').replace(/\D+/g, '');
+    if (!digits) return '';
+    return normalizeDocumentType(documentType) === 'cnpj'
+        ? digits.slice(0, 14)
+        : digits.slice(0, 11);
+}
+
+function inferCustomerType(documentType = 'cpf') {
+    return normalizeDocumentType(documentType) === 'cnpj' ? 'company' : 'individual';
+}
+
 function normalizePhoneDigits(value) {
     return String(value || '').replace(/\D+/g, '');
 }
@@ -188,6 +213,9 @@ async function resolvePagarmeCustomerId(customer = {}) {
 
     const customerName = sanitizeMetadataValue(customer?.name, 120);
     const customerPhones = buildCustomerPhonesPayload(customer?.phone);
+    const documentType = normalizeDocumentType(customer?.documentType);
+    const document = normalizeDocumentDigits(customer?.documentNumber || customer?.document, documentType);
+    const customerType = inferCustomerType(documentType);
 
     try {
         const existingCustomers = await pagarmeRequest(`/customers?email=${encodeURIComponent(customerEmail)}`);
@@ -199,6 +227,9 @@ async function resolvePagarmeCustomerId(customer = {}) {
             const existingPhones = existingCustomer?.phones && typeof existingCustomer.phones === 'object'
                 ? existingCustomer.phones
                 : null;
+            const existingDocument = normalizeDocumentDigits(existingCustomer?.document || '', existingCustomer?.document_type || documentType);
+            const existingDocumentType = normalizeDocumentType(existingCustomer?.document_type || documentType);
+            const existingType = String(existingCustomer?.type || '').trim().toLowerCase();
 
             if (customerName && customerName !== existingName) {
                 updates.name = customerName;
@@ -209,6 +240,18 @@ async function resolvePagarmeCustomerId(customer = {}) {
                 && JSON.stringify(customerPhones) !== JSON.stringify(existingPhones)
             ) {
                 updates.phones = customerPhones;
+            }
+
+            if (document && document !== existingDocument) {
+                updates.document = document;
+            }
+
+            if (document && documentType !== existingDocumentType) {
+                updates.document_type = documentType;
+            }
+
+            if (customerType && customerType !== existingType) {
+                updates.type = customerType;
             }
 
             if (Object.keys(updates).length > 0) {
@@ -226,7 +269,9 @@ async function resolvePagarmeCustomerId(customer = {}) {
             body: {
                 name: customerName || customerEmail,
                 email: customerEmail,
-                type: 'individual',
+                type: customerType,
+                ...(document ? { document } : {}),
+                ...(document ? { document_type: documentType } : {}),
                 ...(customerPhones ? { phones: customerPhones } : {})
             }
         });
@@ -390,6 +435,92 @@ async function createCheckoutSession({ plan, customer = {}, metadata = {} }) {
     };
 }
 
+function buildSubscriptionMetadata(plan, customer = {}, metadata = {}) {
+    return normalizeMetadataObject({
+        plan_key: plan?.key || '',
+        plan_code: plan?.code || '',
+        plan_name: plan?.name || '',
+        pre_checkout_email: normalizeCustomerEmail(customer?.email),
+        pre_checkout_name: sanitizeMetadataValue(customer?.name, 120),
+        pre_checkout_whatsapp: sanitizeMetadataValue(customer?.phone, 40),
+        pre_checkout_company: sanitizeMetadataValue(customer?.companyName, 120),
+        pre_checkout_objective: sanitizeMetadataValue(customer?.objective, 80),
+        pre_checkout_document: normalizeDocumentDigits(customer?.documentNumber || customer?.document, customer?.documentType),
+        pre_checkout_document_type: normalizeDocumentType(customer?.documentType),
+        source: 'zapvender_custom_checkout',
+        ...metadata
+    });
+}
+
+function buildPagarmeIdempotencyKey(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    return `zv_${normalized.slice(0, 100)}`;
+}
+
+async function createPlanSubscription({ plan, customer = {}, cardToken, metadata = {}, idempotencyKey = '' }) {
+    const resolvedPlan = typeof plan === 'string' ? getPlanConfig(plan) : plan;
+    if (!resolvedPlan?.priceId) {
+        throw new Error('Plano invalido para assinatura');
+    }
+
+    const normalizedCardToken = String(cardToken || '').trim();
+    const cardInput = customer?.card && typeof customer.card === 'object' ? customer.card : null;
+    const normalizedCard = cardInput
+        ? {
+            holder_name: sanitizeMetadataValue(cardInput.holder_name || cardInput.holderName, 120),
+            number: String(cardInput.number || '').replace(/\D+/g, ''),
+            exp_month: String(cardInput.exp_month || cardInput.expMonth || '').replace(/\D+/g, '').slice(0, 2),
+            exp_year: String(cardInput.exp_year || cardInput.expYear || '').replace(/\D+/g, '').slice(-4),
+            cvv: String(cardInput.cvv || '').replace(/\D+/g, '').slice(0, 4)
+        }
+        : null;
+    const hasFullCardPayload = Boolean(
+        normalizedCard
+        && normalizedCard.holder_name
+        && normalizedCard.number
+        && normalizedCard.exp_month
+        && normalizedCard.exp_year
+        && normalizedCard.cvv
+    );
+
+    if (!normalizedCardToken && !hasFullCardPayload) {
+        throw new Error('card_token ou cartao completo e obrigatorio');
+    }
+
+    const customerId = await resolvePagarmeCustomerId(customer);
+    if (!customerId) {
+        throw new Error('Nao foi possivel preparar o customer no Pagar.me');
+    }
+
+    const subscriptionPayload = {
+        plan_id: resolvedPlan.priceId,
+        customer_id: customerId,
+        payment_method: 'credit_card',
+        metadata: buildSubscriptionMetadata(resolvedPlan, customer, metadata)
+    };
+
+    if (normalizedCardToken) {
+        subscriptionPayload.card_token = normalizedCardToken;
+    } else if (hasFullCardPayload) {
+        subscriptionPayload.card = normalizedCard;
+    }
+
+    const subscription = await pagarmeRequest('/subscriptions', {
+        method: 'POST',
+        headers: buildPagarmeIdempotencyKey(idempotencyKey)
+            ? { 'Idempotency-Key': buildPagarmeIdempotencyKey(idempotencyKey) }
+            : undefined,
+        body: subscriptionPayload
+    });
+
+    return {
+        id: String(subscription?.id || '').trim(),
+        raw: subscription,
+        payload: await resolveSubscriptionPayload(subscription)
+    };
+}
+
 async function constructWebhookEvent(rawBody) {
     if (!rawBody) return {};
     if (Buffer.isBuffer(rawBody)) {
@@ -486,6 +617,7 @@ async function resolveSubscriptionPayload(subscriptionOrId) {
         sessionId: String(
             subscription?.payment_link?.id
             || subscription?.metadata?.payment_link_id
+            || subscriptionId
             || ''
         ).trim(),
         customerId: extractCustomerId(subscription),
@@ -508,7 +640,9 @@ async function resolveSubscriptionPayload(subscriptionOrId) {
 module.exports = {
     constructWebhookEvent,
     createCheckoutSession,
+    createPlanSubscription,
     getPlanConfig,
+    getPagarmePublicKey,
     getSupportEmail,
     inferPlanByPriceId,
     listPlanCatalog,

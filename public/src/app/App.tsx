@@ -19,6 +19,7 @@ import Inbox from './pages/Inbox';
 import Login from './pages/Login';
 import Planos from './pages/Planos';
 import PreCheckout from './pages/PreCheckout';
+import PublicCheckout from './pages/PublicCheckout';
 import Transmissao from './pages/Transmissao';
 import Whatsapp from './pages/Whatsapp';
 
@@ -212,6 +213,7 @@ export default function App() {
       <Route path="/planos" element={<Planos />} />
       <Route path="/venda" element={<Planos />} />
       <Route path="/pre-checkout" element={<PreCheckout />} />
+      <Route path="/checkout/:planKey" element={<PublicCheckout />} />
       <Route path="/login" element={<Login />} />
       <Route path="/checkout/sucesso" element={<CheckoutSuccess />} />
       <Route path="/finalizar-cadastro" element={<CompleteRegistration />} />

@@ -139,6 +139,18 @@ export function savePreCheckoutSubmission(planKey: string, values: PreCheckoutFo
   } satisfies PreCheckoutSubmissionPayload);
 }
 
+export function loadPreCheckoutSubmission() {
+  const payload = safeReadJson<PreCheckoutSubmissionPayload>(PRE_CHECKOUT_SUBMISSION_KEY);
+  if (!payload || typeof payload !== 'object') return null;
+
+  return {
+    planKey: normalizeText(payload.planKey, 40).toLowerCase() || 'premium',
+    values: normalizePreCheckoutValues(payload.values),
+    leadCaptureId: Number.isInteger(Number(payload.leadCaptureId)) ? Number(payload.leadCaptureId) : null,
+    updatedAt: normalizeText(payload.updatedAt, 60)
+  };
+}
+
 export function validatePreCheckout(values: PreCheckoutFormValues): PreCheckoutFieldErrors {
   const errors: PreCheckoutFieldErrors = {};
 
