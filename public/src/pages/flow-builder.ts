@@ -1620,6 +1620,7 @@ function renderFlowsListSessionSelectionGate(message?: string) {
 
 function renderFlowListSessionScopeControls() {
     const select = document.getElementById('flowListSessionScope') as HTMLSelectElement | null;
+    const modeFilterWrap = document.getElementById('flowListModeFilterWrap') as HTMLElement | null;
     const modeSelect = document.getElementById('flowListModeFilter') as HTMLSelectElement | null;
     const createBtn = document.getElementById('flowSelectorCreateBtn') as HTMLButtonElement | null;
     const options = getAvailableFlowSessionOptions();
@@ -1641,12 +1642,17 @@ function renderFlowListSessionScopeControls() {
         select.disabled = options.length === 0;
     }
 
+    const hasSelectedSession = Boolean(normalizeFlowSessionId(flowsListRequiredSessionId));
+    if (modeFilterWrap) {
+        modeFilterWrap.toggleAttribute('hidden', !hasSelectedSession);
+    }
+
     if (modeSelect) {
         modeSelect.value = normalizeFlowBuilderMode(flowsListModeFilter);
+        modeSelect.disabled = !hasSelectedSession;
     }
 
     if (createBtn) {
-        const hasSelectedSession = Boolean(normalizeFlowSessionId(flowsListRequiredSessionId));
         createBtn.disabled = !hasSelectedSession;
         createBtn.setAttribute('aria-disabled', String(!hasSelectedSession));
         createBtn.title = hasSelectedSession

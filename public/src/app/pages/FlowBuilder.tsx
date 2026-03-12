@@ -3683,7 +3683,7 @@ export default function FlowBuilder() {
                                       <option value="">Escolha uma conta WhatsApp</option>
                                   </select>
                               </div>
-                              <div className="flow-selector-filter flow-selector-filter-mode">
+                              <div className="flow-selector-filter flow-selector-filter-mode" id="flowListModeFilterWrap" hidden>
                                   <label htmlFor="flowListModeFilter" className="flow-selector-filter-label">Tipo de fluxo</label>
                                   <select
                                       id="flowListModeFilter"
