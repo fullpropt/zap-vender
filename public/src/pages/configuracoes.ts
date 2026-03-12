@@ -1003,15 +1003,12 @@ function renderPlanStatus() {
 
     const data = planStatusCache || buildFallbackPlanStatus();
     const statusBadgeClass = getPlanStatusBadgeClass(data.status);
-    const apiBadgeClass = data.apiConfigured ? 'badge-success' : 'badge-secondary';
-    const apiBadgeLabel = data.apiConfigured ? 'API configurada' : 'API pendente';
 
     container.innerHTML = `
         <div class="copy-card" style="margin-bottom: 0;">
             <div class="copy-card-header" style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <span class="copy-card-title">Situacao do Plano</span>
                 <span class="badge ${statusBadgeClass}">${escapeHtml(data.statusLabel)}</span>
-                <span class="badge ${apiBadgeClass}">${apiBadgeLabel}</span>
             </div>
             <p class="text-muted mb-3">${escapeHtml(data.message)}</p>
             <div class="form-row">
