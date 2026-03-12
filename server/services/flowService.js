@@ -2416,9 +2416,6 @@ class FlowService extends EventEmitter {
 
                 // Sem match: mantem aguardando novas mensagens antes de cair no padrao.
                 if (shouldWaitForMoreInput) {
-                    if (intentMenuEnabled) {
-                        await this.maybeSendIntentNodeMenu(execution, currentNode);
-                    }
                     await this.persistExecutionVariables(execution);
 
                     console.info(
