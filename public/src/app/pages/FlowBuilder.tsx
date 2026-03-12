@@ -769,6 +769,10 @@ export default function FlowBuilder() {
 
         .flow-side-panel {
             position: relative;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
             min-width: 0;
         }
         
@@ -1344,43 +1348,53 @@ export default function FlowBuilder() {
             border-left: 1px solid var(--border);
             padding: 18px;
             overflow-y: auto;
+            flex: 1 1 auto;
+            min-height: 0;
             min-width: 0;
             height: 100%;
         }
 
         .flow-preview-toggle {
             position: absolute;
-            top: 26px;
-            right: -14px;
+            top: 22px;
+            right: 10px;
             z-index: 6;
-            width: 28px;
-            height: 44px;
-            border: 1px solid rgba(148, 163, 184, 0.3);
+            width: 36px;
+            height: 54px;
+            border: 1px solid rgba(148, 163, 184, 0.6);
             border-radius: 999px;
-            background: rgba(15, 23, 42, 0.86);
-            color: #d7e2f0;
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.96));
+            color: #f8fbff;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.18);
+            box-shadow:
+                0 0 0 1px rgba(255, 255, 255, 0.1),
+                0 12px 24px rgba(15, 23, 42, 0.34),
+                0 0 20px rgba(var(--primary-rgb), 0.26);
             transition: all 0.2s ease;
         }
 
         .flow-preview-toggle:hover {
-            border-color: rgba(var(--primary-rgb), 0.5);
-            background: rgba(8, 19, 34, 0.95);
+            border-color: rgba(var(--primary-rgb), 0.7);
+            background: linear-gradient(180deg, rgba(8, 19, 34, 0.98), rgba(13, 28, 49, 0.98));
             color: #f8fffb;
+            transform: translateX(1px);
         }
 
         .flow-preview-toggle.is-open {
-            background: rgba(var(--primary-rgb), 0.15);
-            border-color: rgba(var(--primary-rgb), 0.4);
-            color: #0f5132;
+            background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.24), rgba(var(--primary-rgb), 0.16));
+            border-color: rgba(var(--primary-rgb), 0.76);
+            color: #082316;
+            box-shadow:
+                0 0 0 1px rgba(var(--primary-rgb), 0.34),
+                0 12px 24px rgba(7, 35, 24, 0.34),
+                0 0 24px rgba(var(--primary-rgb), 0.36);
         }
 
         .flow-preview-toggle-label {
-            font-size: 16px;
+            font-size: 18px;
             font-weight: 700;
             line-height: 1;
             margin-top: -1px;
