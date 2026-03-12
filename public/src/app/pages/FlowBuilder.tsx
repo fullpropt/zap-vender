@@ -5,6 +5,7 @@ import { brandLogoUrl, brandName } from '../lib/brand';
 type FlowBuilderGlobals = {
   initFlowBuilder?: () => void;
   openFlowsModal?: () => void;
+  resetFlowSelectorScopeState?: () => void;
   createNewFlow?: () => Promise<void>;
   addIntentBlock?: () => void;
   clearCanvas?: () => void;
@@ -50,6 +51,8 @@ export default function FlowBuilder() {
 
     return () => {
       cancelled = true;
+      const win = window as Window & FlowBuilderGlobals;
+      win.resetFlowSelectorScopeState?.();
     };
   }, []);
 

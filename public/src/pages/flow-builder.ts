@@ -5808,11 +5808,18 @@ function openFlowsModal() {
     renamingFlowId = null;
     renamingFlowDraft = '';
     pendingFlowListSessionScopes = {};
-    flowsListRequiredSessionId = '';
-    flowsCache = [];
     renderFlowListSessionScopeControls();
-    renderFlowsListSessionSelectionGate();
-    void loadFlowWhatsappSessions({ silent: true });
+    if (normalizeFlowSessionId(flowsListRequiredSessionId)) {
+        void loadFlows();
+    } else {
+        renderFlowsListSessionSelectionGate();
+    }
+    void (async () => {
+        await loadFlowWhatsappSessions({ silent: true });
+        if (normalizeFlowSessionId(flowsListRequiredSessionId)) {
+            await loadFlows();
+        }
+    })();
     const screenTitle = document.getElementById('flowsScreenTitle') as HTMLElement | null;
     if (screenTitle) {
         screenTitle.textContent = currentFlowId
@@ -5829,9 +5836,21 @@ function closeFlowsModal(options: { force?: boolean } = {}) {
     setFlowBuilderScreen('builder');
 }
 
+function resetFlowSelectorScopeState() {
+    flowsListRequiredSessionId = '';
+    flowsListModeFilter = 'humanized';
+    flowsCache = [];
+    pendingFlowListSessionScopes = {};
+    renamingFlowId = null;
+    renamingFlowDraft = '';
+    renderFlowListSessionScopeControls();
+    renderFlowsListSessionSelectionGate();
+}
+
 const windowAny = window as Window & {
     initFlowBuilder?: () => void;
     openFlowsModal?: () => void;
+    resetFlowSelectorScopeState?: () => void;
     createNewFlow?: () => Promise<void>;
     addIntentBlock?: () => void;
     clearCanvas?: () => void;
@@ -5896,6 +5915,7 @@ const windowAny = window as Window & {
 };
 windowAny.initFlowBuilder = initFlowBuilder;
 windowAny.openFlowsModal = openFlowsModal;
+windowAny.resetFlowSelectorScopeState = resetFlowSelectorScopeState;
 windowAny.createNewFlow = createNewFlow;
 windowAny.addIntentBlock = addIntentBlock;
 windowAny.clearCanvas = clearCanvas;
