@@ -114,6 +114,11 @@ function isFlowIntentClassifierConfigured() {
     return Boolean(String(process.env.GEMINI_API_KEY || '').trim());
 }
 
+function isFlowInlineMenuOptionsEnabled() {
+    const raw = String(process.env.FLOW_MENU_INLINE_OPTIONS_TEXT || 'true').trim().toLowerCase();
+    return raw !== '0' && raw !== 'false' && raw !== 'off';
+}
+
 function readIntentNumberEnv(name, fallback, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY) {
     const parsed = Number(process.env[name]);
     if (!Number.isFinite(parsed)) return fallback;
@@ -1172,6 +1177,28 @@ class FlowService extends EventEmitter {
         return sanitized || FLOW_MENU_PROMPT_DEFAULT;
     }
 
+    buildInlineMenuPrompt(basePrompt = '', rows = []) {
+        const prompt = sanitizeOutgoingFlowText(basePrompt || '') || FLOW_MENU_PROMPT_DEFAULT;
+        if (!isFlowInlineMenuOptionsEnabled()) {
+            return prompt;
+        }
+
+        const normalizedRows = Array.isArray(rows) ? rows : [];
+        if (normalizedRows.length === 0) {
+            return prompt;
+        }
+
+        const numberedOptions = normalizedRows
+            .map((row, index) => `${index + 1}. ${sanitizeOutgoingFlowText(row?.title || '')}`)
+            .filter((line) => !/^\d+\.\s*$/.test(line));
+
+        if (numberedOptions.length === 0) {
+            return prompt;
+        }
+
+        return `${prompt}\n\n${numberedOptions.join('\n')}\n\nResponda com o numero da opcao.`;
+    }
+
     resolveMenuButtonText(node = null, execution = null) {
         const rawText = this.replaceVariables(node?.data?.menuButtonText || '', execution?.variables || {});
         const sanitized = sanitizeOutgoingFlowText(rawText);
@@ -1220,7 +1247,7 @@ class FlowService extends EventEmitter {
 
         return {
             mediaType: 'list',
-            content: this.resolveMenuPrompt(node, execution),
+            content: this.buildInlineMenuPrompt(this.resolveMenuPrompt(node, execution), rows),
             listButtonText: this.resolveMenuButtonText(node, execution),
             listTitle: menuTitle || undefined,
             listFooter: menuFooter || undefined,
@@ -1415,7 +1442,7 @@ class FlowService extends EventEmitter {
 
         return {
             mediaType: 'list',
-            content: this.resolveMenuPrompt(node, execution),
+            content: this.buildInlineMenuPrompt(this.resolveMenuPrompt(node, execution), rows),
             listButtonText: this.resolveMenuButtonText(node, execution),
             listTitle: this.resolveMenuTitle(node, execution) || undefined,
             listFooter: this.resolveMenuFooter(node, execution) || undefined,
