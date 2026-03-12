@@ -1659,7 +1659,8 @@ function renderFlowListSessionScopeControls() {
     }
 
     if (createBtn) {
-        createBtn.disabled = !hasSelectedSession;
+        createBtn.disabled = false;
+        createBtn.classList.toggle('is-disabled', !hasSelectedSession);
         createBtn.setAttribute('aria-disabled', String(!hasSelectedSession));
         createBtn.title = hasSelectedSession
             ? 'Criar fluxo para a conta WhatsApp selecionada'

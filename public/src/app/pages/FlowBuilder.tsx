@@ -2670,6 +2670,12 @@ export default function FlowBuilder() {
             box-shadow: none;
         }
 
+        .flow-selector-create-btn.is-disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
         .flow-selector-body {
             padding: 20px;
             overflow: visible;
@@ -3722,7 +3728,6 @@ export default function FlowBuilder() {
                               className="btn btn-primary flow-selector-create-btn"
                               type="button"
                               onClick={() => globals.createNewFlow?.()}
-                              disabled
                           >
                               <span className="icon icon-add icon-sm"></span> Criar Novo Fluxo
                           </button>
