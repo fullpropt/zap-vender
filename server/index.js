@@ -1002,7 +1002,7 @@ if (process.env.NODE_ENV === 'production') {
 // Migracao roda aqui (servidor ja esta ouvindo via start.js)
 async function bootstrapDatabase() {
     try {
-        const ok = await migrate();
+        const ok = await migrate({ closeConnection: false });
         if (ok) {
             console.log('Banco de dados inicializado');
         }
@@ -19278,20 +19278,33 @@ app.get('*', (req, res, next) => {
         return next();
     }
 
-    const requestedFile = path.join(STATIC_DIR, req.path);
+    const staticRoot = path.resolve(STATIC_DIR);
+    const requestPath = String(req.path || '').replace(/\\/g, '/');
+    const relativeRequestPath = requestPath.replace(/^\/+/, '');
+    const requestedFile = path.resolve(staticRoot, relativeRequestPath || '.');
+    const comparableStaticRoot = process.platform === 'win32' ? staticRoot.toLowerCase() : staticRoot;
+    const comparableRequestedFile = process.platform === 'win32' ? requestedFile.toLowerCase() : requestedFile;
+    const isInsideStaticRoot = comparableRequestedFile === comparableStaticRoot
+        || comparableRequestedFile.startsWith(`${comparableStaticRoot}${path.sep}`);
 
-    if (fs.existsSync(requestedFile)) {
-
-        res.sendFile(requestedFile);
-
-    } else {
-
-        res.setHeader('Cache-Control', 'no-store');
-        res.setHeader('Clear-Site-Data', '"cache"');
-
-        res.sendFile(path.join(STATIC_DIR, 'app.html'));
-
+    if (!isInsideStaticRoot) {
+        return res.status(404).json({ error: 'Arquivo nao encontrado' });
     }
+
+    if (relativeRequestPath && fs.existsSync(requestedFile)) {
+        try {
+            if (fs.statSync(requestedFile).isFile()) {
+                return res.sendFile(requestedFile);
+            }
+        } catch (_) {
+            // fallback para app shell abaixo
+        }
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Clear-Site-Data', '"cache"');
+
+    return res.sendFile(path.join(STATIC_DIR, 'app.html'));
 
 });
 

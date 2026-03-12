@@ -3,6 +3,8 @@
  * Popula o banco de dados com dados iniciais
  */
 
+require('dotenv').config();
+
 const bcrypt = require('bcryptjs');
 const { getDatabase, run, generateUUID, close } = require('./connection');
 

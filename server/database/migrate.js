@@ -3,11 +3,14 @@
  * Executa o esquema SQL para criar/atualizar tabelas
  */
 
+require('dotenv').config();
+
 const fs = require('fs');
 const path = require('path');
 const { getDatabase, query, run, close } = require('./connection');
 
-async function migrate() {
+async function migrate(options = {}) {
+    const shouldCloseConnection = options.closeConnection !== false;
     console.log('?? Iniciando migracao do banco de dados...');
 
     try {
@@ -87,12 +90,14 @@ async function migrate() {
         console.error('? Erro fatal na migracao:', error.message);
         return false;
     } finally {
-        await close();
+        if (shouldCloseConnection) {
+            await close();
+        }
     }
 }
 
 if (require.main === module) {
-    migrate().then(success => process.exit(success ? 0 : 1));
+    migrate({ closeConnection: true }).then(success => process.exit(success ? 0 : 1));
 }
 
 module.exports = { migrate };

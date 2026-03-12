@@ -12,6 +12,7 @@ const fs = require('fs');
 
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
+const APP_VERSION = '4.1.0';
 const DEPLOY_COMMIT_SHA = String(
     process.env.RAILWAY_GIT_COMMIT_SHA
     || process.env.GITHUB_SHA
@@ -65,6 +66,9 @@ const uploadsDir = explicitUploadDir || (volumeBase ? path.join(volumeBase, 'upl
 process.env.SESSIONS_DIR = sessionsDir;
 process.env.UPLOAD_DIR = uploadsDir;
 
+let bootstrapState = 'starting';
+let bootstrapErrorMessage = '';
+
 if (process.env.NODE_ENV === 'production') {
     console.log(`[QueueDebugVersion] commit=${DEPLOY_COMMIT_SHA || 'unknown'} deploy=${DEPLOY_ID || 'unknown'} node=${process.version}`);
     if (volumeBase) {
@@ -86,7 +90,25 @@ if (process.env.NODE_ENV === 'production') {
 
 const app = express();
 app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'healthy', version: '4.1.0', uptime: process.uptime(), timestamp: new Date().toISOString() });
+    if (bootstrapState === 'failed') {
+        return res.status(503).json({
+            status: 'unhealthy',
+            phase: bootstrapState,
+            error: 'bootstrap_failed',
+            message: bootstrapErrorMessage || 'Falha ao carregar aplicacao principal',
+            version: APP_VERSION,
+            uptime: process.uptime(),
+            timestamp: new Date().toISOString()
+        });
+    }
+
+    return res.status(200).json({
+        status: 'healthy',
+        phase: bootstrapState,
+        version: APP_VERSION,
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString()
+    });
 });
 
 const server = http.createServer(app);
@@ -96,7 +118,10 @@ server.listen(PORT, HOST, () => {
     setImmediate(() => {
         try {
             require('./index')(app, server);
+            bootstrapState = 'ready';
         } catch (err) {
+            bootstrapState = 'failed';
+            bootstrapErrorMessage = String(err?.message || err || 'erro desconhecido');
             console.error('[Bootstrap] Erro ao carregar app:', err.message);
         }
     });
