@@ -77,6 +77,7 @@ const senderAllocatorService = require('./services/senderAllocatorService');
 const tenantIntegrityAuditService = require('./services/tenantIntegrityAuditService');
 const { PostgresAdvisoryLock } = require('./services/postgresAdvisoryLock');
 const stripeCheckoutService = require('./services/stripeCheckoutService');
+const planLimitsService = require('./services/planLimitsService');
 const {
     DEFAULT_APP_NAME,
     DEFAULT_EMAIL_HTML_TEMPLATE,
@@ -3863,6 +3864,15 @@ async function persistWhatsappSession(sessionId, status, options = {}) {
         const ownerUserId = Number.isInteger(requestedOwnerUserId) && requestedOwnerUserId > 0
             ? requestedOwnerUserId
             : null;
+        if (ownerUserId && normalizedStatus === 'connecting') {
+            const existingStoredSession = await queryOne(
+                'SELECT session_id FROM whatsapp_sessions WHERE session_id = ? LIMIT 1',
+                [normalizedSessionId]
+            );
+            if (!existingStoredSession?.session_id) {
+                await planLimitsService.assertOwnerCanCreateWhatsAppSession(ownerUserId, 1);
+            }
+        }
 
         await run(`
 
@@ -6615,21 +6625,28 @@ async function syncChatsToDatabase(sessionId, payload) {
         }
 
         if (!lead) {
+            try {
+                const leadResult = await Lead.findOrCreate({
 
-            const leadResult = await Lead.findOrCreate({
+                    phone,
 
-                phone,
+                    jid,
 
-                jid,
+                    name: displayName,
 
-                name: displayName,
+                    source: 'whatsapp',
+                    assigned_to: sessionOwnerUserId || undefined,
+                    owner_user_id: sessionOwnerUserId || undefined
 
-                source: 'whatsapp',
-                assigned_to: sessionOwnerUserId || undefined,
-                owner_user_id: sessionOwnerUserId || undefined
-
-            });
-            lead = leadResult.lead;
+                });
+                lead = leadResult.lead;
+            } catch (error) {
+                if (planLimitsService.isPlanLimitError(error)) {
+                    console.warn(`[${sessionId}] ${error.message}`);
+                    continue;
+                }
+                throw error;
+            }
 
         } else if (displayName) {
             const sanitizedDisplayName = sanitizeAutoName(displayName);
@@ -8769,19 +8786,28 @@ async function processIncomingMessage(sessionId, msg, options = {}) {
 
     // Buscar ou criar lead
 
-    const leadResult = await Lead.findOrCreate({
+    let leadResult;
+    try {
+        leadResult = await Lead.findOrCreate({
 
-        phone,
+            phone,
 
-        jid: from,
+            jid: from,
 
-        name: isSelfChat ? selfName : (!isFromMe ? (pushName || phone) : undefined),
+            name: isSelfChat ? selfName : (!isFromMe ? (pushName || phone) : undefined),
 
-        source: 'whatsapp',
-        assigned_to: sessionOwnerUserId || undefined,
-        owner_user_id: sessionOwnerUserId || undefined
+            source: 'whatsapp',
+            assigned_to: sessionOwnerUserId || undefined,
+            owner_user_id: sessionOwnerUserId || undefined
 
-    });
+        });
+    } catch (error) {
+        if (planLimitsService.isPlanLimitError(error)) {
+            console.warn(`[${sessionId}] ${error.message}`);
+            return;
+        }
+        throw error;
+    }
     let lead = leadResult.lead;
     const leadCreated = leadResult.created;
 
@@ -9930,6 +9956,10 @@ io.on('connection', (socket) => {
                 return;
             }
 
+            if (!storedSession && !existingSession && resolvedOwnerUserId) {
+                await planLimitsService.assertOwnerCanCreateWhatsAppSession(resolvedOwnerUserId, 1);
+            }
+
             await createSession(sessionId, socket, 0, {
                 requestPairingCode: shouldRequestPairingCode,
                 pairingPhone,
@@ -9938,8 +9968,10 @@ io.on('connection', (socket) => {
         } catch (error) {
             const detail = String(error?.message || '').trim().slice(0, 250);
             socket.emit('error', {
-                message: detail ? `Falha ao iniciar sessao WhatsApp: ${detail}` : 'Falha ao iniciar sessao WhatsApp',
-                code: 'START_SESSION_ERROR'
+                message: detail
+                    ? (error?.code ? detail : `Falha ao iniciar sessao WhatsApp: ${detail}`)
+                    : 'Falha ao iniciar sessao WhatsApp',
+                code: String(error?.code || '').trim() || 'START_SESSION_ERROR'
             });
         }
     });
@@ -9994,6 +10026,10 @@ io.on('connection', (socket) => {
                 return;
             }
 
+            if (!storedSession && resolvedOwnerUserId) {
+                await planLimitsService.assertOwnerCanCreateWhatsAppSession(resolvedOwnerUserId, 1);
+            }
+
             await createSession(sessionId, socket, 0, {
                 requestPairingCode: true,
                 pairingPhone,
@@ -10001,8 +10037,8 @@ io.on('connection', (socket) => {
             });
         } catch (error) {
             socket.emit('error', {
-                message: 'Falha ao gerar codigo de pareamento',
-                code: 'PAIRING_REQUEST_ERROR'
+                message: String(error?.message || '').trim() || 'Falha ao gerar codigo de pareamento',
+                code: String(error?.code || '').trim() || 'PAIRING_REQUEST_ERROR'
             });
         }
     });
@@ -10060,14 +10096,17 @@ io.on('connection', (socket) => {
             }
 
             if (!sessionInitLocks.has(sessionId)) {
+                if (!storedSession && !existingSession && resolvedOwnerUserId) {
+                    await planLimitsService.assertOwnerCanCreateWhatsAppSession(resolvedOwnerUserId, 1);
+                }
                 await createSession(sessionId, socket, 0, {
                     ownerUserId: resolvedOwnerUserId || undefined
                 });
             }
         } catch (error) {
             socket.emit('error', {
-                message: 'Falha ao atualizar QR Code',
-                code: 'REFRESH_QR_ERROR'
+                message: String(error?.message || '').trim() || 'Falha ao atualizar QR Code',
+                code: String(error?.code || '').trim() || 'REFRESH_QR_ERROR'
             });
         }
     });
@@ -10975,6 +11014,9 @@ app.put('/api/whatsapp/sessions/:sessionId', authenticate, requireActiveWhatsApp
                     return res.status(403).json({ error: 'Sem permissao para editar esta conta' });
                 }
             }
+            if (!existingSession) {
+                await planLimitsService.assertOwnerCanCreateWhatsAppSession(ownerScopeUserId, 1);
+            }
         }
 
         const updated = await WhatsAppSession.upsertDispatchConfig(sessionId, {
@@ -10990,7 +11032,10 @@ app.put('/api/whatsapp/sessions/:sessionId', authenticate, requireActiveWhatsApp
 
         res.json({ success: true, session: updated });
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        res.status(Number(error?.statusCode || 400) || 400).json({
+            error: error.message,
+            ...(error?.code ? { code: error.code } : {})
+        });
     }
 });
 
@@ -13372,7 +13417,10 @@ app.post('/api/leads', authenticate, async (req, res) => {
 
     } catch (error) {
 
-        res.status(400).json({ error: error.message });
+        res.status(Number(error?.statusCode || 400) || 400).json({
+            error: error.message,
+            ...(error?.code ? { code: error.code } : {})
+        });
 
     }
 
@@ -13477,6 +13525,16 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                     'SELECT id, phone, name, email, tags, custom_fields FROM leads WHERE phone = ANY(?::text[])',
                     [uniquePhones]
                 );
+
+            if (ownerScopeUserId) {
+                const existingPhones = new Set(
+                    (existingRows || [])
+                        .map((row) => String(row?.phone || '').trim())
+                        .filter(Boolean)
+                );
+                const requestedNewContacts = uniquePhones.filter((phone) => !existingPhones.has(phone)).length;
+                await planLimitsService.assertOwnerCanCreateLead(ownerScopeUserId, requestedNewContacts);
+            }
 
             const stateByPhone = new Map();
             for (const row of existingRows || []) {
@@ -13705,9 +13763,10 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
         });
     } catch (error) {
         console.error('Falha ao importar leads em lote:', error);
-        res.status(500).json({
+        res.status(Number(error?.statusCode || 500) || 500).json({
             success: false,
-            error: 'Erro ao importar leads em lote'
+            error: error?.message || 'Erro ao importar leads em lote',
+            ...(error?.code ? { code: error.code } : {})
         });
     }
 });
@@ -18842,7 +18901,10 @@ app.post('/api/webhook/incoming', async (req, res) => {
             const result = await Lead.create(leadPayload);
             return res.json({ success: true, leadId: result.id });
         } catch (error) {
-            return res.status(400).json({ error: error.message });
+            return res.status(Number(error?.statusCode || 400) || 400).json({
+                error: error.message,
+                ...(error?.code ? { code: error.code } : {})
+            });
         }
     }
 
@@ -18888,6 +18950,21 @@ function normalizeOptionalIsoDate(value) {
     return parsed.toISOString();
 }
 
+function buildPlanLimitSnapshot(current, max, label) {
+    const normalizedCurrent = Math.max(0, Number(current || 0) || 0);
+    const normalizedMax = Number.isInteger(Number(max)) && Number(max) >= 0
+        ? Math.floor(Number(max))
+        : null;
+
+    return {
+        label: String(label || '').trim() || 'recurso',
+        current: normalizedCurrent,
+        max: normalizedMax,
+        unlimited: normalizedMax === null,
+        remaining: normalizedMax === null ? null : Math.max(normalizedMax - normalizedCurrent, 0)
+    };
+}
+
 async function buildOwnerPlanStatus(ownerScopeUserId) {
     const normalizedOwnerUserId = normalizeOwnerUserId(ownerScopeUserId);
     const keys = {
@@ -18909,7 +18986,10 @@ async function buildOwnerPlanStatus(ownerScopeUserId) {
         planRenewalDate,
         planLastVerifiedAt,
         planExternalReference,
-        planMessage
+        planMessage,
+        resolvedPlan,
+        contactsCurrent,
+        whatsappSessionsCurrent
     ] = await Promise.all([
         Settings.get(keys.planName),
         Settings.get(keys.planCode),
@@ -18918,7 +18998,10 @@ async function buildOwnerPlanStatus(ownerScopeUserId) {
         Settings.get(keys.planRenewalDate),
         Settings.get(keys.planLastVerifiedAt),
         Settings.get(keys.planExternalReference),
-        Settings.get(keys.planMessage)
+        Settings.get(keys.planMessage),
+        planLimitsService.resolveOwnerPlan(normalizedOwnerUserId),
+        planLimitsService.countOwnerContacts(normalizedOwnerUserId),
+        planLimitsService.countOwnerWhatsAppSessions(normalizedOwnerUserId)
     ]);
 
     const status = planStatusRaw === null || typeof planStatusRaw === 'undefined' || String(planStatusRaw).trim() === ''
@@ -18926,10 +19009,22 @@ async function buildOwnerPlanStatus(ownerScopeUserId) {
         : normalizePlanStatusForApi(planStatusRaw);
     const provider = String(planProvider || '').trim() || 'API nao configurada';
     const apiConfigured = provider.toLowerCase() !== 'api nao configurada';
+    const resolvedPlanName = String(
+        planName
+        || resolvedPlan?.configuredName
+        || (resolvedPlan?.code && resolvedPlan.code !== 'unknown' ? resolvedPlan.name : '')
+        || 'Plano de teste'
+    ).trim() || 'Plano de teste';
+    const resolvedPlanCode = String(
+        planCode
+        || resolvedPlan?.configuredCode
+        || (resolvedPlan?.code && resolvedPlan.code !== 'unknown' ? resolvedPlan.code : '')
+        || ''
+    ).trim();
 
     return {
-        name: String(planName || 'Plano de teste'),
-        code: String(planCode || ''),
+        name: resolvedPlanName,
+        code: resolvedPlanCode,
         status,
         status_label: getPlanStatusLabel(status),
         renewal_date: normalizeOptionalIsoDate(planRenewalDate),
@@ -18938,7 +19033,15 @@ async function buildOwnerPlanStatus(ownerScopeUserId) {
         source: 'settings',
         api_configured: apiConfigured,
         external_reference: String(planExternalReference || ''),
-        message: String(planMessage || 'A confirmacao automatica do plano via API sera habilitada apos configurar a integracao.')
+        message: String(planMessage || 'A confirmacao automatica do plano via API sera habilitada apos configurar a integracao.'),
+        limits: {
+            contacts: buildPlanLimitSnapshot(contactsCurrent, resolvedPlan?.maxContacts, 'contatos'),
+            whatsapp_sessions: buildPlanLimitSnapshot(
+                whatsappSessionsCurrent,
+                resolvedPlan?.maxWhatsAppSessions,
+                'conexoes WhatsApp'
+            )
+        }
     };
 }
 

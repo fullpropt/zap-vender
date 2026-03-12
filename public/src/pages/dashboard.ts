@@ -36,6 +36,7 @@ type LeadSummary = {
     pending: number;
     completed: number;
 };
+type AppError = Error & { code?: string };
 type StatsMetric = 'novos_contatos' | 'mensagens' | 'interacoes';
 type StatsChartType = 'line' | 'bar';
 type StatsPeriodResponse = {
@@ -96,6 +97,10 @@ let onboardingVideoUrl = '';
 let statsChartInstance: { destroy?: () => void } | null = null;
 let statsChartType: StatsChartType = 'line';
 let statsChartRequestSeq = 0;
+
+function getErrorCode(error: unknown) {
+    return String((error as AppError | null | undefined)?.code || '').trim().toUpperCase();
+}
 
 const STATS_METRIC_LABELS: Record<StatsMetric, string> = {
     novos_contatos: 'Novos Contatos',
@@ -1341,6 +1346,7 @@ async function importLeads() {
         showLoading(`Importando ${data.length} leads...`);
         
         let imported = 0;
+        let limitErrorMessage = '';
         for (const row of data) {
             const phone = (row.telefone || row.phone || row.whatsapp || '').replace(/\D/g, '');
             if (!phone) continue;
@@ -1357,6 +1363,10 @@ async function importLeads() {
                 });
                 imported++;
             } catch (e) {
+                if (getErrorCode(e).startsWith('PLAN_')) {
+                    limitErrorMessage = e instanceof Error ? e.message : 'Limite do plano atingido';
+                    break;
+                }
                 console.error('Erro ao importar:', e);
             }
         }
@@ -1369,10 +1379,15 @@ async function importLeads() {
         if (importTag) importTag.value = '';
         
         await loadDashboardData();
+        if (limitErrorMessage) {
+            const partialImportMessage = imported > 0 ? `${imported} leads importados. ` : '';
+            showToast('warning', 'Aviso', `${partialImportMessage}${limitErrorMessage}`);
+            return;
+        }
         showToast('success', 'Sucesso', `${imported} leads importados com sucesso!`);
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', 'Falha na importação');
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Falha na importação');
     }
 }
 

@@ -12,6 +12,10 @@ const {
     uniqueTagLabels: sharedUniqueTagLabels
 } = require('../utils/tagUtils');
 const { normalizeLeadStatus } = require('../utils/leadStatus');
+const {
+    assertOwnerCanCreateLead,
+    assertOwnerCanCreateWhatsAppSession
+} = require('../services/planLimitsService');
 
 function normalizeDigits(value) {
     return String(value || '').replace(/\D/g, '');
@@ -425,6 +429,21 @@ const Lead = {
             throw new Error('Status invalido. Use 1, 2, 3 ou 4.');
         }
         const ownerUserId = await resolveLeadOwnerUserIdInput(data);
+
+        if (ownerUserId) {
+            let duplicateSql = 'SELECT id FROM leads WHERE phone = ?';
+            const duplicateParams = [normalizedPhone];
+            duplicateSql = appendLeadOwnerScopeFilter(duplicateSql, duplicateParams, ownerUserId, 'leads');
+            duplicateSql += ' LIMIT 1';
+            const existingLead = await queryOne(duplicateSql, duplicateParams);
+            if (existingLead?.id) {
+                const duplicateError = new Error('Contato ja cadastrado para esta conta.');
+                duplicateError.code = 'LEAD_ALREADY_EXISTS';
+                throw duplicateError;
+            }
+
+            await assertOwnerCanCreateLead(ownerUserId, 1);
+        }
         
         const result = await run(`
             INSERT INTO leads (uuid, phone, phone_formatted, jid, name, email, vehicle, plate, status, tags, custom_fields, source, assigned_to, owner_user_id)
@@ -1728,6 +1747,9 @@ const WhatsAppSession = {
             throw new Error('Sem permissao para atualizar esta sessao');
         }
         const resolvedCreatedBy = requestedOwnerUserId || requestedCreatedBy || existingCreatedBy || null;
+        if (!existing && resolvedCreatedBy) {
+            await assertOwnerCanCreateWhatsAppSession(resolvedCreatedBy, 1);
+        }
         const resolvedName = Object.prototype.hasOwnProperty.call(data, 'name')
             ? (data.name ? String(data.name).trim().slice(0, 120) : null)
             : (existing?.name || null);

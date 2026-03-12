@@ -24,6 +24,21 @@ type WhatsappSessionItem = {
     campaign_enabled?: boolean | number;
 };
 
+type PlanUsageMetricPayload = {
+    current?: number;
+    max?: number | null;
+    unlimited?: boolean;
+};
+
+type PlanStatusApiPayload = {
+    plan?: {
+        name?: string;
+        limits?: {
+            whatsapp_sessions?: PlanUsageMetricPayload;
+        };
+    };
+};
+
 // Configurações
 const CONFIG = {
     SOCKET_URL: window.location.origin,
@@ -54,6 +69,14 @@ let pairingCodeVisible = false;
 let lastPairingCode = '';
 let qrGenerationWatchdog: number | null = null;
 const reconnectUiRequestedSessionIds = new Set<string>();
+const numberFormatter = new Intl.NumberFormat('pt-BR');
+let whatsappPlanUsageState = {
+    loaded: false,
+    planName: 'Plano',
+    current: 0,
+    max: null as number | null,
+    unlimited: true
+};
 
 function appConfirm(message: string, title = 'Confirmacao') {
     const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
@@ -91,6 +114,55 @@ function resetPendingConnection(message: string) {
     if (!pairingCodeVisible) {
         showQRLoading(message);
     }
+}
+
+function renderWhatsappPlanUsage() {
+    const container = document.getElementById('whatsapp-plan-usage') as HTMLElement | null;
+    if (!container) return;
+
+    if (!whatsappPlanUsageState.loaded) {
+        container.textContent = 'Carregando limite do plano...';
+        return;
+    }
+
+    const planName = String(whatsappPlanUsageState.planName || 'Plano').trim() || 'Plano';
+    const usageText = whatsappPlanUsageState.unlimited || whatsappPlanUsageState.max === null
+        ? `${numberFormatter.format(whatsappPlanUsageState.current)} conexões em uso • sem limite`
+        : `${numberFormatter.format(whatsappPlanUsageState.current)} de ${numberFormatter.format(whatsappPlanUsageState.max)} conexões em uso`;
+    const remainingText = whatsappPlanUsageState.unlimited || whatsappPlanUsageState.max === null
+        ? 'Você pode adicionar novas contas sem restrição de plano.'
+        : whatsappPlanUsageState.current >= whatsappPlanUsageState.max
+            ? 'Limite de conexões atingido para este plano.'
+            : `Restam ${numberFormatter.format(Math.max(whatsappPlanUsageState.max - whatsappPlanUsageState.current, 0))} conexões disponíveis.`;
+
+    container.innerHTML = `
+        <strong style="display: block; margin-bottom: 4px; color: var(--white);">${escapeHtml(planName)}</strong>
+        <span>${escapeHtml(usageText)}. ${escapeHtml(remainingText)}</span>
+    `;
+}
+
+function updateWhatsappPlanUsageCurrent(current: number) {
+    whatsappPlanUsageState.current = Math.max(0, Number(current || 0) || 0);
+    renderWhatsappPlanUsage();
+}
+
+async function loadWhatsappPlanUsage() {
+    try {
+        if (!api?.get) throw new Error('API indisponivel');
+        const response = await api.get('/api/plan/status') as PlanStatusApiPayload;
+        const metric = response?.plan?.limits?.whatsapp_sessions;
+        const rawMax = metric?.max;
+        whatsappPlanUsageState = {
+            loaded: true,
+            planName: String(response?.plan?.name || 'Plano').trim() || 'Plano',
+            current: Math.max(0, Number(metric?.current || whatsappPlanUsageState.current || 0) || 0),
+            max: Number.isInteger(Number(rawMax)) && Number(rawMax) >= 0 ? Math.floor(Number(rawMax)) : null,
+            unlimited: metric?.unlimited === true || rawMax === null || typeof rawMax === 'undefined'
+        };
+    } catch (_) {
+        whatsappPlanUsageState.loaded = true;
+    }
+    renderWhatsappPlanUsage();
 }
 
 // Inicialização
@@ -456,8 +528,10 @@ async function loadSessionOptions(preferredSessionId?: string) {
         if (!api?.get) throw new Error('API indisponivel');
         const response = await api.get('/api/whatsapp/sessions?includeDisabled=true');
         availableSessions = Array.isArray(response?.sessions) ? response.sessions : [];
+        updateWhatsappPlanUsageCurrent(availableSessions.length);
     } catch (error) {
         availableSessions = [];
+        updateWhatsappPlanUsageCurrent(0);
     }
 
     const availableSessionIds = new Set(
@@ -571,8 +645,10 @@ function initWhatsapp() {
         currentSessionId = getStoredSessionId();
         syncGlobalAppSessionId(currentSessionId);
         renderSessionOptions();
+        renderWhatsappPlanUsage();
         initSocket();
         bindPairingCodeCopy();
+        void loadWhatsappPlanUsage();
         await loadSessionOptions(currentSessionId);
     })();
 }

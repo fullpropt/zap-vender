@@ -950,7 +950,11 @@ async function apiRequest(endpoint: string, options: ApiRequestOptions = {}) {
                 (data && typeof data.error === 'string' && data.error.trim())
                     ? data.error
                     : (raw && raw.trim()) ? raw.trim() : 'Erro na requisição';
-            throw new Error(responseMessage);
+            const apiError = new Error(responseMessage) as Error & { code?: string };
+            if (responseCode) {
+                apiError.code = responseCode;
+            }
+            throw apiError;
         }
 
         if (data !== null) return data;

@@ -70,6 +70,21 @@ type BulkLeadsUpdateResponse = {
     errors?: Array<{ id?: number; error?: string }>;
 };
 
+type AppError = Error & { code?: string };
+type PlanUsageMetricPayload = {
+    current?: number;
+    max?: number | null;
+    unlimited?: boolean;
+};
+type PlanStatusApiPayload = {
+    plan?: {
+        name?: string;
+        limits?: {
+            contacts?: PlanUsageMetricPayload;
+        };
+    };
+};
+
 type ContactsCachePayload = {
     savedAt: number;
     contacts?: Contact[];
@@ -124,6 +139,68 @@ const IMPORT_TAG_COLUMN_ALIAS_CANDIDATES = [
 ];
 let contactsBootstrappedOnce = false;
 let importTagColumnRefreshTimer: number | null = null;
+const contactsNumberFormatter = new Intl.NumberFormat('pt-BR');
+let contactsPlanUsageState = {
+    loaded: false,
+    planName: 'Plano',
+    max: null as number | null,
+    unlimited: true
+};
+
+function getErrorCode(error: unknown) {
+    return String((error as AppError | null | undefined)?.code || '').trim().toUpperCase();
+}
+
+function renderContactsPlanUsage() {
+    const container = document.getElementById('contactsPlanUsageCard') as HTMLElement | null;
+    if (!container) return;
+
+    if (!contactsPlanUsageState.loaded) {
+        container.innerHTML = `
+            <div class="card-body">
+                <p style="color: var(--gray-500); margin: 0;">Carregando limite do plano...</p>
+            </div>
+        `;
+        return;
+    }
+
+    const current = allContacts.length;
+    const usageText = contactsPlanUsageState.unlimited || contactsPlanUsageState.max === null
+        ? `${contactsNumberFormatter.format(current)} contatos cadastrados • sem limite`
+        : `${contactsNumberFormatter.format(current)} de ${contactsNumberFormatter.format(contactsPlanUsageState.max)} contatos utilizados`;
+    const remainingText = contactsPlanUsageState.unlimited || contactsPlanUsageState.max === null
+        ? 'Seu plano não impõe limite de contatos.'
+        : current >= contactsPlanUsageState.max
+            ? 'Limite de contatos atingido para este plano.'
+            : `Restam ${contactsNumberFormatter.format(Math.max(contactsPlanUsageState.max - current, 0))} contatos disponíveis.`;
+
+    container.innerHTML = `
+        <div class="card-body" style="display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+            <div>
+                <div style="font-weight: 700; color: var(--dark); margin-bottom: 4px;">${escapeHtml(contactsPlanUsageState.planName)}</div>
+                <div style="color: var(--gray-700);">${escapeHtml(usageText)}</div>
+                <div style="color: var(--gray-500); margin-top: 4px;">${escapeHtml(remainingText)}</div>
+            </div>
+        </div>
+    `;
+}
+
+async function loadContactsPlanUsage() {
+    try {
+        const response = await api.get('/api/plan/status') as PlanStatusApiPayload;
+        const metric = response?.plan?.limits?.contacts;
+        const rawMax = metric?.max;
+        contactsPlanUsageState = {
+            loaded: true,
+            planName: String(response?.plan?.name || 'Plano').trim() || 'Plano',
+            max: Number.isInteger(Number(rawMax)) && Number(rawMax) >= 0 ? Math.floor(Number(rawMax)) : null,
+            unlimited: metric?.unlimited === true || rawMax === null || typeof rawMax === 'undefined'
+        };
+    } catch (_) {
+        contactsPlanUsageState.loaded = true;
+    }
+    renderContactsPlanUsage();
+}
 
 function appConfirm(message: string, title = 'Confirmacao') {
     const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
@@ -748,6 +825,8 @@ function initContacts() {
     bindContactsPaginationControls();
     bindContactsMobileCascadeBehavior();
     bindImportTagColumnMappingControls();
+    renderContactsPlanUsage();
+    void loadContactsPlanUsage();
     loadContactFields();
     void loadContactsSessionFilters().finally(() => {
         void loadContacts({
@@ -1526,6 +1605,8 @@ function updateStats() {
             allContacts.filter(c => c.phone).length
         );
     }
+
+    renderContactsPlanUsage();
 }
 
 function syncSelectionUi() {
@@ -2394,6 +2475,7 @@ async function importContacts() {
         let insertConflicts = 0;
         let skipped = 0;
         let failed = 0;
+        let limitErrorMessage = '';
 
         for (let offset = 0; offset < leadsToImport.length; offset += CONTACTS_IMPORT_BATCH_SIZE) {
             const chunk = leadsToImport.slice(offset, offset + CONTACTS_IMPORT_BATCH_SIZE);
@@ -2408,6 +2490,10 @@ async function importContacts() {
                 skipped += Number(response?.skipped || 0);
                 failed += Number(response?.failed || 0);
             } catch (error) {
+                if (getErrorCode(error).startsWith('PLAN_')) {
+                    limitErrorMessage = error instanceof Error ? error.message : 'Limite do plano atingido';
+                    break;
+                }
                 failed += chunk.length;
             }
         }
@@ -2422,6 +2508,14 @@ async function importContacts() {
         }
         clearLeadViewCaches();
         await loadContacts({ forceRefresh: true, silent: true });
+        if (limitErrorMessage) {
+            const partialSummary = [];
+            if (imported > 0) partialSummary.push(`${imported} importados`);
+            if (updated > 0) partialSummary.push(`${updated} atualizados`);
+            const partialImportMessage = partialSummary.length > 0 ? `${partialSummary.join(', ')}. ` : '';
+            showToast('warning', 'Aviso', `${partialImportMessage}${limitErrorMessage}`);
+            return;
+        }
 
         if ((imported + updated) <= 0 && failed > 0) {
             showToast('error', 'Erro', `Falha na importação (${failed} com erro)`);
@@ -2436,7 +2530,7 @@ async function importContacts() {
         showToast(failed > 0 ? 'warning' : 'success', 'Sucesso', `Importação concluída: ${summary.join(', ')}`);
     } catch (error) {
         hideLoading();
-        showToast('error', 'Erro', 'Falha na importação');
+        showToast('error', 'Erro', error instanceof Error ? error.message : 'Falha na importação');
     }
 }
 

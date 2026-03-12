@@ -932,6 +932,19 @@ export default function Whatsapp() {
                       </div>
                       
                       <div className="card-body">
+                          <div
+                              id="whatsapp-plan-usage"
+                              style={{
+                                marginBottom: '16px',
+                                padding: '12px 14px',
+                                borderRadius: '12px',
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                background: 'rgba(255,255,255,0.03)',
+                                color: 'var(--gray-400)'
+                              }}
+                          >
+                              Carregando limite do plano...
+                          </div>
                           <div id="connection-idle-state"></div>
 
                           <div id="disconnected-state" style={{ display: 'none' }}>

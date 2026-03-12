@@ -372,6 +372,12 @@ export default function Contatos() {
           </div>
         </div>
 
+        <div className="card mb-4" id="contactsPlanUsageCard">
+          <div className="card-body">
+            <p style={{ color: 'var(--gray-500)', margin: 0 }}>Carregando limite do plano...</p>
+          </div>
+        </div>
+
         <div className="stats-grid">
           <div className="stat-card">
             <div className="stat-icon primary"><span className="icon icon-contacts"></span></div>

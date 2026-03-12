@@ -98,7 +98,31 @@ type PlanStatusApiPayload = {
         source?: string;
         api_configured?: boolean;
         message?: string;
+        limits?: {
+            contacts?: {
+                label?: string;
+                current?: number;
+                max?: number | null;
+                unlimited?: boolean;
+                remaining?: number | null;
+            };
+            whatsapp_sessions?: {
+                label?: string;
+                current?: number;
+                max?: number | null;
+                unlimited?: boolean;
+                remaining?: number | null;
+            };
+        };
     };
+};
+
+type PlanUsageMetric = {
+    label: string;
+    current: number;
+    max: number | null;
+    unlimited: boolean;
+    remaining: number | null;
 };
 
 function appConfirm(message: string, title = 'Confirmacao') {
@@ -113,6 +137,7 @@ type PlanStatusViewModel = {
     ownerName: string;
     ownerEmail: string;
     planName: string;
+    planCode: string;
     status: string;
     statusLabel: string;
     renewalDate: string | null;
@@ -121,6 +146,8 @@ type PlanStatusViewModel = {
     source: string;
     apiConfigured: boolean;
     message: string;
+    contacts: PlanUsageMetric;
+    whatsappSessions: PlanUsageMetric;
 };
 
 let templatesCache: TemplateItem[] = [];
@@ -851,6 +878,49 @@ function formatPlanDateTime(value: unknown) {
     }).format(parsed);
 }
 
+function normalizePlanMetric(
+    metric: PlanStatusApiPayload['plan'] extends { limits?: infer T } ? T : never,
+    key: 'contacts' | 'whatsapp_sessions',
+    fallbackLabel: string
+): PlanUsageMetric {
+    const rawMetric = metric && typeof metric === 'object'
+        ? (metric as Record<string, any>)[key]
+        : null;
+    const current = Math.max(0, Number(rawMetric?.current || 0) || 0);
+    const rawMax = rawMetric?.max;
+    const max = Number.isInteger(Number(rawMax)) && Number(rawMax) >= 0 ? Math.floor(Number(rawMax)) : null;
+    const unlimited = rawMetric?.unlimited === true || max === null;
+    const remaining = unlimited ? null : Math.max(Number(rawMetric?.remaining ?? (max - current)) || 0, 0);
+
+    return {
+        label: String(rawMetric?.label || fallbackLabel).trim() || fallbackLabel,
+        current,
+        max,
+        unlimited,
+        remaining
+    };
+}
+
+function formatPlanMetricValue(metric: PlanUsageMetric) {
+    const formatter = new Intl.NumberFormat('pt-BR');
+    if (metric.unlimited || metric.max === null) {
+        return `${formatter.format(metric.current)} em uso • sem limite`;
+    }
+    return `${formatter.format(metric.current)} / ${formatter.format(metric.max)}`;
+}
+
+function formatPlanMetricHint(metric: PlanUsageMetric) {
+    const formatter = new Intl.NumberFormat('pt-BR');
+    if (metric.unlimited || metric.max === null) {
+        return `Uso atual de ${metric.label}.`;
+    }
+    const remaining = Math.max(0, Number(metric.remaining || 0) || 0);
+    if (remaining === 0) {
+        return `Limite atingido para ${metric.label}.`;
+    }
+    return `Restam ${formatter.format(remaining)} ${metric.label}.`;
+}
+
 function getCurrentOwnerFromUsersCache() {
     const ownerUser = usersCache.find((user) => isManagedUserPrimaryAdmin(user));
     if (ownerUser) {
@@ -871,6 +941,7 @@ function buildFallbackPlanStatus(): PlanStatusViewModel {
         ownerName: owner.name,
         ownerEmail: owner.email,
         planName: 'Plano de teste',
+        planCode: '',
         status: 'active',
         statusLabel: 'Ativo',
         renewalDate: null,
@@ -878,7 +949,21 @@ function buildFallbackPlanStatus(): PlanStatusViewModel {
         provider: 'API não configurada',
         source: 'local',
         apiConfigured: false,
-        message: 'A confirmação automática do plano via API será habilitada após configurar a integração.'
+        message: 'A confirmação automática do plano via API será habilitada após configurar a integração.',
+        contacts: {
+            label: 'contatos',
+            current: 0,
+            max: null,
+            unlimited: true,
+            remaining: null
+        },
+        whatsappSessions: {
+            label: 'conexões WhatsApp',
+            current: 0,
+            max: null,
+            unlimited: true,
+            remaining: null
+        }
     };
 }
 
@@ -893,6 +978,7 @@ function normalizePlanStatusPayload(payload: PlanStatusApiPayload | null | undef
         ownerName,
         ownerEmail,
         planName: String(payload?.plan?.name || '').trim() || fallback.planName,
+        planCode: String(payload?.plan?.code || '').trim(),
         status,
         statusLabel,
         renewalDate: payload?.plan?.renewal_date || null,
@@ -900,7 +986,9 @@ function normalizePlanStatusPayload(payload: PlanStatusApiPayload | null | undef
         provider: String(payload?.plan?.provider || '').trim() || fallback.provider,
         source: String(payload?.plan?.source || '').trim() || fallback.source,
         apiConfigured: Boolean(payload?.plan?.api_configured),
-        message: String(payload?.plan?.message || '').trim() || fallback.message
+        message: String(payload?.plan?.message || '').trim() || fallback.message,
+        contacts: normalizePlanMetric(payload?.plan?.limits, 'contacts', fallback.contacts.label),
+        whatsappSessions: normalizePlanMetric(payload?.plan?.limits, 'whatsapp_sessions', fallback.whatsappSessions.label)
     };
 }
 
@@ -941,6 +1029,10 @@ function renderPlanStatus() {
                     <label class="form-label">Plano</label>
                     <input type="text" class="form-input" value="${escapeHtml(data.planName)}" readonly />
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Código do plano</label>
+                    <input type="text" class="form-input" value="${escapeHtml(data.planCode || '-')}" readonly />
+                </div>
             </div>
             <div class="form-row">
                 <div class="form-group">
@@ -950,6 +1042,18 @@ function renderPlanStatus() {
                 <div class="form-group">
                     <label class="form-label">Última confirmação</label>
                     <input type="text" class="form-input" value="${escapeHtml(formatPlanDateTime(data.lastVerifiedAt))}" readonly />
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Conexões WhatsApp</label>
+                    <input type="text" class="form-input" value="${escapeHtml(formatPlanMetricValue(data.whatsappSessions))}" readonly />
+                    <p class="form-help">${escapeHtml(formatPlanMetricHint(data.whatsappSessions))}</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Contatos</label>
+                    <input type="text" class="form-input" value="${escapeHtml(formatPlanMetricValue(data.contacts))}" readonly />
+                    <p class="form-help">${escapeHtml(formatPlanMetricHint(data.contacts))}</p>
                 </div>
             </div>
         </div>
