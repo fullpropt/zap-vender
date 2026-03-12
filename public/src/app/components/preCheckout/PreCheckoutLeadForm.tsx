@@ -120,7 +120,7 @@ export default function PreCheckoutLeadForm({
         <TextField
           id="precheckout-whatsapp"
           name="whatsapp"
-          label="WhatsApp"
+          label="Telefone"
           type="tel"
           placeholder="(11) 99999-9999"
           value={values.whatsapp}

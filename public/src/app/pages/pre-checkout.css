@@ -42,7 +42,7 @@
 
 .precheckout-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   gap: 16px;
   margin-bottom: 22px;
@@ -51,6 +51,7 @@
 .precheckout-brand-link {
   display: inline-flex;
   align-items: center;
+  margin: 0 auto;
 }
 
 .precheckout-brand-link img {
@@ -450,7 +451,7 @@
 
   .precheckout-header {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     margin-bottom: 14px;
   }
 
@@ -474,4 +475,3 @@
     grid-template-columns: 1fr;
   }
 }
-

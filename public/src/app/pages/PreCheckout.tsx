@@ -32,34 +32,34 @@ type PlanPreview = {
 const PLAN_PREVIEW_CATALOG: Record<string, PlanPreview> = {
   premium: {
     key: 'premium',
-    title: 'Ative seu teste gratis',
+    title: 'Ative seu teste grátis',
     subtitle: 'Preencha seus dados para liberar o checkout com prioridade comercial.',
     planName: 'Plano Premium',
-    trialLabel: '7 dias gratis',
-    recurringLabel: 'Depois, R$ 197/mes',
+    trialLabel: '7 dias grátis',
+    recurringLabel: 'Depois, R$ 197/mês',
     benefits: [
-      '3 conexoes WhatsApp simultaneas',
+      '3 conexões WhatsApp simultâneas',
       'Escudo antibloqueio completo',
       'Webhooks e eventos personalizados',
-      'Fluxos ilimitados e suporte prioritario'
+      'Fluxos ilimitados e suporte prioritário'
     ],
     highlights: [
       { label: 'Tempo de cadastro', value: '< 1 minuto' },
-      { label: 'Ativacao', value: 'Imediata apos o pagamento' }
+      { label: 'Ativação', value: 'Imediata após o pagamento' }
     ]
   },
   starter: {
     key: 'starter',
-    title: 'Finalize sua ativacao',
-    subtitle: 'Preencha seu pre-cadastro para seguir para o checkout sem perder o progresso.',
+    title: 'Finalize sua ativação',
+    subtitle: 'Preencha seu pré-cadastro para seguir para o checkout sem perder o progresso.',
     planName: 'Plano Starter',
     trialLabel: 'Acesso imediato',
-    recurringLabel: 'R$ 97/mes',
+    recurringLabel: 'R$ 97/mês',
     benefits: [
-      '1 conexao WhatsApp nativa',
+      '1 conexão WhatsApp nativa',
       'Construtor de fluxo visual',
       'Inbox unificado',
-      'Respostas automaticas 24/7'
+      'Respostas automáticas 24/7'
     ],
     highlights: [
       { label: 'Tempo de cadastro', value: '< 1 minuto' },
@@ -68,15 +68,15 @@ const PLAN_PREVIEW_CATALOG: Record<string, PlanPreview> = {
   },
   advanced: {
     key: 'advanced',
-    title: 'Inicie sua operacao avancada',
-    subtitle: 'Antecipe seus dados para ir ao checkout com preenchimento automatico.',
-    planName: 'Plano Avancado',
+    title: 'Inicie sua operação avançada',
+    subtitle: 'Antecipe seus dados para ir ao checkout com preenchimento automático.',
+    planName: 'Plano Avançado',
     trialLabel: 'Escala para equipes',
-    recurringLabel: 'R$ 397/mes',
+    recurringLabel: 'R$ 397/mês',
     benefits: [
-      '5 conexoes WhatsApp dedicadas',
-      'Multiplos agentes ilimitados',
-      'Relatorios avancados e funil',
+      '5 conexões WhatsApp dedicadas',
+      'Múltiplos agentes ilimitados',
+      'Relatórios avançados e funil',
       'API e webhooks ilimitados'
     ],
     highlights: [
@@ -94,7 +94,7 @@ const TRUST_COPY = [
 
 function normalizePlanKey(value: unknown) {
   const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'avancado') return 'advanced';
+  if (normalized === 'avancado' || normalized === 'avançado') return 'advanced';
   if (normalized === 'starter' || normalized === 'advanced' || normalized === 'premium') {
     return normalized;
   }
@@ -179,7 +179,7 @@ export default function PreCheckout() {
   }, [location.search, selectedPlan.key]);
 
   useEffect(() => {
-    document.title = `${brandName} | Pre-checkout`;
+    document.title = `${brandName} | Pré-checkout`;
   }, []);
 
   useEffect(() => {
@@ -259,13 +259,13 @@ export default function PreCheckout() {
       };
 
       if (!response.ok || !payload.redirect_url) {
-        throw new Error(String(payload.error || 'Nao foi possivel continuar para o pagamento agora.'));
+        throw new Error(String(payload.error || 'Não foi possível continuar para o pagamento agora.'));
       }
 
       savePreCheckoutSubmission(selectedPlan.key, normalizedValues, payload.lead_capture_id || null);
       window.location.assign(String(payload.redirect_url));
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Nao foi possivel continuar para o pagamento agora.');
+      setSubmitError(error instanceof Error ? error.message : 'Não foi possível continuar para o pagamento agora.');
     } finally {
       setIsSubmitting(false);
     }
@@ -279,7 +279,6 @@ export default function PreCheckout() {
           <a href="#/planos" className="precheckout-brand-link" aria-label="Voltar para planos">
             <img src={brandFullLogoUrl} alt={brandName} />
           </a>
-          <p>Fluxo comercial seguro com captura de leads antes do pagamento</p>
         </header>
 
         <section className="precheckout-content">

@@ -155,7 +155,7 @@ export function validatePreCheckout(values: PreCheckoutFormValues): PreCheckoutF
 
   const whatsappDigits = extractWhatsappDigits(values.whatsapp);
   if (whatsappDigits.length < 10) {
-    errors.whatsapp = 'Informe um WhatsApp com DDD.';
+    errors.whatsapp = 'Informe um telefone com DDD.';
   }
 
   if (values.companyName.trim().length < 2) {

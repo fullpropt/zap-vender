@@ -1297,7 +1297,8 @@ app.use('/api', (req, res, next) => {
         path.startsWith('/auth/register') ||
         path.startsWith('/auth/complete-registration') ||
         path.startsWith('/auth/confirm-email') ||
-        path.startsWith('/auth/resend-confirmation')
+        path.startsWith('/auth/resend-confirmation') ||
+        path.startsWith('/pre-checkout/capture')
     ) {
 
         return next();
