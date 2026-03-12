@@ -1570,7 +1570,18 @@ class FlowService extends EventEmitter {
         const topPriorityFlows = pool.filter((item) => Number(item?.priority || 0) === highestPriority);
         if (topPriorityFlows.length === 1) return topPriorityFlows[0];
 
-        return null;
+        // Em empate de prioridade, seleciona de forma deterministica para
+        // evitar que o fluxo deixe de iniciar por ambiguidade.
+        return [...topPriorityFlows].sort((a, b) => {
+            const idA = Number(a?.id || 0);
+            const idB = Number(b?.id || 0);
+            if (Number.isFinite(idA) && Number.isFinite(idB) && idA !== idB) {
+                return idA - idB;
+            }
+            const nameA = String(a?.name || '');
+            const nameB = String(b?.name || '');
+            return nameA.localeCompare(nameB, 'pt-BR');
+        })[0] || null;
     }
 
     isKeywordFlowWithIntentTriggerFirstMessageMenu(flow = null) {
