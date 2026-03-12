@@ -999,7 +999,27 @@ const Conversation = {
         params.push(id);
         return await run(`UPDATE conversations SET ${updates.join(', ')} WHERE id = ?`, params);
     },
-    
+
+    async touchAndMarkAsRead(id, lastMessageId = null, sentAt = null) {
+        const updates = ['unread_count = 0'];
+        const params = [];
+
+        if (lastMessageId) {
+            updates.push('last_message_id = ?');
+            params.push(lastMessageId);
+        }
+
+        if (sentAt) {
+            updates.push('updated_at = ?');
+            params.push(sentAt);
+        } else {
+            updates.push('updated_at = CURRENT_TIMESTAMP');
+        }
+
+        params.push(id);
+        return await run(`UPDATE conversations SET ${updates.join(', ')} WHERE id = ?`, params);
+    },
+
     async markAsRead(id) {
         return await run("UPDATE conversations SET unread_count = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [id]);
     },

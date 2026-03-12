@@ -7265,6 +7265,8 @@ async function backfillConversationMessagesFromStore(options = {}) {
     let hydratedMedia = 0;
     let latestSavedMessageId = null;
     let latestSentAt = '';
+    let latestMessageTimestampMs = 0;
+    let latestMessageFromMe = false;
     let unreadFromLead = 0;
 
     for (const waMsg of orderedMessages) {
@@ -7323,7 +7325,8 @@ async function backfillConversationMessagesFromStore(options = {}) {
 
         const isFromMe = Boolean(waMsg?.key?.fromMe);
         const messageTimestampMs = parseMessageTimestampMs(waMsg?.messageTimestamp);
-        const sentAtIso = messageTimestampMs > 0 ? new Date(messageTimestampMs).toISOString() : new Date().toISOString();
+        const effectiveMessageTimestampMs = messageTimestampMs > 0 ? messageTimestampMs : Date.now();
+        const sentAtIso = new Date(effectiveMessageTimestampMs).toISOString();
         const normalizedStatus = isFromMe ? 'sent' : 'delivered';
 
         const savedMessage = await Message.create({
@@ -7344,15 +7347,23 @@ async function backfillConversationMessagesFromStore(options = {}) {
         });
 
         inserted += 1;
-        latestSavedMessageId = savedMessage?.id || latestSavedMessageId;
-        latestSentAt = sentAtIso || latestSentAt;
+        if (!latestMessageTimestampMs || effectiveMessageTimestampMs >= latestMessageTimestampMs) {
+            latestMessageTimestampMs = effectiveMessageTimestampMs;
+            latestSavedMessageId = savedMessage?.id || latestSavedMessageId;
+            latestSentAt = sentAtIso || latestSentAt;
+            latestMessageFromMe = isFromMe;
+        }
         if (!isFromMe) unreadFromLead += 1;
     }
 
     if (!inserted && !hydratedMedia) return createStoreBackfillResult();
 
     if (inserted > 0) {
-        await Conversation.touch(conversation.id, latestSavedMessageId, latestSentAt || null);
+        if (latestMessageFromMe) {
+            await Conversation.touchAndMarkAsRead(conversation.id, latestSavedMessageId, latestSentAt || null);
+        } else {
+            await Conversation.touch(conversation.id, latestSavedMessageId, latestSentAt || null);
+        }
     }
 
     if (inserted > 0 && lead?.id && latestSentAt) {
@@ -9092,7 +9103,7 @@ async function processIncomingMessage(sessionId, msg, options = {}) {
 
     } else {
 
-        await Conversation.touch(conversation.id, savedMessage.id, messageTimestampIso);
+        await Conversation.touchAndMarkAsRead(conversation.id, savedMessage.id, messageTimestampIso);
 
     }
 
@@ -9641,7 +9652,7 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
 
     
 
-    await Conversation.touch(conversation.id, savedMessage?.id || null, sentAtIso);
+    await Conversation.touchAndMarkAsRead(conversation.id, savedMessage?.id || null, sentAtIso);
     if (options.campaignId) {
         await Campaign.refreshMetrics(options.campaignId);
     }
@@ -14799,12 +14810,14 @@ app.get('/api/conversations', authenticate, async (req, res) => {
         }
         const metadataLastMessage = normalizeText(metadata?.last_message || '');
         const metadataLastMessageAt = normalizeText(metadata?.last_message_at || '');
+        const lastMessageWasFromMe = Boolean(lastMessage?.is_from_me);
+        const unreadCount = lastMessageWasFromMe ? 0 : Math.max(0, Number(c?.unread_count || 0));
 
         const lastMessageText =
             (decrypted || '').trim() ||
             (lastMessage ? previewForMedia(lastMessage.media_type) : '') ||
             metadataLastMessage ||
-            (Number(c?.unread_count || 0) > 0 ? '[mensagem recebida]' : '');
+            (unreadCount > 0 ? '[mensagem recebida]' : '');
 
         const lastMessageAt =
             lastMessage?.sent_at ||
@@ -14830,7 +14843,7 @@ app.get('/api/conversations', authenticate, async (req, res) => {
 
         return {
             ...c,
-            unread: c.unread_count || 0,
+            unread: unreadCount,
             lastMessage: normalizeText(lastMessageText),
             lastMessageAt,
             name,
