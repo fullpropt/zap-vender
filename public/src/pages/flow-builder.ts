@@ -5644,53 +5644,61 @@ async function loadFlow(id: number, options: LoadFlowOptions = {}): Promise<bool
 
 // Criar novo fluxo
 async function createNewFlow() {
-    const scopeSelect = document.getElementById('flowListSessionScope') as HTMLSelectElement | null;
-    const selectedSessionId = normalizeFlowSessionId(
-        flowsListRequiredSessionId || scopeSelect?.value || ''
-    );
-    if (selectedSessionId !== normalizeFlowSessionId(flowsListRequiredSessionId)) {
-        flowsListRequiredSessionId = selectedSessionId;
+    try {
+        const scopeSelect = document.getElementById('flowListSessionScope') as HTMLSelectElement | null;
+        const selectedSessionId = normalizeFlowSessionId(
+            flowsListRequiredSessionId || scopeSelect?.value || ''
+        );
+        if (selectedSessionId !== normalizeFlowSessionId(flowsListRequiredSessionId)) {
+            flowsListRequiredSessionId = selectedSessionId;
+            renderFlowListSessionScopeControls();
+        }
+        if (!selectedSessionId) {
+            await showFlowAlertDialog('Selecione uma conta WhatsApp para criar um novo fluxo.', 'Conta WhatsApp');
+            return;
+        }
+
+        const draft = await showFlowPromptSelectDialog('Escolha um nome e o formato do novo fluxo:', {
+            title: 'Novo fluxo',
+            defaultSelectValue: normalizeFlowBuilderMode(flowsListModeFilter),
+            placeholder: 'Ex.: Captacao de leads - Plano Premium',
+            confirmLabel: 'Criar fluxo',
+            selectOptions: [
+                { value: 'humanized', label: 'Humanizado' },
+                { value: 'menu', label: 'Menu interativo' }
+            ]
+        });
+
+        if (draft === null) return;
+
+        const nextName = String(draft.inputValue || '').trim();
+        const nextFlowBuilderMode = normalizeFlowBuilderMode(draft.selectValue || 'humanized');
+        if (!nextName) {
+            await showFlowAlertDialog('Informe um nome para criar o novo fluxo.', 'Novo fluxo');
+            return;
+        }
+
+        resetEditorState();
+        closeFlowsModal({ force: true });
+        persistLastOpenFlowId(null);
+        currentFlowName = nextName;
+        setCurrentFlowSessionScope(selectedSessionId);
+        currentFlowBuilderMode = nextFlowBuilderMode;
+        flowsListModeFilter = nextFlowBuilderMode;
         renderFlowListSessionScopeControls();
+        renderCurrentFlowName();
+        initializeDefaultIntentFlowSkeleton({
+            selectTrigger: true,
+            markDirty: true,
+            flowBuilderMode: nextFlowBuilderMode
+        });
+    } catch (error) {
+        console.error('[flow-builder] createNewFlow failed', error);
+        await showFlowAlertDialog(
+            'Não foi possível iniciar a criação do fluxo. Tente atualizar a tela e tentar novamente.',
+            'Novo fluxo'
+        );
     }
-    if (!selectedSessionId) {
-        await showFlowAlertDialog('Selecione uma conta WhatsApp para criar um novo fluxo.', 'Conta WhatsApp');
-        return;
-    }
-
-    const draft = await showFlowPromptSelectDialog('Escolha um nome e o formato do novo fluxo:', {
-        title: 'Novo fluxo',
-        defaultSelectValue: normalizeFlowBuilderMode(flowsListModeFilter),
-        placeholder: 'Ex.: Captacao de leads - Plano Premium',
-        confirmLabel: 'Criar fluxo',
-        selectOptions: [
-            { value: 'humanized', label: 'Humanizado' },
-            { value: 'menu', label: 'Menu interativo' }
-        ]
-    });
-
-    if (draft === null) return;
-
-    const nextName = String(draft.inputValue || '').trim();
-    const nextFlowBuilderMode = normalizeFlowBuilderMode(draft.selectValue || 'humanized');
-    if (!nextName) {
-        await showFlowAlertDialog('Informe um nome para criar o novo fluxo.', 'Novo fluxo');
-        return;
-    }
-
-    resetEditorState();
-    closeFlowsModal({ force: true });
-    persistLastOpenFlowId(null);
-    currentFlowName = nextName;
-    setCurrentFlowSessionScope(selectedSessionId);
-    currentFlowBuilderMode = nextFlowBuilderMode;
-    flowsListModeFilter = nextFlowBuilderMode;
-    renderFlowListSessionScopeControls();
-    renderCurrentFlowName();
-    initializeDefaultIntentFlowSkeleton({
-        selectTrigger: true,
-        markDirty: true,
-        flowBuilderMode: nextFlowBuilderMode
-    });
 }
 
 function applyAiDraftToEditor(draft: AiGeneratedFlowDraft) {
