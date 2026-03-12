@@ -107,20 +107,105 @@ function normalizePlanStatus(value) {
     return STRIPE_TO_APP_PLAN_STATUS[normalized] || 'active';
 }
 
-async function createCheckoutSession({ plan, successUrl, cancelUrl }) {
+function sanitizeStripeMetadataValue(value, maxLength = 500) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    return normalized.slice(0, maxLength);
+}
+
+function normalizeCustomerEmail(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return '';
+    return normalized;
+}
+
+function normalizeStripeMetadataObject(metadata = {}) {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+        return {};
+    }
+
+    const entries = Object.entries(metadata).slice(0, 20);
+    const normalized = {};
+
+    for (const [rawKey, rawValue] of entries) {
+        const key = String(rawKey || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9_]/g, '_')
+            .replace(/_{2,}/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .slice(0, 40);
+        if (!key) continue;
+
+        const value = sanitizeStripeMetadataValue(rawValue);
+        if (!value) continue;
+        normalized[key] = value;
+    }
+
+    return normalized;
+}
+
+async function resolveStripeCustomerId(stripe, customer = {}, metadata = {}) {
+    const email = normalizeCustomerEmail(customer?.email);
+    if (!email) return '';
+
+    const customerName = sanitizeStripeMetadataValue(customer?.name, 120);
+    const customerPhone = sanitizeStripeMetadataValue(customer?.phone, 40);
+
+    try {
+        const existingCustomers = await stripe.customers.list({ email, limit: 1 });
+        const existingCustomer = existingCustomers?.data?.[0] || null;
+
+        if (existingCustomer?.id) {
+            const updates = {};
+            if (customerName) updates.name = customerName;
+            if (customerPhone) updates.phone = customerPhone;
+            if (Object.keys(metadata).length > 0) {
+                updates.metadata = {
+                    ...(existingCustomer?.metadata && typeof existingCustomer.metadata === 'object'
+                        ? existingCustomer.metadata
+                        : {}),
+                    ...metadata
+                };
+            }
+            if (Object.keys(updates).length > 0) {
+                await stripe.customers.update(existingCustomer.id, updates);
+            }
+            return existingCustomer.id;
+        }
+
+        const createdCustomer = await stripe.customers.create({
+            email,
+            name: customerName || undefined,
+            phone: customerPhone || undefined,
+            metadata: Object.keys(metadata).length > 0 ? metadata : undefined
+        });
+        return String(createdCustomer?.id || '').trim();
+    } catch (error) {
+        console.warn('[stripeCheckoutService] Falha ao preparar customer para prefill:', error.message);
+        return '';
+    }
+}
+
+async function createCheckoutSession({ plan, successUrl, cancelUrl, customer = {}, metadata = {} }) {
     const resolvedPlan = typeof plan === 'string' ? getPlanConfig(plan) : plan;
     if (!resolvedPlan?.priceId) {
         throw new Error('Plano invalido para checkout');
     }
 
     const stripe = getStripeClient();
+    const customerEmail = normalizeCustomerEmail(customer?.email);
+    const checkoutMetadata = {
+        plan_key: resolvedPlan.key,
+        plan_code: resolvedPlan.code,
+        plan_name: resolvedPlan.name,
+        source: 'zapvender_public_plans',
+        ...normalizeStripeMetadataObject(metadata)
+    };
+
     const subscriptionData = {
-        metadata: {
-            plan_key: resolvedPlan.key,
-            plan_code: resolvedPlan.code,
-            plan_name: resolvedPlan.name,
-            source: 'zapvender_public_plans'
-        }
+        metadata: checkoutMetadata
     };
 
     if (Number(resolvedPlan.trialDays || 0) > 0) {
@@ -133,7 +218,7 @@ async function createCheckoutSession({ plan, successUrl, cancelUrl }) {
         billing_address_collection: 'auto',
         allow_promotion_codes: true,
         phone_number_collection: {
-            enabled: false
+            enabled: true
         },
         success_url: successUrl,
         cancel_url: cancelUrl,
@@ -143,14 +228,16 @@ async function createCheckoutSession({ plan, successUrl, cancelUrl }) {
                 quantity: 1
             }
         ],
-        metadata: {
-            plan_key: resolvedPlan.key,
-            plan_code: resolvedPlan.code,
-            plan_name: resolvedPlan.name,
-            source: 'zapvender_public_plans'
-        },
+        metadata: checkoutMetadata,
         subscription_data: subscriptionData
     };
+
+    const customerId = await resolveStripeCustomerId(stripe, customer, checkoutMetadata);
+    if (customerId) {
+        checkoutSessionPayload.customer = customerId;
+    } else if (customerEmail) {
+        checkoutSessionPayload.customer_email = customerEmail;
+    }
 
     const brandingSettings = buildCheckoutBrandingSettings();
     const requestOptions = {};

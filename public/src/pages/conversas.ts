@@ -67,8 +67,8 @@ function onReady(callback: () => void) {
 }
 
 
-function getLoginUrl() {
-    return '#/login';
+function getPostLogoutUrl() {
+    return '#/planos';
 }
 
 function getQueryParams() {
@@ -684,7 +684,7 @@ async function logout() {
     sessionStorage.removeItem('selfDashboardUserId');
     sessionStorage.removeItem('selfDashboardUserEmail');
     sessionStorage.removeItem('selfDashboardIdentity');
-    window.location.href = getLoginUrl();
+    window.location.href = getPostLogoutUrl();
 }
 
 const windowAny = window as Window & {

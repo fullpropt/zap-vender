@@ -457,7 +457,7 @@ export default function AdminDashboard() {
     }
     clearSessionAuthStorage();
     clearPersistedAuthSession();
-    window.location.hash = '#/login';
+    window.location.hash = '#/planos';
   };
   const openAccountEditor = (account: AppAdminAccount) => {
     setOverviewError('');

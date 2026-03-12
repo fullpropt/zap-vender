@@ -375,6 +375,34 @@ CREATE TABLE IF NOT EXISTS checkout_registrations (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS pre_checkout_leads (
+    id SERIAL PRIMARY KEY,
+    uuid TEXT UNIQUE NOT NULL,
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    whatsapp TEXT NOT NULL,
+    company_name TEXT,
+    primary_objective TEXT,
+    plan_key TEXT NOT NULL,
+    status TEXT DEFAULT 'captured' CHECK(status IN (
+        'captured',
+        'checkout_started',
+        'checkout_completed',
+        'discarded'
+    )),
+    stripe_checkout_session_id TEXT,
+    checkout_started_at TIMESTAMPTZ,
+    source_url TEXT,
+    utm_source TEXT,
+    utm_medium TEXT,
+    utm_campaign TEXT,
+    utm_term TEXT,
+    utm_content TEXT,
+    metadata TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS whatsapp_sessions (
     id SERIAL PRIMARY KEY,
     session_id TEXT UNIQUE NOT NULL,
@@ -587,6 +615,10 @@ CREATE INDEX IF NOT EXISTS idx_checkout_registrations_subscription ON checkout_r
 CREATE INDEX IF NOT EXISTS idx_checkout_registrations_customer ON checkout_registrations(stripe_customer_id);
 CREATE INDEX IF NOT EXISTS idx_checkout_registrations_token_hash ON checkout_registrations(email_confirmation_token_hash);
 CREATE INDEX IF NOT EXISTS idx_checkout_registrations_status ON checkout_registrations(status);
+CREATE INDEX IF NOT EXISTS idx_pre_checkout_leads_email ON pre_checkout_leads(email);
+CREATE INDEX IF NOT EXISTS idx_pre_checkout_leads_plan_key ON pre_checkout_leads(plan_key);
+CREATE INDEX IF NOT EXISTS idx_pre_checkout_leads_status ON pre_checkout_leads(status);
+CREATE INDEX IF NOT EXISTS idx_pre_checkout_leads_created_at ON pre_checkout_leads(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_campaign ON campaign_sender_accounts(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_campaign_sender_accounts_session ON campaign_sender_accounts(session_id);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_sessions_created_by ON whatsapp_sessions(created_by);

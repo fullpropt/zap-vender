@@ -58,6 +58,7 @@ const {
     User,
     WhatsAppSession,
     SupportInboxMessage,
+    PreCheckoutLead,
     CheckoutRegistration
 } = require('./database/models');
 
@@ -1296,7 +1297,8 @@ app.use('/api', (req, res, next) => {
         path.startsWith('/auth/register') ||
         path.startsWith('/auth/complete-registration') ||
         path.startsWith('/auth/confirm-email') ||
-        path.startsWith('/auth/resend-confirmation')
+        path.startsWith('/auth/resend-confirmation') ||
+        path.startsWith('/pre-checkout/capture')
     ) {
 
         return next();
@@ -10784,6 +10786,136 @@ async function handleStripeWebhookEvent(req, event) {
 
 // ============================================
 
+const PRE_CHECKOUT_PRIMARY_OBJECTIVE_OPTIONS = new Set([
+    'organizar_leads',
+    'automatizar_atendimento',
+    'aumentar_vendas',
+    'melhorar_whatsapp',
+    'outro'
+]);
+
+function normalizePreCheckoutText(value, maxLength = 160) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    return normalized.slice(0, maxLength);
+}
+
+function normalizePreCheckoutEmail(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return '';
+    return normalized;
+}
+
+function normalizePreCheckoutPhone(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.slice(0, 18);
+}
+
+function normalizePreCheckoutObjective(value) {
+    const normalized = normalizePreCheckoutText(value, 80).toLowerCase();
+    if (!normalized) return '';
+    return PRE_CHECKOUT_PRIMARY_OBJECTIVE_OPTIONS.has(normalized)
+        ? normalized
+        : 'outro';
+}
+
+function parsePreCheckoutUtmPayload(body = {}, req = null) {
+    const sourceBody = body && typeof body === 'object' ? body : {};
+    const sourceUtm = sourceBody?.utm && typeof sourceBody.utm === 'object' ? sourceBody.utm : {};
+    const query = req?.query && typeof req.query === 'object' ? req.query : {};
+
+    return {
+        utm_source: normalizePreCheckoutText(sourceUtm.utm_source || sourceUtm.source || sourceBody.utm_source || query.utm_source || '', 120),
+        utm_medium: normalizePreCheckoutText(sourceUtm.utm_medium || sourceUtm.medium || sourceBody.utm_medium || query.utm_medium || '', 120),
+        utm_campaign: normalizePreCheckoutText(sourceUtm.utm_campaign || sourceUtm.campaign || sourceBody.utm_campaign || query.utm_campaign || '', 160),
+        utm_term: normalizePreCheckoutText(sourceUtm.utm_term || sourceUtm.term || sourceBody.utm_term || query.utm_term || '', 160),
+        utm_content: normalizePreCheckoutText(sourceUtm.utm_content || sourceUtm.content || sourceBody.utm_content || query.utm_content || '', 160)
+    };
+}
+
+app.post('/api/pre-checkout/capture', async (req, res) => {
+    try {
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        const requestedPlanKey = normalizePreCheckoutText(
+            body.planKey || body.plan_key || body.plan || 'premium',
+            40
+        ).toLowerCase() || 'premium';
+        const plan = stripeCheckoutService.getPlanConfig(requestedPlanKey);
+        if (!plan) {
+            return res.status(400).json({ success: false, error: 'Plano invalido para pre-checkout' });
+        }
+
+        const fullName = normalizePreCheckoutText(body.fullName || body.full_name || body.name, 120);
+        const email = normalizePreCheckoutEmail(body.email);
+        const whatsapp = normalizePreCheckoutPhone(body.whatsapp || body.phone);
+        const companyName = normalizePreCheckoutText(body.companyName || body.company_name, 120);
+        const primaryObjective = normalizePreCheckoutObjective(
+            body.primaryObjective || body.primary_objective || body.objective
+        );
+
+        if (!fullName) {
+            return res.status(400).json({ success: false, error: 'Nome completo e obrigatorio' });
+        }
+        if (!isValidEmailAddress(email)) {
+            return res.status(400).json({ success: false, error: 'E-mail invalido' });
+        }
+        if (whatsapp.length < 10) {
+            return res.status(400).json({ success: false, error: 'WhatsApp invalido' });
+        }
+        if (!companyName) {
+            return res.status(400).json({ success: false, error: 'Nome da empresa e obrigatorio' });
+        }
+        if (!primaryObjective) {
+            return res.status(400).json({ success: false, error: 'Objetivo principal e obrigatorio' });
+        }
+
+        const utmPayload = parsePreCheckoutUtmPayload(body, req);
+        const sourceUrl = normalizePreCheckoutText(
+            body.sourceUrl || body.source_url || req.get('referer') || '',
+            500
+        );
+        const preCheckoutLead = await PreCheckoutLead.create({
+            full_name: fullName,
+            email,
+            whatsapp,
+            company_name: companyName,
+            primary_objective: primaryObjective,
+            plan_key: plan.code,
+            source_url: sourceUrl || null,
+            ...utmPayload,
+            metadata: {
+                source: 'pre_checkout_page',
+                captured_from_path: normalizePreCheckoutText(body.path || body.captured_from_path || '', 200) || null,
+                referrer: normalizePreCheckoutText(req.get('referer') || '', 300) || null,
+                user_agent: normalizePreCheckoutText(req.get('user-agent') || '', 300) || null
+            }
+        });
+
+        const redirectParams = new URLSearchParams();
+        redirectParams.set('lead_capture_id', String(preCheckoutLead.id));
+        redirectParams.set('prefill_name', fullName);
+        redirectParams.set('prefill_email', email);
+        redirectParams.set('prefill_whatsapp', whatsapp);
+        redirectParams.set('prefill_company_name', companyName);
+        redirectParams.set('prefill_objective', primaryObjective);
+        const redirectUrl = `/billing/checkout/${encodeURIComponent(plan.code)}?${redirectParams.toString()}`;
+
+        return res.status(201).json({
+            success: true,
+            plan: plan.code,
+            lead_capture_id: preCheckoutLead.id,
+            redirect_url: redirectUrl
+        });
+    } catch (error) {
+        console.error('[pre-checkout] Falha ao capturar lead:', error.message);
+        return res.status(500).json({
+            success: false,
+            error: 'Nao foi possivel registrar o pre-checkout agora'
+        });
+    }
+});
+
 
 app.get('/billing/checkout/:planKey', async (req, res) => {
     try {
@@ -10792,6 +10924,18 @@ app.get('/billing/checkout/:planKey', async (req, res) => {
             return res.status(404).send('Plano de checkout nao encontrado');
         }
 
+        const prefillName = normalizePreCheckoutText(req.query?.prefill_name || req.query?.name, 120);
+        const prefillEmail = normalizePreCheckoutEmail(req.query?.prefill_email || req.query?.email);
+        const prefillWhatsApp = normalizePreCheckoutPhone(req.query?.prefill_whatsapp || req.query?.whatsapp || req.query?.phone);
+        const prefillCompanyName = normalizePreCheckoutText(req.query?.prefill_company_name || req.query?.company_name, 120);
+        const prefillObjective = normalizePreCheckoutObjective(req.query?.prefill_objective || req.query?.objective);
+        const leadCaptureId = parsePositiveIntInRange(
+            req.query?.lead_capture_id || req.query?.leadCaptureId,
+            0,
+            1,
+            2147483647
+        );
+
         const appBaseUrl = buildPublicAppBaseUrl(req);
         if (!appBaseUrl) {
             return res.status(500).send('Nao foi possivel resolver a URL publica da aplicacao');
@@ -10799,14 +10943,68 @@ app.get('/billing/checkout/:planKey', async (req, res) => {
 
         const successUrl = `${appBaseUrl}/#/checkout/sucesso?session_id={CHECKOUT_SESSION_ID}&plan=${encodeURIComponent(plan.code)}`;
         const cancelUrl = `${appBaseUrl}/#/planos?checkout=cancelado&plan=${encodeURIComponent(plan.code)}`;
+        const checkoutMetadata = {
+            pre_checkout_name: prefillName || '',
+            pre_checkout_whatsapp: prefillWhatsApp || '',
+            pre_checkout_company: prefillCompanyName || '',
+            pre_checkout_objective: prefillObjective || '',
+            pre_checkout_lead_id: leadCaptureId > 0 ? String(leadCaptureId) : ''
+        };
         const checkoutSession = await stripeCheckoutService.createCheckoutSession({
             plan,
             successUrl,
-            cancelUrl
+            cancelUrl,
+            customer: {
+                email: prefillEmail,
+                name: prefillName,
+                phone: prefillWhatsApp,
+                companyName: prefillCompanyName,
+                objective: prefillObjective
+            },
+            metadata: checkoutMetadata
         });
 
         if (!checkoutSession?.url) {
             throw new Error('Checkout da Stripe nao retornou URL');
+        }
+
+        if (prefillEmail && isValidEmailAddress(prefillEmail) && checkoutSession?.id) {
+            try {
+                await CheckoutRegistration.upsertBySession({
+                    email: prefillEmail,
+                    stripe_checkout_session_id: checkoutSession.id,
+                    stripe_plan_key: plan.key,
+                    stripe_plan_code: plan.code,
+                    stripe_plan_name: plan.name,
+                    status: 'pending_email_confirmation',
+                    metadata: {
+                        pre_checkout: {
+                            name: prefillName || null,
+                            whatsapp: prefillWhatsApp || null,
+                            company_name: prefillCompanyName || null,
+                            objective: prefillObjective || null,
+                            lead_capture_id: leadCaptureId > 0 ? leadCaptureId : null,
+                            captured_at: new Date().toISOString()
+                        }
+                    }
+                });
+            } catch (registrationError) {
+                console.warn('[billing/checkout] Falha ao registrar pre-checkout na sessao:', registrationError.message);
+            }
+        }
+
+        if (leadCaptureId > 0 && checkoutSession?.id) {
+            try {
+                await PreCheckoutLead.markCheckoutStarted(leadCaptureId, {
+                    stripe_checkout_session_id: checkoutSession.id,
+                    metadata: {
+                        checkout_url: checkoutSession.url,
+                        checkout_started_at: new Date().toISOString()
+                    }
+                });
+            } catch (leadUpdateError) {
+                console.warn('[billing/checkout] Falha ao atualizar status do pre-checkout lead:', leadUpdateError.message);
+            }
         }
 
         return res.redirect(303, checkoutSession.url);

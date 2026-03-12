@@ -204,6 +204,10 @@ function getLoginUrl() {
     return buildAppUrl('login');
 }
 
+function getPostLogoutUrl() {
+    return buildAppUrl('planos');
+}
+
 // ============================================
 // INICIALIZAÇÃO
 // ============================================
@@ -355,7 +359,7 @@ async function logout() {
     window.dispatchEvent(new CustomEvent('app:logout'));
     clearSessionAuthStorage();
     clearPersistedAuthSession();
-    window.location.href = getLoginUrl();
+    window.location.href = getPostLogoutUrl();
 }
 
 // ============================================

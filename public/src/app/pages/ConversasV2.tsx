@@ -6,6 +6,7 @@ type ConversasV2Globals = {
   initConversasV2?: () => void;
   closeAttachModal?: () => void;
   sendFile?: () => void;
+  logout?: () => void;
 };
 
 export default function ConversasV2() {
@@ -51,7 +52,7 @@ export default function ConversasV2() {
                   <li><Link to="/configuracoes"><span className="icon icon-settings"></span> Configurações</Link></li>
               </ul>
               <div className="sidebar-footer">
-                  <Link to="/login" className="btn-logout">Sair</Link>
+                  <button type="button" className="btn-logout" onClick={() => globals.logout?.()}>Sair</button>
               </div>
           </nav>
           

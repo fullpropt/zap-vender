@@ -179,6 +179,10 @@ function getLoginUrl() {
     return '#/login';
 }
 
+function getPostLogoutUrl() {
+    return '#/planos';
+}
+
 function normalizePairingPhoneInput(value: string) {
     const digits = String(value || '').replace(/\D/g, '');
     if (!digits) return '';
@@ -1292,7 +1296,7 @@ async function logout() {
     sessionStorage.removeItem('selfDashboardUserId');
     sessionStorage.removeItem('selfDashboardUserEmail');
     sessionStorage.removeItem('selfDashboardIdentity');
-    window.location.href = getLoginUrl();
+    window.location.href = getPostLogoutUrl();
 }
 
 const windowAny = window as Window & {

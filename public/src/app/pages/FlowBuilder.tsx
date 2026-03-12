@@ -23,6 +23,7 @@ type FlowBuilderGlobals = {
   resetZoom?: () => void;
   insertVariable?: (value: string) => void;
   closeFlowsModal?: () => void;
+  logout?: () => void;
 };
 
 export default function FlowBuilder() {
@@ -3518,7 +3519,7 @@ export default function FlowBuilder() {
                   </div>
               </nav>
               <div className="sidebar-footer">
-                  <Link to="/login" className="btn-logout">Sair</Link>
+                  <button type="button" className="btn-logout" onClick={() => globals.logout?.()}>Sair</button>
               </div>
           </aside>
           
