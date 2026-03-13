@@ -80,7 +80,7 @@ let whatsappPlanUsageState = {
     unlimited: true
 };
 
-function appConfirm(message: string, title = 'Confirmacao') {
+function appConfirm(message: string, title = 'Confirmação') {
     const win = window as Window & { showAppConfirm?: (message: string, title?: string) => Promise<boolean> };
     if (typeof win.showAppConfirm === 'function') {
         return win.showAppConfirm(message, title);
@@ -167,7 +167,7 @@ function updateWhatsappPlanUsageCurrent(current: number) {
 
 async function loadWhatsappPlanUsage() {
     try {
-        if (!api?.get) throw new Error('API indisponivel');
+        if (!api?.get) throw new Error('API indisponível');
         const response = await api.get('/api/plan/status') as PlanStatusApiPayload;
         const metric = response?.plan?.limits?.whatsapp_sessions;
         const rawMax = metric?.max;
@@ -277,7 +277,7 @@ async function resolvePreferredDefaultSessionId() {
     const ownerUserId = getOwnerUserIdFromSessionToken();
     preferredDefaultSessionId = buildOwnerFallbackSessionId(ownerUserId, CONFIG.DEFAULT_SESSION_ID);
     try {
-        if (!api?.get) throw new Error('API indisponivel');
+        if (!api?.get) throw new Error('API indisponível');
         const response = await api.get('/api/settings');
         preferredDefaultSessionId = buildCompanyDefaultSessionId(response?.settings?.company_name, ownerUserId);
     } catch (_) {
@@ -421,7 +421,7 @@ function renderSessionList(sessions: WhatsappSessionItem[], currentId: string) {
     if (!list) return;
 
     if (!Array.isArray(sessions) || sessions.length === 0) {
-        list.innerHTML = '<div class="whatsapp-session-list-empty">Nenhuma conta disponivel.</div>';
+        list.innerHTML = '<div class="whatsapp-session-list-empty">Nenhuma conta disponível.</div>';
         return;
     }
 
@@ -538,7 +538,7 @@ function renderSessionOptions() {
 async function loadSessionOptions(preferredSessionId?: string) {
     const fallbackSessionId = sanitizeSessionId(preferredSessionId, getCurrentSessionId());
     try {
-        if (!api?.get) throw new Error('API indisponivel');
+        if (!api?.get) throw new Error('API indisponível');
         const response = await api.get('/api/whatsapp/sessions?includeDisabled=true');
         availableSessions = Array.isArray(response?.sessions) ? response.sessions : [];
         updateWhatsappPlanUsageCurrent(availableSessions.length);
@@ -594,7 +594,7 @@ function resetConnectionUi() {
     if (qrTimerEl) qrTimerEl.style.display = 'none';
 
     if (shouldShowReconnectUiForSession(getCurrentSessionId())) {
-        showQRLoading('Aguardando conexao...');
+        showQRLoading('Aguardando conexão...');
     }
     syncConnectionSectionVisibility();
 }
@@ -632,7 +632,7 @@ async function createSessionPrompt() {
         .replace(/^-|-$/g, '');
 
     if (!normalized) {
-        showToast('warning', 'Identificador da conta invalido');
+        showToast('warning', 'Identificador da conta inválido');
         return;
     }
 
@@ -727,7 +727,7 @@ function initSocket() {
     }
     if (!socket) {
         if (!io) {
-            console.warn('Socket.IO nao carregado');
+            console.warn('Socket.IO não carregado');
             return;
         }
         socket = io(CONFIG.SOCKET_URL, socketOptions);
@@ -776,7 +776,7 @@ function initSocket() {
             updateStatus('connecting', normalizedStatus === 'reconnecting' ? 'Reconectando...' : 'Conectando...');
             updateConnectButton(true);
             if (!pairingCodeVisible) {
-                showQRLoading(normalizedStatus === 'reconnecting' ? 'Reconectando sessao...' : 'Gerando QR Code...');
+                showQRLoading(normalizedStatus === 'reconnecting' ? 'Reconectando sessão...' : 'Gerando QR Code...');
             }
             return;
         }
@@ -818,7 +818,7 @@ function initSocket() {
     socket.on('reconnecting', function(data) {
         if (!isPayloadForCurrentSession(data)) return;
         updateStatus('connecting', 'Reconectando...');
-        showQRLoading('Reconectando sessao...');
+        showQRLoading('Reconectando sessão...');
     });
     
     socket.on('connected', function(data) {
@@ -877,7 +877,7 @@ function startConnection() {
     }
     const runtimeSocket = socket;
     if (!runtimeSocket) {
-        showToast('error', 'Conexao com servidor indisponivel. Recarregue a pagina.');
+        showToast('error', 'Conexão com o servidor indisponível. Recarregue a página.');
         return;
     }
     if (runtimeSocket.connected !== true && typeof runtimeSocket.connect === 'function') {
@@ -914,7 +914,7 @@ function requestPairingCode() {
     }
     const runtimeSocket = socket;
     if (!runtimeSocket) {
-        showToast('error', 'Conexao com servidor indisponivel. Recarregue a pagina.');
+        showToast('error', 'Conexão com o servidor indisponível. Recarregue a página.');
         return;
     }
     if (runtimeSocket.connected !== true && typeof runtimeSocket.connect === 'function') {
@@ -980,10 +980,10 @@ async function removeSession() {
         return;
     }
 
-    if (await appConfirm(`Tem certeza que deseja remover a conta ${sessionId}? Essa acao desconecta e exclui a sessao.`, 'Remover conta WhatsApp')) {
+    if (await appConfirm(`Tem certeza de que deseja remover a conta ${sessionId}? Essa ação desconecta e exclui a sessão.`, 'Remover conta WhatsApp')) {
         try {
             if (typeof api?.delete !== 'function') {
-                throw new Error('API indisponivel');
+                throw new Error('API indisponível');
             }
 
             await api.delete(`/api/whatsapp/sessions/${encodeURIComponent(sessionId)}`);
@@ -1001,7 +1001,7 @@ async function removeSession() {
             socket?.emit('check-session', { sessionId: getCurrentSessionId() });
             showToast('success', `Conta removida: ${sessionId}`);
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Nao foi possivel remover a conta.';
+            const message = error instanceof Error ? error.message : 'Não foi possível remover a conta.';
             showToast('error', message);
         }
     }
@@ -1040,7 +1040,7 @@ function isIdleQrLoadingMessage(message: string) {
         .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase()
         .trim();
-    return normalized.startsWith('aguardando conexao');
+    return normalized.startsWith('aguardando conexão');
 }
 
 // Mostrar loading do QR
@@ -1090,7 +1090,7 @@ function displayPairingCode(code: string, phoneNumber: string) {
     pairingValue.textContent = code || '-';
     pairingValue.title = 'Toque para copiar';
     if (pairingMeta) {
-        pairingMeta.textContent = phoneNumber ? `Numero: +${phoneNumber}` : '';
+        pairingMeta.textContent = phoneNumber ? `Número: +${phoneNumber}` : '';
     }
 
     if (pairingCodeHideTimer) clearTimeout(pairingCodeHideTimer);
@@ -1310,7 +1310,7 @@ async function copyPairingCode() {
         showToast('success', 'Codigo copiado');
         return;
     }
-    showToast('warning', 'Nao foi possivel copiar automaticamente');
+    showToast('warning', 'Não foi possível copiar automaticamente');
 }
 
 function bindPairingCodeCopy() {
