@@ -9558,6 +9558,67 @@ function normalizeButtonUrlForSend(value) {
     }
 }
 
+async function sendListMessageWithNativeRelay(session, jid, {
+    description = '',
+    title = '',
+    footer = '',
+    buttonText = 'Ver Menu',
+    sections = []
+} = {}) {
+    const baileys = await baileysLoader.getBaileys();
+    const listTypeSingleSelect = baileys?.proto?.Message?.ListMessage?.ListType?.SINGLE_SELECT || 1;
+
+    const normalizedSections = (Array.isArray(sections) ? sections : [])
+        .map((section, sectionIndex) => {
+            const rows = (Array.isArray(section?.rows) ? section.rows : [])
+                .map((row, rowIndex) => {
+                    const rowTitle = String(row?.title || '').trim();
+                    if (!rowTitle) return null;
+
+                    const rowId = String(row?.rowId || row?.id || '').trim() || `option-${sectionIndex + 1}-${rowIndex + 1}`;
+                    const rowDescription = String(row?.description || '').trim();
+
+                    return {
+                        title: rowTitle,
+                        rowId,
+                        description: rowDescription || undefined
+                    };
+                })
+                .filter(Boolean);
+
+            if (rows.length === 0) return null;
+
+            return {
+                title: String(section?.title || '').trim() || `Opcoes ${sectionIndex + 1}`,
+                rows
+            };
+        })
+        .filter(Boolean);
+
+    if (normalizedSections.length === 0) {
+        throw new Error('Mensagem de menu sem opcoes validas');
+    }
+
+    const outboundMessage = baileys.generateWAMessageFromContent(jid, {
+        listMessage: {
+            title: title || undefined,
+            description: description || 'Selecione uma opcao:',
+            buttonText: buttonText || 'Ver Menu',
+            footerText: footer || undefined,
+            listType: listTypeSingleSelect,
+            sections: normalizedSections
+        }
+    }, {
+        userJid: session?.socket?.user?.id || undefined
+    });
+
+    await session.socket.relayMessage(jid, outboundMessage.message, {
+        messageId: outboundMessage.key.id
+    });
+
+    return outboundMessage;
+}
+
 /**
 
  * Enviar mensagem
@@ -9696,13 +9757,27 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
                 ? applyLeadTemplate(listFooterRaw, lead, { mensagem: renderedTextMessage || listFooterRaw })
                 : '';
 
-            result = await session.socket.sendMessage(jid, {
-                text: renderedTextMessage || 'Selecione uma opcao:',
-                title: listTitle || undefined,
-                footer: listFooter || undefined,
-                buttonText: listButtonText,
-                sections
-            });
+            try {
+                result = await sendListMessageWithNativeRelay(session, jid, {
+                    description: renderedTextMessage || 'Selecione uma opcao:',
+                    title: listTitle,
+                    footer: listFooter,
+                    buttonText: listButtonText,
+                    sections
+                });
+            } catch (nativeListError) {
+                console.warn(
+                    `[${sessionId}] Falha no envio de lista nativa (${nativeListError.message}). `
+                    + 'Aplicando fallback de envio legado.'
+                );
+                result = await session.socket.sendMessage(jid, {
+                    text: renderedTextMessage || 'Selecione uma opcao:',
+                    title: listTitle || undefined,
+                    footer: listFooter || undefined,
+                    buttonText: listButtonText,
+                    sections
+                });
+            }
 
         } else if (normalizedType === 'button_url') {
             const buttonTextRaw = String(options.buttonText || options.listButtonText || '').trim();

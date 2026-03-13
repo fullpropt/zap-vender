@@ -2544,6 +2544,20 @@ const Flow = {
             created_by: data.created_by
         });
 
+        if (finalFlow && Number(finalFlow.is_active || 0) !== 1) {
+            await run(`
+                UPDATE flow_executions
+                SET status = 'cancelled',
+                    completed_at = CURRENT_TIMESTAMP,
+                    error_message = CASE
+                        WHEN error_message IS NULL OR TRIM(error_message) = ''
+                            THEN 'Execucao cancelada automaticamente: fluxo desativado.'
+                        ELSE error_message
+                    END
+                WHERE flow_id = ? AND status = 'running'
+            `, [id]);
+        }
+
         const deactivatedFlowIds = finalFlow
             && Number(finalFlow.is_active) > 0
             && resolvePersistedFlowBuilderMode(finalFlow.flow_builder_mode, finalFlow.nodes) === 'menu'
@@ -2562,6 +2576,17 @@ const Flow = {
     },
     
     async delete(id) {
+        await run(`
+            UPDATE flow_executions
+            SET status = 'cancelled',
+                completed_at = CURRENT_TIMESTAMP,
+                error_message = CASE
+                    WHEN error_message IS NULL OR TRIM(error_message) = ''
+                        THEN 'Execucao cancelada automaticamente: fluxo removido.'
+                    ELSE error_message
+                END
+            WHERE flow_id = ? AND status = 'running'
+        `, [id]);
         return await run('DELETE FROM flows WHERE id = ?', [id]);
     }
 };

@@ -1014,6 +1014,35 @@ class FlowService extends EventEmitter {
         if (cached) {
             if (lead) cached.lead = lead;
             if (conversation) cached.conversation = conversation;
+
+            const cachedFlowId = Number(cached?.flow?.id || 0);
+            if (!Number.isInteger(cachedFlowId) || cachedFlowId <= 0) {
+                await this.endFlow(cached, 'failed', 'Execucao sem fluxo associado.');
+                return null;
+            }
+
+            const refreshedFlow = await Flow.findById(cachedFlowId);
+            if (!refreshedFlow) {
+                await this.endFlow(cached, 'failed', 'Fluxo associado nao encontrado para continuar execucao.');
+                return null;
+            }
+
+            if (Number(refreshedFlow?.is_active || 0) !== 1) {
+                await this.endFlow(cached, 'cancelled', 'Execucao cancelada automaticamente: fluxo inativo.');
+                return null;
+            }
+
+            if (!this.flowMatchesConversationSession(refreshedFlow, cached?.conversation?.session_id)) {
+                await this.endFlow(cached, 'cancelled', 'Execucao cancelada automaticamente: fluxo fora do escopo da sessao.');
+                return null;
+            }
+
+            if (this.hasInconsistentMenuMode(refreshedFlow)) {
+                await this.endFlow(cached, 'cancelled', 'Execucao cancelada automaticamente: fluxo com modo inconsistente.');
+                return null;
+            }
+
+            cached.flow = refreshedFlow;
             return cached;
         }
 
