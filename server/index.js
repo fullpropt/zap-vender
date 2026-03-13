@@ -16606,6 +16606,22 @@ function pickRandomCampaignMessagePoolEntry(pool = [], fallback = '') {
 
 const CAMPAIGN_SEND_WINDOW_DEFAULT_START = '08:00';
 const CAMPAIGN_SEND_WINDOW_DEFAULT_END = '18:00';
+const CAMPAIGN_SEND_WINDOW_TIMEZONE = String(
+    process.env.CAMPAIGN_SEND_WINDOW_TIMEZONE
+    || process.env.APP_TIMEZONE
+    || process.env.TZ
+    || 'America/Sao_Paulo'
+).trim() || 'America/Sao_Paulo';
+const campaignSendWindowDateTimeFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CAMPAIGN_SEND_WINDOW_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+});
 
 function normalizeCampaignSendWindowTime(value, fallback = null) {
     const raw = String(value || '').trim();
@@ -16878,10 +16894,97 @@ function randomIntBetween(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function getCampaignSendWindowDateParts(date = new Date()) {
+    try {
+        const parts = campaignSendWindowDateTimeFormatter.formatToParts(date);
+        const values = {};
+        for (const part of parts) {
+            if (part?.type === 'literal') continue;
+            values[part.type] = Number(part.value);
+        }
+
+        if (
+            Number.isInteger(values.year)
+            && Number.isInteger(values.month)
+            && Number.isInteger(values.day)
+            && Number.isInteger(values.hour)
+            && Number.isInteger(values.minute)
+        ) {
+            return {
+                year: values.year,
+                month: values.month,
+                day: values.day,
+                hour: values.hour,
+                minute: values.minute,
+                second: Number.isInteger(values.second) ? values.second : 0
+            };
+        }
+    } catch (_) {
+        // fallback local abaixo
+    }
+
+    return {
+        year: date.getFullYear(),
+        month: date.getMonth() + 1,
+        day: date.getDate(),
+        hour: date.getHours(),
+        minute: date.getMinutes(),
+        second: date.getSeconds()
+    };
+}
+
+function shiftCampaignSendWindowDateParts(parts, dayDelta = 0) {
+    const utcAnchor = Date.UTC(
+        Number(parts?.year || 1970),
+        Math.max(0, Number(parts?.month || 1) - 1),
+        Number(parts?.day || 1) + Number(dayDelta || 0),
+        12,
+        0,
+        0,
+        0
+    );
+    return getCampaignSendWindowDateParts(new Date(utcAnchor));
+}
+
+function buildUtcTimestampForCampaignSendWindow(parts, minutesOfDay = 0) {
+    const safeMinutes = Number.isFinite(Number(minutesOfDay)) ? Math.max(0, Math.floor(Number(minutesOfDay))) : 0;
+    const hour = Math.floor(safeMinutes / 60);
+    const minute = safeMinutes % 60;
+    const desiredUtcEquivalent = Date.UTC(
+        Number(parts?.year || 1970),
+        Math.max(0, Number(parts?.month || 1) - 1),
+        Number(parts?.day || 1),
+        hour,
+        minute,
+        0,
+        0
+    );
+
+    let guess = desiredUtcEquivalent;
+    for (let i = 0; i < 3; i++) {
+        const resolved = getCampaignSendWindowDateParts(new Date(guess));
+        const resolvedUtcEquivalent = Date.UTC(
+            resolved.year,
+            Math.max(0, resolved.month - 1),
+            resolved.day,
+            resolved.hour,
+            resolved.minute,
+            0,
+            0
+        );
+        const diffMs = desiredUtcEquivalent - resolvedUtcEquivalent;
+        if (diffMs === 0) break;
+        guess += diffMs;
+    }
+
+    return guess;
+}
+
 function isWithinCampaignSendWindow(sendWindowConfig, date = new Date()) {
     if (!sendWindowConfig?.enabled) return true;
 
-    const nowMinutes = (date.getHours() * 60) + date.getMinutes();
+    const parts = getCampaignSendWindowDateParts(date);
+    const nowMinutes = (parts.hour * 60) + parts.minute;
     const start = Number(sendWindowConfig.startMinutes);
     const end = Number(sendWindowConfig.endMinutes);
 
@@ -16915,23 +17018,21 @@ function alignCampaignScheduleToSendWindow(timestampMs, sendWindowConfig = null)
     }
 
     const baseDate = new Date(numericTimestamp);
-    const nowMinutes = (baseDate.getHours() * 60) + baseDate.getMinutes();
-    const startHour = Math.floor(start / 60);
-    const startMinute = start % 60;
+    const zonedParts = getCampaignSendWindowDateParts(baseDate);
+    const nowMinutes = (zonedParts.hour * 60) + zonedParts.minute;
 
     if (start < end) {
         if (nowMinutes < start) {
-            baseDate.setHours(startHour, startMinute, 0, 0);
-            return baseDate.getTime();
+            return buildUtcTimestampForCampaignSendWindow(zonedParts, start);
         }
 
-        baseDate.setDate(baseDate.getDate() + 1);
-        baseDate.setHours(startHour, startMinute, 0, 0);
-        return baseDate.getTime();
+        return buildUtcTimestampForCampaignSendWindow(
+            shiftCampaignSendWindowDateParts(zonedParts, 1),
+            start
+        );
     }
 
-    baseDate.setHours(startHour, startMinute, 0, 0);
-    return baseDate.getTime();
+    return buildUtcTimestampForCampaignSendWindow(zonedParts, start);
 }
 
 function addCampaignDelayRespectingSendWindow(currentMs, delayMs, sendWindowConfig = null) {
