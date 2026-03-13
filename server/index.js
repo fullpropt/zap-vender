@@ -9558,6 +9558,35 @@ function normalizeButtonUrlForSend(value) {
     }
 }
 
+function isTruthyEnvFlag(value, fallback = false) {
+    if (value === undefined || value === null || value === '') return fallback;
+    const normalized = String(value).trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'on' || normalized === 'yes';
+}
+
+function buildInlineListFallbackText(description = '', sections = []) {
+    const prompt = String(description || '').trim() || 'Escolha uma opcao no menu abaixo:';
+    const lines = [prompt, ''];
+    let index = 1;
+
+    for (const section of (Array.isArray(sections) ? sections : [])) {
+        const rows = Array.isArray(section?.rows) ? section.rows : [];
+        for (const row of rows) {
+            const title = String(row?.title || '').trim();
+            if (!title) continue;
+            lines.push(`${index}. ${title}`);
+            index += 1;
+        }
+    }
+
+    if (index > 1) {
+        lines.push('');
+        lines.push('Responda com o numero da opcao.');
+    }
+
+    return lines.join('\n').trim();
+}
+
 async function sendListMessageWithNativeRelay(session, jid, {
     description = '',
     title = '',
@@ -9756,27 +9785,37 @@ async function sendMessage(sessionId, to, message, type = 'text', options = {}) 
             const listFooter = listFooterRaw
                 ? applyLeadTemplate(listFooterRaw, lead, { mensagem: renderedTextMessage || listFooterRaw })
                 : '';
+            const fallbackText = buildInlineListFallbackText(
+                renderedTextMessage || 'Selecione uma opcao:',
+                sections
+            );
+            const interactiveListEnabled = isTruthyEnvFlag(
+                process.env.WHATSAPP_INTERACTIVE_LIST_ENABLED,
+                false
+            );
 
-            try {
-                result = await sendListMessageWithNativeRelay(session, jid, {
-                    description: renderedTextMessage || 'Selecione uma opcao:',
-                    title: listTitle,
-                    footer: listFooter,
-                    buttonText: listButtonText,
-                    sections
-                });
-            } catch (nativeListError) {
-                console.warn(
-                    `[${sessionId}] Falha no envio de lista nativa (${nativeListError.message}). `
-                    + 'Aplicando fallback de envio legado.'
-                );
+            if (!interactiveListEnabled) {
                 result = await session.socket.sendMessage(jid, {
-                    text: renderedTextMessage || 'Selecione uma opcao:',
-                    title: listTitle || undefined,
-                    footer: listFooter || undefined,
-                    buttonText: listButtonText,
-                    sections
+                    text: fallbackText
                 });
+            } else {
+                try {
+                    result = await sendListMessageWithNativeRelay(session, jid, {
+                        description: renderedTextMessage || 'Selecione uma opcao:',
+                        title: listTitle,
+                        footer: listFooter,
+                        buttonText: listButtonText,
+                        sections
+                    });
+                } catch (nativeListError) {
+                    console.warn(
+                        `[${sessionId}] Falha no envio de lista nativa (${nativeListError.message}). `
+                        + 'Aplicando fallback de texto com opcoes.'
+                    );
+                    result = await session.socket.sendMessage(jid, {
+                        text: fallbackText
+                    });
+                }
             }
 
         } else if (normalizedType === 'button_url') {
