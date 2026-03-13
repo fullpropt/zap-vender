@@ -14654,11 +14654,19 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
 
         if (normalizedRows.length > 0) {
             const uniquePhones = Array.from(new Set(normalizedRows.map((row) => row.phone)));
+            const uniqueJids = Array.from(new Set(
+                normalizedRows
+                    .map((row) => String(row.jid || '').trim())
+                    .filter(Boolean)
+            ));
             const existingRows = ownerScopeUserId
                 ? await query(`
-                    SELECT id, phone, name, email, tags, custom_fields
+                    SELECT id, phone, jid, name, email, tags, custom_fields
                     FROM leads
-                    WHERE phone = ANY(?::text[])
+                    WHERE (
+                        phone = ANY(?::text[])
+                        OR (? = TRUE AND jid = ANY(?::text[]))
+                    )
                       AND (
                           owner_user_id = ?
                           OR (
@@ -14671,10 +14679,24 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                               )
                           )
                       )
-                `, [uniquePhones, ownerScopeUserId, ownerScopeUserId, ownerScopeUserId])
+                `, [
+                    uniquePhones,
+                    uniqueJids.length > 0,
+                    uniqueJids,
+                    ownerScopeUserId,
+                    ownerScopeUserId,
+                    ownerScopeUserId
+                ])
                 : await query(
-                    'SELECT id, phone, name, email, tags, custom_fields FROM leads WHERE phone = ANY(?::text[])',
-                    [uniquePhones]
+                    `
+                        SELECT id, phone, jid, name, email, tags, custom_fields
+                        FROM leads
+                        WHERE (
+                            phone = ANY(?::text[])
+                            OR (? = TRUE AND jid = ANY(?::text[]))
+                        )
+                    `,
+                    [uniquePhones, uniqueJids.length > 0, uniqueJids]
                 );
 
             if (ownerScopeUserId) {
@@ -14683,23 +14705,57 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                         .map((row) => String(row?.phone || '').trim())
                         .filter(Boolean)
                 );
-                const requestedNewContacts = uniquePhones.filter((phone) => !existingPhones.has(phone)).length;
+                const existingJids = new Set(
+                    (existingRows || [])
+                        .map((row) => String(row?.jid || '').trim())
+                        .filter(Boolean)
+                );
+                const seenImportKeys = new Set();
+                let requestedNewContacts = 0;
+
+                for (const row of normalizedRows) {
+                    const rowPhone = String(row?.phone || '').trim();
+                    const rowJid = String(row?.jid || '').trim();
+                    const dedupKey = rowJid ? `jid:${rowJid}` : `phone:${rowPhone}`;
+                    if (!rowPhone || seenImportKeys.has(dedupKey)) {
+                        continue;
+                    }
+                    seenImportKeys.add(dedupKey);
+
+                    const existsByPhone = existingPhones.has(rowPhone);
+                    const existsByJid = rowJid ? existingJids.has(rowJid) : false;
+                    if (!existsByPhone && !existsByJid) {
+                        requestedNewContacts += 1;
+                    }
+                }
+
                 await planLimitsService.assertOwnerCanCreateLead(ownerScopeUserId, requestedNewContacts);
             }
 
             const stateByPhone = new Map();
+            const stateByJid = new Map();
             for (const row of existingRows || []) {
                 const phone = String(row?.phone || '').trim();
-                if (!phone) continue;
-                stateByPhone.set(phone, {
+                const jid = String(row?.jid || '').trim();
+                if (!phone && !jid) continue;
+
+                const state = {
                     existsInDb: true,
                     id: Number(row.id),
                     phone,
+                    jid,
                     name: String(row.name || ''),
                     email: String(row.email || '').trim(),
                     tags: parseLeadTagsForMerge(row.tags),
                     custom_fields: parseLeadCustomFields(row.custom_fields)
-                });
+                };
+
+                if (phone) {
+                    stateByPhone.set(phone, state);
+                }
+                if (jid) {
+                    stateByJid.set(jid, state);
+                }
             }
 
             const stagedInsertsByPhone = new Map();
@@ -14708,7 +14764,12 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
             let updatedExistingEvents = 0;
 
             for (const row of normalizedRows) {
-                let state = stateByPhone.get(row.phone);
+                const rowPhone = String(row?.phone || '').trim();
+                const rowJid = String(row?.jid || '').trim();
+                let state = stateByPhone.get(rowPhone);
+                if (!state && rowJid) {
+                    state = stateByJid.get(rowJid);
+                }
 
                 if (!state) {
                     state = {
@@ -14718,8 +14779,11 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                         tags: parseLeadTagsForMerge(row.tags),
                         custom_fields: parseLeadCustomFields(row.custom_fields)
                     };
-                    stateByPhone.set(row.phone, state);
-                    stagedInsertsByPhone.set(row.phone, state);
+                    stateByPhone.set(rowPhone, state);
+                    if (rowJid) {
+                        stateByJid.set(rowJid, state);
+                    }
+                    stagedInsertsByPhone.set(rowPhone, state);
                     continue;
                 }
 
@@ -14764,7 +14828,13 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                     state.custom_fields = updates.custom_fields;
                 }
 
-                stateByPhone.set(row.phone, state);
+                stateByPhone.set(rowPhone, state);
+                if (rowJid) {
+                    stateByJid.set(rowJid, state);
+                }
+                if (String(state.jid || '').trim()) {
+                    stateByJid.set(String(state.jid).trim(), state);
+                }
 
                 if (state.existsInDb) {
                     updatedExistingEvents += 1;
@@ -14851,7 +14921,7 @@ app.post('/api/leads/bulk', authenticate, async (req, res) => {
                         assigned_to integer,
                         owner_user_id integer
                     )
-                    ON CONFLICT (owner_user_id, phone) WHERE owner_user_id IS NOT NULL DO NOTHING
+                    ON CONFLICT DO NOTHING
                     RETURNING phone
                 `, [JSON.stringify(insertPayload)]);
 

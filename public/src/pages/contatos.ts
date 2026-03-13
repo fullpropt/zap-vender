@@ -396,6 +396,45 @@ function getImportValue(normalizedRow: Record<string, string>, aliases: string[]
     return '';
 }
 
+function resolveImportContactName(normalizedRow: Record<string, string>) {
+    const directName = getImportValue(normalizedRow, [
+        'nome',
+        'name',
+        'nome_completo',
+        'contato',
+        'cliente',
+        'full_name'
+    ]);
+    if (directName) return directName;
+
+    const ignoredKeys = new Set([
+        'telefone',
+        'phone',
+        'whatsapp',
+        'celular',
+        'fone',
+        'numero',
+        'email',
+        'e_mail',
+        'mail',
+        'tag',
+        'tags',
+        'etiqueta',
+        'etiquetas',
+        'status',
+        'situacao'
+    ]);
+
+    for (const [key, rawValue] of Object.entries(normalizedRow || {})) {
+        const normalizedKey = normalizeImportHeader(key);
+        if (!normalizedKey || ignoredKeys.has(normalizedKey)) continue;
+        const value = String(rawValue || '').trim();
+        if (value) return value;
+    }
+
+    return '';
+}
+
 function getImportTagColumnSelect() {
     return document.getElementById('importTagColumn') as HTMLSelectElement | null;
 }
@@ -2457,7 +2496,7 @@ async function importContacts() {
         }
 
         const payload: Record<string, any> = {
-            name: getImportValue(normalizedRow, ['nome', 'name', 'nome_completo', 'contato']) || 'Sem nome',
+            name: resolveImportContactName(normalizedRow) || 'Sem nome',
             phone,
             email: getImportValue(normalizedRow, ['email', 'e-mail', 'mail']),
             status,
@@ -2484,6 +2523,7 @@ async function importContacts() {
         let skipped = 0;
         let failed = 0;
         let limitErrorMessage = '';
+        let firstChunkErrorMessage = '';
 
         for (let offset = 0; offset < leadsToImport.length; offset += CONTACTS_IMPORT_BATCH_SIZE) {
             const chunk = leadsToImport.slice(offset, offset + CONTACTS_IMPORT_BATCH_SIZE);
@@ -2501,6 +2541,9 @@ async function importContacts() {
                 if (getErrorCode(error).startsWith('PLAN_')) {
                     limitErrorMessage = error instanceof Error ? error.message : 'Limite do plano atingido';
                     break;
+                }
+                if (!firstChunkErrorMessage && error instanceof Error && String(error.message || '').trim()) {
+                    firstChunkErrorMessage = String(error.message || '').trim();
                 }
                 failed += chunk.length;
             }
@@ -2526,7 +2569,10 @@ async function importContacts() {
         }
 
         if ((imported + updated) <= 0 && failed > 0) {
-            showToast('error', 'Erro', `Falha na importação (${failed} com erro)`);
+            const errorMessage = firstChunkErrorMessage
+                ? `Falha na importacao (${failed} com erro): ${firstChunkErrorMessage}`
+                : `Falha na importacao (${failed} com erro)`;
+            showToast('error', 'Erro', errorMessage);
             return;
         }
 
