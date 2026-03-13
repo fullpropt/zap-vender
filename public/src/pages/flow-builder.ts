@@ -844,7 +844,7 @@ function getIntentMenuButtonUrl(node?: FlowNode | null) {
 
 function isProtectedFlowBoundaryNode(node?: FlowNode | null) {
     if (!node) return false;
-    return node.type === 'trigger' || node.type === 'end';
+    return node.type === 'trigger';
 }
 
 function clearOutputEntryLabelsForNode(node?: FlowNode | null) {
@@ -2281,7 +2281,10 @@ function renderNode(node: FlowNode) {
     const isEventCircle = node.type === 'event';
     const previewText = String(getNodePreview(node) || '').trim();
     const hasPreview = previewText.length > 0;
-    const canDuplicateOrDelete = !isProtectedFlowBoundaryNode(node);
+    const isProtectedNode = isProtectedFlowBoundaryNode(node);
+    const endNodesCount = nodes.filter((item) => item.type === 'end').length;
+    const canDuplicate = !isProtectedNode && node.type !== 'end';
+    const canDelete = !isProtectedNode && (node.type !== 'end' || endNodesCount > 1);
     const showNodeKind = !isIntentTrigger(node);
     const eventDisplayName = node.type === 'event'
         ? String(node.data.eventName || node.data.eventKey || '').trim()
@@ -2317,10 +2320,12 @@ function renderNode(node: FlowNode) {
                 ${eventDisplayName ? `<span class="node-subtitle" title="${escapeHtml(eventDisplayName)}">${escapeHtml(truncateLabel(eventDisplayName, 22))}</span>` : ''}
             </div>
             <div class="node-header-actions">
-                ${canDuplicateOrDelete ? `
+                ${canDuplicate ? `
                     <button class="node-header-btn duplicate-btn" title="Duplicar bloco" aria-label="Duplicar bloco" onclick="duplicateNode('${node.id}', event)">
                         <span class="icon icon-templates icon-sm"></span>
                     </button>
+                ` : ''}
+                ${canDelete ? `
                     <button class="node-header-btn delete-btn" title="Excluir bloco" aria-label="Excluir bloco" onclick="deleteNode('${node.id}')">
                         <span class="icon icon-delete icon-sm"></span>
                     </button>
@@ -3074,6 +3079,14 @@ function deselectNode() {
 function deleteNode(id: string) {
     if (isFlowReadOnlyMode()) return;
     const node = nodes.find((item) => item.id === id);
+    if (!node) return;
+    if (node.type === 'end') {
+        const endNodesCount = nodes.filter((item) => item.type === 'end').length;
+        if (endNodesCount <= 1) {
+            notify('warning', 'Bloco obrigatório', 'Mantenha pelo menos um bloco de finalização no fluxo.');
+            return;
+        }
+    }
     if (isProtectedFlowBoundaryNode(node)) return;
     if (connectionStart?.nodeId === id) {
         cancelConnection();
@@ -3106,6 +3119,7 @@ function duplicateNode(id: string, event?: Event) {
 
     const sourceNode = nodes.find((node) => node.id === id);
     if (!sourceNode) return;
+    if (sourceNode.type === 'end') return;
     if (isProtectedFlowBoundaryNode(sourceNode)) return;
 
     const duplicate: FlowNode = {
@@ -3312,19 +3326,19 @@ function renderProperties() {
         html += `
             <div class="property-group">
                 <label>Mensagem de finalizacao</label>
-                <textarea onchange="updateNodeProperty('content', this.value)" placeholder="Obrigado pelo contato!">${escapeHtml(endMessage)}</textarea>
+                <textarea oninput="updateNodeProperty('content', this.value)" placeholder="Obrigado pelo contato!">${escapeHtml(endMessage)}</textarea>
             </div>
             <div class="property-group">
                 <label>Mensagem das opcoes</label>
-                <textarea onchange="updateNodeProperty('menuPrompt', this.value)" placeholder="Se desejar, escolha uma opcao no menu abaixo:">${escapeHtml(endMenuPrompt)}</textarea>
+                <textarea oninput="updateNodeProperty('menuPrompt', this.value)" placeholder="Se desejar, escolha uma opcao no menu abaixo:">${escapeHtml(endMenuPrompt)}</textarea>
             </div>
             <div class="property-group">
                 <label>Texto do botao</label>
-                <input type="text" value="${escapeHtml(endMenuButtonText)}" onchange="updateNodeProperty('menuButtonText', this.value)" placeholder="Ver Menu">
+                <input type="text" value="${escapeHtml(endMenuButtonText)}" oninput="updateNodeProperty('menuButtonText', this.value)" placeholder="Ver Menu">
             </div>
             <div class="property-group">
                 <label>Titulo da secao de opcoes</label>
-                <input type="text" value="${escapeHtml(endMenuSectionTitle)}" onchange="updateNodeProperty('menuSectionTitle', this.value)" placeholder="Finalizacao">
+                <input type="text" value="${escapeHtml(endMenuSectionTitle)}" oninput="updateNodeProperty('menuSectionTitle', this.value)" placeholder="Finalizacao">
             </div>
             <div class="property-group">
                 <label>Opcoes finais</label>
@@ -3337,7 +3351,7 @@ function renderProperties() {
                                 value="${escapeHtml(String(option || ''))}"
                                 title="${escapeHtml(String(option || '').trim() || ('Opcao ' + (index + 1)))}"
                                 placeholder="Ex.: Voltar ao menu principal"
-                                onchange="updateEndNodeOption(${index}, this.value)"
+                                oninput="updateEndNodeOption(${index}, this.value)"
                             >
                             <button class="remove-btn intent-menu-option-remove-btn" type="button" title="Remover opcao" onclick="removeEndNodeOption(${index})">×</button>
                         </div>
