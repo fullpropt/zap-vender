@@ -357,13 +357,24 @@ function extractCustomerEmail(payload = {}) {
 }
 
 function extractRenewalDate(payload = {}) {
-    const candidate = String(
+    const primaryCandidate = String(
         payload?.next_billing_at
         || payload?.current_period?.end_at
         || payload?.current_cycle?.end_at
         || payload?.billing?.next_at
         || ''
     ).trim();
+
+    const rawStatus = String(payload?.status || '').trim().toLowerCase();
+    const fallbackFutureCandidate = ['future', 'trialing', 'processing'].includes(rawStatus)
+        ? String(
+            payload?.start_at
+            || payload?.trial?.end_at
+            || ''
+        ).trim()
+        : '';
+
+    const candidate = primaryCandidate || fallbackFutureCandidate;
 
     if (!candidate) return null;
     const parsed = new Date(candidate);
