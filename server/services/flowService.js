@@ -1029,6 +1029,25 @@ class FlowService extends EventEmitter {
         return 'text';
     }
 
+    normalizeFlowBuilderMode(value = '') {
+        return String(value || '').trim().toLowerCase() === 'menu' ? 'menu' : 'humanized';
+    }
+
+    inferFlowBuilderModeFromNodes(flow = null) {
+        const nodes = Array.isArray(flow?.nodes) ? flow.nodes : [];
+        const hasIntentMenuNode = nodes.some((node) => this.isIntentMenuEnabled(node));
+        return hasIntentMenuNode ? 'menu' : 'humanized';
+    }
+
+    isMenuFlowBuilderMode(flow = null) {
+        const explicitModeRaw = String(flow?.flow_builder_mode || flow?.flowBuilderMode || '').trim();
+        if (explicitModeRaw) {
+            return this.normalizeFlowBuilderMode(explicitModeRaw) === 'menu';
+        }
+
+        return this.inferFlowBuilderModeFromNodes(flow) === 'menu';
+    }
+
     normalizeMenuButtonUrl(value = '') {
         const rawValue = String(value || '').trim();
         if (!rawValue) return '';
@@ -1417,8 +1436,26 @@ class FlowService extends EventEmitter {
         return this.normalizeFlowResponseMode(node?.data?.responseMode || 'text') === 'menu';
     }
 
-    isIntentLinkButtonEnabled(node = null, execution = null) {
+    isIntentMenuEnabledForExecution(execution = null, node = null) {
         if (!this.isIntentMenuEnabled(node)) return false;
+        const flow = execution?.flow;
+        const explicitModeRaw = String(flow?.flow_builder_mode || flow?.flowBuilderMode || '').trim();
+        if (explicitModeRaw) {
+            return this.normalizeFlowBuilderMode(explicitModeRaw) === 'menu';
+        }
+
+        const hasFlowNodes = Array.isArray(flow?.nodes) && flow.nodes.length > 0;
+        if (hasFlowNodes) {
+            return this.inferFlowBuilderModeFromNodes(flow) === 'menu';
+        }
+
+        // Compatibilidade: quando o contexto nao traz metadados do fluxo,
+        // usa o proprio no para decidir o modo.
+        return true;
+    }
+
+    isIntentLinkButtonEnabled(node = null, execution = null) {
+        if (!this.isIntentMenuEnabledForExecution(execution, node)) return false;
         return Boolean(this.resolveMenuButtonUrl(node, execution));
     }
 
@@ -1442,9 +1479,7 @@ class FlowService extends EventEmitter {
         }
 
         const hasDefaultFromEdges = handlesFromEdges.includes('default');
-        const handles = handlesFromEdges.length > 0
-            ? handlesFromEdges
-            : routeHandleOrder.filter(Boolean);
+        const handles = handlesFromEdges.length > 0 ? handlesFromEdges : [];
         if (hasDefaultFromEdges && !handles.includes('default')) {
             handles.push('default');
         }
@@ -1549,7 +1584,7 @@ class FlowService extends EventEmitter {
     }
 
     buildIntentNodeMenuPayload(execution = null, node = null) {
-        if (!this.isIntentMenuEnabled(node)) return null;
+        if (!this.isIntentMenuEnabledForExecution(execution, node)) return null;
         if (this.isIntentLinkButtonEnabled(node, execution)) return null;
 
         const options = this.getIntentMenuOptions(execution?.flow, node);
@@ -1760,6 +1795,7 @@ class FlowService extends EventEmitter {
     isKeywordFlowWithIntentTriggerFirstMessageMenu(flow = null) {
         const triggerType = String(flow?.trigger_type || '').trim().toLowerCase();
         if (triggerType !== 'keyword') return false;
+        if (!this.isMenuFlowBuilderMode(flow)) return false;
 
         const triggerNode = this.resolveFlowTriggerStartNode(flow);
         if (!this.isIntentTriggerNode(triggerNode)) {
@@ -2425,7 +2461,7 @@ class FlowService extends EventEmitter {
         }
         
         // Se não encontrou por keyword, verificar se é novo contato
-        if (!flow) {
+        if (!flow && conversation?.created) {
             const activeKeywordFlows = await loadActiveKeywordFlows();
             const menuFallbackFlow = this.pickKeywordFlowByIntentTriggerFirstMessageMenu(
                 activeKeywordFlows,
@@ -2544,7 +2580,7 @@ class FlowService extends EventEmitter {
         if (isIntentNode) {
             await this.maybeSendTriggerWelcomeMessage(execution, currentNode);
             this.ensureExecutionVariables(execution).last_response = messageText;
-            const intentMenuEnabled = this.isIntentMenuEnabled(currentNode);
+            const intentMenuEnabled = this.isIntentMenuEnabledForExecution(execution, currentNode);
             let selectedHandle = intentMenuEnabled
                 ? this.resolveIntentMenuHandleFromInboundMessage(execution, currentNode, message, messageText)
                 : '';
@@ -2825,7 +2861,7 @@ class FlowService extends EventEmitter {
                         break;
                     }
 
-                    if (this.isIntentMenuEnabled(node)) {
+                    if (this.isIntentMenuEnabledForExecution(execution, node)) {
                         const pendingBeforeIntent = this.readPendingIncomingMessages(execution);
                         if (pendingBeforeIntent.length === 0) {
                             await this.maybeSendIntentNodeMenu(execution, node);
@@ -3156,7 +3192,7 @@ class FlowService extends EventEmitter {
 
     async maybeSendTriggerWelcomeMessage(execution, node = null) {
         if (!this.isIntentTriggerNode(node)) return false;
-        if (this.isIntentMenuEnabled(node)) return false;
+        if (this.isIntentMenuEnabledForExecution(execution, node)) return false;
         if (!this.sendFunction) return false;
 
         const config = this.resolveTriggerWelcomeConfig(node);
@@ -3212,7 +3248,7 @@ class FlowService extends EventEmitter {
             return;
         }
 
-        if (this.isIntentMenuEnabled(node)) {
+        if (this.isIntentMenuEnabledForExecution(execution, node)) {
             delete execution.variables.trigger_intent_handle;
             this.clearIntentNoMatchCounter(execution, node?.id);
             this.clearIntentHistory(execution, node?.id);
