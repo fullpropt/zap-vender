@@ -1,0 +1,3313 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZapVender · Automação e IA no WhatsApp que Multiplica Vendas</title>
+    <meta name="description"
+        content="A primeira inteligência de vendas para WhatsApp 100% à prova de bloqueios. Transforme contatos em clientes automaticamente. Teste grátis o Motor de Vendas hoje.">
+
+    <!-- Open Graph for Social Sharing -->
+    <meta property="og:title" content="ZapVender · Motor Automático de Conversão" />
+    <meta property="og:description"
+        content="Plataforma de recuperação de vendas, automação humanizada e disparos via WhatsApp Oficial e Alternativo. Comece em segundos." />
+    <meta property="og:type" content="website" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;800&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #020202;
+            --bg-surface: rgba(20, 20, 20, 0.4);
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.2);
+            --primary: #00ffa3;
+            /* Tech Green */
+            --cyan: #00f0ff;
+            --purple: #7a00f4;
+            --text-high: #ffffff;
+            --text-med: #a1a1aa;
+            --font-sans: 'Inter', -apple-system, sans-serif;
+            --font-display: 'Outfit', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-med);
+            font-family: var(--font-sans);
+            line-height: 1.6;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ----- BACKGROUNDS & GLOWS ----- */
+        .ambient-glow {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: -1;
+            overflow: hidden;
+        }
+
+        .ambient-glow::before {
+            content: '';
+            position: absolute;
+            top: -20%;
+            left: 30%;
+            width: 50vw;
+            height: 50vw;
+            background: radial-gradient(circle, rgba(0, 255, 163, 0.08) 0%, transparent 60%);
+            border-radius: 50%;
+            filter: blur(80px);
+        }
+
+        .ambient-glow::after {
+            content: '';
+            position: absolute;
+            top: 30%;
+            left: -10%;
+            width: 40vw;
+            height: 40vw;
+            background: radial-gradient(circle, rgba(122, 0, 244, 0.06) 0%, transparent 60%);
+            border-radius: 50%;
+            filter: blur(80px);
+        }
+        .ambient-glow::before {
+            animation: ambientPulse 10s ease-in-out infinite;
+        }
+        .ambient-glow::after {
+            animation: ambientPulse 12s ease-in-out infinite 1s;
+        }
+        @keyframes ambientPulse {
+            0%, 100% { opacity: 0.7; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.08); }
+        }
+
+        .noise-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' op='%23000' opacity='0.03'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 1000;
+            opacity: 0.8;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 32px;
+            position: relative;
+        }
+
+        /* ----- NAV ----- */
+        .nav-wrapper {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100% - 40px);
+            max-width: 1100px;
+            background: rgba(12, 12, 14, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 28px;
+            z-index: 100;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+        }
+        .btn-nav-cta {
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+            color: #fff;
+            font-weight: 700;
+            padding: 10px 22px;
+            border-radius: 10px;
+            border: none;
+            font-size: 0.9rem;
+            box-shadow: 0 2px 12px rgba(37, 211, 102, 0.35);
+        }
+        .btn-nav-cta {
+            animation: ctaGlow 3s ease-in-out infinite;
+        }
+        @keyframes ctaGlow {
+            0%, 100% { box-shadow: 0 2px 12px rgba(37, 211, 102, 0.35); }
+            50% { box-shadow: 0 2px 20px rgba(37, 211, 102, 0.5); }
+        }
+        .btn-nav-cta:hover {
+            background: linear-gradient(135deg, #2ee071 0%, #149c8e 100%);
+            box-shadow: 0 4px 24px rgba(37, 211, 102, 0.5);
+            color: #fff;
+        }
+
+        .nav-toggle {
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            gap: 5px;
+            width: 44px;
+            height: 44px;
+            padding: 10px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            cursor: pointer;
+            color: var(--text-high);
+        }
+        .nav-toggle span {
+            display: block;
+            width: 20px;
+            height: 2px;
+            background: currentColor;
+            border-radius: 1px;
+            transition: transform 0.3s, opacity 0.3s;
+        }
+        .nav-toggle.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+        .nav-toggle.open span:nth-child(2) { opacity: 0; }
+        .nav-toggle.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+        .logo {
+            font-family: var(--font-display);
+            font-weight: 800;
+            font-size: 1.4rem;
+            color: var(--text-high);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo .icon {
+            color: var(--primary);
+            font-size: 1.6rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 16px;
+        }
+
+        .nav-links a {
+            color: var(--text-med);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.3s;
+            padding: 8px 16px;
+            border-radius: 100px;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-high);
+            background: rgba(255, 255, 255, 0.05);
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+        }
+
+        .nav-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn {
+            font-family: var(--font-sans);
+            font-weight: 600;
+            font-size: 0.9rem;
+            padding: 10px 24px;
+            border-radius: 100px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-ghost {
+            color: var(--text-high);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-hover);
+            backdrop-filter: blur(10px);
+        }
+
+        .btn-ghost:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(0, 255, 163, 0.2);
+            color: var(--primary);
+        }
+
+        .btn-glow {
+            background: var(--text-high);
+            color: #000;
+            border: none;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-glow:hover {
+            background: #fff;
+            transform: translateY(-1px);
+            box-shadow: 0 0 25px rgba(255, 255, 255, 0.4);
+        }
+
+        /* ----- HERO ----- */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding-top: 112px;
+        }
+
+        .hero-tag {
+            font-size: 0.9rem;
+            color: var(--text-med);
+            margin-bottom: 28px;
+            letter-spacing: 0.02em;
+        }
+
+        .hero h1 {
+            font-family: var(--font-display);
+            font-size: clamp(3rem, 6vw, 5.5rem);
+            font-weight: 800;
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+            color: var(--text-high);
+            max-width: 900px;
+            margin-bottom: 24px;
+        }
+
+        .hero h1 span {
+            background: linear-gradient(135deg, var(--text-high) 0%, rgba(255, 255, 255, 0.6) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero h1 .tech-highlight {
+            background: linear-gradient(90deg, var(--primary), var(--cyan), var(--primary));
+            background-size: 200% auto;
+            color: transparent;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shine 3s linear infinite;
+            display: inline-block;
+            filter: drop-shadow(0 0 15px rgba(0, 255, 163, 0.4));
+        }
+
+        @keyframes shine {
+            to {
+                background-position: 200% center;
+            }
+        }
+
+        .hero p {
+            font-size: 1.15rem;
+            max-width: 600px;
+            margin-bottom: 48px;
+            color: var(--text-med);
+            line-height: 1.6;
+        }
+
+        .hero-btns {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 64px;
+        }
+
+        .btn-primary-large {
+            background: linear-gradient(135deg, #00ffa3 0%, #00e676 40%, #00c853 100%);
+            color: #001a0d;
+            padding: 16px 36px;
+            font-size: 1rem;
+            box-shadow: 0 4px 20px rgba(0, 230, 118, 0.35),
+                        0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+            border: none;
+            position: relative;
+            transition: color 0.25s, box-shadow 0.35s, transform 0.25s;
+        }
+
+        .btn-primary-large:hover {
+            color: #001a0d;
+            box-shadow: 0 8px 32px rgba(0, 255, 163, 0.5),
+                        0 0 40px rgba(0, 230, 118, 0.25),
+                        0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+            transform: translateY(-2px);
+        }
+
+        .btn-primary-large::after {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(135deg, var(--primary), var(--cyan), #00e676);
+            z-index: -1;
+            border-radius: 100px;
+            background-size: 200% 200%;
+            animation: gradientOut 4s ease infinite;
+            filter: blur(10px);
+            opacity: 0;
+            transition: opacity 0.35s;
+        }
+
+        .btn-primary-large:hover::after {
+            opacity: 0.7;
+        }
+
+        .btn-pulse,
+        .price-card-cta .btn-primary-large {
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%) !important;
+            color: #fff !important;
+            box-shadow: 0 4px 20px rgba(37, 211, 102, 0.4);
+        }
+        .btn-pulse:hover,
+        .price-card-cta .btn-primary-large:hover {
+            box-shadow: 0 6px 28px rgba(37, 211, 102, 0.5);
+            color: #fff !important;
+        }
+        .btn-pulse {
+            animation: btnPulse 2s ease-in-out infinite, btnFloat 2s ease-in-out infinite;
+        }
+        @keyframes btnPulse {
+            0%, 100% { box-shadow: 0 4px 20px rgba(37, 211, 102, 0.5); }
+            50% { box-shadow: 0 6px 28px rgba(37, 211, 102, 0.65), 0 0 24px rgba(37, 211, 102, 0.3); }
+        }
+        @keyframes btnFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        .btn-hero-secondary {
+            border-color: rgba(0, 240, 255, 0.25);
+            color: var(--cyan);
+        }
+        .btn-hero-secondary:hover {
+            background: rgba(0, 240, 255, 0.08);
+            border-color: var(--cyan);
+            color: var(--cyan);
+        }
+        .price-card-cta .btn-ghost {
+            background: rgba(255, 255, 255, 0.04);
+            border: 2px solid #0a5c4a;
+            color: var(--text-high);
+        }
+        .price-card-cta .btn-ghost:hover {
+            background: rgba(37, 211, 102, 0.12);
+            border-color: #25D366;
+            color: var(--primary);
+        }
+
+        @keyframes gradientOut {
+            0% {
+                background-position: 0 0;
+            }
+
+            50% {
+                background-position: 100% 0;
+            }
+
+            100% {
+                background-position: 0 0;
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        /* ----- INTERACTIVE DASHBOARD MOCKUP ----- */
+        .dash-mock-container {
+            width: 100%;
+            max-width: 1000px;
+            min-height: 650px;
+            height: auto;
+            background: #0b111a;
+            border-radius: 12px;
+            border: 1px solid var(--border-subtle);
+            display: flex;
+            overflow: visible;
+            position: relative;
+            transform: perspective(1200px) rotateX(4deg) rotateY(-8deg) scale(0.95);
+            transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.6s;
+            box-shadow: -20px 30px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(0, 255, 163, 0.1);
+            text-align: left;
+        }
+
+        .dash-mock-container:hover {
+            transform: perspective(1200px) rotateX(0deg) rotateY(0deg) scale(1.02);
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.9), 0 0 60px rgba(0, 255, 163, 0.3);
+            z-index: 10;
+        }
+
+        .dash-mock-container::before {
+            content: '';
+            position: absolute;
+            top: 5%;
+            left: 5%;
+            right: 5%;
+            bottom: -5%;
+            background: linear-gradient(135deg, rgba(0, 255, 163, 0.4) 0%, rgba(122, 0, 244, 0.4) 100%);
+            filter: blur(50px);
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.6s;
+        }
+
+        .dash-mock-container:hover::before {
+            opacity: 1;
+        }
+
+        .dash-sidebar {
+            width: 250px;
+            background: #0e1520;
+            border-right: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            padding: 24px 0;
+            z-index: 1;
+        }
+
+        .dash-sidebar-logo {
+            padding: 0 24px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-family: var(--font-display);
+            font-weight: 800;
+            color: var(--primary);
+            font-size: 1.2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            margin-bottom: 24px;
+        }
+
+        .dash-sidebar-logo img {
+            width: 24px;
+        }
+
+        .dash-nav-group {
+            padding: 0 16px;
+            margin-bottom: 24px;
+        }
+
+        .dash-nav-title {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.3);
+            margin-bottom: 12px;
+            padding: 0 8px;
+            letter-spacing: 1px;
+            font-weight: 700;
+        }
+
+        .dash-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            color: var(--text-med);
+            font-size: 0.85rem;
+            border-radius: 8px;
+            margin-bottom: 4px;
+            font-weight: 500;
+            cursor: default;
+            transition: background 0.3s;
+        }
+
+        .dash-nav-item:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .dash-nav-item.active {
+            background: rgba(0, 255, 163, 0.1);
+            color: var(--primary);
+        }
+
+        .dash-content {
+            flex: 1;
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            background: #0b111a;
+            position: relative;
+        }
+
+        .dash-row {
+            display: flex;
+            gap: 24px;
+        }
+
+        .dash-chart-card {
+            background: #0d1320;
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            flex: 2;
+            height: 220px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dash-chart-label {
+            position: absolute;
+            top: 14px;
+            left: 18px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-med);
+            letter-spacing: 0.03em;
+            z-index: 2;
+        }
+
+        .dash-status-panel {
+            flex: 1;
+            min-width: 140px;
+            background: #0d1320;
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            justify-content: center;
+        }
+
+        .dash-status-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .dash-status-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dash-status-row span:last-child {
+            font-size: 0.7rem;
+            color: var(--text-med);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .dash-status-item strong {
+            font-size: 0.9rem;
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .dash-status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        .dash-status-on {
+            background: var(--primary);
+            box-shadow: 0 0 8px var(--primary);
+            animation: dashPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes dashPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .dash-stats-row {
+            display: flex;
+            gap: 24px;
+        }
+
+        .dash-stat-box {
+            background: #111926;
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 24px;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            position: relative;
+            overflow: hidden;
+            transition: background 0.3s;
+        }
+
+        .dash-stat-box:hover {
+            background: #1a2333;
+        }
+
+        .dash-stat-icon {
+            width: 48px;
+            height: 48px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+        }
+
+        .dash-stat-info {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            margin-left: auto;
+        }
+
+        .dash-stat-val {
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #fff;
+            line-height: 1;
+            margin-bottom: 6px;
+        }
+
+        .dash-stat-label {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.5);
+            font-weight: 500;
+        }
+
+        .dash-stat-badge {
+            background: rgba(0, 255, 163, 0.1);
+            color: var(--primary);
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+
+        /* Animated SVG Chart */
+        .svg-chart {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            pointer-events: none;
+        }
+
+        .chart-line {
+            fill: none;
+            stroke: var(--primary);
+            stroke-width: 3;
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: drawLine 2.5s ease-out forwards;
+        }
+
+        .chart-area {
+            fill: url(#chart-gradient);
+            opacity: 0;
+            animation: fadeIn 1s 2s ease-out forwards;
+        }
+
+        .chart-dots circle {
+            fill: var(--primary);
+            opacity: 0;
+            transform-origin: center;
+            transform-box: fill-box;
+            animation: bounceIn 0.5s forwards;
+        }
+
+        .chart-dots circle:nth-child(1) {
+            animation-delay: 0.5s;
+        }
+
+        .chart-dots circle:nth-child(2) {
+            animation-delay: 1.0s;
+        }
+
+        .chart-dots circle:nth-child(3) {
+            animation-delay: 1.5s;
+        }
+
+        .chart-dots circle:nth-child(4) {
+            animation-delay: 2.0s;
+        }
+
+        .chart-dots circle:nth-child(5) {
+            animation-delay: 2.5s;
+        }
+
+        .chart-dots circle:nth-child(6) {
+            animation-delay: 2.8s;
+        }
+
+        .chart-bars .chart-bar {
+            fill: url(#chart-gradient);
+            fill: rgba(0, 255, 163, 0.5);
+            transition: height 0.6s ease-out, y 0.6s ease-out;
+        }
+
+        @keyframes drawLine {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes bounceIn {
+            0% {
+                transform: scale(0);
+                opacity: 0;
+            }
+
+            50% {
+                transform: scale(1.5);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* Simulating Data processing */
+        .data-processor {
+            position: absolute;
+            top: 24px;
+            right: 32px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            background: rgba(0, 255, 163, 0.1);
+            padding: 6px 14px;
+            border-radius: 100px;
+            border: 1px solid rgba(0, 255, 163, 0.3);
+            color: var(--primary);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            z-index: 10;
+        }
+
+        .data-processor .dot {
+            width: 8px;
+            height: 8px;
+            background: var(--primary);
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+
+        /* ----- ZENVIA-STYLE VIDEO EXPERIENCE ----- */
+        .video-experience {
+            padding: 80px 24px 100px;
+            position: relative;
+        }
+
+        .video-experience .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .video-experience-header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .video-experience-header .tag {
+            font-family: var(--font-display);
+            font-size: 0.75rem;
+            font-weight: 800;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .video-experience-header h2 {
+            font-family: var(--font-display);
+            font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+            font-weight: 800;
+            color: var(--text-high);
+            line-height: 1.2;
+            margin-bottom: 16px;
+            letter-spacing: -0.02em;
+        }
+
+        .video-experience-header p {
+            font-size: 1.05rem;
+            color: var(--text-med);
+            max-width: 560px;
+            margin: 0 auto;
+        }
+
+        .video-wrapper {
+            position: relative;
+            border-radius: 20px;
+            overflow: hidden;
+            background: #0b111a;
+            border: 1px solid var(--border-subtle);
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.03);
+            aspect-ratio: 16 / 9;
+            max-height: 620px;
+        }
+
+        .video-wrapper video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .video-wrapper::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 20px;
+            box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.2);
+            pointer-events: none;
+        }
+
+        .video-play-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.35);
+            opacity: 1;
+            transition: opacity 0.4s, background 0.4s;
+            z-index: 2;
+            cursor: pointer;
+        }
+
+        .video-play-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .video-play-overlay:hover {
+            background: rgba(0, 0, 0, 0.25);
+        }
+
+        .video-play-btn {
+            width: 88px;
+            height: 88px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.95);
+            color: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .video-play-overlay:hover .video-play-btn {
+            transform: scale(1.08);
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .video-play-btn svg {
+            width: 36px;
+            height: 36px;
+            margin-left: 6px;
+        }
+
+        .video-caption {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 0.9rem;
+            color: var(--text-med);
+        }
+
+        /* ----- MARQUEE LOGOS ----- */
+        .marquee-section {
+            padding: 40px 0;
+            border-bottom: 1px solid var(--border-subtle);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            opacity: 0.6;
+        }
+
+        .marquee-content {
+            display: flex;
+            gap: 60px;
+            animation: scroll 20s linear infinite;
+            white-space: nowrap;
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 1.2rem;
+            color: var(--text-med);
+        }
+
+        .marquee-content span {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        @keyframes scroll {
+            0% {
+                transform: translateX(0);
+            }
+
+            100% {
+                transform: translateX(-50%);
+            }
+        }
+
+        /* ----- BENTO GRID / FEATURES ----- */
+        .section {
+            padding: 120px 0;
+        }
+        #plataforma {
+            padding-bottom: 56px;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 64px;
+        }
+
+        .section-tag {
+            font-family: var(--font-display);
+            font-size: 0.8rem;
+            font-weight: 800;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 16px;
+            display: block;
+            animation: tagPulse 4s ease-in-out infinite;
+        }
+        @keyframes tagPulse {
+            0%, 100% { opacity: 0.88; }
+            50% { opacity: 1; }
+        }
+
+        .section-title {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 800;
+            color: var(--text-high);
+            line-height: 1.1;
+            margin-bottom: 24px;
+            letter-spacing: -0.02em;
+        }
+
+        .bento-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-auto-rows: minmax(300px, auto);
+            gap: 24px;
+        }
+        .bento-wa-auto {
+            min-height: 500px;
+        }
+
+        .bento-card {
+            background: var(--bg-surface);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 20px;
+            padding: 32px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.04) inset;
+        }
+
+        .bento-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(800px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.06), transparent 40%);
+            z-index: 0;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .bento-card:hover::before {
+            opacity: 1;
+        }
+
+        .bento-card:hover {
+            border-color: rgba(0, 255, 163, 0.15);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(0, 255, 163, 0.08) inset;
+        }
+
+        .bento-card-content {
+            position: relative;
+            z-index: 1;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .bento-card-img-wrap {
+            width: 100%;
+            max-width: 140px;
+            margin-bottom: 16px;
+            padding: 18px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+        }
+        .bento-card-img-large { max-width: 180px; }
+        .bento-card-img {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 8px;
+        }
+        .bento-metricas .bento-card-img-wrap,
+        .bento-inbox .bento-card-img-wrap { margin-bottom: 18px; }
+
+        .bento-escala-inner {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 28px;
+        }
+        .bento-escala-visual {
+            flex-shrink: 0;
+            width: 42%;
+            max-width: 200px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+        }
+        .bento-escala-visual .bento-card-img { width: 100%; }
+        .bento-escala-text { flex: 1; min-width: 0; }
+        .bento-escala-text h3 { margin-bottom: 12px; }
+        .bento-escala-text p { margin-bottom: 0; line-height: 1.55; }
+        @media (max-width: 700px) {
+            .bento-escala-inner { flex-direction: column; align-items: flex-start; gap: 20px; }
+            .bento-escala-visual { width: 100%; max-width: 160px; }
+        }
+
+        .bento-icon {
+            width: 56px;
+            height: 56px;
+            background: rgba(0, 255, 163, 0.06);
+            border: 1px solid rgba(0, 255, 163, 0.18);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 24px;
+            color: var(--primary);
+        }
+        .bento-icon svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        .bento-card h3 {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            color: var(--text-high);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .bento-card p {
+            font-size: 0.95rem;
+            color: var(--text-med);
+        }
+
+        .bento-large {
+            grid-column: span 2;
+        }
+
+        /* ----- Construtor de Fluxo: igual ao fluxo real, sem espaço vazio no desktop ----- */
+        .bento-flow-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .bento-flow-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+        }
+        .bento-flow-header .bento-icon { margin-bottom: 0; }
+        .bento-flow-header h3 { margin-bottom: 8px; }
+        .bento-flow-header p { margin-bottom: 0; }
+        .bento-flow-preview {
+            flex: 1;
+            min-height: 0;
+            margin-top: 4px;
+        }
+        .bento-flow-canvas {
+            position: relative;
+            width: 100%;
+            height: 0;
+            padding-bottom: 52%;
+            min-height: 340px;
+            background-color: #f5f6f8;
+            background-image: radial-gradient(circle, #d1d3d6 1px, transparent 1px);
+            background-size: 10px 10px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+        }
+        .flow-lines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .flow-line {
+            fill: none;
+            stroke: #64748b;
+            stroke-width: 1.5;
+            stroke-dasharray: 260;
+            stroke-dashoffset: 260;
+        }
+        .bento-flow-canvas.flow-visible .flow-line {
+            animation: flowLineDraw 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        .bento-flow-canvas.flow-visible .flow-line[data-draw="1"] { animation-delay: 2.2s; }
+        .bento-flow-canvas.flow-visible .flow-line[data-draw="2"] { animation-delay: 2.2s; }
+        .bento-flow-canvas.flow-visible .flow-line[data-draw="3"] { animation-delay: 2.2s; }
+        .bento-flow-canvas.flow-visible .flow-line[data-draw="4"] { animation-delay: 2.2s; }
+        .bento-flow-canvas.flow-visible .flow-line[data-draw="5"] { animation-delay: 10.2s; }
+        .bento-flow-canvas.flow-visible .flow-line[data-draw="6"] { animation-delay: 10.2s; }
+        .bento-flow-canvas.flow-visible .flow-line[data-draw="7"] { animation-delay: 10.2s; }
+        .bento-flow-canvas.flow-visible .flow-line[data-draw="8"] { animation-delay: 10.2s; }
+        @keyframes flowLineDraw {
+            to { stroke-dashoffset: 0; }
+        }
+        .flow-node {
+            position: absolute;
+            width: 114px;
+            padding: 10px 12px;
+            background: #fff;
+            border-radius: 14px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+            opacity: 0;
+            transform: scale(0.88);
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            border: 2px solid transparent;
+            overflow: visible;
+            min-width: 0;
+        }
+        .bento-flow-canvas.flow-visible .flow-node {
+            animation: flowNodeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation-delay: calc(0s + var(--i) * 2s);
+        }
+        @keyframes flowNodeIn {
+            to { opacity: 1; transform: scale(1); }
+        }
+        .flow-node-lead {
+            border-color: #25D366;
+            box-shadow: 0 4px 24px rgba(37, 211, 102, 0.15), 0 2px 10px rgba(0, 0, 0, 0.06);
+        }
+        .flow-node-int {
+            border-color: #f97316;
+            border-top: 4px solid #f97316;
+            box-shadow: 0 4px 20px rgba(249, 115, 22, 0.12), 0 2px 10px rgba(0, 0, 0, 0.06);
+        }
+        .flow-node-end {
+            border-color: #64748b;
+            border-top: 4px solid #64748b;
+            width: 98px;
+            box-shadow: 0 4px 20px rgba(100, 116, 139, 0.12), 0 2px 10px rgba(0, 0, 0, 0.06);
+        }
+        .flow-node-head {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-bottom: 4px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        }
+        .flow-node-badge {
+            font-size: 0.5rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+        }
+        .flow-badge-green { color: #16a34a; }
+        .flow-badge-orange { color: #ea580c; }
+        .flow-badge-gray { color: #64748b; }
+        .flow-icon {
+            width: 11px;
+            height: 11px;
+            flex-shrink: 0;
+        }
+        .flow-icon-bolt {
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23eab308'%3E%3Cpath d='M13 2L9 12h4l-3 10 9-12h-4l3-10z'/%3E%3C/svg%3E") no-repeat center/contain;
+        }
+        .flow-icon-check {
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2325D366'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E") no-repeat center/contain;
+        }
+        .flow-node-title {
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: #111;
+            line-height: 1.25;
+        }
+        .flow-node-opt {
+            font-size: 0.54rem;
+            color: #374151;
+            padding-left: 6px;
+            border-left: 3px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 3px;
+            min-width: 0;
+            word-break: break-word;
+            line-height: 1.3;
+        }
+        .flow-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #3b82f6;
+            flex-shrink: 0;
+        }
+        /* Layout organizado: Lead | coluna Categorias/Estilo/Showroom | Interesse | Fim */
+        .flow-node-1 { left: 4%;   top: 50%; margin: 0; transform: scale(0.88) translate(-50%, -50%); }
+        .flow-node-2 { left: 28%;  top: 12%; }
+        .flow-node-3 { left: 28%;  top: 40%; }
+        .flow-node-4 { left: 54%;  top: 12%; }
+        .flow-node-5 { left: 28%;  top: 68%; }
+        .flow-node-6 { left: 66%;  top: 50%; margin: 0; transform: scale(0.88) translate(-50%, -50%); }
+        .bento-flow-canvas.flow-visible .flow-node-1,
+        .bento-flow-canvas.flow-visible .flow-node-6 {
+            animation-name: flowNodeInCenter;
+        }
+        @keyframes flowNodeInCenter {
+            to { opacity: 1; transform: scale(1) translate(-50%, -50%); }
+        }
+        @media (max-width: 900px) {
+            .bento-flow-canvas { padding-bottom: 48%; min-height: 260px; }
+            .flow-node { width: 90px; padding: 7px 9px; }
+            .flow-node-end { width: 78px; }
+            .flow-node-title { font-size: 0.58rem; }
+            .flow-node-opt { font-size: 0.48rem; }
+            .flow-node-1 { left: 2%; top: 50%; transform: scale(0.88) translate(-50%, -50%); }
+            .flow-node-2 { left: 26%; top: 12%; }
+            .flow-node-3 { left: 26%; top: 40%; }
+            .flow-node-4 { left: 52%; top: 12%; }
+            .flow-node-5 { left: 26%; top: 68%; }
+            .flow-node-6 { left: 62%; top: 50%; transform: scale(0.88) translate(-50%, -50%); }
+        }
+        @media (max-width: 600px) {
+            .bento-flow-canvas { padding-bottom: 42%; min-height: 200px; }
+            .flow-node { width: 68px; padding: 5px 6px; min-width: 0; }
+            .flow-node-end { width: 62px; }
+            .flow-node-title { font-size: 0.44rem; line-height: 1.2; }
+            .flow-node-opt { font-size: 0.38rem; padding-left: 4px; }
+            .flow-node-head { gap: 3px; margin-bottom: 2px; padding-bottom: 2px; }
+            .flow-node-badge { font-size: 0.4rem; }
+            .flow-node-1 { left: 0; top: 50%; margin: 0; transform: scale(0.88) translate(-50%, -50%); }
+            .flow-node-2 { left: 24%; top: 10%; }
+            .flow-node-3 { left: 24%; top: 38%; }
+            .flow-node-4 { left: 48%; top: 10%; }
+            .flow-node-5 { left: 24%; top: 66%; }
+            .flow-node-6 { left: 60%; top: 50%; margin: 0; transform: scale(0.88) translate(-50%, -50%); }
+        }
+
+        /* ----- BOTÃO WHATSAPP (link direto) ----- */
+        .wa-widget {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 1000;
+        }
+
+        .wa-button {
+            width: 56px;
+            height: 56px;
+            background-color: #25D366;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            box-shadow: 0 4px 20px rgba(37, 211, 102, 0.4);
+            transition: transform 0.3s, box-shadow 0.3s;
+            position: relative;
+            text-decoration: none;
+            animation: waBtnGlow 2.5s ease-in-out infinite;
+        }
+        @keyframes waBtnGlow {
+            0%, 100% { box-shadow: 0 4px 20px rgba(37, 211, 102, 0.4); }
+            50% { box-shadow: 0 4px 26px rgba(37, 211, 102, 0.55); }
+        }
+
+        .wa-button:hover {
+            color: white;
+            transform: scale(1.08);
+            box-shadow: 0 8px 28px rgba(37, 211, 102, 0.5);
+        }
+
+        .wa-button svg {
+            width: 28px;
+            height: 28px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .wa-pulse {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            height: 100%;
+            background: rgba(37, 211, 102, 0.35);
+            border-radius: 50%;
+            z-index: 1;
+            pointer-events: none;
+            animation: waPulse 2s infinite;
+        }
+
+        @keyframes waPulse {
+            0% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translate(-50%, -50%) scale(1.5);
+                opacity: 0;
+            }
+        }
+
+        /* Chat da vendedora automática */
+        .wa-chat-box {
+            position: absolute;
+            bottom: 72px;
+            right: 0;
+            width: 340px;
+            max-width: calc(100vw - 32px);
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.35);
+            overflow: hidden;
+            display: none;
+            flex-direction: column;
+            z-index: 1001;
+        }
+        .wa-chat-box.open { display: flex; }
+        .wa-chat-header {
+            background: linear-gradient(135deg, #00A884, #008c6a);
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #fff;
+        }
+        .wa-chat-header strong { font-size: 0.95rem; }
+        .wa-chat-header span { font-size: 0.75rem; opacity: 0.95; }
+        .wa-close {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 4px;
+            line-height: 1;
+        }
+        .wa-chat-body {
+            min-height: 320px;
+            max-height: 380px;
+            height: 360px;
+            background: #e5ddd5;
+            padding: 14px 16px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .wa-msg {
+            max-width: 90%;
+            padding: 12px 14px;
+            border-radius: 10px;
+            font-size: 1rem;
+            color: #111;
+            line-height: 1.5;
+        }
+        .wa-msg-in {
+            background: #fff;
+            align-self: flex-start;
+            border-top-left-radius: 0;
+        }
+        .wa-msg-out {
+            background: #dcf8c6;
+            align-self: flex-end;
+            border-top-right-radius: 0;
+        }
+        .wa-msg-in b { color: #008c6a; }
+        .wa-msg-typing {
+            align-self: flex-start;
+            background: #fff;
+            padding: 12px 16px;
+            border-radius: 10px;
+            border-top-left-radius: 0;
+            font-size: 0.9rem;
+            color: #667781;
+        }
+        .wa-msg-typing .wa-typing-dots span {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #008c6a;
+            margin: 0 2px;
+            animation: wa-dot 1.4s ease-in-out infinite both;
+        }
+        .wa-msg-typing .wa-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .wa-msg-typing .wa-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes wa-dot {
+            0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1); }
+        }
+        .wa-cta-wrap {
+            margin-top: 8px;
+        }
+        .wa-cta-btn {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 12px 20px;
+            background: #25D366;
+            color: #fff !important;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 700;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+            line-height: 1.3;
+        }
+        .wa-cta-btn:hover { color: #fff; transform: scale(1.02); box-shadow: 0 4px 12px rgba(37,211,102,0.5); }
+        .wa-chat-footer {
+            padding: 10px 12px;
+            background: #f0f0f0;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .wa-chat-footer input {
+            flex: 1;
+            border: none;
+            padding: 10px 14px;
+            border-radius: 24px;
+            font-size: 0.9rem;
+            outline: none;
+        }
+        .wa-chat-footer button {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #00A884;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .wa-chat-footer button svg { width: 20px; height: 20px; }
+
+        .wa-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 0 0 12px 0;
+        }
+
+        .wa-chip {
+            padding: 10px 18px;
+            background: #fff;
+            border: 2px solid #25D366;
+            border-radius: 24px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #128C7E;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
+        }
+
+        .wa-chip:hover {
+            background: #25D366;
+            color: #fff;
+            border-color: #25D366;
+        }
+
+        /* Card WhatsApp Atendimento — tech + gamificado */
+        .bento-wa-auto .bento-card-content {
+            position: relative;
+        }
+        .bento-wa-auto .bento-icon { display: none; }
+        .bento-wa-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 6px 12px;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(37, 211, 102, 0.2);
+            border-radius: 10px;
+        }
+        .bento-wa-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #25D366;
+            letter-spacing: 0.08em;
+        }
+        .bento-wa-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #25D366;
+            box-shadow: 0 0 12px #25D366;
+            animation: waPulse 1.5s ease-in-out infinite;
+        }
+        @keyframes waPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.1); }
+        }
+        .bento-wa-stats {
+            display: flex;
+            gap: 14px;
+            font-size: 0.7rem;
+            color: var(--text-med);
+        }
+        .bento-wa-stat strong {
+            color: var(--primary);
+            font-weight: 700;
+        }
+        .bento-wa-auto .bento-card-content p {
+            margin-bottom: 12px;
+        }
+        .bento-wa-xp {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .bento-wa-xp-label {
+            font-size: 0.7rem;
+            color: var(--text-med);
+            white-space: nowrap;
+        }
+        .bento-wa-xp-bar {
+            flex: 1;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 100px;
+            overflow: hidden;
+        }
+        .bento-wa-xp-fill {
+            width: 94%;
+            height: 100%;
+            background: linear-gradient(90deg, #25D366, var(--primary));
+            border-radius: 100px;
+            animation: waXpGlow 2s ease-in-out infinite;
+            transition: width 0.5s ease;
+        }
+        @keyframes waXpGlow {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.85; }
+        }
+        .bento-wa-xp-val {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        .bento-wa-mock {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .bento-wa-mock-live {
+            max-height: 400px;
+            min-height: 340px;
+            overflow: hidden;
+            background-color: #e5ddd5;
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 20c0-2 1-4 3-4s3 2 3 4-1 4-3 4-3-2-3-4zm0 20c0-2 1-4 3-4s3 2 3 4-1 4-3 4-3-2-3-4zM10 30c0-2 1-4 3-4s3 2 3 4-1 4-3 4-3-2-3-4zm40 0c0-2 1-4 3-4s3 2 3 4-1 4-3 4-3-2-3-4z' fill='%23d4ccc4' fill-opacity='0.35'/%3E%3C/svg%3E");
+            border-radius: 14px;
+            padding: 16px;
+            margin: 0 -4px 0 0;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 2px 8px rgba(0,0,0,0.06);
+            border: 1px solid rgba(0,0,0,0.06);
+        }
+        .bento-wa-mock-live .bento-wa-msg {
+            animation: waMsgIn 0.35s ease forwards;
+        }
+        .bento-wa-typing-bubble {
+            align-self: flex-start;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 12px 16px;
+            border-radius: 14px;
+            border-top-left-radius: 4px;
+            font-size: 0.8rem;
+            color: var(--text-med);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .bento-wa-typing-bubble span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #25D366;
+            animation: waDot 1s ease-in-out infinite;
+        }
+        .bento-wa-typing-bubble span:nth-child(2) { animation-delay: 0.15s; }
+        .bento-wa-typing-bubble span:nth-child(3) { animation-delay: 0.3s; }
+        @keyframes waDot {
+            0%, 80%, 100% { opacity: 0.35; transform: scale(0.85); }
+            40% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes waMsgIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .bento-wa-msg {
+            max-width: 90%;
+            padding: 12px 14px;
+            border-radius: 14px;
+            font-size: 0.875rem;
+            line-height: 1.45;
+        }
+        .bento-wa-msg > span:last-of-type { display: block; margin-top: 6px; }
+        .bento-wa-msg em {
+            font-size: 0.7rem;
+            color: var(--text-med);
+            font-style: normal;
+            opacity: 0.9;
+            display: block;
+            margin-top: 4px;
+        }
+        .bento-wa-tag {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-med);
+            margin-bottom: 6px;
+        }
+        .bento-wa-tag-bot {
+            background: rgba(37, 211, 102, 0.25);
+            color: #25D366;
+        }
+        .bento-wa-mock-live .bento-wa-tag {
+            background: rgba(0,0,0,0.08);
+            color: #54656f;
+            font-weight: 800;
+        }
+        .bento-wa-mock-live .bento-wa-tag-bot {
+            background: rgba(37, 211, 102, 0.22);
+            color: #128C7E;
+            font-weight: 800;
+        }
+        .bento-wa-mock-live .bento-wa-msg-text {
+            color: #111;
+            font-weight: 500;
+        }
+        .bento-wa-mock-live .bento-wa-in {
+            background: #fff;
+            border: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 2px 6px rgba(0,0,0,0.04);
+        }
+        .bento-wa-mock-live .bento-wa-out {
+            background: #d9f7d0;
+            border: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.03);
+            color: #111;
+        }
+        .bento-wa-mock-live .bento-wa-msg em {
+            color: #667781;
+            font-weight: 500;
+        }
+        .bento-wa-mock-live .bento-wa-typing-bubble {
+            background: #fff;
+            border: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 2px 6px rgba(0,0,0,0.04);
+        }
+        .bento-wa-in {
+            align-self: flex-start;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .bento-wa-out {
+            align-self: flex-end;
+            background: linear-gradient(135deg, rgba(37, 211, 102, 0.15), rgba(0, 255, 163, 0.08));
+            border: 1px solid rgba(37, 211, 102, 0.3);
+            color: rgba(255, 255, 255, 0.95);
+        }
+        .bento-wa-auto:hover .bento-wa-xp-fill { width: 98%; transition: width 0.5s ease; }
+
+        /* ----- PRICING ----- */
+        #precos {
+            padding-top: 80px;
+            padding-bottom: 56px;
+        }
+        #precos .section-header { margin-bottom: 56px; }
+        #precos .section-header p { max-width: 520px; margin-left: auto; margin-right: auto; }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-top: 0;
+            align-items: stretch;
+        }
+
+        .price-card {
+            background: rgba(12, 12, 14, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 0;
+            position: relative;
+            transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .price-card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+            transform: translateY(-2px);
+        }
+
+        .price-card.popular {
+            background: linear-gradient(180deg, rgba(0, 255, 163, 0.06) 0%, rgba(12, 12, 14, 0.92) 24px);
+            border-color: rgba(0, 255, 163, 0.25);
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+        }
+
+        .price-card.popular:hover {
+            border-color: rgba(0, 255, 163, 0.4);
+            box-shadow: 0 20px 56px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 255, 163, 0.1);
+        }
+
+        .price-card.popular::before {
+            content: 'Recomendado';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 28px;
+            background: rgba(0, 255, 163, 0.15);
+            color: var(--primary);
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .price-card-inner {
+            padding: 28px 24px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .price-card.popular .price-card-inner { padding-top: 36px; }
+
+        .price-name {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-high);
+            margin-bottom: 4px;
+            letter-spacing: -0.02em;
+        }
+
+        .price-desc {
+            font-size: 0.8rem;
+            color: var(--text-med);
+            margin-bottom: 20px;
+            line-height: 1.4;
+        }
+
+        .price-card.popular .price-name { color: var(--primary); }
+
+        .price-block {
+            margin-bottom: 24px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .price-val {
+            font-family: var(--font-display);
+            font-size: 2.25rem;
+            font-weight: 800;
+            color: var(--text-high);
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+            letter-spacing: -0.03em;
+        }
+
+        .price-val span {
+            font-size: 0.875rem;
+            color: var(--text-med);
+            font-weight: 500;
+            font-family: var(--font-sans);
+        }
+
+        .price-val-custom {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-high);
+        }
+
+        .price-trial-badge {
+            font-size: 0.8rem;
+            color: var(--primary);
+            background: rgba(0, 255, 163, 0.1);
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-top: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            width: fit-content;
+            font-weight: 600;
+        }
+
+        .price-trial-badge svg {
+            flex-shrink: 0;
+            width: 14px;
+            height: 14px;
+        }
+
+        .price-features {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            flex: 1;
+        }
+
+        .price-features li {
+            margin-bottom: 10px;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            color: rgba(255, 255, 255, 0.82);
+            line-height: 1.4;
+        }
+
+        .price-features li::before {
+            content: '';
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            margin-top: 2px;
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2300ffa3' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E") no-repeat center;
+        }
+
+        .price-card-cta {
+            margin-top: auto;
+            padding-top: 24px;
+        }
+
+        .price-card-cta .btn {
+            width: 100%;
+            border-radius: 10px;
+            padding: 14px 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-align: center;
+            text-decoration: none;
+            transition: background 0.2s, border-color 0.2s, color 0.2s;
+        }
+
+        .price-card-cta .btn-ghost {
+            background: rgba(255, 255, 255, 0.04);
+            border: 2px solid #0a5c4a;
+            color: var(--text-high);
+        }
+
+        .price-card-cta .btn-ghost:hover {
+            background: rgba(37, 211, 102, 0.12);
+            border-color: #25D366;
+            color: var(--primary);
+        }
+
+        .price-card-note {
+            text-align: center;
+            font-size: 0.7rem;
+            color: var(--text-med);
+            margin-top: 10px;
+            opacity: 0.85;
+        }
+
+        .btn-full {
+            width: 100%;
+            border-radius: 12px;
+            padding: 16px;
+            font-size: 1rem;
+        }
+
+        /* ----- FOOTER ----- */
+        .footer {
+            border-top: 1px solid var(--border-subtle);
+            padding: 48px 0 32px;
+            margin-top: 48px;
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 48px;
+            margin-bottom: 28px;
+        }
+        .footer-grid > div:first-child {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        .footer-grid > div:first-child .logo {
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .footer-links h4 {
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+            color: var(--text-high);
+            margin-bottom: 24px;
+        }
+
+        .footer-links ul {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .footer-links a {
+            color: var(--text-med);
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: color 0.3s;
+        }
+
+        .footer-links a:hover {
+            color: var(--text-high);
+        }
+
+        @media (max-width: 900px) {
+            .nav-wrapper {
+                border-radius: 16px;
+                width: calc(100% - 32px);
+                flex-wrap: wrap;
+                padding: 12px 16px;
+            }
+            .nav-toggle {
+                display: flex;
+                order: 2;
+                margin-left: auto;
+            }
+            .nav-links {
+                display: none;
+                order: 3;
+                width: 100%;
+                flex-direction: column;
+                gap: 0;
+                padding-top: 16px;
+                border-top: 1px solid var(--border-subtle);
+                margin-top: 8px;
+            }
+            .nav-wrapper.open .nav-links {
+                display: flex;
+            }
+            .nav-links a {
+                padding: 14px 0;
+                border-bottom: 1px solid rgba(255,255,255,0.05);
+            }
+            .nav-actions {
+                display: none;
+                order: 4;
+                width: 100%;
+                flex-direction: column;
+                gap: 10px;
+                padding-top: 16px;
+            }
+            .nav-wrapper.open .nav-actions {
+                display: flex;
+            }
+            .nav-actions .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .hero {
+                padding-top: 80px;
+                padding-bottom: 48px;
+                min-height: auto;
+            }
+
+            .hero h1 {
+                font-size: 2.5rem;
+                margin-bottom: 16px;
+            }
+
+            .hero p {
+                font-size: 1rem;
+                margin-bottom: 28px;
+                padding: 0 8px;
+            }
+
+            .hero-btns {
+                flex-direction: column;
+                width: 100%;
+                max-width: 320px;
+                margin-bottom: 40px;
+            }
+
+            .hero-btns .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .dash-mock-container {
+                width: 100%;
+                max-width: 100%;
+                height: auto;
+                min-height: 520px;
+                transform: none;
+                border-radius: 16px;
+                overflow: visible;
+            }
+
+            .dash-mock-container:hover {
+                transform: none;
+            }
+
+            .dash-sidebar {
+                width: 56px;
+                min-width: 56px;
+                padding: 12px 0;
+            }
+
+            .dash-sidebar-logo {
+                padding: 0 8px 16px;
+                justify-content: center;
+                font-size: 0;
+            }
+
+            .dash-sidebar-logo img {
+                width: 28px;
+                height: 28px;
+            }
+
+            .dash-nav-group {
+                padding: 0 8px;
+                margin-bottom: 8px;
+            }
+
+            .dash-nav-title {
+                display: none;
+            }
+
+            .dash-nav-item {
+                padding: 10px;
+                justify-content: center;
+                font-size: 0;
+            }
+
+            .dash-nav-item svg {
+                margin: 0;
+                width: 20px;
+                height: 20px;
+                flex-shrink: 0;
+            }
+
+            .dash-content {
+                padding: 16px;
+                gap: 16px;
+                min-width: 0;
+            }
+
+            .dash-row {
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .dash-chart-card {
+                height: 160px;
+                min-height: 160px;
+            }
+
+            .dash-status-panel {
+                min-width: 120px;
+                padding: 14px;
+            }
+
+            .dash-stats-row {
+                flex-wrap: wrap;
+                gap: 12px;
+            }
+
+            .dash-stat-box {
+                padding: 12px 16px;
+                min-width: calc(50% - 6px);
+                flex: 1 1 calc(50% - 12px);
+            }
+
+            .dash-stat-val {
+                font-size: 1.25rem;
+            }
+
+            .dash-stat-label {
+                font-size: 0.7rem;
+            }
+
+            .data-processor {
+                top: 12px;
+                right: 16px;
+                padding: 4px 10px;
+                font-size: 0.65rem;
+            }
+
+            .bento-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .bento-large {
+                grid-column: span 1;
+            }
+            .pricing-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .footer-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
+            .hero {
+                padding-top: 100px;
+            }
+
+            .hero h1 {
+                font-size: 2rem;
+                line-height: 1.15;
+            }
+
+            .hero-tag {
+                font-size: 0.8rem;
+                margin-bottom: 20px;
+            }
+
+            .dash-mock-container {
+                min-height: 480px;
+                border-radius: 12px;
+            }
+
+            .dash-sidebar {
+                width: 48px;
+                min-width: 48px;
+                padding: 8px 0;
+            }
+
+            .dash-sidebar-logo img {
+                width: 24px;
+                height: 24px;
+            }
+
+            .dash-nav-item {
+                padding: 8px;
+            }
+
+            .dash-content {
+                padding: 12px;
+                gap: 12px;
+            }
+
+            .dash-chart-card {
+                height: 120px;
+                min-height: 120px;
+            }
+
+            .dash-stat-box {
+                min-width: 100%;
+                flex: 1 1 100%;
+            }
+
+            .dash-stat-val {
+                font-size: 1.1rem;
+            }
+
+            .pricing-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .video-experience {
+                padding: 48px 16px 64px;
+            }
+
+            .video-wrapper {
+                border-radius: 16px;
+                max-height: 320px;
+            }
+
+            .video-play-btn {
+                width: 72px;
+                height: 72px;
+            }
+
+            .video-play-btn svg {
+                width: 28px;
+                height: 28px;
+            }
+
+            .section {
+                padding: 60px 0;
+            }
+            .section-header {
+                margin-bottom: 40px;
+            }
+            .section-title {
+                font-size: 1.65rem;
+            }
+            .bento-card {
+                padding: 24px;
+            }
+            .bento-card h3 {
+                font-size: 1.25rem;
+            }
+            .bento-card p {
+                font-size: 0.9rem;
+            }
+            .bento-wa-auto {
+                min-height: 400px;
+            }
+            .bento-wa-mock-live {
+                max-height: 320px;
+                min-height: 280px;
+                overflow: hidden;
+            }
+            .bento-escala-inner {
+                flex-direction: column;
+                gap: 20px;
+            }
+            .bento-escala-visual {
+                width: 100%;
+                max-width: 140px;
+            }
+            .wa-widget {
+                bottom: 16px;
+                right: 16px;
+                left: auto;
+            }
+            .wa-chat-box {
+                width: calc(100vw - 24px);
+                max-width: 340px;
+                right: 0;
+                bottom: 68px;
+            }
+            .wa-chat-body {
+                min-height: 280px;
+                max-height: 50vh;
+                height: 300px;
+            }
+            .marquee-content {
+                font-size: 0.85rem;
+            }
+            #precos .section-header {
+                margin-bottom: 36px;
+            }
+            .price-card-inner {
+                padding: 24px 20px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding-left: 12px;
+                padding-right: 12px;
+            }
+            .nav-wrapper {
+                width: calc(100% - 24px);
+            }
+            .hero h1 {
+                font-size: 1.75rem;
+            }
+            .hero-btns .btn {
+                padding: 14px 24px;
+                font-size: 0.95rem;
+            }
+            .wa-button {
+                width: 52px;
+                height: 52px;
+            }
+            .wa-button svg {
+                width: 24px;
+                height: 24px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ambient-glow"></div>
+    <div class="noise-overlay"></div>
+
+    <!-- NAVBAR -->
+    <nav class="nav-wrapper" id="nav">
+        <a href="#" class="logo">
+            <img src="./logo.png" alt="ZapVender" style="height: 40px; width: auto; object-fit: contain;">
+        </a>
+        <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Abrir menu">
+            <span></span><span></span><span></span>
+        </button>
+        <div class="nav-links" id="nav-links">
+            <a href="#plataforma">Recursos</a>
+            <a href="#precos">Planos</a>
+            <a href="#experiencia">Demonstração</a>
+            <a href="#contato">Contato</a>
+        </div>
+        <div class="nav-actions" id="nav-actions">
+            <a href="/#/login" target="_top" class="btn btn-ghost" id="nav-login">Entrar</a>
+            <a href="#plano-premium" class="btn btn-nav-cta">Teste grátis</a>
+        </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="container hero">
+        <p class="hero-tag">Plataforma de automação e vendas no WhatsApp</p>
+        <h1>O Motor de Vendas que<br><span>Multiplica Resultados no </span><span class="tech-highlight">WhatsApp.</span>
+        </h1>
+        <p>Tecnologia especializada em conversão no WhatsApp. Automatize triagem de leads, recuperação de carrinhos e funis de vendas que trabalham 24/7 — com segurança e escala para sua operação.
+        </p>
+
+        <div class="hero-btns">
+            <a href="#plano-premium" class="btn btn-primary-large"
+                style="font-weight: 800; padding: 18px 40px; letter-spacing: 0.5px;">TESTAR 7 DIAS GRÁTIS</a>
+            <a href="#experiencia" class="btn btn-ghost btn-hero-secondary" style="padding: 18px 40px;">Ver Plataforma</a>
+        </div>
+
+        <!-- 3D Interactive Dashboard Mockup Overlay -->
+        <div class="dash-mock-container">
+            <!-- Sidebar -->
+            <div class="dash-sidebar">
+                <div class="dash-sidebar-logo">
+                    <img src="./logo.png" alt="ZapVender Icon"> ZapVender
+                </div>
+
+                <div class="dash-nav-group">
+                    <div class="dash-nav-item active">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                        Painel de Controle
+                    </div>
+                    <div class="dash-nav-item">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        Contatos
+                    </div>
+                    <div class="dash-nav-item">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                        </svg>
+                        Campanhas
+                    </div>
+                </div>
+
+                <div class="dash-nav-group">
+                    <div class="dash-nav-title">Conversas</div>
+                    <div class="dash-nav-item">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        Inbox
+                    </div>
+                </div>
+
+                <div class="dash-nav-group">
+                    <div class="dash-nav-title">Automação</div>
+                    <div class="dash-nav-item">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                        Automação
+                    </div>
+                    <div class="dash-nav-item">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                        </svg>
+                        Fluxos de Conversa
+                    </div>
+                    <div class="dash-nav-item">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                        </svg>
+                        Funil de Vendas
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="dash-content">
+                <div class="data-processor">
+                    <div class="dot"></div> PROCESSANDO EVENTOS...
+                </div>
+
+                <!-- Row 1: Gráfico + Status -->
+                <div class="dash-row">
+                    <div class="dash-chart-card">
+                        <div class="dash-chart-label">Conversões · últimos 7 dias</div>
+                        <svg class="svg-chart" viewBox="0 0 600 200" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="chart-gradient" x1="0" x2="0" y1="0" y2="1">
+                                    <stop offset="0%" stop-color="rgba(0, 255, 163, 0.35)" />
+                                    <stop offset="100%" stop-color="rgba(0, 255, 163, 0)" />
+                                </linearGradient>
+                            </defs>
+                            <path class="chart-area"
+                                d="M0,180 L100,180 L200,180 L300,40 L400,180 L500,180 L600,180 L600,200 L0,200 Z" />
+                            <path class="chart-line" d="M0,180 L100,180 L200,180 L300,40 L400,180 L500,180 L600,180" />
+                            <g class="chart-dots">
+                                <circle cx="0" cy="180" r="4" />
+                                <circle cx="100" cy="180" r="4" />
+                                <circle cx="200" cy="180" r="4" />
+                                <circle cx="300" cy="40" r="4" />
+                                <circle cx="400" cy="180" r="4" />
+                                <circle cx="500" cy="180" r="4" />
+                                <circle cx="600" cy="180" r="4" />
+                            </g>
+                            <g class="chart-bars" id="dash-chart-bars">
+                                <rect id="dash-bar-0" class="chart-bar" x="45" y="140" width="52" height="60" rx="6" />
+                                <rect id="dash-bar-1" class="chart-bar" x="125" y="120" width="52" height="80" rx="6" />
+                                <rect id="dash-bar-2" class="chart-bar" x="205" y="130" width="52" height="70" rx="6" />
+                                <rect id="dash-bar-3" class="chart-bar" x="285" y="60" width="52" height="140" rx="6" />
+                                <rect id="dash-bar-4" class="chart-bar" x="365" y="100" width="52" height="100" rx="6" />
+                                <rect id="dash-bar-5" class="chart-bar" x="445" y="90" width="52" height="110" rx="6" />
+                                <rect id="dash-bar-6" class="chart-bar" x="525" y="115" width="52" height="85" rx="6" />
+                            </g>
+                        </svg>
+                    </div>
+                    <div class="dash-status-panel">
+                        <div class="dash-status-item">
+                            <div class="dash-status-row"><span class="dash-status-dot dash-status-on"></span><span>WhatsApp</span></div>
+                            <strong>Conectado</strong>
+                        </div>
+                        <div class="dash-status-item">
+                            <div class="dash-status-row"><span class="dash-status-dot dash-status-on"></span><span>Atendimento</span></div>
+                            <strong>24/7 ativo</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 2: Stats -->
+                <div class="dash-stats-row">
+                    <div class="dash-stat-box">
+                        <div class="dash-stat-icon" style="color: var(--primary);">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="9" cy="7" r="4"></circle>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                        </div>
+                        <div class="dash-stat-info">
+                            <div class="dash-stat-val">9.545</div>
+                            <div class="dash-stat-label">Total de Leads</div>
+                            <div class="dash-stat-badge">+34%</div>
+                        </div>
+                    </div>
+
+                    <div class="dash-stat-box">
+                        <div class="dash-stat-icon" style="color: #4CAF50;">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                        </div>
+                        <div class="dash-stat-info">
+                            <div class="dash-stat-val">1.240</div>
+                            <div class="dash-stat-label">Concluídos</div>
+                            <div class="dash-stat-badge" style="background: rgba(76, 175, 80, 0.1); color: #4CAF50;">
+                                +12%</div>
+                        </div>
+                    </div>
+
+                    <div class="dash-stat-box">
+                        <div class="dash-stat-icon" style="color: #FFC107;">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                        </div>
+                        <div class="dash-stat-info">
+                            <div class="dash-stat-val">342</div>
+                            <div class="dash-stat-label">Em Andamento</div>
+                        </div>
+                    </div>
+
+                    <div class="dash-stat-box" style="flex: 0.8;">
+                        <div class="dash-stat-icon" style="color: #2196F3;">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <line x1="18" y1="20" x2="18" y2="10"></line>
+                                <line x1="12" y1="20" x2="12" y2="4"></line>
+                                <line x1="6" y1="20" x2="6" y2="14"></line>
+                            </svg>
+                        </div>
+                        <div class="dash-stat-info">
+                            <div class="dash-stat-val">82%</div>
+                            <div class="dash-stat-label">Conversão</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ZENVIA-STYLE VIDEO EXPERIENCE -->
+    <section class="video-experience" id="experiencia">
+        <div class="container">
+            <div class="video-experience-header">
+                <span class="tag">Veja na prática</span>
+                <h2>A experiência que transforma vendas no WhatsApp</h2>
+                <p>Assista à plataforma em ação: automação, triagem de leads e conversão em tempo real.</p>
+            </div>
+            <div class="video-wrapper">
+                <video id="hero-video" playsinline controls preload="metadata" poster="">
+                    <source src="IMG_5833.MOV" type="video/quicktime">
+                    <source src="IMG_5833.mp4" type="video/mp4">
+                    Seu navegador não suporta reprodução de vídeo.
+                </video>
+                <div class="video-play-overlay" id="play-overlay" aria-label="Reproduzir vídeo">
+                    <div class="video-play-btn">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <p class="video-caption">Demonstração da plataforma · ZapVender em uso real</p>
+        </div>
+    </section>
+
+    <!-- SOCIAL PROOF MARQUEE -->
+    <div class="marquee-section">
+        <div class="marquee-content">
+            <!-- Repetido 2x para efeito infinito suave -->
+            <span>✦ Conexão Nativa Sem Apis Pagas</span><span>✦ Construtor de Vendas Neural</span><span>✦ Blindagem
+                Antibloqueio</span><span>✦
+                Conversor de Carrinhos</span><span>✦ Gestão de Equipe Avançada</span><span>✦ Escala Infinita</span>
+            <span>✦ Conexão Nativa Sem Apis Pagas</span><span>✦ Construtor de Vendas Neural</span><span>✦ Blindagem
+                Antibloqueio</span><span>✦
+                Conversor de Carrinhos</span><span>✦ Gestão de Equipe Avançada</span><span>✦ Escala Infinita</span>
+        </div>
+    </div>
+
+    <!-- CORE FEATURES / BENTO GRID -->
+    <main class="container section" id="plataforma">
+        <div class="section-header">
+            <span class="section-tag">TECNOLOGIA PROPRIETÁRIA</span>
+            <h2 class="section-title">O fim do atendimento braçal. <br>Apresentamos o Motor de Vendas Automático.</h2>
+            <p>Deixe o trabalho repetitivo e exaustivo com nossos algoritmos de alta conversão. Seu único foco agora é
+                escalar seus lucros.</p>
+        </div>
+
+        <div class="bento-grid">
+            <!-- Card 1: Construtor + visual tech + fluxo ao vivo -->
+            <div class="bento-card bento-large card-hover bento-flow-card">
+                <div class="bento-card-content bento-flow-content">
+                    <div class="bento-flow-header">
+                        <div class="bento-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6M9 18h6M6 9v6M18 9v6"/></svg>
+                        </div>
+                        <div>
+                            <h3>Construtor de Fluxo Inteligente</h3>
+                            <p>Interface visual onde você arrasta e conecta blocos. Crie automações de conversão em minutos, sem código.</p>
+                        </div>
+                    </div>
+                    <div class="bento-flow-preview">
+                        <div class="bento-flow-canvas" id="bento-flow-canvas">
+                            <svg class="flow-lines" viewBox="0 0 520 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                                <path class="flow-line" data-draw="1" d="M 78 100 Q 140 75 203 51"/>
+                                <path class="flow-line" data-draw="2" d="M 78 100 Q 140 104 203 107"/>
+                                <path class="flow-line" data-draw="3" d="M 78 100 Q 208 75 338 51"/>
+                                <path class="flow-line" data-draw="4" d="M 78 100 Q 140 132 203 163"/>
+                                <path class="flow-line" data-draw="5" d="M 203 51 Q 298 75 392 100"/>
+                                <path class="flow-line" data-draw="6" d="M 203 107 Q 298 104 392 100"/>
+                                <path class="flow-line" data-draw="7" d="M 338 51 Q 365 75 392 100"/>
+                                <path class="flow-line" data-draw="8" d="M 203 163 Q 298 132 392 100"/>
+                            </svg>
+                            <div class="flow-node flow-node-lead flow-node-1" style="--i: 0"><span class="flow-node-head"><span class="flow-node-badge flow-badge-green">INTENÇÃO</span><span class="flow-icon flow-icon-bolt"></span></span><span class="flow-node-title">Interesse do Lead</span><span class="flow-node-opt">Onde comprar <span class="flow-dot"></span></span><span class="flow-node-opt">Conhecer os modelos <span class="flow-dot"></span></span><span class="flow-node-opt">Loja Física <span class="flow-dot"></span></span><span class="flow-node-opt">Outra resposta <span class="flow-dot"></span></span></div>
+                            <div class="flow-node flow-node-int flow-node-2" style="--i: 1"><span class="flow-node-head"><span class="flow-node-badge flow-badge-orange">INTENÇÃO</span><span class="flow-icon flow-icon-bolt"></span></span><span class="flow-node-title">Categorias</span><span class="flow-node-opt">Linha esportiva <span class="flow-dot"></span></span><span class="flow-node-opt">Linha clássica <span class="flow-dot"></span></span><span class="flow-node-opt">Outra resposta <span class="flow-dot"></span></span></div>
+                            <div class="flow-node flow-node-int flow-node-3" style="--i: 2"><span class="flow-node-head"><span class="flow-node-badge flow-badge-orange">INTENÇÃO</span><span class="flow-icon flow-icon-bolt"></span></span><span class="flow-node-title">Estilo</span><span class="flow-node-opt">De metal <span class="flow-dot"></span></span><span class="flow-node-opt">Arredondado <span class="flow-dot"></span></span><span class="flow-node-opt">Outra resposta <span class="flow-dot"></span></span></div>
+                            <div class="flow-node flow-node-int flow-node-4" style="--i: 3"><span class="flow-node-head"><span class="flow-node-badge flow-badge-orange">INTENÇÃO</span><span class="flow-icon flow-icon-bolt"></span></span><span class="flow-node-title">Interesse</span><span class="flow-node-opt">Interessado <span class="flow-dot"></span></span><span class="flow-node-opt">Não interessado <span class="flow-dot"></span></span><span class="flow-node-opt">Outra resposta <span class="flow-dot"></span></span></div>
+                            <div class="flow-node flow-node-int flow-node-5" style="--i: 4"><span class="flow-node-head"><span class="flow-node-badge flow-badge-orange">INTENÇÃO</span><span class="flow-icon flow-icon-bolt"></span></span><span class="flow-node-title">Showroom</span><span class="flow-node-opt">Vai no showroom <span class="flow-dot"></span></span><span class="flow-node-opt">Horário de função <span class="flow-dot"></span></span><span class="flow-node-opt">Outra resposta <span class="flow-dot"></span></span></div>
+                            <div class="flow-node flow-node-end flow-node-6" style="--i: 5"><span class="flow-node-head"><span class="flow-node-badge flow-badge-gray">FINALIZAR</span><span class="flow-icon flow-icon-check"></span></span><span class="flow-node-title">Fim</span><span class="flow-node-opt">Dúvida horário</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 2: WhatsApp Atendimento Automático (tech + gamificado) -->
+            <div class="bento-card card-hover bento-wa-auto">
+                <div class="bento-card-content">
+                    <div class="bento-wa-header">
+                        <div class="bento-wa-status">
+                            <span class="bento-wa-dot"></span>
+                            <span>LIVE</span>
+                        </div>
+                        <div class="bento-wa-stats">
+                            <span class="bento-wa-stat"><strong>247</strong> conversas</span>
+                            <span class="bento-wa-stat"><strong>98%</strong> respostas</span>
+                        </div>
+                    </div>
+                    <h3>Atendimento Automático WhatsApp</h3>
+                    <p>Bot 24/7 que responde, qualifica leads e encaminha para sua equipe. Zero fila, zero lead perdido.</p>
+                    <div class="bento-wa-xp">
+                        <span class="bento-wa-xp-label">Nível de automação</span>
+                        <div class="bento-wa-xp-bar"><div class="bento-wa-xp-fill"></div></div>
+                        <span class="bento-wa-xp-val">94%</span>
+                    </div>
+                    <div class="bento-wa-mock bento-wa-mock-live" id="bento-wa-mock"></div>
+                </div>
+            </div>
+
+            <!-- Card 3 -->
+            <div class="bento-card card-hover bento-metricas">
+                <div class="bento-card-content">
+                    <div class="bento-card-img-wrap">
+                        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 64' fill='none'%3E%3Crect x='2' y='2' width='116' height='60' rx='8' stroke='rgba(0,255,163,0.25)' stroke-width='1' fill='rgba(0,255,163,0.04)'/%3E%3Cpath d='M60 18v28M60 46l-10-8M60 46l10-8' stroke='%2300ffa3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' opacity='0.9'/%3E%3Ccircle cx='60' cy='46' r='4' fill='%2300ffa3'/%3E%3Cpath d='M60 12a34 34 0 0 1 0 68 34 34 0 0 1 0-68' stroke='rgba(0,255,163,0.2)' stroke-width='4' fill='none' stroke-dasharray='53 160' stroke-linecap='round'/%3E%3Cpath d='M60 12a34 34 0 0 1 24 12' stroke='%2300ffa3' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='60' cy='12' r='3' fill='%2300ffa3'/%3E%3C/svg%3E" alt="" class="bento-card-img">
+                    </div>
+                    <h3>Métricas e funil em tempo real</h3>
+                    <p>Acompanhe conversões, taxa de resposta e estágios do funil em um só painel. Dados atualizados na hora para você tomar decisões e ajustar campanhas.</p>
+                </div>
+            </div>
+
+            <!-- Card 4 -->
+            <div class="bento-card card-hover bento-inbox">
+                <div class="bento-card-content">
+                    <div class="bento-card-img-wrap">
+                        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 64' fill='none'%3E%3Crect x='2' y='2' width='116' height='60' rx='8' stroke='rgba(122,0,244,0.25)' stroke-width='1' fill='rgba(122,0,244,0.04)'/%3E%3Cpath d='M14 20h92M14 32h72M14 44h80M14 56h56' stroke='%237a00f4' stroke-width='1' stroke-linecap='round' opacity='0.4'/%3E%3Ccircle cx='26' cy='50' r='5' fill='%237a00f4' opacity='0.35'/%3E%3Ccircle cx='50' cy='50' r='5' fill='%237a00f4' opacity='0.6'/%3E%3Ccircle cx='74' cy='50' r='5' fill='%237a00f4'/%3E%3Crect x='14' y='12' width='8' height='6' rx='1' fill='%237a00f4' opacity='0.2'/%3E%3C/svg%3E" alt="" class="bento-card-img">
+                    </div>
+                    <h3>Inbox Multi-Agentes</h3>
+                    <p>Toda a sua equipe comercial operando números de WhatsApp em uma única tela. Latência zero e
+                        comunicação cristalina sem precisar pagar APIs abusivas.</p>
+                </div>
+            </div>
+
+            <!-- Card 5 -->
+            <div class="bento-card bento-large card-hover bento-escala">
+                <div class="bento-card-content bento-escala-inner">
+                    <div class="bento-escala-visual">
+                        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 80' fill='none'%3E%3Crect x='2' y='2' width='156' height='76' rx='8' stroke='rgba(0,255,163,0.2)' stroke-width='1' fill='rgba(0,255,163,0.03)'/%3E%3Cpath d='M14 68V36h22v32H14zm28-22v22h22V46H42zm28-14v36h22V32H70zm28 6v30h22V38H98zm28-26v56h22V12H126z' stroke='%2300ffa3' stroke-width='1.2' fill='rgba(0,255,163,0.1)'/%3E%3Cpath d='M14 36c10-14 22-6 34 2s22 0 34 8 22 10 34 2 22-16 34-8' stroke='%2300ffa3' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round' opacity='0.95'/%3E%3C/svg%3E" alt="" class="bento-card-img">
+                    </div>
+                    <div class="bento-escala-text">
+                        <h3>Escala de mensagens e aumento de faturamento</h3>
+                        <p>Atenda centenas ou milhares de leads ao mesmo tempo, sem aumentar a equipe. Mais conversas no WhatsApp, mais vendas fechadas — o faturamento cresce enquanto você escala a comunicação.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- PRICING -->
+    <section class="container section" id="precos">
+        <div class="section-header">
+            <span class="section-tag" style="color: var(--cyan);">PLANOS</span>
+            <h2 class="section-title">Escolha o plano ideal para sua operação</h2>
+            <p>Preços transparentes. Comece com teste grátis no plano recomendado ou fale com vendas para Monster.</p>
+        </div>
+
+        <div class="pricing-grid">
+            <div class="price-card">
+                <div class="price-card-inner">
+                    <h3 class="price-name">Starter</h3>
+                    <p class="price-desc">Para começar com um número</p>
+                    <div class="price-block">
+                        <div class="price-val">R$ 97<span>/mês</span></div>
+                    </div>
+                    <ul class="price-features">
+                        <li>1 Conexão WhatsApp nativa</li>
+                        <li>Construtor de fluxo visual</li>
+                        <li>Inbox unificado</li>
+                        <li>Respostas automáticas 24/7</li>
+                        <li>Até 1.000 contatos</li>
+                    </ul>
+                    <div class="price-card-cta">
+                        <a href="/#/pre-checkout?plan=starter" class="btn btn-ghost" target="_top" rel="noopener">Assinar Starter</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="price-card popular" id="plano-premium">
+                <div class="price-card-inner">
+                    <h3 class="price-name">Premium</h3>
+                    <p class="price-desc">Para times que escalam vendas</p>
+                    <div class="price-block">
+                        <div class="price-val">R$ 197<span>/mês</span></div>
+                        <div class="price-trial-badge">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                            7 dias grátis
+                        </div>
+                    </div>
+                    <ul class="price-features">
+                        <li>3 Conexões WhatsApp simultâneas</li>
+                        <li>Escudo antibloqueio completo</li>
+                        <li>Webhooks e eventos personalizados</li>
+                        <li>Fluxos ilimitados</li>
+                        <li>Suporte prioritário</li>
+                    </ul>
+                    <div class="price-card-cta">
+                        <a href="/#/pre-checkout?plan=premium" class="btn btn-primary-large btn-pulse" target="_top" rel="noopener">Começar teste grátis</a>
+                        <p class="price-card-note">Sem compromisso. Cancele quando quiser.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="price-card">
+                <div class="price-card-inner">
+                    <h3 class="price-name">Avançado</h3>
+                    <p class="price-desc">Para operações em crescimento</p>
+                    <div class="price-block">
+                        <div class="price-val">R$ 397<span>/mês</span></div>
+                    </div>
+                    <ul class="price-features">
+                        <li>5 Conexões WhatsApp dedicadas</li>
+                        <li>Múltiplos agentes ilimitados</li>
+                        <li>CRM completo integrado</li>
+                        <li>Relatórios avançados e funil</li>
+                        <li>API e webhooks ilimitados</li>
+                    </ul>
+                    <div class="price-card-cta">
+                        <a href="/#/pre-checkout?plan=advanced" class="btn btn-ghost" target="_top" rel="noopener">Assinar Avançado</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="price-card">
+                <div class="price-card-inner">
+                    <h3 class="price-name">Monster</h3>
+                    <p class="price-desc">Soluções sob medida</p>
+                    <div class="price-block">
+                        <div class="price-val price-val-custom">Sob consulta</div>
+                    </div>
+                    <ul class="price-features">
+                        <li>Conexões ilimitadas</li>
+                        <li>Infraestrutura dedicada</li>
+                        <li>Gerente de conta exclusivo</li>
+                        <li>SLA garantido 99,9%</li>
+                        <li>Onboarding e treinamento</li>
+                    </ul>
+                    <div class="price-card-cta">
+                        <a href="mailto:suporte@zapvender.com?subject=Interesse%20no%20plano%20Monster%20-%20ZapVender&body=Ol%C3%A1%2C%20quero%20saber%20mais%20sobre%20o%20plano%20Monster%20da%20ZapVender." class="btn btn-ghost">Falar com vendas</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FOOTER / CONTATO -->
+    <footer class="footer container" id="contato">
+        <div class="footer-grid">
+            <div>
+                <a href="#" class="logo" style="margin-bottom: 24px; display: inline-block;">
+                    <img src="./logo.png" alt="ZapVender" style="height: 48px; width: auto; object-fit: contain; display: block;">
+                </a>
+                <p style="font-size: 0.9rem;">Sistema tático de alta performance projetado para escabilidade financeira
+                    em operações complexas de conversão inbound e outbound.</p>
+            </div>
+            <div class="footer-links">
+                <h4>Produto</h4>
+                <ul>
+                    <li><a href="/motor-automacao.html">Motor de Automação</a></li>
+                    <li><a href="/seguranca-api.html">Segurança API</a></li>
+                    <li><a href="/log-metricas.html">Log e Métricas</a></li>
+                </ul>
+            </div>
+            <div class="footer-links">
+                <h4>Legal</h4>
+                <ul>
+                    <li><a href="/privacidade.html">Privacidade Total</a></li>
+                    <li><a href="/termos-de-uso.html">Termos de Uso</a></li>
+                </ul>
+            </div>
+        </div>
+        <div
+            style="border-top: 1px solid var(--border-subtle); padding-top: 24px; text-align: center; font-size: 0.85rem;">
+            &copy; 2026 ZapVender Networks. Todos os direitos reservados.
+        </div>
+    </footer>
+
+    <!-- Botão: abre chat com IA vendedora → CTA para WhatsApp -->
+    <div class="wa-widget" id="wa-widget">
+        <div class="wa-chat-box" id="wa-chat-box">
+            <div class="wa-chat-header">
+                <div><strong>Assistente ZapVender</strong><br><span>Vendedora automática · Online</span></div>
+                <button type="button" class="wa-close" id="wa-close" aria-label="Fechar">✕</button>
+            </div>
+            <div class="wa-chat-body" id="wa-chat-body"></div>
+            <div class="wa-chat-footer">
+                <input type="text" id="wa-input" placeholder="Digite sua dúvida..." maxlength="500" autocomplete="off">
+                <button type="button" id="wa-send" aria-label="Enviar">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="wa-button" id="wa-button" role="button" tabindex="0" title="Falar com a assistente">
+            <div class="wa-pulse"></div>
+            <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.878-.788-1.47-1.761-1.643-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
+            </svg>
+        </div>
+    </div>
+
+    <script>
+        // Config pública: login e WhatsApp (preenchido por /api/config)
+        (function() {
+            fetch('/api/config').then(function(r) { return r.json(); }).then(function(c) {
+                window.__ZAPVENDER_CONFIG__ = c;
+                // Entrar sempre vai para a página de login do site (/login); redirecionamento ao app é feito na própria tela de login se LOGIN_URL estiver configurado
+                var loginEl = document.getElementById('nav-login');
+                if (loginEl && c.loginUrl && c.loginUrl.indexOf('http') === 0) loginEl.href = c.loginUrl;
+                var num = (c.whatsappNumber || '').replace(/\D/g, '') || '558190000000';
+                var defaultMsg = c.whatsappMsg || 'Olá, vim pelo site e quero ativar meu teste grátis de 7 dias da ZapVender.';
+                document.querySelectorAll('[data-wa-link]').forEach(function(a) {
+                    var msg = a.getAttribute('data-wa-msg') || defaultMsg;
+                    a.href = 'https://wa.me/' + num + '?text=' + encodeURIComponent(msg);
+                    a.removeAttribute('data-wa-link');
+                    a.removeAttribute('data-wa-msg');
+                });
+            }).catch(function() { window.__ZAPVENDER_CONFIG__ = {}; });
+        })();
+
+        // Menu mobile: toggle ao clicar no hamburger
+        (function() {
+            var nav = document.getElementById('nav');
+            var toggle = document.getElementById('nav-toggle');
+            if (!nav || !toggle) return;
+            toggle.addEventListener('click', function() {
+                nav.classList.toggle('open');
+                toggle.classList.toggle('open');
+                document.body.style.overflow = nav.classList.contains('open') ? 'hidden' : '';
+            });
+            document.querySelectorAll('.nav-links a').forEach(function(a) {
+                a.addEventListener('click', function() {
+                    nav.classList.remove('open');
+                    toggle.classList.remove('open');
+                    document.body.style.overflow = '';
+                });
+            });
+        })();
+
+        // Conversa automatizada no card WA: lead e bot trocam mensagens em tempo real (typing + mensagens)
+        (function() {
+            var mock = document.getElementById('bento-wa-mock');
+            if (!mock) return;
+            var conversas = [
+                { lead: 'Oi, quero saber do plano', bot: 'Olá! Sou o Zap Vender. A maioria começa com 7 dias grátis no Premium. Qual seu WhatsApp que eu te mando o link?' },
+                { lead: 'Quanto custa?', bot: 'Temos o Starter (R$ 97/mês) e o Premium (R$ 197/mês) com 7 dias grátis. O Premium é o mais escolhido. Quer ativar o trial?' },
+                { lead: 'Funciona com minha loja?', bot: 'Sim! Integramos com Hotmart, Kiwify, ecommerce, carrinho abandonado. A equipe te ajuda a conectar. Quer que eu te passe o link do teste grátis?' },
+                { lead: 'Quero testar agora', bot: 'Beleza! Role até a seção Planos e clique em "Começar teste grátis", ou fale com a gente pelo botão verde do WhatsApp. Ativamos na hora.' },
+                { lead: 'Tem suporte?', bot: 'Temos sim. No Premium o suporte é prioritário. E no trial você já pode falar com a equipe pelo WhatsApp.' },
+                { lead: 'Como configuro?', bot: 'É em 3 passos: conecta o WhatsApp, monta os fluxos no painel e o Zap Vender atende sozinho. A maioria coloca no ar em poucos minutos.' }
+            ];
+            var idx = 0;
+            var maxMsgs = 5;
+
+            function addMsg(tipo, text) {
+                var div = document.createElement('div');
+                div.className = 'bento-wa-msg bento-wa-' + tipo;
+                var tag = document.createElement('span');
+                tag.className = 'bento-wa-tag' + (tipo === 'out' ? ' bento-wa-tag-bot' : '');
+                tag.textContent = tipo === 'in' ? 'Lead' : 'ZapVender';
+                var body = document.createElement('span');
+                body.className = 'bento-wa-msg-text';
+                body.textContent = text;
+                div.appendChild(tag);
+                div.appendChild(body);
+                if (tipo === 'out') {
+                    var em = document.createElement('em');
+                    em.textContent = '· agora';
+                    div.appendChild(em);
+                }
+                mock.appendChild(div);
+                while (mock.children.length > maxMsgs) mock.removeChild(mock.firstChild);
+                mock.scrollTop = mock.scrollHeight;
+                if (tipo === 'out') window.dispatchEvent(new CustomEvent('wa-message'));
+            }
+
+            function showTyping(cb) {
+                var el = document.createElement('div');
+                el.className = 'bento-wa-typing-bubble';
+                el.innerHTML = '<span></span><span></span><span></span>';
+                mock.appendChild(el);
+                mock.scrollTop = mock.scrollHeight;
+                setTimeout(function() {
+                    if (el.parentNode) el.parentNode.removeChild(el);
+                    if (cb) cb();
+                }, 1400);
+            }
+
+            function step() {
+                var c = conversas[idx % conversas.length];
+                idx++;
+                addMsg('in', c.lead);
+                showTyping(function() {
+                    addMsg('out', c.bot);
+                    setTimeout(step, 2800);
+                });
+            }
+            setTimeout(step, 800);
+        })();
+
+        // Gráfico do dashboard sobe a cada mensagem do chat (evento wa-message)
+        (function() {
+            var bars = document.querySelectorAll('#dash-chart-bars .chart-bar');
+            if (!bars.length) return;
+            var barIndex = 0;
+            var maxH = 175;
+            window.addEventListener('wa-message', function() {
+                var bar = bars[barIndex % bars.length];
+                barIndex++;
+                var h = parseFloat(bar.getAttribute('height')) || 60;
+                var add = 10 + Math.random() * 14;
+                var newH = Math.min(maxH, h + add);
+                bar.setAttribute('height', newH);
+                bar.setAttribute('y', 200 - newH);
+            });
+        })();
+
+        // Fluxo do construtor: animação só quando o lead chega nessa parte do site
+        (function() {
+            var canvas = document.getElementById('bento-flow-canvas');
+            if (!canvas) return;
+            var io = new IntersectionObserver(function(entries) {
+                entries.forEach(function(e) {
+                    if (e.isIntersecting) e.target.classList.add('flow-visible');
+                });
+            }, { rootMargin: '0px', threshold: 0.25 });
+            io.observe(canvas);
+        })();
+
+        // Efeito de Radian Hover no Bento Grid simulando "Lanterna/Spotlight" em Glassmorphism
+        const cards = document.querySelectorAll('.card-hover');
+        document.querySelector('.bento-grid').addEventListener('mousemove', (e) => {
+            cards.forEach(card => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                card.style.setProperty('--mouse-x', `${x}px`);
+                card.style.setProperty('--mouse-y', `${y}px`);
+            });
+        });
+        // Zenvia-style video: overlay de play
+        (function () {
+            var video = document.getElementById('hero-video');
+            var overlay = document.getElementById('play-overlay');
+            if (!video || !overlay) return;
+            overlay.addEventListener('click', function () {
+                video.play();
+                overlay.classList.add('hidden');
+            });
+            video.addEventListener('pause', function () {
+                overlay.classList.remove('hidden');
+            });
+            video.addEventListener('ended', function () {
+                overlay.classList.remove('hidden');
+            });
+        })();
+
+        // ---- Chat: IA (OpenAI) quando backend disponível; senão respostas por palavras-chave ----
+        (function() {
+            function getWaNumber() { var c = window.__ZAPVENDER_CONFIG__; return (c && c.whatsappNumber) ? String(c.whatsappNumber).replace(/\D/g, '') : '558190000000'; }
+            function getWaMsg() { var c = window.__ZAPVENDER_CONFIG__; return (c && c.whatsappMsg) ? c.whatsappMsg : 'Olá, vim pelo site e quero ativar meu teste grátis de 7 dias da ZapVender.'; }
+            const CHAT_API = (typeof window !== 'undefined' && window.CHAT_API_BASE) ? window.CHAT_API_BASE + '/api/chat' : '/api/chat';
+            const waBox = document.getElementById('wa-chat-box');
+            const waBtn = document.getElementById('wa-button');
+            const waClose = document.getElementById('wa-close');
+            const waBody = document.getElementById('wa-chat-body');
+            const waInput = document.getElementById('wa-input');
+            const waSend = document.getElementById('wa-send');
+            if (!waBox || !waBody) return;
+
+            let firstOpen = true;
+            var chatHistory = [];
+
+            var duvidasPrincipais = [
+                'Quanto custa?',
+                'Tem teste grátis?',
+                'Como funciona?',
+                'É difícil configurar?',
+                'Funciona com minha loja?',
+                'Quero falar no WhatsApp'
+            ];
+
+            var respostas = [
+                { keys: ['preco','preço','valor','custa','quanto','planos','pagar','assinatura','caro','barato','mensal','investimento'],
+                  msg: 'Os planos começam em <b>R$ 97/mês</b> (Starter, 1 conexão). O <b>Premium</b> é R$ 197/mês (3 conexões, 7 dias grátis) e é o mais usado. Tem o <b>Avançado</b> (R$ 397/mês) e o <b>Monster</b> sob consulta. Se quiser, posso te ajudar a escolher ou você dá uma olhada na seção Planos.', cta: false },
+                { keys: ['teste','grátis','gratis','experimentar','começar','comecar','demo','demonstração','trial','experiencia'],
+                  msg: 'Sim. O plano Premium tem <b>7 dias grátis</b> para você testar — sem compromisso. Se curtir, continua; se não, cancela. Quer que eu te passe o link para ativar o trial?', cta: true },
+                { keys: ['banimento','baniu','bloqueio','bloqueia','seguro','conta','meta','numero','número'],
+                  msg: 'A gente tem o <b>Escudo Antibloqueio</b>: o sistema replica comportamento humano (horários, ritmo de resposta, etc.) para reduzir risco de bloqueio pela Meta. Quem usa em escala costuma ter bem menos problema. Quer saber de algo específico sobre isso?', cta: false },
+                { keys: ['integração','integracao','webhook','api','hotmart','kiwify','ecommerce','venda','loja','plataforma'],
+                  msg: 'Integramos com várias plataformas via webhooks: carrinho abandonado, compra aprovada, ecommerce, Hotmart, Kiwify e outras. A equipe te mostra a lista completa e ajuda a conectar quando você entrar. Sua loja é em qual plataforma?', cta: false },
+                { keys: ['como funciona','funciona','usar','configurar','começo','comeco','passos'],
+                  msg: 'Em resumo: (1) Você conecta seu WhatsApp no painel, (2) Monta os fluxos no construtor visual — arrasta blocos, sem código, (3) O ZapVender responde, qualifica e encaminha sozinho. A maioria coloca o primeiro fluxo no ar em poucos minutos. Quer que eu te explique alguma parte melhor?', cta: false },
+                { keys: ['dificil','difícil','complicado','facil','fácil','demora','tempo','rapido','rápido'],
+                  msg: 'A interface é pensada para ser prática: construtor visual, sem precisar programar. A maioria dos usuários conecta e já deixa um fluxo rodando em poucos minutos. Se travar em algo, a equipe no WhatsApp ajuda.', cta: false },
+                { keys: ['garantia','cancelar','reembolso','desistir'],
+                  msg: 'O trial é grátis e você cancela quando quiser, sem multa. Depois que assinar um plano pago, as condições de cancelamento e reembolso a equipe te explica direitinho no WhatsApp.', cta: false },
+                { keys: ['suporte','contato','whatsapp','falar','equipe','humano','atendente','duvida','dúvida'],
+                  msg: 'A equipe atende direto no WhatsApp. Se quiser falar com alguém agora, é só usar o botão verde aqui embaixo que a conversa já abre. Eles respondem rápido.', cta: true },
+                { keys: ['agora','hoje','já','quero','ativar','vamos','bora'],
+                  msg: 'Beleza. Para ativar o trial você pode rolar até a seção Planos e clicar em "Começar teste grátis" no plano Premium, ou falar com a equipe pelo botão verde — eles ativam na hora.', cta: true },
+                { keys: ['resultado','vendas','aumentar','faturamento','conversao','conversão','escala'],
+                  msg: 'Quem usa costuma ver mais conversões e conseguir atender em escala sem aumentar a equipe na mesma proporção. O ideal é testar na sua operação; por isso o trial de 7 dias ajuda a ver se encaixa no seu caso.', cta: false },
+                { keys: ['mensagem','mensagens','enviar','limite','limites','quantas','volume','disparo'],
+                  msg: 'Os limites variam por plano. No Starter você tem até 1.000 contatos; no Premium (3 conexões) e no Avançado (5 conexões) a capacidade sobe. Para o número exato de mensagens por dia, a seção Planos tem o detalhe ou a equipe no WhatsApp pode te passar. Quer que eu te ajude a escolher um plano?', cta: false },
+                { keys: ['oi','ola','olá','bom dia','boa tarde','boa noite','hey','opa'],
+                  msg: 'Oi! Em que posso te ajudar? Pode escolher uma das opções abaixo ou escrever sua dúvida.', cta: false }
+            ];
+
+            var fallback = 'Entendi. Se quiser, pode dar uma olhada na seção Planos na página ou falar com a equipe pelo botão verde. Posso te ajudar em mais alguma coisa?';
+
+            function normalizar(t) {
+                return (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+            }
+
+            function respostaDaVendedora(texto) {
+                var n = normalizar(texto);
+                if (!n) return { msg: fallback, cta: false };
+                for (var i = 0; i < respostas.length; i++) {
+                    var r = respostas[i];
+                    for (var j = 0; j < r.keys.length; j++) {
+                        if (n.indexOf(normalizar(r.keys[j])) !== -1) return { msg: r.msg, cta: r.cta !== false };
+                    }
+                }
+                return { msg: fallback, cta: false };
+            }
+
+            function botaoWhatsApp() {
+                return '<div class="wa-cta-wrap"><a href="https://wa.me/' + getWaNumber() + '?text=' + encodeURIComponent(getWaMsg()) + '" class="wa-cta-btn" target="_blank" rel="noopener noreferrer">💬 Falar no WhatsApp</a></div>';
+            }
+
+            function appendMsg(html, tipo, showCta) {
+                if (showCta === undefined) showCta = true;
+                var div = document.createElement('div');
+                div.className = 'wa-msg wa-msg-' + tipo;
+                div.innerHTML = html + (tipo === 'in' && showCta ? botaoWhatsApp() : '');
+                waBody.appendChild(div);
+                waBody.scrollTop = waBody.scrollHeight;
+            }
+
+            function showTyping() {
+                var div = document.createElement('div');
+                div.className = 'wa-msg wa-msg-typing';
+                div.id = 'wa-typing-indicator';
+                div.innerHTML = 'Bot ZapVender respondendo <span class="wa-typing-dots"><span></span><span></span><span></span></span>';
+                waBody.appendChild(div);
+                waBody.scrollTop = waBody.scrollHeight;
+                return div;
+            }
+
+            function hideTyping() {
+                var el = document.getElementById('wa-typing-indicator');
+                if (el) el.remove();
+            }
+
+            function delayResposta() {
+                return 800 + Math.random() * 400;
+            }
+
+            function stripHtml(html) {
+                var tmp = document.createElement('div');
+                tmp.innerHTML = html || '';
+                return (tmp.textContent || tmp.innerText || '').trim();
+            }
+
+            function esconderChips() {
+                var el = document.getElementById('wa-chips');
+                if (el) el.style.display = 'none';
+            }
+
+            function mostrarResposta(msg, cta) {
+                hideTyping();
+                chatHistory.push({ role: 'assistant', content: stripHtml(msg) });
+                appendMsg(msg, 'in', cta);
+            }
+
+            function enviarUsuario(texto) {
+                if (!texto || !String(texto).trim()) return;
+                esconderChips();
+                var textoTrim = String(texto).trim();
+                appendMsg(textoTrim.replace(/\n/g, '<br>'), 'out');
+                waInput.value = '';
+                chatHistory.push({ role: 'user', content: textoTrim });
+
+                showTyping();
+
+            var controller = new AbortController();
+            var timeoutId = setTimeout(function() { controller.abort(); }, 18000);
+
+            fetch(CHAT_API, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: textoTrim,
+                    history: chatHistory.slice(-11, -1)
+                }),
+                signal: controller.signal
+            }).then(function(r) {
+                clearTimeout(timeoutId);
+                return r.ok ? r.json() : Promise.reject(r);
+            }).then(function(data) {
+                var reply = (data.reply || '').trim();
+                if (!reply) throw new Error('Resposta vazia');
+                mostrarResposta(reply, data.cta !== false);
+            }).catch(function() {
+                clearTimeout(timeoutId);
+                var resp = respostaDaVendedora(textoTrim);
+                mostrarResposta(resp.msg, resp.cta);
+            });
+            }
+
+            function renderChips() {
+                var container = document.getElementById('wa-chips');
+                if (!container) {
+                    container = document.createElement('div');
+                    container.id = 'wa-chips';
+                    container.className = 'wa-chips';
+                    waBody.appendChild(container);
+                }
+                container.innerHTML = '';
+                container.style.display = 'flex';
+                duvidasPrincipais.forEach(function(label) {
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'wa-chip';
+                    btn.textContent = label;
+                    btn.addEventListener('click', function() { enviarUsuario(label); });
+                    container.appendChild(btn);
+                });
+            }
+
+            var msgBoasVindas = 'Oi! Sou a assistente do ZapVender. Pode escolher uma opção abaixo ou digitar sua dúvida — te ajudo no que precisar.';
+
+            function abrirChat() {
+                waBox.classList.add('open');
+                if (firstOpen) {
+                    firstOpen = false;
+                    appendMsg(msgBoasVindas, 'in');
+                    renderChips();
+                }
+            }
+
+            function fecharChat() {
+                waBox.classList.remove('open');
+            }
+
+            waBtn.addEventListener('click', function() {
+                if (waBox.classList.contains('open')) fecharChat();
+                else abrirChat();
+            });
+            waClose.addEventListener('click', fecharChat);
+            waSend.addEventListener('click', function() { enviarUsuario(waInput.value); });
+            waInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') enviarUsuario(waInput.value);
+            });
+        })();
+    </script>
+</body>
+
+</html>
+
+

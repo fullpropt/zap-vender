@@ -1,0 +1,455 @@
+openapi: 3.0.3
+info:
+  title: ZapVender API
+  version: 1.0.0
+  description: |
+    Baseline OpenAPI spec for main operational endpoints.
+    Authentication uses Bearer JWT unless stated otherwise.
+servers:
+  - url: http://localhost:3001
+    description: Local development
+tags:
+  - name: Leads
+  - name: Messaging
+  - name: Flows
+  - name: Campaigns
+  - name: Queue
+  - name: AI
+paths:
+  /api/leads:
+    get:
+      tags: [Leads]
+      summary: List leads
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: integer
+            enum: [1, 2, 3, 4]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Leads listed
+    post:
+      tags: [Leads]
+      summary: Create lead
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeadCreateInput'
+      responses:
+        '200':
+          description: Lead created
+        '400':
+          description: Validation error
+  /api/leads/{id}:
+    get:
+      tags: [Leads]
+      summary: Get lead by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LeadIdPath'
+      responses:
+        '200':
+          description: Lead found
+        '404':
+          description: Lead not found
+    put:
+      tags: [Leads]
+      summary: Update lead
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LeadIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeadUpdateInput'
+      responses:
+        '200':
+          description: Lead updated
+        '400':
+          description: Invalid status or payload
+        '404':
+          description: Lead not found
+    delete:
+      tags: [Leads]
+      summary: Delete lead
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/LeadIdPath'
+      responses:
+        '200':
+          description: Lead deleted
+        '404':
+          description: Lead not found
+  /api/leads/bulk:
+    post:
+      tags: [Leads]
+      summary: Bulk import leads
+      description: Maximum 1000 leads per request.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [leads]
+              properties:
+                leads:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    $ref: '#/components/schemas/LeadCreateInput'
+      responses:
+        '200':
+          description: Bulk import processed
+        '400':
+          description: Invalid batch or size limit exceeded
+  /api/leads/bulk-update:
+    post:
+      tags: [Leads]
+      summary: Bulk update leads
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [leadIds]
+              properties:
+                leadIds:
+                  type: array
+                  maxItems: 2000
+                  items:
+                    type: integer
+                status:
+                  type: integer
+                  enum: [1, 2, 3, 4]
+                addTags:
+                  oneOf:
+                    - type: array
+                      items: { type: string }
+                    - type: string
+                removeTags:
+                  oneOf:
+                    - type: array
+                      items: { type: string }
+                    - type: string
+      responses:
+        '200':
+          description: Bulk update processed
+        '400':
+          description: Invalid payload
+  /api/send:
+    post:
+      tags: [Messaging]
+      summary: Send message by explicit session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendInput'
+      responses:
+        '200':
+          description: Message sent
+        '400':
+          description: Invalid parameters
+        '500':
+          description: Send failure
+  /api/messages/send:
+    post:
+      tags: [Messaging]
+      summary: Send message by lead or phone
+      description: Subject to per-session send throttle (default 30/min per session_id).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                leadId:
+                  type: integer
+                phone:
+                  type: string
+                content:
+                  type: string
+                type:
+                  type: string
+                  enum: [text, image, video, document, audio]
+                sessionId:
+                  type: string
+                options:
+                  type: object
+      responses:
+        '200':
+          description: Message sent
+        '400':
+          description: Invalid parameters
+        '500':
+          description: Send failure
+  /api/flows:
+    get:
+      tags: [Flows]
+      summary: List flows
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Flows listed
+    post:
+      tags: [Flows]
+      summary: Create flow
+      description: Trigger type `webhook` is currently not available and will be rejected.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowInput'
+      responses:
+        '200':
+          description: Flow created
+        '400':
+          description: Invalid trigger type or payload
+  /api/flows/{id}:
+    get:
+      tags: [Flows]
+      summary: Get flow by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FlowIdPath'
+      responses:
+        '200':
+          description: Flow found
+        '404':
+          description: Flow not found
+    put:
+      tags: [Flows]
+      summary: Update flow
+      description: Trigger type `webhook` is currently not available and will be rejected.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FlowIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowInput'
+      responses:
+        '200':
+          description: Flow updated
+        '400':
+          description: Invalid trigger type or payload
+        '404':
+          description: Flow not found
+    delete:
+      tags: [Flows]
+      summary: Delete flow
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FlowIdPath'
+      responses:
+        '200':
+          description: Flow deleted
+        '404':
+          description: Flow not found
+  /api/campaigns/{id}/recipients:
+    get:
+      tags: [Campaigns]
+      summary: List campaign recipients
+      description: Query `limit` is clamped to `1..1000` (default `200`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+      responses:
+        '200':
+          description: Recipients listed
+  /api/queue/status:
+    get:
+      tags: [Queue]
+      summary: Queue worker status
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Queue status
+  /api/ai/flows/generate:
+    post:
+      tags: [AI]
+      summary: Generate flow draft
+      description: Prompt max length is 5000 characters.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  maxLength: 5000
+      responses:
+        '200':
+          description: Draft generated
+        '400':
+          description: Invalid prompt
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    LeadIdPath:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+    FlowIdPath:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+  schemas:
+    LeadCreateInput:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        vehicle:
+          type: string
+        plate:
+          type: string
+        status:
+          type: integer
+          enum: [1, 2, 3, 4]
+        tags:
+          oneOf:
+            - type: array
+              items: { type: string }
+            - type: string
+    LeadUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        vehicle:
+          type: string
+        plate:
+          type: string
+        status:
+          type: integer
+          enum: [1, 2, 3, 4]
+        tags:
+          oneOf:
+            - type: array
+              items: { type: string }
+            - type: string
+        custom_fields:
+          type: object
+        assigned_to:
+          type: integer
+        is_blocked:
+          type: integer
+    SendInput:
+      type: object
+      required: [sessionId, to, message]
+      properties:
+        sessionId:
+          type: string
+        to:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+          enum: [text, image, video, document, audio]
+        options:
+          type: object
+    FlowInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        trigger_type:
+          type: string
+          enum: [new_contact, keyword, manual]
+        trigger_value:
+          type: string
+        is_active:
+          type: integer
+        session_id:
+          type: string
+        nodes:
+          type: array
+          items:
+            type: object
+        edges:
+          type: array
+          items:
+            type: object

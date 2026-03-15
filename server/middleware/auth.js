@@ -7,8 +7,17 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { User } = require('../database/models');
+const { queryOne, run } = require('../database/connection');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'self-protecao-jwt-secret-2024';
+const JWT_SECRET = String(process.env.JWT_SECRET || '').trim();
+const JWT_SECRET_DEV = String(process.env.JWT_SECRET_DEV || '').trim();
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET is required in production');
+}
+const JWT_SECRET_EFFECTIVE = JWT_SECRET || JWT_SECRET_DEV || crypto.randomBytes(32).toString('hex');
+if (!JWT_SECRET && process.env.NODE_ENV !== 'production' && !JWT_SECRET_DEV) {
+    console.warn('[Auth] JWT_SECRET nao definido; usando segredo efemero para ambiente local.');
+}
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
 
@@ -51,10 +60,11 @@ function generateToken(user) {
         id: user.id,
         uuid: user.uuid,
         email: user.email,
-        role: user.role
+        role: user.role,
+        owner_user_id: user.owner_user_id
     };
     
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+    return jwt.sign(payload, JWT_SECRET_EFFECTIVE, { expiresIn: JWT_EXPIRES_IN });
 }
 
 /**
@@ -67,7 +77,7 @@ function generateRefreshToken(user) {
         type: 'refresh'
     };
     
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRES_IN });
+    return jwt.sign(payload, JWT_SECRET_EFFECTIVE, { expiresIn: REFRESH_TOKEN_EXPIRES_IN });
 }
 
 /**
@@ -75,7 +85,7 @@ function generateRefreshToken(user) {
  */
 function verifyToken(token) {
     try {
-        return jwt.verify(token, JWT_SECRET);
+        return jwt.verify(token, JWT_SECRET_EFFECTIVE);
     } catch (error) {
         return null;
     }
@@ -84,54 +94,62 @@ function verifyToken(token) {
 /**
  * Middleware de autenticação
  */
-function authenticate(req, res, next) {
-    // Verificar header Authorization
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ 
-            error: 'Token não fornecido',
-            code: 'NO_TOKEN'
+async function authenticate(req, res, next) {
+    try {
+        // Verificar header Authorization
+        const authHeader = req.headers.authorization;
+        
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ 
+                error: 'Token n?o fornecido',
+                code: 'NO_TOKEN'
+            });
+        }
+        
+        const token = authHeader.split(' ')[1];
+        const decoded = verifyToken(token);
+        
+        if (!decoded) {
+            return res.status(401).json({ 
+                error: 'Token inv?lido ou expirado',
+                code: 'INVALID_TOKEN'
+            });
+        }
+        
+        // Verificar se usu?rio existe
+        const user = await User.findById(decoded.id);
+        
+        if (!user) {
+            return res.status(401).json({ 
+                error: 'Usu?rio n?o encontrado',
+                code: 'USER_NOT_FOUND'
+            });
+        }
+        
+        if (!user.is_active) {
+            return res.status(401).json({ 
+                error: 'Usu?rio desativado',
+                code: 'USER_INACTIVE'
+            });
+        }
+        
+        // Adicionar usu?rio ? requisi??o
+        req.user = {
+            id: user.id,
+            uuid: user.uuid,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            owner_user_id: user.owner_user_id
+        };
+        
+        next();
+    } catch (error) {
+        return res.status(500).json({
+            error: 'Erro interno de autentica??o',
+            code: 'AUTH_INTERNAL_ERROR'
         });
     }
-    
-    const token = authHeader.split(' ')[1];
-    const decoded = verifyToken(token);
-    
-    if (!decoded) {
-        return res.status(401).json({ 
-            error: 'Token inválido ou expirado',
-            code: 'INVALID_TOKEN'
-        });
-    }
-    
-    // Verificar se usuário existe
-    const user = User.findById(decoded.id);
-    
-    if (!user) {
-        return res.status(401).json({ 
-            error: 'Usuário não encontrado',
-            code: 'USER_NOT_FOUND'
-        });
-    }
-    
-    if (!user.is_active) {
-        return res.status(401).json({ 
-            error: 'Usuário desativado',
-            code: 'USER_INACTIVE'
-        });
-    }
-    
-    // Adicionar usuário à requisição
-    req.user = {
-        id: user.id,
-        uuid: user.uuid,
-        email: user.email,
-        name: user.name,
-        role: user.role
-    };
-    
-    next();
 }
 
 /**
@@ -160,25 +178,30 @@ function authorize(...roles) {
 /**
  * Middleware opcional de autenticação (não bloqueia)
  */
-function optionalAuth(req, res, next) {
-    const authHeader = req.headers.authorization;
-    
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split(' ')[1];
-        const decoded = verifyToken(token);
+async function optionalAuth(req, res, next) {
+    try {
+        const authHeader = req.headers.authorization;
         
-        if (decoded) {
-            const user = User.findById(decoded.id);
-            if (user && user.is_active) {
-                req.user = {
-                    id: user.id,
-                    uuid: user.uuid,
-                    email: user.email,
-                    name: user.name,
-                    role: user.role
-                };
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.split(' ')[1];
+            const decoded = verifyToken(token);
+            
+            if (decoded) {
+                const user = await User.findById(decoded.id);
+                if (user && user.is_active) {
+                    req.user = {
+                        id: user.id,
+                        uuid: user.uuid,
+                        email: user.email,
+                        name: user.name,
+                        role: user.role,
+                        owner_user_id: user.owner_user_id
+                    };
+                }
             }
         }
+    } catch (error) {
+        // Autentica??o opcional n?o deve quebrar a request
     }
     
     next();
@@ -188,39 +211,135 @@ function optionalAuth(req, res, next) {
  * Rate limiter por IP
  */
 const rateLimitStore = new Map();
+const RATE_LIMIT_STORAGE_MODE = String(process.env.RATE_LIMIT_STORAGE || 'database').trim().toLowerCase();
+const DISTRIBUTED_RATE_LIMIT_ENABLED = RATE_LIMIT_STORAGE_MODE !== 'memory';
+let rateLimitStorageReady = false;
+let rateLimitStorageReadyPromise = null;
+
+async function ensureRateLimitStorageReady() {
+    if (!DISTRIBUTED_RATE_LIMIT_ENABLED) return false;
+    if (rateLimitStorageReady) return true;
+    if (rateLimitStorageReadyPromise) return rateLimitStorageReadyPromise;
+
+    rateLimitStorageReadyPromise = (async () => {
+        await run(`
+            CREATE TABLE IF NOT EXISTS api_rate_limits (
+                bucket_key TEXT PRIMARY KEY,
+                count INTEGER NOT NULL DEFAULT 0,
+                reset_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        await run('CREATE INDEX IF NOT EXISTS idx_api_rate_limits_reset ON api_rate_limits(reset_at)');
+        rateLimitStorageReady = true;
+        return true;
+    })().finally(() => {
+        rateLimitStorageReadyPromise = null;
+    });
+
+    return rateLimitStorageReadyPromise;
+}
+
+function applyInMemoryRateLimit(key, nowMs, windowMs, max) {
+    if (!rateLimitStore.has(key)) {
+        rateLimitStore.set(key, { count: 1, resetAt: nowMs + windowMs });
+        return { allowed: true, retryAfter: Math.ceil(windowMs / 1000) };
+    }
+
+    const record = rateLimitStore.get(key);
+    if (!record || nowMs > Number(record.resetAt || 0)) {
+        rateLimitStore.set(key, { count: 1, resetAt: nowMs + windowMs });
+        return { allowed: true, retryAfter: Math.ceil(windowMs / 1000) };
+    }
+
+    record.count = Number(record.count || 0) + 1;
+    const retryAfter = Math.max(1, Math.ceil((Number(record.resetAt || nowMs) - nowMs) / 1000));
+    return {
+        allowed: Number(record.count || 0) <= max,
+        retryAfter
+    };
+}
+
+async function applyDistributedRateLimit(key, nowMs, windowMs, max) {
+    await ensureRateLimitStorageReady();
+    const resetAtIso = new Date(nowMs + windowMs).toISOString();
+
+    const row = await queryOne(`
+        INSERT INTO api_rate_limits (bucket_key, count, reset_at, updated_at)
+        VALUES (?, 1, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT (bucket_key)
+        DO UPDATE SET
+            count = CASE
+                WHEN api_rate_limits.reset_at <= CURRENT_TIMESTAMP THEN 1
+                ELSE api_rate_limits.count + 1
+            END,
+            reset_at = CASE
+                WHEN api_rate_limits.reset_at <= CURRENT_TIMESTAMP THEN EXCLUDED.reset_at
+                ELSE api_rate_limits.reset_at
+            END,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING count, reset_at
+    `, [key, resetAtIso]);
+
+    const count = Number(row?.count || 0);
+    const resetAtMs = Date.parse(String(row?.reset_at || ''));
+    const retryAfter = Number.isFinite(resetAtMs)
+        ? Math.max(1, Math.ceil((resetAtMs - nowMs) / 1000))
+        : Math.ceil(windowMs / 1000);
+
+    return {
+        allowed: count <= max,
+        retryAfter
+    };
+}
+
+function cleanupInMemoryRateLimit() {
+    const now = Date.now();
+    for (const [key, record] of rateLimitStore.entries()) {
+        if (now > Number(record?.resetAt || 0)) {
+            rateLimitStore.delete(key);
+        }
+    }
+}
+
+async function cleanupDistributedRateLimit() {
+    if (!DISTRIBUTED_RATE_LIMIT_ENABLED) return;
+    if (!rateLimitStorageReady) return;
+    await run(`
+        DELETE FROM api_rate_limits
+        WHERE reset_at <= (CURRENT_TIMESTAMP - INTERVAL '1 minute')
+    `);
+}
 
 function rateLimit(options = {}) {
     const windowMs = options.windowMs || 60000; // 1 minuto
     const max = options.max || 100;
     const message = options.message || 'Muitas requisições, tente novamente mais tarde';
     
-    return (req, res, next) => {
+    return async (req, res, next) => {
         const ip = req.ip || req.connection.remoteAddress;
         const key = `${ip}:${req.path}`;
         const now = Date.now();
-        
-        if (!rateLimitStore.has(key)) {
-            rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
-            return next();
+
+        let result;
+        if (DISTRIBUTED_RATE_LIMIT_ENABLED) {
+            try {
+                result = await applyDistributedRateLimit(key, now, windowMs, max);
+            } catch (_) {
+                result = applyInMemoryRateLimit(key, now, windowMs, max);
+            }
+        } else {
+            result = applyInMemoryRateLimit(key, now, windowMs, max);
         }
-        
-        const record = rateLimitStore.get(key);
-        
-        if (now > record.resetAt) {
-            rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
-            return next();
-        }
-        
-        record.count++;
-        
-        if (record.count > max) {
+
+        if (!result?.allowed) {
             return res.status(429).json({ 
                 error: message,
                 code: 'RATE_LIMIT_EXCEEDED',
-                retryAfter: Math.ceil((record.resetAt - now) / 1000)
+                retryAfter: Number(result?.retryAfter || Math.ceil(windowMs / 1000))
             });
         }
-        
+
         next();
     };
 }
@@ -229,12 +348,8 @@ function rateLimit(options = {}) {
  * Limpar rate limit store periodicamente
  */
 setInterval(() => {
-    const now = Date.now();
-    for (const [key, record] of rateLimitStore.entries()) {
-        if (now > record.resetAt) {
-            rateLimitStore.delete(key);
-        }
-    }
+    cleanupInMemoryRateLimit();
+    void cleanupDistributedRateLimit();
 }, 60000);
 
 /**

@@ -1,0 +1,1186 @@
+import { useEffect } from 'react';
+
+import { Link } from 'react-router-dom';
+import { brandLogoUrl, brandName } from '../lib/brand';
+type ConfiguracoesGlobals = {
+  initConfiguracoes?: () => void;
+  showPanel?: (panel: string) => void;
+  saveGeneralSettings?: () => void;
+  saveFunnelSettings?: () => void;
+  saveCopysSettings?: () => void;
+  insertVariable?: (value: string) => void;
+  saveNewTemplate?: () => void;
+  saveTemplate?: (id: number) => void;
+  deleteTemplate?: (id: number) => void;
+  replaceTemplateAudio?: (id: number, event: Event) => void;
+  updateNewTemplateForm?: () => void;
+  connectWhatsApp?: () => void;
+  disconnectWhatsApp?: () => void;
+  refreshWhatsAppAccounts?: () => Promise<void>;
+  saveWhatsAppSessionName?: (sessionId: string) => Promise<void>;
+  removeWhatsAppSession?: (sessionId: string) => Promise<void>;
+  saveWhatsAppSettings?: () => void;
+  saveAiSettings?: () => Promise<void>;
+  saveBusinessHoursSettings?: () => void;
+  refreshBusinessHoursAccounts?: () => Promise<void>;
+  saveNotificationSettings?: () => Promise<void>;
+  createContactField?: () => Promise<void>;
+  updateContactField?: (key: string) => Promise<void>;
+  deleteContactField?: (key: string) => Promise<void>;
+  confirmDeleteContactField?: () => Promise<void>;
+  cancelDeleteContactField?: () => void;
+  createSettingsTag?: () => Promise<void>;
+  updateSettingsTag?: (id: number) => Promise<void>;
+  deleteSettingsTag?: (id: number) => Promise<void>;
+  loadUsers?: () => Promise<void>;
+  addUser?: () => Promise<void>;
+  deleteAccount?: () => Promise<void>;
+  confirmDeleteUser?: () => Promise<void>;
+  cancelDeleteUser?: () => void;
+  confirmDeleteAccount?: () => Promise<void>;
+  cancelDeleteAccount?: () => void;
+  openEditUserModal?: (id: number) => void;
+  updateUser?: () => Promise<void>;
+  changePassword?: () => Promise<void>;
+  copyApiKey?: () => void;
+  regenerateApiKey?: () => void;
+  testWebhook?: () => void;
+  saveApiSettings?: () => void;
+  loadPlanStatus?: (options?: { silent?: boolean }) => Promise<void>;
+  openModal?: (id: string) => void;
+  closeModal?: (id: string) => void;
+  logout?: () => void;
+};
+
+export default function Configuracoes() {
+  useEffect(() => {
+    let cancelled = false;
+
+    const boot = async () => {
+      await import('../../core/app');
+      const mod = await import('../../pages/configuracoes');
+
+      if (cancelled) return;
+
+      const win = window as Window & ConfiguracoesGlobals;
+      if (typeof win.initConfiguracoes === 'function') {
+        win.initConfiguracoes();
+      } else if (typeof (mod as { initConfiguracoes?: () => void }).initConfiguracoes === 'function') {
+        (mod as { initConfiguracoes?: () => void }).initConfiguracoes?.();
+      }
+    };
+
+    boot();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const globals = window as Window & ConfiguracoesGlobals;
+  const SHOW_AI_TAB = false;
+  const SHOW_NOTIFICATIONS_TAB = true;
+
+  return (
+    <div className="configuracoes-react">
+      <style>{`
+.settings-container {
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 30px;
+        }
+        @media (max-width: 768px) {
+            .settings-container { grid-template-columns: 1fr; }
+            .settings-nav {
+                position: static;
+                top: auto;
+                margin-bottom: 14px;
+            }
+            .settings-nav .settings-nav-item { display: none; }
+            .settings-nav .settings-nav-item[data-panel="conexao"],
+            .settings-nav .settings-nav-item[data-panel="users"],
+            .settings-nav .settings-nav-item[data-panel="plan"] { display: flex; }
+            .settings-plan-hero-grid { grid-template-columns: 1fr; }
+        }
+        .settings-nav {
+            background: var(--surface);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-md);
+            padding: 20px;
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+        }
+        .settings-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 5px;
+            color: var(--gray-800);
+        }
+        .settings-nav-item:hover { background: var(--gray-50); color: var(--dark); }
+        .settings-nav-item.active { background: rgba(var(--primary-rgb), 0.16); color: #eafff4; font-weight: 700; border: 1px solid rgba(var(--primary-rgb), 0.35); }
+        .settings-panel {
+            background: var(--surface);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-md);
+            padding: 30px;
+            display: none;
+        }
+        .settings-panel.active { display: block; }
+        .settings-section {
+            margin-bottom: 30px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .settings-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .settings-section-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .settings-users-table {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .settings-users-table .data-table {
+            min-width: 640px;
+        }
+        .settings-users-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 16px;
+        }
+        .settings-users-actions .btn {
+            margin: 0 !important;
+        }
+        .copy-card {
+            background: var(--gray-50);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+        .settings-plan-shell {
+            margin-bottom: 22px;
+        }
+        .settings-plan-hero {
+            position: relative;
+            overflow: hidden;
+            display: grid;
+            gap: 16px;
+            padding: 24px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background:
+                radial-gradient(circle at top right, var(--plan-glow, rgba(255, 255, 255, 0.12)), transparent 48%),
+                linear-gradient(135deg, rgba(17, 32, 53, 0.94) 0%, rgba(10, 22, 38, 0.98) 100%);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+        .settings-plan-hero::after {
+            content: '';
+            position: absolute;
+            inset: auto -20% -55% auto;
+            width: 240px;
+            height: 240px;
+            border-radius: 50%;
+            background: var(--plan-orb, rgba(255, 255, 255, 0.12));
+            filter: blur(60px);
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        .settings-plan-hero--starter {
+            --plan-glow: rgba(34, 197, 94, 0.22);
+            --plan-orb: rgba(34, 197, 94, 0.18);
+        }
+        .settings-plan-hero--premium {
+            --plan-glow: rgba(226, 232, 240, 0.20);
+            --plan-orb: rgba(148, 163, 184, 0.18);
+        }
+        .settings-plan-hero--advanced {
+            --plan-glow: rgba(245, 158, 11, 0.22);
+            --plan-orb: rgba(251, 191, 36, 0.18);
+        }
+        .settings-plan-hero--monster {
+            --plan-glow: rgba(96, 165, 250, 0.24);
+            --plan-orb: rgba(34, 211, 238, 0.18);
+        }
+        .settings-plan-hero-top,
+        .settings-plan-hero-grid,
+        .settings-plan-hero-copy,
+        .settings-plan-hero-name {
+            position: relative;
+            z-index: 1;
+        }
+        .settings-plan-hero-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .settings-plan-hero-label {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: rgba(191, 212, 233, 0.70);
+        }
+        .settings-plan-hero-name {
+            display: block;
+            font-size: clamp(30px, 4vw, 42px);
+            font-weight: 800;
+            line-height: 0.95;
+            letter-spacing: -0.05em;
+            color: transparent;
+            background: linear-gradient(120deg, #f8fafc 0%, #dbeafe 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+        }
+        .settings-plan-hero--starter .settings-plan-hero-name {
+            background-image: linear-gradient(120deg, #d1fae5 0%, #4ade80 50%, #15803d 100%);
+        }
+        .settings-plan-hero--premium .settings-plan-hero-name {
+            background-image: linear-gradient(120deg, #ffffff 0%, #dce3eb 40%, #94a3b8 100%);
+        }
+        .settings-plan-hero--advanced .settings-plan-hero-name {
+            background-image: linear-gradient(120deg, #fef3c7 0%, #fbbf24 45%, #b45309 100%);
+        }
+        .settings-plan-hero--monster .settings-plan-hero-name {
+            background-image: linear-gradient(120deg, #e0f2fe 0%, #7dd3fc 28%, #60a5fa 58%, #22d3ee 100%);
+        }
+        .settings-plan-hero-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+        .settings-plan-hero-metric {
+            display: grid;
+            gap: 6px;
+            padding: 14px 16px;
+            border-radius: 16px;
+            background: rgba(8, 17, 30, 0.36);
+            border: 1px solid rgba(148, 163, 184, 0.14);
+        }
+        .settings-plan-hero-metric-label {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: rgba(191, 212, 233, 0.72);
+        }
+        .settings-plan-hero-metric-value {
+            color: #f8fafc;
+            font-size: 19px;
+            font-weight: 700;
+            line-height: 1.1;
+        }
+        .settings-plan-hero-metric-hint,
+        .settings-plan-hero-copy {
+            color: rgba(191, 212, 233, 0.82);
+            font-size: 13px;
+            line-height: 1.6;
+            margin: 0;
+        }
+        .copy-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .copy-card-title { font-weight: 600; }
+        .copy-card-actions { display: flex; gap: 10px; }
+        .variable-tag {
+            display: inline-block;
+            background: rgba(var(--primary-rgb), 0.1);
+            color: var(--primary);
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            margin: 3px;
+            cursor: pointer;
+        }
+        .variable-tag:hover { background: rgba(var(--primary-rgb), 0.2); }
+        .connection-status-card { background: var(--surface-muted); border-radius: var(--border-radius); padding: 30px; border: 1px solid var(--border-color); }
+        .connection-icon { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; margin-bottom: 20px; }
+        .connection-icon.success { background: var(--success); color: #052216; }
+        .connection-icon.disconnected { background: var(--gray-200); color: var(--gray-800); }
+        .connection-status-card h4 { margin: 0 0 12px; font-size: 20px; }
+        .connection-status-card p { margin: 0 0 12px; color: var(--gray-800); line-height: 1.5; }
+        .connection-info { font-size: 13px; color: var(--gray-700); background: var(--gray-50); padding: 15px; border-radius: 8px; margin: 15px 0 !important; border: 1px solid var(--border-color); }
+        .connection-accounts-list {
+            display: grid;
+            gap: 12px;
+        }
+        .connection-account-item {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+            background: var(--gray-50);
+        }
+        .connection-account-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .connection-account-session {
+            font-size: 12px;
+            color: var(--gray-700);
+            word-break: break-word;
+        }
+        .connection-status-pill {
+            border-radius: 999px;
+            padding: 3px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            border: 1px solid transparent;
+            white-space: nowrap;
+        }
+        .connection-status-pill.connected {
+            color: var(--success-light);
+            background: rgba(var(--success-rgb), 0.16);
+            border-color: rgba(var(--success-rgb), 0.32);
+        }
+        .connection-status-pill.disconnected {
+            color: var(--danger-light);
+            background: rgba(var(--danger-rgb), 0.12);
+            border-color: rgba(var(--danger-rgb), 0.28);
+        }
+        .connection-account-body {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) 120px 170px auto auto;
+            gap: 10px;
+            align-items: end;
+        }
+        .connection-account-body .form-group {
+            margin-bottom: 0;
+        }
+        .connection-account-body .btn {
+            width: auto;
+            white-space: nowrap;
+        }
+        .connection-account-inline-field .form-label {
+            font-size: 11px;
+            margin-bottom: 6px;
+        }
+        .connection-campaign-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--gray-700);
+            white-space: nowrap;
+            padding-bottom: 9px;
+        }
+        .connection-campaign-toggle input {
+            width: 16px;
+            height: 16px;
+        }
+        .business-hours-account-body {
+            display: grid;
+            grid-template-columns: 180px 180px auto auto;
+            gap: 10px;
+            align-items: end;
+        }
+        .business-hours-account-body .form-group {
+            margin-bottom: 0;
+        }
+        .business-hours-account-controls {
+            margin-bottom: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: rgba(12, 24, 40, 0.58);
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .business-hours-checkbox-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: #d8e5f8;
+            line-height: 1.2;
+        }
+        .business-hours-session-enabled-input {
+            position: static;
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            flex-shrink: 0;
+        }
+        .business-hours-toggle-hint {
+            margin: 6px 0 0 26px;
+            font-size: 11px;
+            color: var(--gray-500);
+        }
+        .business-hours-account-message {
+            grid-column: 1 / -1;
+        }
+        .business-hours-account-message .form-textarea {
+            min-height: 84px;
+        }
+        .business-hours-account-body .btn {
+            width: auto;
+            white-space: nowrap;
+        }
+        @media (max-width: 768px) {
+            .configuracoes-react .settings-nav {
+                position: static !important;
+                top: auto !important;
+                z-index: auto !important;
+                margin-bottom: 14px;
+            }
+            .connection-account-body {
+                grid-template-columns: 1fr;
+            }
+            .business-hours-account-body {
+                grid-template-columns: 1fr;
+            }
+            .business-hours-toggle-hint {
+                margin-left: 0;
+            }
+            .connection-account-body .btn {
+                width: 100%;
+            }
+            .business-hours-account-body .btn {
+                width: 100%;
+            }
+            .settings-panel {
+                padding: 18px;
+            }
+            .settings-section-title {
+                font-size: 16px;
+                margin-bottom: 14px;
+            }
+            .settings-users-table .data-table {
+                min-width: 560px;
+            }
+            .settings-users-table th,
+            .settings-users-table td {
+                padding: 12px 14px;
+            }
+            .settings-users-actions .btn {
+                width: 100%;
+                margin-left: 0 !important;
+            }
+        }
+      `}</style>
+      <button className="mobile-menu-toggle" type="button" onClick={() => { document.querySelector('.sidebar')?.classList.toggle('open'); document.querySelector('.sidebar-overlay')?.classList.toggle('active'); }}>☰</button>
+          <div className="sidebar-overlay"></div>
+      
+          <aside className="sidebar">
+              <div className="sidebar-header">
+                  <Link to="/dashboard" className="sidebar-logo"><img src={brandLogoUrl} alt={brandName} className="brand-logo" /><span className="brand-text">{brandName}</span></Link>
+              </div>
+              <nav className="sidebar-nav">
+                                    <div className="nav-section">
+                      <ul className="nav-menu">
+                          <li className="nav-item"><Link to="/dashboard" className="nav-link"><span className="icon icon-dashboard"></span>Painel de Controle</Link></li>
+                          <li className="nav-item"><Link to="/contatos" className="nav-link"><span className="icon icon-contacts"></span>Contatos</Link></li>
+                          <li className="nav-item"><Link to="/campanhas" className="nav-link"><span className="icon icon-campaigns"></span>Campanhas</Link></li>
+                      </ul>
+                  </div>
+
+                  <div className="nav-section">
+                      <div className="nav-section-title">Conversas</div>
+                      <ul className="nav-menu">
+                          <li className="nav-item"><Link to="/inbox" className="nav-link"><span className="icon icon-inbox"></span>Inbox</Link></li>
+                      </ul>
+                  </div>
+                  <div className="nav-section">
+                      <div className="nav-section-title">Automação</div>
+                      <ul className="nav-menu">
+                          <li className="nav-item"><Link to="/automacao" className="nav-link"><span className="icon icon-automation"></span>Automação</Link></li>
+                          <li className="nav-item"><Link to="/fluxos" className="nav-link"><span className="icon icon-flows"></span>Fluxos de Conversa</Link></li>
+                          <li className="nav-item"><Link to="/funil" className="nav-link"><span className="icon icon-funnel"></span>Funil de Vendas</Link></li>
+                      </ul>
+                  </div>
+                  <div className="nav-section">
+                      <div className="nav-section-title">Sistema</div>
+                      <ul className="nav-menu">
+                          <li className="nav-item"><Link to="/whatsapp" className="nav-link"><span className="icon icon-whatsapp"></span>WhatsApp</Link></li>
+                          <li className="nav-item"><Link to="/configuracoes" className="nav-link active"><span className="icon icon-settings"></span>Configurações</Link></li>
+                      </ul>
+                  </div>
+              </nav>
+              <div className="sidebar-footer">
+                  <div className="whatsapp-status">
+                      <span className="status-indicator disconnected"></span>
+                      <span className="whatsapp-status-text">Desconectado</span>
+                  </div>
+                  <button className="btn-logout" onClick={() => globals.logout?.()}>Sair</button>
+              </div>
+          </aside>
+      
+          <main className="main-content">
+              <div className="page-header">
+                  <div className="page-title">
+                      <h1><span className="icon icon-settings icon-sm"></span> Configurações</h1>
+                      <p>Gerencie as configurações do sistema</p>
+                  </div>
+              </div>
+      
+              <div className="settings-container">
+                  <nav className="settings-nav">
+                      <div className="settings-nav-item active" data-panel="conexao" onClick={() => globals.showPanel?.('conexao')}><span className="icon icon-whatsapp icon-sm"></span> Contas</div>
+                      <div className="settings-nav-item" data-panel="general" onClick={() => globals.showPanel?.('general')}><span className="icon icon-building icon-sm"></span> Campos</div>
+                      <div className="settings-nav-item" data-panel="contact-fields" onClick={() => globals.showPanel?.('contact-fields')}><span className="icon icon-contacts icon-sm"></span> Campos Dinâmicos</div>
+                      <div className="settings-nav-item" data-panel="labels" onClick={() => globals.showPanel?.('labels')}><span className="icon icon-tag icon-sm"></span> Tags</div>
+                      <div className="settings-nav-item" data-panel="quick" onClick={() => globals.showPanel?.('quick')}><span className="icon icon-bolt icon-sm"></span> Respostas rápidas</div>
+                      <div className="settings-nav-item" data-panel="hours" onClick={() => globals.showPanel?.('hours')}><span className="icon icon-clock icon-sm"></span> Horários</div>
+                      {SHOW_AI_TAB && (
+                        <div className="settings-nav-item" data-panel="ai" onClick={() => globals.showPanel?.('ai')}><span className="icon icon-automation icon-sm"></span> Inteligência Artificial</div>
+                      )}
+                      {SHOW_NOTIFICATIONS_TAB && (
+                        <div className="settings-nav-item" data-panel="notifications" onClick={() => globals.showPanel?.('notifications')}><span className="icon icon-bell icon-sm"></span> Notificações</div>
+                      )}
+                      <div className="settings-nav-item" data-panel="users" onClick={() => globals.showPanel?.('users')}><span className="icon icon-user icon-sm"></span> Usuários</div>
+                      <div className="settings-nav-item" data-panel="plan" onClick={() => globals.showPanel?.('plan')}><span className="icon icon-dashboard icon-sm"></span> Plano</div>
+                      <div className="settings-nav-item" data-panel="api" onClick={() => globals.showPanel?.('api')}><span className="icon icon-plug icon-sm"></span> API e Webhooks</div>
+                  </nav>
+      
+                  <div className="settings-panels">
+                      <div className="settings-panel active" id="panel-conexao">
+                          <h3 className="settings-section-title">Contas</h3>
+                          <div className="connection-status-card" id="connectionStatusCard">
+                              <h4 style={{ marginTop: 0 }}>Contas WhatsApp</h4>
+                              <p className="connection-info">
+                                  Gerencie nome de exibição, participação em campanhas, peso e limite diário de cada conta.
+                              </p>
+                              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                                  <button className="btn btn-outline btn-refresh-outline" onClick={() => globals.refreshWhatsAppAccounts?.()}><span className="icon icon-refresh icon-sm"></span> Atualizar lista</button>
+                                  <Link to="/whatsapp" className="btn btn-primary">Ir para WhatsApp</Link>
+                              </div>
+                              <div className="connection-accounts-list" id="connectionAccountsList">
+                                  <p style={{ color: 'var(--gray-500)', margin: 0 }}>Carregando contas...</p>
+                              </div>
+                          </div>
+                      </div>
+      
+                      <div className="settings-panel" id="panel-general">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-building icon-sm"></span> Informações da Empresa</h3>
+                              <div className="form-group">
+                                  <label className="form-label">Nome da Empresa</label>
+                                  <input type="text" className="form-input" id="companyName" defaultValue="ZapVender" />
+                              </div>
+                              <div className="form-row">
+                                  <div className="form-group">
+                                      <label className="form-label">CNPJ</label>
+                                      <input type="text" className="form-input" id="companyCnpj" placeholder="00.000.000/0000-00" />
+                                  </div>
+                                  <div className="form-group">
+                                      <label className="form-label">Telefone</label>
+                                      <input type="text" className="form-input" id="companyPhone" placeholder="(00) 00000-0000" />
+                                  </div>
+                              </div>
+                              <div className="form-group">
+                                  <label className="form-label">E-mail</label>
+                                  <input type="email" className="form-input" id="companyEmail" placeholder="contato@empresa.com" />
+                              </div>
+                          </div>
+                          <button className="btn btn-primary" onClick={() => globals.saveGeneralSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Configurações</button>
+                      </div>
+      
+                      <div className="settings-panel" id="panel-contact-fields">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-contacts icon-sm"></span> Campos Dinâmicos</h3>
+                              <p className="text-muted mb-3">Esses campos aparecem no cadastro de contato e viram vari&aacute;veis para respostas r&aacute;pidas.</p>
+
+                              <div className="copy-card">
+                                  <div className="copy-card-header">
+                                      <span className="copy-card-title">Campos padr&atilde;o (fixos)</span>
+                                  </div>
+                                  <div id="defaultContactFieldsList"></div>
+                              </div>
+
+                              <div className="copy-card" style={{ marginTop: '18px' }}>
+                                  <div className="copy-card-header">
+                                      <span className="copy-card-title">Novo campo personalizado</span>
+                                  </div>
+                                  <div className="form-row">
+                                      <div className="form-group">
+                                          <label className="form-label required">Nome do campo</label>
+                                          <input type="text" className="form-input" id="newContactFieldLabel" placeholder="Ex.: Cidade" />
+                                      </div>
+                                      <div className="form-group">
+                                          <label className="form-label">Placeholder</label>
+                                          <input type="text" className="form-input" id="newContactFieldPlaceholder" placeholder="Opcional" />
+                                      </div>
+                                  </div>
+                                  <button className="btn btn-primary" onClick={() => globals.createContactField?.()}>
+                                      <span className="icon icon-add icon-sm"></span> Adicionar campo
+                                  </button>
+                              </div>
+
+                              <div className="table-container" style={{ marginTop: '18px' }}>
+                                  <table className="data-table">
+                                      <thead>
+                                          <tr>
+                                              <th>Vari&aacute;vel</th>
+                                              <th>R&oacute;tulo</th>
+                                              <th>Placeholder</th>
+                                              <th>{'Ações'}</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody id="contactFieldsTableBody">
+                                          <tr>
+                                              <td colSpan={4} className="table-empty">
+                                                  <div className="table-empty-icon icon icon-empty icon-lg"></div>
+                                                  <p>Carregando campos...</p>
+                                              </td>
+                                          </tr>
+                                      </tbody>
+                                  </table>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div className="settings-panel" id="panel-labels">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-tag icon-sm"></span> Tags</h3>
+                              <p className="text-muted mb-3">Gerencie todas as tags usadas em contatos e campanhas.</p>
+
+                              <div className="copy-card">
+                                  <div className="copy-card-header">
+                                      <span className="copy-card-title">Nova etiqueta</span>
+                                  </div>
+                                  <div className="form-group">
+                                      <label className="form-label required">Nome</label>
+                                      <input type="text" className="form-input" id="newTagName" placeholder="Ex.: Lead quente" />
+                                  </div>
+                                  <div className="form-group">
+                                      <label className="form-label">{'Descrição'}</label>
+                                      <input type="text" className="form-input" id="newTagDescription" placeholder="Opcional" />
+                                  </div>
+                                  <button className="btn btn-primary" onClick={() => globals.createSettingsTag?.()}>
+                                      <span className="icon icon-add icon-sm"></span> Adicionar etiqueta
+                                  </button>
+                              </div>
+
+                              <div className="table-container" style={{ marginTop: '18px' }}>
+                                  <table className="data-table">
+                                      <thead>
+                                          <tr>
+                                              <th>Nome</th>
+                                              <th>{'Descrição'}</th>
+                                              <th>{'Ações'}</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody id="settingsTagsTableBody">
+                                          <tr>
+                                              <td colSpan={3} className="table-empty">
+                                                  <div className="table-empty-icon icon icon-empty icon-lg"></div>
+                                                  <p>Carregando tags...</p>
+                                              </td>
+                                          </tr>
+                                      </tbody>
+                                  </table>
+                              </div>
+                          </div>
+                      </div>
+                      <div className="settings-panel" id="panel-quick">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-bolt icon-sm"></span> Respostas rápidas</h3>
+                              <p className="text-muted mb-3">Crie respostas de texto e áudio para usar no Inbox.</p>
+
+                              <div className="mb-4" id="contactVariablesList"></div>
+
+                              <div className="copy-card">
+                                  <div className="copy-card-header">
+                                      <span className="copy-card-title">Respostas cadastradas</span>
+                                  </div>
+                                  <div id="templatesList"></div>
+                                  <p className="text-muted" id="templatesEmpty" style={{ marginTop: '12px' }}>Nenhuma resposta rápida cadastrada.</p>
+                              </div>
+
+                              <button className="btn btn-outline w-100 mt-3" onClick={() => globals.openModal?.('addTemplateModal')}><span className="icon icon-add icon-sm"></span> Nova resposta rápida</button>
+                          </div>
+                          <button className="btn btn-primary" onClick={() => globals.saveCopysSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar respostas rápidas</button>
+                      </div>
+                      {SHOW_AI_TAB && (
+                        <div className="settings-panel" id="panel-ai">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-automation icon-sm"></span> Inteligência Artificial</h3>
+                              <p className="text-muted mb-3">
+                                  Configure o contexto do seu negocio para a IA gerar rascunhos de fluxos mais alinhados ao seu atendimento.
+                              </p>
+
+                              <div className="copy-card">
+                                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                      <label className="checkbox-wrapper">
+                                          <input type="checkbox" id="aiEnabled" />
+                                          <span className="checkbox-custom"></span>
+                                      </label>
+                                      <label className="form-label" htmlFor="aiEnabled" style={{ margin: 0 }}>Ativar Inteligência Artificial para geração de fluxos</label>
+                                  </div>
+
+                                  <div className="form-group">
+                                      <label className="form-label">Descricao do negocio</label>
+                                      <textarea className="form-textarea" id="aiBusinessDescription" rows={4} placeholder="Explique o que sua empresa faz, seu segmento e diferenciais."></textarea>
+                                  </div>
+
+                                  <div className="form-group">
+                                      <label className="form-label">Produtos / servicos</label>
+                                      <textarea className="form-textarea" id="aiProductsServices" rows={4} placeholder="Liste os principais produtos, servicos, planos ou ofertas."></textarea>
+                                  </div>
+
+                                  <div className="form-row">
+                                      <div className="form-group">
+                                          <label className="form-label">Publico-alvo</label>
+                                          <textarea className="form-textarea" id="aiTargetAudience" rows={3} placeholder="Quem você atende? Perfil, necessidades, região, etc."></textarea>
+                                      </div>
+                                      <div className="form-group">
+                                          <label className="form-label">Tom de voz</label>
+                                          <select className="form-select" id="aiToneOfVoice" defaultValue="consultivo">
+                                              <option value="consultivo">Consultivo</option>
+                                              <option value="formal">Formal</option>
+                                              <option value="amigavel">Amigavel</option>
+                                              <option value="direto">Direto</option>
+                                          </select>
+                                      </div>
+                                  </div>
+
+                                  <div className="form-group">
+                                      <label className="form-label">Regras e politicas</label>
+                                      <textarea className="form-textarea" id="aiRulesPolicies" rows={4} placeholder="Regras que a IA deve considerar (prazo, pagamento, limites, compliance, etc.)."></textarea>
+                                  </div>
+
+                                  <div className="form-group">
+                                      <label className="form-label">FAQ (uma pergunta/resposta por linha)</label>
+                                      <textarea className="form-textarea" id="aiFaqs" rows={5} placeholder="Ex.: Qual o prazo de atendimento? Resposta: ..."></textarea>
+                                  </div>
+
+                                  <div className="form-group">
+                                      <label className="form-label">Site</label>
+                                      <input type="url" className="form-input" id="aiWebsiteUrl" placeholder="https://seusite.com.br" />
+                                      <p className="form-help">Nesta primeira fase, a IA usa o URL como contexto cadastrado. A sincronizacao/indexacao vira na proxima etapa.</p>
+                                  </div>
+
+                                  <div className="form-group">
+                                      <label className="form-label">Documentos / catalogos (resumo)</label>
+                                      <textarea className="form-textarea" id="aiDocumentsNotes" rows={4} placeholder="Resuma catalogos, tabelas, scripts comerciais e materiais importantes."></textarea>
+                                  </div>
+
+                                  <div className="form-group">
+                                      <label className="form-label">Observacoes internas</label>
+                                      <textarea className="form-textarea" id="aiInternalNotes" rows={4} placeholder="Instrucoes internas para geracao de fluxos (ex.: quando transferir para humano, como abordar objecoes)."></textarea>
+                                  </div>
+                              </div>
+
+                              <button className="btn btn-primary" onClick={() => globals.saveAiSettings?.()}>
+                                  <span className="icon icon-save icon-sm"></span> Salvar Inteligência Artificial
+                              </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="settings-panel" id="panel-hours">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-clock icon-sm"></span> Horários de funcionamento</h3>
+                              <p className="text-muted mb-3">Defina por conta quando transmissões e campanhas podem enviar mensagens.</p>
+
+                              <div className="copy-card">
+                                  <p style={{ margin: 0, color: 'var(--gray-700)' }}>
+                                      Configure início/fim do expediente por conta e ative/desative o horário comercial individualmente.
+                                  </p>
+                              </div>
+
+                              <div className="settings-users-actions" style={{ marginTop: 0 }}>
+                                  <button className="btn btn-outline" onClick={() => globals.refreshBusinessHoursAccounts?.()}>
+                                      <span className="icon icon-refresh icon-sm"></span> Atualizar lista
+                                  </button>
+                                  <Link className="btn btn-primary" to="/whatsapp">
+                                      Ir para WhatsApp
+                                  </Link>
+                              </div>
+
+                              <div className="copy-card">
+                                  <div className="connection-accounts-list" id="businessHoursAccountsList">
+                                      <p style={{ margin: 0, color: 'var(--gray-500)' }}>Carregando contas...</p>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                      <div className="settings-panel" id="panel-funnel">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-funnel icon-sm"></span> Etapas do Funil</h3>
+                              <p className="text-muted mb-4">Configure as etapas do seu funil de vendas.</p>
+                              
+                              <div id="funnelStages">
+                                  <div className="copy-card" data-stage="1">
+                                      <div className="copy-card-header"><span className="copy-card-title">Etapa 1</span></div>
+                                      <div className="form-row">
+                                          <div className="form-group">
+                                              <label className="form-label">Nome</label>
+                                              <input type="text" className="form-input" defaultValue="Novo" id="funnel1Name" />
+                                          </div>
+                                          <div className="form-group">
+                                              <label className="form-label">Cor</label>
+                                              <input type="color" className="form-input" defaultValue="#667eea" id="funnel1Color" style={{ height: '45px' }} />
+                                          </div>
+                                      </div>
+                                      <div className="form-group">
+                                          <label className="form-label">Descrição</label>
+                                          <input type="text" className="form-input" defaultValue="Lead recém cadastrado" id="funnel1Desc" />
+                                      </div>
+                                  </div>
+      
+                                  <div className="copy-card" data-stage="2">
+                                      <div className="copy-card-header"><span className="copy-card-title">Etapa 2</span></div>
+                                      <div className="form-row">
+                                          <div className="form-group">
+                                              <label className="form-label">Nome</label>
+                                              <input type="text" className="form-input" defaultValue="Em Andamento" id="funnel2Name" />
+                                          </div>
+                                          <div className="form-group">
+                                              <label className="form-label">Cor</label>
+                                              <input type="color" className="form-input" defaultValue="#f5576c" id="funnel2Color" style={{ height: '45px' }} />
+                                          </div>
+                                      </div>
+                                      <div className="form-group">
+                                          <label className="form-label">Descrição</label>
+                                          <input type="text" className="form-input" defaultValue="Em negociação" id="funnel2Desc" />
+                                      </div>
+                                  </div>
+      
+                                  <div className="copy-card" data-stage="3">
+                                      <div className="copy-card-header"><span className="copy-card-title">Etapa 3</span></div>
+                                      <div className="form-row">
+                                          <div className="form-group">
+                                              <label className="form-label">Nome</label>
+                                              <input type="text" className="form-input" defaultValue="Concluído" id="funnel3Name" />
+                                          </div>
+                                          <div className="form-group">
+                                              <label className="form-label">Cor</label>
+                                              <input type="color" className="form-input" defaultValue="#43e97b" id="funnel3Color" style={{ height: '45px' }} />
+                                          </div>
+                                      </div>
+                                      <div className="form-group">
+                                          <label className="form-label">Descrição</label>
+                                          <input type="text" className="form-input" defaultValue="Venda realizada" id="funnel3Desc" />
+                                      </div>
+                                  </div>
+      
+                                  <div className="copy-card" data-stage="4">
+                                      <div className="copy-card-header"><span className="copy-card-title">Etapa 4</span></div>
+                                      <div className="form-row">
+                                          <div className="form-group">
+                                              <label className="form-label">Nome</label>
+                                              <input type="text" className="form-input" defaultValue="Perdido" id="funnel4Name" />
+                                          </div>
+                                          <div className="form-group">
+                                              <label className="form-label">Cor</label>
+                                              <input type="color" className="form-input" defaultValue="#6b7280" id="funnel4Color" style={{ height: '45px' }} />
+                                          </div>
+                                      </div>
+                                      <div className="form-group">
+                                          <label className="form-label">Descrição</label>
+                                          <input type="text" className="form-input" defaultValue="Não converteu" id="funnel4Desc" />
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+                          <button className="btn btn-primary" onClick={() => globals.saveFunnelSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Funil</button>
+                      </div>
+      
+                      {SHOW_NOTIFICATIONS_TAB && (
+                        <div className="settings-panel" id="panel-notifications">
+                            <div className="settings-section">
+                                <h3 className="settings-section-title"><span className="icon icon-bell icon-sm"></span> Preferências de Notificação</h3>
+                                <div className="form-group">
+                                    <label className="checkbox-wrapper">
+                                        <input type="checkbox" id="notifyNewLead" defaultChecked />
+                                        <span className="checkbox-custom"></span>
+                                        Notificar novos leads
+                                    </label>
+                                </div>
+                                <div className="form-group">
+                                    <label className="checkbox-wrapper">
+                                        <input type="checkbox" id="notifyNewMessage" defaultChecked />
+                                        <span className="checkbox-custom"></span>
+                                        Notificar novas mensagens
+                                    </label>
+                                </div>
+                                <div className="form-group">
+                                    <label className="checkbox-wrapper">
+                                        <input type="checkbox" id="notifySound" defaultChecked />
+                                        <span className="checkbox-custom"></span>
+                                        Som de notificação
+                                    </label>
+                                </div>
+                            </div>
+                            <button className="btn btn-primary" onClick={() => globals.saveNotificationSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Notificações</button>
+                        </div>
+                      )}
+      
+                      <div className="settings-panel" id="panel-users">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-user icon-sm"></span> Gerenciar Usuários</h3>
+                              <div className="table-container settings-users-table">
+                                  <table className="data-table">
+                                      <thead>
+                                          <tr>
+                                              <th>Nome</th>
+                                              <th>E-mail</th>
+                                              <th>Função</th>
+                                              <th>Status</th>
+                                              <th>Ações</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody id="usersTableBody">
+                                          <tr>
+                                              <td colSpan={5} className="table-empty">
+                                                  <div className="table-empty-icon icon icon-empty icon-lg"></div>
+                                                  <p>Carregando usuários...</p>
+                                              </td>
+                                          </tr>
+                                      </tbody>
+                                  </table>
+                              </div>
+                              <div className="settings-users-actions">
+                                  <button id="addUserButton" className="btn btn-primary" onClick={() => globals.openModal?.('addUserModal')}><span className="icon icon-add icon-sm"></span> Adicionar Usuário</button>
+                                  <button id="deleteAccountButton" className="btn btn-outline-danger" onClick={() => globals.deleteAccount?.()}><span className="icon icon-delete icon-sm"></span> Excluir conta</button>
+                              </div>
+                          </div>
+      
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-lock icon-sm"></span> Alterar Senha</h3>
+                              <div className="form-group">
+                                  <label className="form-label">Senha Atual</label>
+                                  <input type="password" className="form-input" id="currentPassword" />
+                              </div>
+                              <div className="form-group">
+                                  <label className="form-label">Nova Senha</label>
+                                  <input type="password" className="form-input" id="newPassword" />
+                              </div>
+                              <div className="form-group">
+                                  <label className="form-label">Confirmar Nova Senha</label>
+                                  <input type="password" className="form-input" id="confirmPassword" />
+                              </div>
+                              <button className="btn btn-primary" onClick={() => globals.changePassword?.()}><span className="icon icon-lock icon-sm"></span> Alterar Senha</button>
+                          </div>
+                      </div>
+
+                      <div className="settings-panel" id="panel-plan">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-dashboard icon-sm"></span> Plano da Conta</h3>
+                              <p className="text-muted mb-4">
+                                  A situação do plano do admin principal será atualizada e confirmada via API.
+                              </p>
+                              <div id="planStatusCard">
+                                  <p style={{ color: 'var(--gray-500)', margin: 0 }}>Carregando situação do plano...</p>
+                              </div>
+                          </div>
+                      </div>
+      
+                      <div className="settings-panel" id="panel-api">
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-lock icon-sm"></span> Chaves de API</h3>
+                              <div className="form-group">
+                                  <label className="form-label">API Key</label>
+                                  <div style={{ display: 'flex', gap: '10px' }}>
+                                      <input type="text" className="form-input" id="apiKey" defaultValue="sk_live_xxxxxxxxxxxx" readOnly style={{ fontFamily: 'monospace' }} />
+                                      <button className="btn btn-outline" onClick={() => globals.copyApiKey?.()}><span className="icon icon-templates icon-sm"></span></button>
+                                      <button className="btn btn-outline" onClick={() => globals.regenerateApiKey?.()}><span className="icon icon-refresh icon-sm"></span></button>
+                                  </div>
+                              </div>
+                          </div>
+      
+                          <div className="settings-section">
+                              <h3 className="settings-section-title"><span className="icon icon-link icon-sm"></span> Webhooks</h3>
+                              <p className="text-muted mb-4">Configure URLs para receber notificações de eventos.</p>
+                              <div className="form-group">
+                                  <label className="form-label">URL do Webhook (Novo Lead)</label>
+                                  <input type="url" className="form-input" id="webhookNewLead" placeholder="https://seu-site.com/webhook/new-lead" />
+                              </div>
+                              <div className="form-group">
+                                  <label className="form-label">URL do Webhook (Nova Mensagem)</label>
+                                  <input type="url" className="form-input" id="webhookNewMessage" placeholder="https://seu-site.com/webhook/new-message" />
+                              </div>
+                              <button className="btn btn-outline" onClick={() => globals.testWebhook?.()}>Testar Webhook</button>
+                          </div>
+                          <button className="btn btn-primary" onClick={() => globals.saveApiSettings?.()}><span className="icon icon-save icon-sm"></span> Salvar Configurações</button>
+                      </div>
+                  </div>
+              </div>
+          </main>
+      
+          <div className="modal-overlay" id="addUserModal">
+              <div className="modal">
+                  <div className="modal-header">
+                      <h3 className="modal-title"><span className="icon icon-add icon-sm"></span> Adicionar Usuário</h3>
+                      <button className="modal-close" onClick={() => globals.closeModal?.('addUserModal')}>{'\u00D7'}</button>
+                  </div>
+                  <div className="modal-body">
+                      <div className="form-group">
+                          <label className="form-label required">Nome</label>
+                          <input type="text" className="form-input" id="newUserName" required />
+                      </div>
+                      <div className="form-group">
+                          <label className="form-label required">E-mail</label>
+                          <input type="email" className="form-input" id="newUserEmail" required />
+                      </div>
+                      <div className="form-group">
+                          <label className="form-label required">Senha</label>
+                          <input type="password" className="form-input" id="newUserPassword" required />
+                      </div>
+                      <div className="form-group">
+                          <label className="form-label">Função</label>
+                          <select className="form-select" id="newUserRole">
+                              <option value="agent">Usuário</option>
+                              <option value="admin">Administrador</option>
+                          </select>
+                      </div>
+                  </div>
+                  <div className="modal-footer">
+                      <button className="btn btn-outline" onClick={() => globals.closeModal?.('addUserModal')}>Cancelar</button>
+                      <button className="btn btn-primary" onClick={() => globals.addUser?.()}><span className="icon icon-add icon-sm"></span> Adicionar</button>
+                  </div>
+              </div>
+          </div>
+
+          <div className="modal-overlay" id="editUserModal">
+              <div className="modal">
+                  <div className="modal-header">
+                      <h3 className="modal-title"><span className="icon icon-edit icon-sm"></span> Editar Usuário</h3>
+                      <button className="modal-close" onClick={() => globals.closeModal?.('editUserModal')}>{'\u00D7'}</button>
+                  </div>
+                  <div className="modal-body">
+                      <input type="hidden" id="editUserId" />
+                      <div className="form-group">
+                          <label className="form-label required">Nome</label>
+                          <input type="text" className="form-input" id="editUserName" required />
+                      </div>
+                      <div className="form-group">
+                          <label className="form-label">E-mail</label>
+                          <input type="email" className="form-input" id="editUserEmail" readOnly />
+                      </div>
+                      <div className="form-row">
+                          <div className="form-group">
+                               <label className="form-label">Função</label>
+                               <select className="form-select" id="editUserRole">
+                                   <option value="agent">Usuário</option>
+                                   <option value="admin">Administrador</option>
+                               </select>
+                          </div>
+                      </div>
+                  </div>
+                  <div className="modal-footer">
+                      <button className="btn btn-outline" onClick={() => globals.closeModal?.('editUserModal')}>Cancelar</button>
+                      <button className="btn btn-primary" onClick={() => globals.updateUser?.()}><span className="icon icon-save icon-sm"></span> Salvar</button>
+                  </div>
+              </div>
+          </div>
+
+          <div className="modal-overlay" id="confirmDeleteUserModal">
+              <div className="modal">
+                  <div className="modal-header">
+                      <h3 className="modal-title"><span className="icon icon-delete icon-sm"></span> Você tem certeza?</h3>
+                      <button className="modal-close" onClick={() => globals.cancelDeleteUser?.()}>{'\u00D7'}</button>
+                  </div>
+                  <div className="modal-body">
+                      <input type="hidden" id="confirmDeleteUserId" />
+                      <p className="text-muted mb-4">
+                          Esta ação removerá o usuário <strong id="confirmDeleteUserName">usuário</strong> da sua conta.
+                      </p>
+                      <p className="text-muted">Essa ação não pode ser desfeita.</p>
+                  </div>
+                  <div className="modal-footer">
+                      <button className="btn btn-outline" onClick={() => globals.cancelDeleteUser?.()}>Cancelar</button>
+                      <button className="btn btn-danger" onClick={() => globals.confirmDeleteUser?.()}><span className="icon icon-delete icon-sm"></span> Excluir usuário</button>
+                  </div>
+              </div>
+          </div>
+
+          <div className="modal-overlay" id="confirmDeleteContactFieldModal">
+              <div className="modal">
+                  <div className="modal-header">
+                      <h3 className="modal-title"><span className="icon icon-delete icon-sm"></span> Você tem certeza?</h3>
+                      <button className="modal-close" onClick={() => globals.cancelDeleteContactField?.()}>{'\u00D7'}</button>
+                  </div>
+                  <div className="modal-body">
+                      <input type="hidden" id="confirmDeleteContactFieldKey" />
+                      <p className="text-muted mb-4">
+                          Esta ação removerá o campo <strong id="confirmDeleteContactFieldName">campo</strong> dos Campos Dinâmicos.
+                      </p>
+                      <p className="text-muted">Essa ação não pode ser desfeita.</p>
+                  </div>
+                  <div className="modal-footer">
+                      <button className="btn btn-outline" onClick={() => globals.cancelDeleteContactField?.()}>Cancelar</button>
+                      <button className="btn btn-danger" onClick={() => globals.confirmDeleteContactField?.()}><span className="icon icon-delete icon-sm"></span> Excluir campo</button>
+                  </div>
+              </div>
+          </div>
+
+          <div className="modal-overlay" id="confirmDeleteAccountModal">
+              <div className="modal">
+                  <div className="modal-header">
+                      <h3 className="modal-title"><span className="icon icon-delete icon-sm"></span> Você tem certeza?</h3>
+                      <button className="modal-close" onClick={() => globals.cancelDeleteAccount?.()}>{'\u00D7'}</button>
+                  </div>
+                  <div className="modal-body">
+                      <p className="text-muted mb-4">Esta ação excluirá sua conta e desativará todos os usuários vinculados. Deseja continuar?</p>
+                  </div>
+                  <div className="modal-footer">
+                      <button className="btn btn-outline" onClick={() => globals.cancelDeleteAccount?.()}>Cancelar</button>
+                      <button className="btn btn-danger" onClick={() => globals.confirmDeleteAccount?.()}><span className="icon icon-delete icon-sm"></span> Excluir conta</button>
+                  </div>
+              </div>
+          </div>
+       
+          <div className="modal-overlay" id="addTemplateModal">
+              <div className="modal">
+                  <div className="modal-header">
+                      <h3 className="modal-title"><span className="icon icon-add icon-sm"></span> Nova resposta rápida</h3>
+                      <button className="modal-close" onClick={() => globals.closeModal?.('addTemplateModal')}>{'\u00D7'}</button>
+                  </div>
+                  <div className="modal-body">
+                      <div className="form-group">
+                          <label className="form-label required">Título da resposta</label>
+                          <input type="text" className="form-input" id="newTemplateName" required placeholder="Ex.: Primeiro contato" />
+                      </div>
+                      <div className="form-group">
+                          <label className="form-label required">Tipo de conteúdo</label>
+                          <select className="form-select" id="newTemplateType" onChange={() => globals.updateNewTemplateForm?.()}>
+                              <option value="text">Texto</option>
+                              <option value="audio">Áudio</option>
+                          </select>
+                      </div>
+                      <div className="form-group">
+                          <div id="newTemplateTextGroup">
+                              <label className="form-label required">Mensagem</label>
+                              <textarea className="form-textarea" id="newTemplateMessage" rows="6" required placeholder="Digite a mensagem..."></textarea>
+                          </div>
+                          <div id="newTemplateAudioGroup" style={{ display: 'none' }}>
+                              <label className="form-label required">Arquivo de áudio</label>
+                              <input type="file" className="form-input" id="newTemplateAudio" accept="audio/*" />
+                              <small className="text-muted">Envie um áudio (ogg/mp3/wav) para usar como resposta rápida no Inbox.</small>
+                          </div>
+                      </div>
+                  </div>
+                  <div className="modal-footer">
+                      <button className="btn btn-outline" onClick={() => globals.closeModal?.('addTemplateModal')}>Cancelar</button>
+                      <button className="btn btn-primary" onClick={() => globals.saveNewTemplate?.()}><span className="icon icon-save icon-sm"></span> Salvar</button>
+                  </div>
+              </div>
+          </div>
+      
+    </div>
+  );
+}

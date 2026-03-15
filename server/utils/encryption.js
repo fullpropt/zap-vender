@@ -14,7 +14,12 @@ const SALT_LENGTH = 64;
 const PBKDF2_ITERATIONS = 100000;
 
 // Chave mestra (deve ser configurada via variável de ambiente)
-const MASTER_KEY = process.env.ENCRYPTION_KEY || 'self-protecao-veicular-master-key-2024';
+const DEFAULT_MASTER_KEY = 'self-protecao-veicular-master-key-2024';
+const MASTER_KEY_FROM_ENV = String(process.env.ENCRYPTION_KEY || '').trim();
+if (process.env.NODE_ENV === 'production' && (!MASTER_KEY_FROM_ENV || MASTER_KEY_FROM_ENV === DEFAULT_MASTER_KEY)) {
+    throw new Error('ENCRYPTION_KEY is required in production and cannot use the default value');
+}
+const MASTER_KEY = MASTER_KEY_FROM_ENV || DEFAULT_MASTER_KEY;
 
 /**
  * Derivar chave a partir de senha

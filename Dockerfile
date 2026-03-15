@@ -34,20 +34,23 @@ WORKDIR /app
 # Copiar apenas package.json primeiro (otimização de cache)
 COPY package*.json ./
 
-# Instalar dependências (npm install funciona sem package-lock.json)
-RUN npm install --omit=dev --legacy-peer-deps && \
+# Instalar dependências (inclui dev para build do frontend)
+RUN npm install --legacy-peer-deps && \
     npm cache clean --force
 
 # Copiar resto do código
 COPY --chown=nodejs:nodejs . .
 
+# Build do frontend (Vite)
+RUN npm run build:frontend
+
+# Remover dependências de desenvolvimento
+RUN npm prune --omit=dev
+
 # Criar diretórios necessários com permissões corretas
 RUN mkdir -p sessions data uploads && \
     chown -R nodejs:nodejs sessions data uploads && \
     chmod 755 sessions data uploads
-
-# Mudar para usuário não-root
-USER nodejs
 
 # Expor porta
 EXPOSE 3001
@@ -61,4 +64,4 @@ ENV HOST=0.0.0.0
 # Não usar HEALTHCHECK interno do Docker para evitar conflitos
 
 # Iniciar aplicação
-CMD ["node", "server/index.js"]
+CMD ["node", "server/start.js"]

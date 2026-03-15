@@ -66,7 +66,7 @@ Este documento descreve a arquitetura completa do sistema SELF Proteção Veicul
 ## Estrutura de Pastas
 
 ```
-self-protecao-veicular/
+zap-vender/
 ├── data/                          # Banco de dados SQLite
 │   └── database.db                # Arquivo do banco
 │
